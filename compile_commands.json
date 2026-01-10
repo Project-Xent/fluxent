@@ -1,0 +1,16 @@
+[
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["c:\\Users\\Wynn\\llvm-mingw-20251216-ucrt-x86_64\\bin\\x86_64-w64-mingw32-g++.exe", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++20", "-I..\\xent-core\\include", "-Iinclude", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00", "-DUNICODE", "-D_UNICODE", "-I", "C:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\73b690b4e3bb42a0975d319cc3000bd2\\include", "-DNDEBUG", "-o", "build\\.objs\\hello_fluxent\\mingw\\x86_64\\release\\examples\\hello_fluxent\\main.cpp.obj", "examples\\hello_fluxent\\main.cpp"],
+  "file": "examples\\hello_fluxent\\main.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["c:\\Users\\Wynn\\llvm-mingw-20251216-ucrt-x86_64\\bin\\x86_64-w64-mingw32-g++.exe", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++20", "-I..\\xent-core\\include", "-Iinclude", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00", "-DUNICODE", "-D_UNICODE", "-I", "C:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\73b690b4e3bb42a0975d319cc3000bd2\\include", "-DNDEBUG", "-o", "build\\.objs\\fluxent\\mingw\\x86_64\\release\\src\\engine.cpp.obj", "src\\engine.cpp"],
+  "file": "src\\engine.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["c:\\Users\\Wynn\\llvm-mingw-20251216-ucrt-x86_64\\bin\\x86_64-w64-mingw32-g++.exe", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++20", "-I..\\xent-core\\include", "-Iinclude", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00", "-DUNICODE", "-D_UNICODE", "-I", "C:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\73b690b4e3bb42a0975d319cc3000bd2\\include", "-DNDEBUG", "-o", "build\\.objs\\fluxent\\mingw\\x86_64\\release\\src\\window.cpp.obj", "src\\window.cpp"],
+  "file": "src\\window.cpp"
+}]

@@ -1,9 +1,193 @@
 // FluXent Render Engine implementation
 #include "fluxent/engine.hpp"
+#include "fluxent/input.hpp"
+#include "fluxent/theme/theme_manager.hpp"
+
+#include <yoga/Yoga.h>
 #include <stdexcept>
 #include <functional>
+#include <string>
+
+#include <vector>
 
 namespace fluxent {
+
+static bool color_equal(const xent::Color& a, const xent::Color& b) {
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+static xent::Color to_xent_color(const Color& c) {
+    return xent::Color{
+        static_cast<std::uint8_t>(c.r),
+        static_cast<std::uint8_t>(c.g),
+        static_cast<std::uint8_t>(c.b),
+        static_cast<std::uint8_t>(c.a),
+    };
+}
+
+struct ThemeRemapEntry {
+    xent::Color from;
+    xent::Color to;
+};
+
+static std::vector<ThemeRemapEntry> build_theme_remap(
+    const theme::ThemeResources& from,
+    const theme::ThemeResources& to
+) {
+    // Note: include every ThemeResources field so any view that "baked" a theme token
+    // can be updated by matching old RGBA -> new RGBA.
+    return {
+        {to_xent_color(from.TextPrimary), to_xent_color(to.TextPrimary)},
+        {to_xent_color(from.TextSecondary), to_xent_color(to.TextSecondary)},
+        {to_xent_color(from.TextTertiary), to_xent_color(to.TextTertiary)},
+        {to_xent_color(from.TextDisabled), to_xent_color(to.TextDisabled)},
+        {to_xent_color(from.TextInverse), to_xent_color(to.TextInverse)},
+
+        {to_xent_color(from.TextOnAccentPrimary), to_xent_color(to.TextOnAccentPrimary)},
+        {to_xent_color(from.TextOnAccentSecondary), to_xent_color(to.TextOnAccentSecondary)},
+        {to_xent_color(from.TextOnAccentDisabled), to_xent_color(to.TextOnAccentDisabled)},
+
+        {to_xent_color(from.ControlFillDefault), to_xent_color(to.ControlFillDefault)},
+        {to_xent_color(from.ControlFillSecondary), to_xent_color(to.ControlFillSecondary)},
+        {to_xent_color(from.ControlFillTertiary), to_xent_color(to.ControlFillTertiary)},
+        {to_xent_color(from.ControlFillQuarternary), to_xent_color(to.ControlFillQuarternary)},
+        {to_xent_color(from.ControlFillDisabled), to_xent_color(to.ControlFillDisabled)},
+        {to_xent_color(from.ControlFillTransparent), to_xent_color(to.ControlFillTransparent)},
+        {to_xent_color(from.ControlFillInputActive), to_xent_color(to.ControlFillInputActive)},
+
+        {to_xent_color(from.ControlStrongFillDefault), to_xent_color(to.ControlStrongFillDefault)},
+        {to_xent_color(from.ControlStrongFillDisabled), to_xent_color(to.ControlStrongFillDisabled)},
+
+        {to_xent_color(from.ControlSolidFillDefault), to_xent_color(to.ControlSolidFillDefault)},
+
+        {to_xent_color(from.SubtleFillTransparent), to_xent_color(to.SubtleFillTransparent)},
+        {to_xent_color(from.SubtleFillSecondary), to_xent_color(to.SubtleFillSecondary)},
+        {to_xent_color(from.SubtleFillTertiary), to_xent_color(to.SubtleFillTertiary)},
+        {to_xent_color(from.SubtleFillDisabled), to_xent_color(to.SubtleFillDisabled)},
+
+        {to_xent_color(from.ControlAltFillTransparent), to_xent_color(to.ControlAltFillTransparent)},
+        {to_xent_color(from.ControlAltFillSecondary), to_xent_color(to.ControlAltFillSecondary)},
+        {to_xent_color(from.ControlAltFillTertiary), to_xent_color(to.ControlAltFillTertiary)},
+        {to_xent_color(from.ControlAltFillQuarternary), to_xent_color(to.ControlAltFillQuarternary)},
+        {to_xent_color(from.ControlAltFillDisabled), to_xent_color(to.ControlAltFillDisabled)},
+
+        {to_xent_color(from.ControlOnImageFillDefault), to_xent_color(to.ControlOnImageFillDefault)},
+        {to_xent_color(from.ControlOnImageFillSecondary), to_xent_color(to.ControlOnImageFillSecondary)},
+        {to_xent_color(from.ControlOnImageFillTertiary), to_xent_color(to.ControlOnImageFillTertiary)},
+        {to_xent_color(from.ControlOnImageFillDisabled), to_xent_color(to.ControlOnImageFillDisabled)},
+
+        {to_xent_color(from.AccentDefault), to_xent_color(to.AccentDefault)},
+        {to_xent_color(from.AccentSecondary), to_xent_color(to.AccentSecondary)},
+        {to_xent_color(from.AccentTertiary), to_xent_color(to.AccentTertiary)},
+        {to_xent_color(from.AccentDisabled), to_xent_color(to.AccentDisabled)},
+
+        {to_xent_color(from.ControlStrokeDefault), to_xent_color(to.ControlStrokeDefault)},
+        {to_xent_color(from.ControlStrokeSecondary), to_xent_color(to.ControlStrokeSecondary)},
+        {to_xent_color(from.ControlStrokeOnAccentDefault), to_xent_color(to.ControlStrokeOnAccentDefault)},
+        {to_xent_color(from.ControlStrokeOnAccentSecondary), to_xent_color(to.ControlStrokeOnAccentSecondary)},
+        {to_xent_color(from.ControlStrokeOnAccentTertiary), to_xent_color(to.ControlStrokeOnAccentTertiary)},
+        {to_xent_color(from.ControlStrokeOnAccentDisabled), to_xent_color(to.ControlStrokeOnAccentDisabled)},
+        {to_xent_color(from.ControlStrokeForStrongFillWhenOnImage), to_xent_color(to.ControlStrokeForStrongFillWhenOnImage)},
+
+        {to_xent_color(from.ControlStrongStrokeDefault), to_xent_color(to.ControlStrongStrokeDefault)},
+        {to_xent_color(from.ControlStrongStrokeDisabled), to_xent_color(to.ControlStrongStrokeDisabled)},
+
+        {to_xent_color(from.CardStrokeDefault), to_xent_color(to.CardStrokeDefault)},
+        {to_xent_color(from.CardStrokeDefaultSolid), to_xent_color(to.CardStrokeDefaultSolid)},
+        {to_xent_color(from.CardBackgroundDefault), to_xent_color(to.CardBackgroundDefault)},
+        {to_xent_color(from.CardBackgroundSecondary), to_xent_color(to.CardBackgroundSecondary)},
+        {to_xent_color(from.CardBackgroundTertiary), to_xent_color(to.CardBackgroundTertiary)},
+
+        {to_xent_color(from.SurfaceStrokeDefault), to_xent_color(to.SurfaceStrokeDefault)},
+        {to_xent_color(from.SurfaceStrokeFlyout), to_xent_color(to.SurfaceStrokeFlyout)},
+        {to_xent_color(from.SurfaceStrokeInverse), to_xent_color(to.SurfaceStrokeInverse)},
+
+        {to_xent_color(from.FocusStrokeOuter), to_xent_color(to.FocusStrokeOuter)},
+        {to_xent_color(from.FocusStrokeInner), to_xent_color(to.FocusStrokeInner)},
+
+        {to_xent_color(from.DividerStrokeDefault), to_xent_color(to.DividerStrokeDefault)},
+
+        {to_xent_color(from.SolidBackgroundBase), to_xent_color(to.SolidBackgroundBase)},
+        {to_xent_color(from.SolidBackgroundSecondary), to_xent_color(to.SolidBackgroundSecondary)},
+        {to_xent_color(from.SolidBackgroundTertiary), to_xent_color(to.SolidBackgroundTertiary)},
+        {to_xent_color(from.SolidBackgroundQuarternary), to_xent_color(to.SolidBackgroundQuarternary)},
+        {to_xent_color(from.SolidBackgroundQuinary), to_xent_color(to.SolidBackgroundQuinary)},
+        {to_xent_color(from.SolidBackgroundSenary), to_xent_color(to.SolidBackgroundSenary)},
+        {to_xent_color(from.SolidBackgroundTransparent), to_xent_color(to.SolidBackgroundTransparent)},
+        {to_xent_color(from.SolidBackgroundBaseAlt), to_xent_color(to.SolidBackgroundBaseAlt)},
+        {to_xent_color(from.LayerFillDefault), to_xent_color(to.LayerFillDefault)},
+        {to_xent_color(from.LayerFillAlt), to_xent_color(to.LayerFillAlt)},
+        {to_xent_color(from.LayerOnAcrylicFillDefault), to_xent_color(to.LayerOnAcrylicFillDefault)},
+        {to_xent_color(from.LayerOnAccentAcrylicFillDefault), to_xent_color(to.LayerOnAccentAcrylicFillDefault)},
+        {to_xent_color(from.LayerOnMicaBaseAltDefault), to_xent_color(to.LayerOnMicaBaseAltDefault)},
+        {to_xent_color(from.LayerOnMicaBaseAltSecondary), to_xent_color(to.LayerOnMicaBaseAltSecondary)},
+        {to_xent_color(from.LayerOnMicaBaseAltTertiary), to_xent_color(to.LayerOnMicaBaseAltTertiary)},
+        {to_xent_color(from.LayerOnMicaBaseAltTransparent), to_xent_color(to.LayerOnMicaBaseAltTransparent)},
+        {to_xent_color(from.SmokeFillDefault), to_xent_color(to.SmokeFillDefault)},
+
+        {to_xent_color(from.SystemSuccess), to_xent_color(to.SystemSuccess)},
+        {to_xent_color(from.SystemCaution), to_xent_color(to.SystemCaution)},
+        {to_xent_color(from.SystemCritical), to_xent_color(to.SystemCritical)},
+        {to_xent_color(from.SystemNeutral), to_xent_color(to.SystemNeutral)},
+        {to_xent_color(from.SystemSolidNeutral), to_xent_color(to.SystemSolidNeutral)},
+        {to_xent_color(from.SystemAttentionBackground), to_xent_color(to.SystemAttentionBackground)},
+        {to_xent_color(from.SystemSuccessBackground), to_xent_color(to.SystemSuccessBackground)},
+        {to_xent_color(from.SystemCautionBackground), to_xent_color(to.SystemCautionBackground)},
+        {to_xent_color(from.SystemCriticalBackground), to_xent_color(to.SystemCriticalBackground)},
+        {to_xent_color(from.SystemNeutralBackground), to_xent_color(to.SystemNeutralBackground)},
+        {to_xent_color(from.SystemSolidAttentionBackground), to_xent_color(to.SystemSolidAttentionBackground)},
+        {to_xent_color(from.SystemSolidNeutralBackground), to_xent_color(to.SystemSolidNeutralBackground)},
+    };
+}
+
+static void remap_color_in_place(xent::Color& c, const std::vector<ThemeRemapEntry>& map) {
+    for (const auto& e : map) {
+        if (color_equal(c, e.from)) {
+            c = e.to;
+            return;
+        }
+    }
+}
+
+static void remap_view_tree_theme_colors(
+    const std::shared_ptr<xent::ViewData>& data,
+    const std::vector<ThemeRemapEntry>& map
+) {
+    if (!data) return;
+    remap_color_in_place(data->text_color, map);
+    remap_color_in_place(data->background_color, map);
+    remap_color_in_place(data->border_color, map);
+
+    for (const auto& child : data->children) {
+        remap_view_tree_theme_colors(child, map);
+    }
+}
+
+static bool is_zero_padding(const xent::ViewData& d) {
+    return d.padding_top == 0.0f && d.padding_right == 0.0f && d.padding_bottom == 0.0f && d.padding_left == 0.0f;
+}
+
+
+static void apply_button_defaults_recursive(const std::shared_ptr<xent::ViewData>& data) {
+    if (!data) return;
+
+    if (data->component_type == "Button") {
+        // WinUI3 DefaultButtonStyle content padding: 5,11,6,11 (T,R,B,L)
+        if (is_zero_padding(*data)) {
+            data->padding_top = 5.0f;
+            data->padding_right = 11.0f;
+            data->padding_bottom = 6.0f;
+            data->padding_left = 11.0f;
+        }
+
+        // NOTE: WinUI3 does not set a default MinHeight/MinWidth for Button in XAML.
+        // Keep framework defaults (0) unless the app sets constraints explicitly.
+    }
+
+    for (const auto& child : data->children) {
+        apply_button_defaults_recursive(child);
+    }
+}
 
 RenderEngine::RenderEngine(GraphicsPipeline* graphics)
     : graphics_(graphics) {
@@ -12,9 +196,33 @@ RenderEngine::RenderEngine(GraphicsPipeline* graphics)
     }
     d2d_context_ = graphics_->get_d2d_context();
     text_renderer_ = std::make_unique<TextRenderer>(graphics_);
+    control_renderer_ = std::make_unique<controls::ControlRenderer>(graphics_, text_renderer_.get());
+
+    // Initialize theme snapshot and subscribe for automatic UI updates.
+    last_theme_resources_ = theme::res();
+    theme_listener_id_ = theme::ThemeManager::instance().add_theme_changed_listener([
+        this
+    ](theme::Mode) {
+        const auto next = theme::res();
+        const auto map = build_theme_remap(last_theme_resources_, next);
+        last_theme_resources_ = next;
+
+        if (auto root = last_root_data_.lock()) {
+            remap_view_tree_theme_colors(root, map);
+        }
+
+        if (graphics_) {
+            graphics_->request_redraw();
+        }
+    });
 }
 
-RenderEngine::~RenderEngine() = default;
+RenderEngine::~RenderEngine() {
+    if (theme_listener_id_ != 0) {
+        theme::ThemeManager::instance().remove_theme_changed_listener(theme_listener_id_);
+        theme_listener_id_ = 0;
+    }
+}
 
 // Text measurement callback
 std::pair<float, float> RenderEngine::measure_text_callback(const std::string& text, float font_size, float max_width) {
@@ -45,13 +253,23 @@ void RenderEngine::render_frame(xent::View& root) {
     
     auto root_data = root.data();
     if (root_data) {
+        last_root_data_ = root_data;
+        apply_button_defaults_recursive(root_data);
         root_data->calculate_layout(size.width, size.height);
     }
     
     graphics_->begin_draw();
     graphics_->clear(Color::transparent());
+
+    if (control_renderer_) {
+        control_renderer_->begin_frame();
+    }
     render(root);
     graphics_->end_draw();
+
+    if (control_renderer_) {
+        control_renderer_->end_frame();
+    }
     graphics_->present();
 }
 
@@ -80,10 +298,28 @@ void RenderEngine::draw_view_data_recursive(
     float abs_x = parent_x + x;
     float abs_y = parent_y + y;
     Rect bounds(abs_x, abs_y, w, h);
-    
-    draw_view_background(*data, bounds);
-    draw_view_border(*data, bounds);
-    draw_view_text(*data, bounds);
+
+    if (control_renderer_ && !data->component_type.empty()) {
+        controls::ControlState state;
+        if (input_) {
+            if (auto hovered = input_->get_hovered_view()) {
+                state.is_hovered = (hovered.get() == data.get());
+            }
+            if (auto pressed = input_->get_pressed_view()) {
+                state.is_pressed = (pressed.get() == data.get());
+            }
+            if (auto focused = input_->get_focused_view()) {
+                state.is_focused = input_->should_show_focus_visuals() && (focused.get() == data.get());
+            }
+        }
+        control_renderer_->render(*data, bounds, state);
+    } else if (control_renderer_) {
+        control_renderer_->render_view(*data, bounds);
+    } else {
+        draw_view_background(*data, bounds);
+        draw_view_border(*data, bounds);
+        draw_view_text(*data, bounds);
+    }
     
     if (debug_mode_) {
         draw_rect(bounds, Color(255, 0, 255, 128), 1.0f);

@@ -31,6 +31,7 @@ namespace dark {
     constexpr Color ControlFillDefault{255, 255, 255, 15};     // #0FFFFFFF
     constexpr Color ControlFillSecondary{255, 255, 255, 21};   // #15FFFFFF
     constexpr Color ControlFillTertiary{255, 255, 255, 8};     // #08FFFFFF
+    constexpr Color ControlFillQuarternary{255, 255, 255, 15}; // #0FFFFFFF
     constexpr Color ControlFillDisabled{255, 255, 255, 11};    // #0BFFFFFF
     constexpr Color ControlFillTransparent{255, 255, 255, 0};  // #00FFFFFF
     constexpr Color ControlFillInputActive{30, 30, 30, 179};   // #B31E1E1E
@@ -53,6 +54,13 @@ namespace dark {
     constexpr Color ControlAltFillSecondary{0, 0, 0, 25};          // #19000000
     constexpr Color ControlAltFillTertiary{255, 255, 255, 11};     // #0BFFFFFF
     constexpr Color ControlAltFillQuarternary{255, 255, 255, 18};  // #12FFFFFF
+    constexpr Color ControlAltFillDisabled{255, 255, 255, 0};       // #00FFFFFF
+
+    // On-image fill
+    constexpr Color ControlOnImageFillDefault{28, 28, 28, 179};     // #B31C1C1C
+    constexpr Color ControlOnImageFillSecondary{26, 26, 26, 255};   // #1A1A1A
+    constexpr Color ControlOnImageFillTertiary{19, 19, 19, 255};    // #131313
+    constexpr Color ControlOnImageFillDisabled{30, 30, 30, 255};    // #1E1E1E
     
     // Accent fill
     constexpr Color AccentFillDisabled{255, 255, 255, 40};     // #28FFFFFF
@@ -64,6 +72,7 @@ namespace dark {
     constexpr Color ControlStrokeOnAccentSecondary{0, 0, 0, 35};       // #23000000
     constexpr Color ControlStrokeOnAccentTertiary{0, 0, 0, 55};        // #37000000
     constexpr Color ControlStrokeOnAccentDisabled{0, 0, 0, 51};        // #33000000
+    constexpr Color ControlStrokeForStrongFillWhenOnImage{0, 0, 0, 107}; // #6B000000
     
     // Strong strokes
     constexpr Color ControlStrongStrokeDefault{255, 255, 255, 139};    // #8BFFFFFF
@@ -76,6 +85,7 @@ namespace dark {
     // Surface strokes
     constexpr Color SurfaceStrokeDefault{117, 117, 117, 102};  // #66757575
     constexpr Color SurfaceStrokeFlyout{0, 0, 0, 51};          // #33000000
+    constexpr Color SurfaceStrokeInverse{0, 0, 0, 15};          // #0F000000
     
     // Dividers
     constexpr Color DividerStrokeDefault{255, 255, 255, 21};   // #15FFFFFF
@@ -96,15 +106,20 @@ namespace dark {
     constexpr Color LayerFillDefault{58, 58, 58, 76};          // #4C3A3A3A
     constexpr Color LayerFillAlt{255, 255, 255, 13};           // #0DFFFFFF
     constexpr Color LayerOnAcrylicFillDefault{255, 255, 255, 9};   // #09FFFFFF
+    constexpr Color LayerOnAccentAcrylicFillDefault{255, 255, 255, 9}; // #09FFFFFF
     constexpr Color LayerOnMicaBaseAltDefault{58, 58, 58, 115};    // #733A3A3A
     constexpr Color LayerOnMicaBaseAltSecondary{255, 255, 255, 15}; // #0FFFFFFF
     constexpr Color LayerOnMicaBaseAltTertiary{44, 44, 44, 255};   // #2C2C2C
+    constexpr Color LayerOnMicaBaseAltTransparent{255, 255, 255, 0}; // #00FFFFFF
     
     // Solid backgrounds
     constexpr Color SolidBackgroundBase{32, 32, 32, 255};          // #202020
     constexpr Color SolidBackgroundSecondary{28, 28, 28, 255};     // #1C1C1C
     constexpr Color SolidBackgroundTertiary{40, 40, 40, 255};      // #282828
     constexpr Color SolidBackgroundQuarternary{44, 44, 44, 255};   // #2C2C2C
+    constexpr Color SolidBackgroundQuinary{51, 51, 51, 255};        // #333333
+    constexpr Color SolidBackgroundSenary{55, 55, 55, 255};         // #373737
+    constexpr Color SolidBackgroundTransparent{32, 32, 32, 0};      // #00202020
     constexpr Color SolidBackgroundBaseAlt{10, 10, 10, 255};       // #0A0A0A
     
     // System colors
@@ -119,6 +134,9 @@ namespace dark {
     constexpr Color SystemSuccessBackground{57, 61, 27, 255};      // #393D1B
     constexpr Color SystemCautionBackground{67, 53, 25, 255};      // #433519
     constexpr Color SystemCriticalBackground{68, 39, 38, 255};     // #442726
+    constexpr Color SystemNeutralBackground{255, 255, 255, 8};      // #08FFFFFF
+    constexpr Color SystemSolidAttentionBackground{46, 46, 46, 255}; // #2E2E2E
+    constexpr Color SystemSolidNeutralBackground{46, 46, 46, 255};   // #2E2E2E
 }
 
 // Light theme colors
@@ -139,6 +157,7 @@ namespace light {
     constexpr Color ControlFillDefault{255, 255, 255, 179};    // #B3FFFFFF
     constexpr Color ControlFillSecondary{249, 249, 249, 128};  // #80F9F9F9
     constexpr Color ControlFillTertiary{249, 249, 249, 77};    // #4DF9F9F9
+    constexpr Color ControlFillQuarternary{243, 243, 243, 194}; // #C2F3F3F3
     constexpr Color ControlFillDisabled{249, 249, 249, 77};    // #4DF9F9F9
     constexpr Color ControlFillTransparent{255, 255, 255, 0};  // #00FFFFFF
     constexpr Color ControlFillInputActive{255, 255, 255, 255}; // #FFFFFF
@@ -161,6 +180,13 @@ namespace light {
     constexpr Color ControlAltFillSecondary{0, 0, 0, 6};           // #06000000
     constexpr Color ControlAltFillTertiary{0, 0, 0, 15};           // #0F000000
     constexpr Color ControlAltFillQuarternary{0, 0, 0, 24};        // #18000000
+    constexpr Color ControlAltFillDisabled{255, 255, 255, 0};       // #00FFFFFF
+
+    // On-image fill
+    constexpr Color ControlOnImageFillDefault{255, 255, 255, 201};  // #C9FFFFFF
+    constexpr Color ControlOnImageFillSecondary{243, 243, 243, 255}; // #F3F3F3
+    constexpr Color ControlOnImageFillTertiary{235, 235, 235, 255};  // #EBEBEB
+    constexpr Color ControlOnImageFillDisabled{255, 255, 255, 0};    // #00FFFFFF
     
     // Accent fill
     constexpr Color AccentFillDisabled{0, 0, 0, 55};           // #37000000
@@ -172,6 +198,7 @@ namespace light {
     constexpr Color ControlStrokeOnAccentSecondary{0, 0, 0, 102};      // #66000000
     constexpr Color ControlStrokeOnAccentTertiary{0, 0, 0, 55};        // #37000000
     constexpr Color ControlStrokeOnAccentDisabled{0, 0, 0, 15};        // #0F000000
+    constexpr Color ControlStrokeForStrongFillWhenOnImage{255, 255, 255, 89}; // #59FFFFFF
     
     // Strong strokes
     constexpr Color ControlStrongStrokeDefault{0, 0, 0, 114};  // #72000000
@@ -184,6 +211,7 @@ namespace light {
     // Surface strokes
     constexpr Color SurfaceStrokeDefault{117, 117, 117, 102};  // #66757575
     constexpr Color SurfaceStrokeFlyout{0, 0, 0, 15};          // #0F000000
+    constexpr Color SurfaceStrokeInverse{255, 255, 255, 21};    // #15FFFFFF
     
     // Dividers
     constexpr Color DividerStrokeDefault{0, 0, 0, 15};         // #0F000000
@@ -204,15 +232,20 @@ namespace light {
     constexpr Color LayerFillDefault{255, 255, 255, 128};      // #80FFFFFF
     constexpr Color LayerFillAlt{255, 255, 255, 255};          // #FFFFFF
     constexpr Color LayerOnAcrylicFillDefault{255, 255, 255, 64};  // #40FFFFFF
+    constexpr Color LayerOnAccentAcrylicFillDefault{255, 255, 255, 64}; // #40FFFFFF
     constexpr Color LayerOnMicaBaseAltDefault{255, 255, 255, 179}; // #B3FFFFFF
     constexpr Color LayerOnMicaBaseAltSecondary{0, 0, 0, 10};      // #0A000000
     constexpr Color LayerOnMicaBaseAltTertiary{249, 249, 249, 255}; // #F9F9F9
+    constexpr Color LayerOnMicaBaseAltTransparent{0, 0, 0, 0};       // #00000000
     
     // Solid backgrounds
     constexpr Color SolidBackgroundBase{243, 243, 243, 255};       // #F3F3F3
     constexpr Color SolidBackgroundSecondary{238, 238, 238, 255};  // #EEEEEE
     constexpr Color SolidBackgroundTertiary{249, 249, 249, 255};   // #F9F9F9
     constexpr Color SolidBackgroundQuarternary{255, 255, 255, 255}; // #FFFFFF
+    constexpr Color SolidBackgroundQuinary{253, 253, 253, 255};      // #FDFDFD
+    constexpr Color SolidBackgroundSenary{255, 255, 255, 255};       // #FFFFFF
+    constexpr Color SolidBackgroundTransparent{243, 243, 243, 0};    // #00F3F3F3
     constexpr Color SolidBackgroundBaseAlt{218, 218, 218, 255};    // #DADADA
     
     // System colors
@@ -227,6 +260,9 @@ namespace light {
     constexpr Color SystemSuccessBackground{223, 246, 221, 255};   // #DFF6DD
     constexpr Color SystemCautionBackground{255, 244, 206, 255};   // #FFF4CE
     constexpr Color SystemCriticalBackground{253, 231, 233, 255};  // #FDE7E9
+    constexpr Color SystemNeutralBackground{0, 0, 0, 6};            // #06000000
+    constexpr Color SystemSolidAttentionBackground{247, 247, 247, 255}; // #F7F7F7
+    constexpr Color SystemSolidNeutralBackground{243, 243, 243, 255};   // #F3F3F3
 }
 
 // Accent palette

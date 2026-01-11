@@ -1,7 +1,34 @@
 // FluXent Theme Manager implementation
 #include "fluxent/theme/theme_manager.hpp"
 
+#include <xent/button.hpp>
+
+#include <algorithm>
+
 namespace fluxent::theme {
+
+static xent::Color to_xent_color(const Color& c) {
+    return xent::Color{
+        static_cast<std::uint8_t>(c.r),
+        static_cast<std::uint8_t>(c.g),
+        static_cast<std::uint8_t>(c.b),
+        static_cast<std::uint8_t>(c.a),
+    };
+}
+
+static void sync_xent_button_palette_from_theme(const ThemeResources& r) {
+    xent::ButtonPalette p;
+    // Map semantic roles to Fluent/WinUI-ish theme tokens.
+    p.primary = to_xent_color(r.AccentDefault);
+    // Secondary should behave like a default WinUI3 button (i.e., no explicit background override).
+    p.secondary = to_xent_color(r.ControlFillTransparent);
+    p.success = to_xent_color(r.SystemSuccess);
+    p.warning = to_xent_color(r.SystemCaution);
+    // Danger should follow WinUI system critical color:
+    // Light: deep red, Dark: light pink (see CommonStyles/Common_themeresources_any.xaml).
+    p.danger = to_xent_color(r.SystemCritical);
+    xent::set_button_palette(p);
+}
 
 ThemeManager& ThemeManager::instance() {
     static ThemeManager instance;
@@ -10,6 +37,23 @@ ThemeManager& ThemeManager::instance() {
 
 ThemeManager::ThemeManager() {
     apply_dark_theme();
+}
+
+size_t ThemeManager::add_theme_changed_listener(ThemeChangedCallback callback) {
+    const size_t id = next_listener_id_++;
+    theme_changed_listeners_.push_back({id, std::move(callback)});
+    return id;
+}
+
+void ThemeManager::remove_theme_changed_listener(size_t id) {
+    theme_changed_listeners_.erase(
+        std::remove_if(
+            theme_changed_listeners_.begin(),
+            theme_changed_listeners_.end(),
+            [id](const auto& p) { return p.first == id; }
+        ),
+        theme_changed_listeners_.end()
+    );
 }
 
 void ThemeManager::set_mode(Mode mode) {
@@ -29,9 +73,9 @@ void ThemeManager::set_mode(Mode mode) {
     }
     
     update_accent_resources();
-    
-    if (on_theme_changed_) {
-        on_theme_changed_(mode);
+
+    for (auto& [id, cb] : theme_changed_listeners_) {
+        if (cb) cb(mode);
     }
 }
 
@@ -101,6 +145,9 @@ void ThemeManager::update_accent_resources() {
             static_cast<uint8_t>(accent_.dark1.a * 0.8f)
         };
     }
+
+    // Keep xent-core semantic role colors aligned to the active theme.
+    sync_xent_button_palette_from_theme(resources_);
 }
 
 void ThemeManager::apply_dark_theme() {
@@ -117,6 +164,7 @@ void ThemeManager::apply_dark_theme() {
     resources_.ControlFillDefault = dark::ControlFillDefault;
     resources_.ControlFillSecondary = dark::ControlFillSecondary;
     resources_.ControlFillTertiary = dark::ControlFillTertiary;
+    resources_.ControlFillQuarternary = dark::ControlFillQuarternary;
     resources_.ControlFillDisabled = dark::ControlFillDisabled;
     resources_.ControlFillTransparent = dark::ControlFillTransparent;
     resources_.ControlFillInputActive = dark::ControlFillInputActive;
@@ -134,6 +182,12 @@ void ThemeManager::apply_dark_theme() {
     resources_.ControlAltFillSecondary = dark::ControlAltFillSecondary;
     resources_.ControlAltFillTertiary = dark::ControlAltFillTertiary;
     resources_.ControlAltFillQuarternary = dark::ControlAltFillQuarternary;
+    resources_.ControlAltFillDisabled = dark::ControlAltFillDisabled;
+
+    resources_.ControlOnImageFillDefault = dark::ControlOnImageFillDefault;
+    resources_.ControlOnImageFillSecondary = dark::ControlOnImageFillSecondary;
+    resources_.ControlOnImageFillTertiary = dark::ControlOnImageFillTertiary;
+    resources_.ControlOnImageFillDisabled = dark::ControlOnImageFillDisabled;
     
     resources_.AccentDisabled = dark::AccentFillDisabled;
     
@@ -141,12 +195,21 @@ void ThemeManager::apply_dark_theme() {
     resources_.ControlStrokeSecondary = dark::ControlStrokeSecondary;
     resources_.ControlStrokeOnAccentDefault = dark::ControlStrokeOnAccentDefault;
     resources_.ControlStrokeOnAccentSecondary = dark::ControlStrokeOnAccentSecondary;
+    resources_.ControlStrokeOnAccentTertiary = dark::ControlStrokeOnAccentTertiary;
+    resources_.ControlStrokeOnAccentDisabled = dark::ControlStrokeOnAccentDisabled;
+    resources_.ControlStrokeForStrongFillWhenOnImage = dark::ControlStrokeForStrongFillWhenOnImage;
     resources_.ControlStrongStrokeDefault = dark::ControlStrongStrokeDefault;
     resources_.ControlStrongStrokeDisabled = dark::ControlStrongStrokeDisabled;
     
     resources_.CardStrokeDefault = dark::CardStrokeDefault;
+    resources_.CardStrokeDefaultSolid = dark::CardStrokeDefaultSolid;
     resources_.CardBackgroundDefault = dark::CardBackgroundDefault;
     resources_.CardBackgroundSecondary = dark::CardBackgroundSecondary;
+    resources_.CardBackgroundTertiary = dark::CardBackgroundTertiary;
+
+    resources_.SurfaceStrokeDefault = dark::SurfaceStrokeDefault;
+    resources_.SurfaceStrokeFlyout = dark::SurfaceStrokeFlyout;
+    resources_.SurfaceStrokeInverse = dark::SurfaceStrokeInverse;
     
     resources_.FocusStrokeOuter = dark::FocusStrokeOuter;
     resources_.FocusStrokeInner = dark::FocusStrokeInner;
@@ -156,16 +219,33 @@ void ThemeManager::apply_dark_theme() {
     resources_.SolidBackgroundBase = dark::SolidBackgroundBase;
     resources_.SolidBackgroundSecondary = dark::SolidBackgroundSecondary;
     resources_.SolidBackgroundTertiary = dark::SolidBackgroundTertiary;
+    resources_.SolidBackgroundQuarternary = dark::SolidBackgroundQuarternary;
+    resources_.SolidBackgroundQuinary = dark::SolidBackgroundQuinary;
+    resources_.SolidBackgroundSenary = dark::SolidBackgroundSenary;
+    resources_.SolidBackgroundTransparent = dark::SolidBackgroundTransparent;
+    resources_.SolidBackgroundBaseAlt = dark::SolidBackgroundBaseAlt;
     resources_.LayerFillDefault = dark::LayerFillDefault;
+    resources_.LayerFillAlt = dark::LayerFillAlt;
+    resources_.LayerOnAcrylicFillDefault = dark::LayerOnAcrylicFillDefault;
+    resources_.LayerOnAccentAcrylicFillDefault = dark::LayerOnAccentAcrylicFillDefault;
+    resources_.LayerOnMicaBaseAltDefault = dark::LayerOnMicaBaseAltDefault;
+    resources_.LayerOnMicaBaseAltSecondary = dark::LayerOnMicaBaseAltSecondary;
+    resources_.LayerOnMicaBaseAltTertiary = dark::LayerOnMicaBaseAltTertiary;
+    resources_.LayerOnMicaBaseAltTransparent = dark::LayerOnMicaBaseAltTransparent;
     resources_.SmokeFillDefault = dark::SmokeFillDefault;
     
     resources_.SystemSuccess = dark::SystemSuccess;
     resources_.SystemCaution = dark::SystemCaution;
     resources_.SystemCritical = dark::SystemCritical;
     resources_.SystemNeutral = dark::SystemNeutral;
+    resources_.SystemSolidNeutral = dark::SystemSolidNeutral;
+    resources_.SystemAttentionBackground = dark::SystemAttentionBackground;
     resources_.SystemSuccessBackground = dark::SystemSuccessBackground;
     resources_.SystemCautionBackground = dark::SystemCautionBackground;
     resources_.SystemCriticalBackground = dark::SystemCriticalBackground;
+    resources_.SystemNeutralBackground = dark::SystemNeutralBackground;
+    resources_.SystemSolidAttentionBackground = dark::SystemSolidAttentionBackground;
+    resources_.SystemSolidNeutralBackground = dark::SystemSolidNeutralBackground;
     
     update_accent_resources();
 }
@@ -184,6 +264,7 @@ void ThemeManager::apply_light_theme() {
     resources_.ControlFillDefault = light::ControlFillDefault;
     resources_.ControlFillSecondary = light::ControlFillSecondary;
     resources_.ControlFillTertiary = light::ControlFillTertiary;
+    resources_.ControlFillQuarternary = light::ControlFillQuarternary;
     resources_.ControlFillDisabled = light::ControlFillDisabled;
     resources_.ControlFillTransparent = light::ControlFillTransparent;
     resources_.ControlFillInputActive = light::ControlFillInputActive;
@@ -201,6 +282,12 @@ void ThemeManager::apply_light_theme() {
     resources_.ControlAltFillSecondary = light::ControlAltFillSecondary;
     resources_.ControlAltFillTertiary = light::ControlAltFillTertiary;
     resources_.ControlAltFillQuarternary = light::ControlAltFillQuarternary;
+    resources_.ControlAltFillDisabled = light::ControlAltFillDisabled;
+
+    resources_.ControlOnImageFillDefault = light::ControlOnImageFillDefault;
+    resources_.ControlOnImageFillSecondary = light::ControlOnImageFillSecondary;
+    resources_.ControlOnImageFillTertiary = light::ControlOnImageFillTertiary;
+    resources_.ControlOnImageFillDisabled = light::ControlOnImageFillDisabled;
     
     resources_.AccentDisabled = light::AccentFillDisabled;
     
@@ -208,12 +295,21 @@ void ThemeManager::apply_light_theme() {
     resources_.ControlStrokeSecondary = light::ControlStrokeSecondary;
     resources_.ControlStrokeOnAccentDefault = light::ControlStrokeOnAccentDefault;
     resources_.ControlStrokeOnAccentSecondary = light::ControlStrokeOnAccentSecondary;
+    resources_.ControlStrokeOnAccentTertiary = light::ControlStrokeOnAccentTertiary;
+    resources_.ControlStrokeOnAccentDisabled = light::ControlStrokeOnAccentDisabled;
+    resources_.ControlStrokeForStrongFillWhenOnImage = light::ControlStrokeForStrongFillWhenOnImage;
     resources_.ControlStrongStrokeDefault = light::ControlStrongStrokeDefault;
     resources_.ControlStrongStrokeDisabled = light::ControlStrongStrokeDisabled;
     
     resources_.CardStrokeDefault = light::CardStrokeDefault;
+    resources_.CardStrokeDefaultSolid = light::CardStrokeDefaultSolid;
     resources_.CardBackgroundDefault = light::CardBackgroundDefault;
     resources_.CardBackgroundSecondary = light::CardBackgroundSecondary;
+    resources_.CardBackgroundTertiary = light::CardBackgroundTertiary;
+
+    resources_.SurfaceStrokeDefault = light::SurfaceStrokeDefault;
+    resources_.SurfaceStrokeFlyout = light::SurfaceStrokeFlyout;
+    resources_.SurfaceStrokeInverse = light::SurfaceStrokeInverse;
     
     resources_.FocusStrokeOuter = light::FocusStrokeOuter;
     resources_.FocusStrokeInner = light::FocusStrokeInner;
@@ -223,16 +319,33 @@ void ThemeManager::apply_light_theme() {
     resources_.SolidBackgroundBase = light::SolidBackgroundBase;
     resources_.SolidBackgroundSecondary = light::SolidBackgroundSecondary;
     resources_.SolidBackgroundTertiary = light::SolidBackgroundTertiary;
+    resources_.SolidBackgroundQuarternary = light::SolidBackgroundQuarternary;
+    resources_.SolidBackgroundQuinary = light::SolidBackgroundQuinary;
+    resources_.SolidBackgroundSenary = light::SolidBackgroundSenary;
+    resources_.SolidBackgroundTransparent = light::SolidBackgroundTransparent;
+    resources_.SolidBackgroundBaseAlt = light::SolidBackgroundBaseAlt;
     resources_.LayerFillDefault = light::LayerFillDefault;
+    resources_.LayerFillAlt = light::LayerFillAlt;
+    resources_.LayerOnAcrylicFillDefault = light::LayerOnAcrylicFillDefault;
+    resources_.LayerOnAccentAcrylicFillDefault = light::LayerOnAccentAcrylicFillDefault;
+    resources_.LayerOnMicaBaseAltDefault = light::LayerOnMicaBaseAltDefault;
+    resources_.LayerOnMicaBaseAltSecondary = light::LayerOnMicaBaseAltSecondary;
+    resources_.LayerOnMicaBaseAltTertiary = light::LayerOnMicaBaseAltTertiary;
+    resources_.LayerOnMicaBaseAltTransparent = light::LayerOnMicaBaseAltTransparent;
     resources_.SmokeFillDefault = light::SmokeFillDefault;
     
     resources_.SystemSuccess = light::SystemSuccess;
     resources_.SystemCaution = light::SystemCaution;
     resources_.SystemCritical = light::SystemCritical;
     resources_.SystemNeutral = light::SystemNeutral;
+    resources_.SystemSolidNeutral = light::SystemSolidNeutral;
+    resources_.SystemAttentionBackground = light::SystemAttentionBackground;
     resources_.SystemSuccessBackground = light::SystemSuccessBackground;
     resources_.SystemCautionBackground = light::SystemCautionBackground;
     resources_.SystemCriticalBackground = light::SystemCriticalBackground;
+    resources_.SystemNeutralBackground = light::SystemNeutralBackground;
+    resources_.SystemSolidAttentionBackground = light::SystemSolidAttentionBackground;
+    resources_.SystemSolidNeutralBackground = light::SystemSolidNeutralBackground;
     
     update_accent_resources();
 }

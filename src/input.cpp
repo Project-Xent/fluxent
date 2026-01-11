@@ -62,6 +62,7 @@ bool InputHandler::hit_test_recursive(
 // Event handling
 
 void InputHandler::handle_mouse_event(const xent::View& root, const MouseEvent& event) {
+    show_focus_visuals_ = false;
     last_mouse_position_ = event.position;
     
     HitTestResult hit_result = hit_test(root, event.position);
@@ -84,6 +85,10 @@ void InputHandler::handle_mouse_event(const xent::View& root, const MouseEvent& 
         if (event.is_down) {
             pressed_view_ = hit_result.view_data;
             focused_view_ = hit_result.view_data;
+
+            if (on_invalidate_) {
+                on_invalidate_();
+            }
         } else {
             auto pressed = pressed_view_.lock();
             
@@ -92,13 +97,30 @@ void InputHandler::handle_mouse_event(const xent::View& root, const MouseEvent& 
             }
             
             pressed_view_.reset();
+
+            if (on_invalidate_) {
+                on_invalidate_();
+            }
         }
     }
 }
 
 void InputHandler::handle_key_event(const xent::View& root, const KeyEvent& event) {
     (void)root;
-    (void)event;
+
+    if (!event.is_down) return;
+
+    switch (event.virtual_key) {
+        case VK_TAB:
+        case VK_LEFT:
+        case VK_RIGHT:
+        case VK_UP:
+        case VK_DOWN:
+            show_focus_visuals_ = true;
+            break;
+        default:
+            break;
+    }
 }
 
 bool InputHandler::dispatch_to_view(

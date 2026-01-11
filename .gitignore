@@ -50,3 +50,5 @@ Desktop.ini
 
 # Resources
 /CommonStyles/
+
+.vscode/*

@@ -39,6 +39,9 @@ public:
     std::shared_ptr<xent::ViewData> get_pressed_view() const { return pressed_view_.lock(); }
     std::shared_ptr<xent::ViewData> get_focused_view() const { return focused_view_.lock(); }
 
+    // WinUI-like behavior: focus visuals are generally shown for keyboard focus, not pointer clicks.
+    bool should_show_focus_visuals() const { return show_focus_visuals_; }
+
     // Callbacks
     
     using HoverChangedCallback = std::function<void(
@@ -72,6 +75,8 @@ private:
     std::weak_ptr<xent::ViewData> pressed_view_;
     std::weak_ptr<xent::ViewData> focused_view_;
     Point last_mouse_position_;
+
+    bool show_focus_visuals_ = false;
     
     HoverChangedCallback on_hover_changed_;
     InvalidateCallback on_invalidate_;

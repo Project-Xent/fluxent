@@ -1,5 +1,7 @@
 ﻿// Hello FluXent example
 
+#include "fluxent/theme/theme_manager.hpp"
+#include <cstdint>
 #include <fluxent/fluxent.hpp>
 #include <xent/xent.hpp>
 #include <xent/vstack.hpp>
@@ -8,6 +10,16 @@
 #include <Windows.h>
 
 using namespace fluxent;
+
+template <typename T>
+static xent::Color to_xent_color(const T& c) {
+    return xent::Color{
+        static_cast<std::uint8_t>(c.r),
+        static_cast<std::uint8_t>(c.g),
+        static_cast<std::uint8_t>(c.b),
+        static_cast<std::uint8_t>(c.a),
+    };
+}
 
 // Forward declare build_ui
 xent::View build_ui(class App& app);
@@ -96,35 +108,35 @@ void on_input_invalidate() {
 
 xent::View build_ui(App& app) {
     auto counter_text = xent::Text{"Count: 0"}
-        .font_size(48)
-        .color(xent::Color{255, 255, 255, 255});
+        .font_size(36)
+        .color(to_xent_color(theme::res().TextPrimary));
 
     app.counter_text_data = counter_text.data();
     
-    return xent::VStack{}
+    auto root = xent::VStack{}
         .padding(32)
         .gap(20)
-        .align_items(YGAlignStretch)
+        .align_items(YGAlignCenter)
         .justify_content(YGJustifyCenter)
-        .background(xent::Color{30, 30, 30, 255})
+        .background(to_xent_color(theme::res().SolidBackgroundBase))
         .expand()
         .add(
             xent::Text{"Hello, FluXent!"}
                 .font_size(32)
-                .color(xent::Color{255, 255, 255, 255})
+                .color(to_xent_color(theme::res().TextPrimary))
         )
         .add(
             xent::Text{"A modern Windows UI framework"}
                 .font_size(14)
-                .color(xent::Color{180, 180, 180, 255})
+                .color(to_xent_color(theme::res().TextSecondary))
         )
         .add(counter_text)
         .add(
             xent::VStack{}
                 .padding(20)
                 .gap(12)
-                .align_items(YGAlignStretch)
-                .background(xent::Color{45, 45, 45, 255})
+                .align_items(YGAlignCenter)
+                .background(to_xent_color(theme::res().CardBackgroundDefault))
                 .corner_radius(8)
                 .add(
                     xent::Button{"+1"}
@@ -147,8 +159,10 @@ xent::View build_ui(App& app) {
         .add(
             xent::Text{"Click the buttons!"}
                 .font_size(12)
-                .color(xent::Color{120, 120, 120, 255})
+                .color(to_xent_color(theme::res().TextSecondary))
         );
+
+    return root;
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
@@ -166,6 +180,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     engine.set_debug_mode(false);
 
     InputHandler input;
+    engine.set_input_handler(&input);
 
     App app;
 

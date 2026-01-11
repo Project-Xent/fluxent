@@ -88,6 +88,11 @@ void GraphicsPipeline::create_device_resources() {
         d2d_device_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &d2d_context_),
         "Failed to create D2D Device Context"
     );
+
+    throw_if_failed(
+        d2d_device_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &d2d_overlay_context_),
+        "Failed to create D2D Overlay Device Context"
+    );
     
     throw_if_failed(
         DCompositionCreateDevice(
@@ -111,6 +116,11 @@ void GraphicsPipeline::attach_to_window(HWND hwnd) {
     dpi_.dpi_y = static_cast<float>(dpi);
 
     create_window_size_resources();
+}
+
+void GraphicsPipeline::request_redraw() {
+    if (!hwnd_) return;
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void GraphicsPipeline::create_window_size_resources() {
@@ -180,6 +190,15 @@ void GraphicsPipeline::create_window_size_resources() {
     );
     
     d2d_context_->SetTarget(d2d_target_bitmap_.Get());
+
+    // Keep the device context in sync with the window DPI so D2D coordinates are in DIPs.
+    // Without this, the context may remain at the default 96 DPI and the UI will appear
+    // incorrectly sized on high-DPI displays.
+    d2d_context_->SetDpi(dpi_.dpi_x, dpi_.dpi_y);
+
+    if (d2d_overlay_context_) {
+        d2d_overlay_context_->SetDpi(dpi_.dpi_x, dpi_.dpi_y);
+    }
     
     throw_if_failed(
         dcomp_device_->CreateTargetForHwnd(hwnd_, TRUE, &dcomp_target_),
@@ -190,10 +209,20 @@ void GraphicsPipeline::create_window_size_resources() {
         dcomp_device_->CreateVisual(&root_visual_),
         "Failed to create DComp visual"
     );
+
+    throw_if_failed(
+        dcomp_device_->CreateVisual(&swapchain_visual_),
+        "Failed to create DComp swapchain visual"
+    );
     
     throw_if_failed(
-        root_visual_->SetContent(swap_chain_.Get()),
-        "Failed to set DComp visual content"
+        swapchain_visual_->SetContent(swap_chain_.Get()),
+        "Failed to set DComp swapchain visual content"
+    );
+
+    throw_if_failed(
+        root_visual_->AddVisual(swapchain_visual_.Get(), FALSE, nullptr),
+        "Failed to add swapchain visual"
     );
     
     throw_if_failed(
@@ -212,6 +241,7 @@ void GraphicsPipeline::release_window_size_resources() {
     d2d_target_bitmap_.Reset();
     dcomp_target_.Reset();
     root_visual_.Reset();
+    swapchain_visual_.Reset();
     swap_chain_.Reset();
 }
 
@@ -257,6 +287,9 @@ void GraphicsPipeline::resize(int width, int height) {
     );
     
     d2d_context_->SetTarget(d2d_target_bitmap_.Get());
+
+    // Ensure DPI stays correct after buffer recreation.
+    d2d_context_->SetDpi(dpi_.dpi_x, dpi_.dpi_y);
 }
 
 void GraphicsPipeline::set_dpi(const DpiInfo& dpi) {
@@ -264,6 +297,15 @@ void GraphicsPipeline::set_dpi(const DpiInfo& dpi) {
     if (d2d_context_) {
         d2d_context_->SetDpi(dpi.dpi_x, dpi.dpi_y);
     }
+    if (d2d_overlay_context_) {
+        d2d_overlay_context_->SetDpi(dpi.dpi_x, dpi.dpi_y);
+    }
+}
+
+void GraphicsPipeline::add_overlay_visual(IDCompositionVisual* visual) {
+    if (!root_visual_ || !swapchain_visual_ || !visual) return;
+    // Insert the overlay above the swapchain visual.
+    root_visual_->AddVisual(visual, TRUE, swapchain_visual_.Get());
 }
 
 void GraphicsPipeline::begin_draw() {
@@ -318,6 +360,15 @@ Size GraphicsPipeline::get_render_target_size() const {
         return Size(size.width, size.height);
     }
     return Size();
+}
+
+Size GraphicsPipeline::get_client_pixel_size() const {
+    if (!hwnd_) return Size();
+    RECT rc{};
+    if (!GetClientRect(hwnd_, &rc)) return Size();
+    const float w = static_cast<float>(std::max<LONG>(0, rc.right - rc.left));
+    const float h = static_cast<float>(std::max<LONG>(0, rc.bottom - rc.top));
+    return Size(w, h);
 }
 
 } // namespace fluxent

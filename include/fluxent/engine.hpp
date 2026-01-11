@@ -5,6 +5,8 @@
 #include "types.hpp"
 #include "graphics.hpp"
 #include "text.hpp"
+#include "controls/control_renderer.hpp"
+#include "fluxent/theme/theme_manager.hpp"
 #include <xent/view.hpp>
 #include <memory>
 #include <unordered_map>
@@ -22,6 +24,8 @@ public:
     void render(const xent::View& root);
 
     void render_frame(xent::View& root);
+
+    void set_input_handler(InputHandler* input) { input_ = input; }
 
     void fill_rect(const Rect& rect, const Color& color);
     void fill_rounded_rect(const Rect& rect, float radius, const Color& color);
@@ -84,11 +88,19 @@ private:
     ID2D1DeviceContext* d2d_context_ = nullptr;
     std::unique_ptr<TextRenderer> text_renderer_;
 
+    std::unique_ptr<controls::ControlRenderer> control_renderer_;
+    InputHandler* input_ = nullptr;
+
     std::unordered_map<uint32_t, ComPtr<ID2D1SolidColorBrush>> brush_cache_;
 
     std::vector<D2D1_MATRIX_3X2_F> transform_stack_;
 
     bool debug_mode_ = false;
+
+    // Theme sync
+    size_t theme_listener_id_ = 0;
+    theme::ThemeResources last_theme_resources_{};
+    std::weak_ptr<xent::ViewData> last_root_data_;
 };
 
 } // namespace fluxent

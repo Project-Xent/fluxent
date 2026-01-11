@@ -9,6 +9,12 @@
 #define NOMINMAX
 #endif
 
+// Ensure newer DirectComposition interfaces (e.g. IDCompositionVisual3) are available.
+// Some toolchains (clangd/IntelliSense) default to an older _WIN32_WINNT.
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00 // Windows 10
+#endif
+
 #include <windows.h>
 #include <d2d1_3.h>
 #include <d3d11_1.h>

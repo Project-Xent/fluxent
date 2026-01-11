@@ -1,5 +1,6 @@
 // FluXent Window - Win32 window management implementation
 #include "fluxent/window.hpp"
+#include <fluxent/theme/theme_manager.hpp>
 #include <stdexcept>
 #include <windowsx.h>
 
@@ -7,6 +8,7 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "advapi32.lib")
 #endif
 
 // Win11 DWM constants for old SDK compatibility
@@ -37,6 +39,29 @@
 #endif
 
 namespace fluxent {
+
+static theme::Mode query_system_theme_mode() {
+    // Reads HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme
+    DWORD value = 0;
+    DWORD dataSize = sizeof(value);
+    LSTATUS st = RegGetValueW(
+        HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        L"AppsUseLightTheme",
+        RRF_RT_REG_DWORD,
+        nullptr,
+        &value,
+        &dataSize
+    );
+
+    if (st == ERROR_SUCCESS) {
+        return (value != 0) ? theme::Mode::Light : theme::Mode::Dark;
+    }
+
+    // Default to Dark if unknown.
+    return theme::Mode::Dark;
+}
+
 
 bool Window::class_registered_ = false;
 
@@ -106,6 +131,11 @@ Window::Window(const WindowConfig& config) : config_(config) {
     dpi_.dpi_x = static_cast<float>(dpi);
     dpi_.dpi_y = static_cast<float>(dpi);
     
+    // Initialize theme from system preference and apply to ThemeManager + DWM
+    auto sys_mode = query_system_theme_mode();
+    theme::ThemeManager::instance().set_mode(sys_mode);
+    config_.dark_mode = (sys_mode == theme::Mode::Dark);
+
     setup_dwm_backdrop();
     
     graphics_ = std::make_unique<GraphicsPipeline>();
@@ -233,6 +263,24 @@ LRESULT CALLBACK Window::window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM 
 
 LRESULT Window::handle_message(UINT msg, WPARAM wparam, LPARAM lparam) {
     switch (msg) {
+                case WM_SETTINGCHANGE:
+                    // Re-query system theme and apply.
+                    {
+                        auto m = query_system_theme_mode();
+                        theme::ThemeManager::instance().set_mode(m);
+                        // Keep DWM dark flag in sync
+                        set_dark_mode(m == theme::Mode::Dark);
+                    }
+                    return 0;
+
+                case WM_THEMECHANGED:
+                    {
+                        auto m = query_system_theme_mode();
+                        theme::ThemeManager::instance().set_mode(m);
+                        set_dark_mode(m == theme::Mode::Dark);
+                    }
+                    return 0;
+
         case WM_CREATE:
             on_create();
             return 0;

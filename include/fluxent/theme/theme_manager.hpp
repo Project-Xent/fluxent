@@ -4,6 +4,7 @@
 
 #include "colors.hpp"
 #include <functional>
+#include <vector>
 
 namespace fluxent::theme {
 
@@ -25,6 +26,7 @@ struct ThemeResources {
     Color ControlFillDefault;
     Color ControlFillSecondary;
     Color ControlFillTertiary;
+    Color ControlFillQuarternary;
     Color ControlFillDisabled;
     Color ControlFillTransparent;
     Color ControlFillInputActive;
@@ -47,6 +49,13 @@ struct ThemeResources {
     Color ControlAltFillSecondary;
     Color ControlAltFillTertiary;
     Color ControlAltFillQuarternary;
+    Color ControlAltFillDisabled;
+
+    // On-image fill
+    Color ControlOnImageFillDefault;
+    Color ControlOnImageFillSecondary;
+    Color ControlOnImageFillTertiary;
+    Color ControlOnImageFillDisabled;
     
     // Accent fill
     Color AccentDefault;
@@ -59,6 +68,9 @@ struct ThemeResources {
     Color ControlStrokeSecondary;
     Color ControlStrokeOnAccentDefault;
     Color ControlStrokeOnAccentSecondary;
+    Color ControlStrokeOnAccentTertiary;
+    Color ControlStrokeOnAccentDisabled;
+    Color ControlStrokeForStrongFillWhenOnImage;
     
     // Strong strokes
     Color ControlStrongStrokeDefault;
@@ -66,8 +78,15 @@ struct ThemeResources {
     
     // Cards
     Color CardStrokeDefault;
+    Color CardStrokeDefaultSolid;
     Color CardBackgroundDefault;
     Color CardBackgroundSecondary;
+    Color CardBackgroundTertiary;
+
+    // Surface strokes
+    Color SurfaceStrokeDefault;
+    Color SurfaceStrokeFlyout;
+    Color SurfaceStrokeInverse;
     
     // Focus
     Color FocusStrokeOuter;
@@ -80,7 +99,19 @@ struct ThemeResources {
     Color SolidBackgroundBase;
     Color SolidBackgroundSecondary;
     Color SolidBackgroundTertiary;
+    Color SolidBackgroundQuarternary;
+    Color SolidBackgroundQuinary;
+    Color SolidBackgroundSenary;
+    Color SolidBackgroundTransparent;
+    Color SolidBackgroundBaseAlt;
     Color LayerFillDefault;
+    Color LayerFillAlt;
+    Color LayerOnAcrylicFillDefault;
+    Color LayerOnAccentAcrylicFillDefault;
+    Color LayerOnMicaBaseAltDefault;
+    Color LayerOnMicaBaseAltSecondary;
+    Color LayerOnMicaBaseAltTertiary;
+    Color LayerOnMicaBaseAltTransparent;
     Color SmokeFillDefault;
     
     // System
@@ -88,9 +119,14 @@ struct ThemeResources {
     Color SystemCaution;
     Color SystemCritical;
     Color SystemNeutral;
+    Color SystemSolidNeutral;
+    Color SystemAttentionBackground;
     Color SystemSuccessBackground;
     Color SystemCautionBackground;
     Color SystemCriticalBackground;
+    Color SystemNeutralBackground;
+    Color SystemSolidAttentionBackground;
+    Color SystemSolidNeutralBackground;
 };
 
 // ThemeManager
@@ -108,9 +144,10 @@ public:
     void set_accent_color(const Color& base);
 
     using ThemeChangedCallback = std::function<void(Mode)>;
-    void on_theme_changed(ThemeChangedCallback callback) {
-        on_theme_changed_ = std::move(callback);
-    }
+    // Registers a callback invoked when mode changes (Dark/Light/HighContrast).
+    // Returns an id that can be used to remove the callback.
+    size_t add_theme_changed_listener(ThemeChangedCallback callback);
+    void remove_theme_changed_listener(size_t id);
     
 private:
     ThemeManager();
@@ -125,7 +162,8 @@ private:
     Mode mode_ = Mode::Dark;
     ThemeResources resources_;
     AccentPalette accent_ = AccentPalette::Default();
-    ThemeChangedCallback on_theme_changed_;
+    std::vector<std::pair<size_t, ThemeChangedCallback>> theme_changed_listeners_;
+    size_t next_listener_id_ = 1;
 };
 
 // Convenience accessors

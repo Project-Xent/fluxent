@@ -1,0 +1,122 @@
+#include "fluxent/controls/control_renderer.hpp"
+#include "fluxent/theme/theme_manager.hpp"
+#include "renderer_utils.hpp"
+
+namespace fluxent::controls {
+
+void ControlRenderer::render_text(const xent::ViewData &data,
+                                  const Rect &bounds) {
+  if (!text_renderer_ || data.text_content.empty())
+    return;
+
+  const auto &res = theme::res();
+
+  Color user_color = to_fluxent_color(data.text_color);
+  Color text_color = user_color.a > 0 ? user_color : res.TextPrimary;
+
+  float font_size =
+      data.font_size > 0 ? data.font_size : kControlContentThemeFontSize;
+
+  std::wstring wtext(data.text_content.begin(), data.text_content.end());
+  TextStyle style;
+  style.font_size = font_size;
+  style.color = text_color;
+  style.alignment = TextAlignment::Leading;
+  style.paragraph_alignment = ParagraphAlignment::Near;
+
+  text_renderer_->draw_text(wtext, bounds, style);
+}
+
+void ControlRenderer::render_card(const xent::ViewData &data,
+                                  const Rect &bounds) {
+  auto d2d = graphics_->get_d2d_context();
+  const auto &res = theme::res();
+
+  float corner_radius = data.corner_radius > 0 ? data.corner_radius : 4.0f;
+
+  D2D1_ROUNDED_RECT rounded_rect =
+      D2D1::RoundedRect(D2D1::RectF(bounds.x, bounds.y, bounds.x + bounds.width,
+                                    bounds.y + bounds.height),
+                        corner_radius, corner_radius);
+
+  Color user_bg = to_fluxent_color(data.background_color);
+  Color bg = user_bg.a > 0 ? user_bg : res.CardBackgroundDefault;
+  d2d->FillRoundedRectangle(rounded_rect, get_brush(bg));
+
+  D2D1_ROUNDED_RECT stroke_rect =
+      D2D1::RoundedRect(D2D1::RectF(bounds.x + 0.5f, bounds.y + 0.5f,
+                                    bounds.x + bounds.width - 0.5f,
+                                    bounds.y + bounds.height - 0.5f),
+                        corner_radius, corner_radius);
+  d2d->DrawRoundedRectangle(stroke_rect, get_brush(res.CardStrokeDefault),
+                            1.0f);
+}
+
+void ControlRenderer::render_divider(const Rect &bounds, bool horizontal) {
+  auto d2d = graphics_->get_d2d_context();
+  const auto &res = theme::res();
+
+  if (horizontal) {
+    float y = bounds.y + bounds.height / 2.0f;
+    d2d->DrawLine(D2D1::Point2F(bounds.x, y),
+                  D2D1::Point2F(bounds.x + bounds.width, y),
+                  get_brush(res.DividerStrokeDefault), 1.0f);
+  } else {
+    float x = bounds.x + bounds.width / 2.0f;
+    d2d->DrawLine(D2D1::Point2F(x, bounds.y),
+                  D2D1::Point2F(x, bounds.y + bounds.height),
+                  get_brush(res.DividerStrokeDefault), 1.0f);
+  }
+}
+
+void ControlRenderer::render_view(const xent::ViewData &data,
+                                  const Rect &bounds) {
+  auto d2d = graphics_->get_d2d_context();
+
+  Color user_bg = to_fluxent_color(data.background_color);
+
+  if (user_bg.a > 0) {
+    float corner_radius = data.corner_radius;
+
+    if (corner_radius > 0) {
+      D2D1_ROUNDED_RECT rounded_rect = D2D1::RoundedRect(
+          D2D1::RectF(bounds.x, bounds.y, bounds.x + bounds.width,
+                      bounds.y + bounds.height),
+          corner_radius, corner_radius);
+      d2d->FillRoundedRectangle(rounded_rect, get_brush(user_bg));
+    } else {
+      D2D1_RECT_F rect =
+          D2D1::RectF(bounds.x, bounds.y, bounds.x + bounds.width,
+                      bounds.y + bounds.height);
+      d2d->FillRectangle(rect, get_brush(user_bg));
+    }
+  }
+
+  Color user_border = to_fluxent_color(data.border_color);
+  if (data.border_width > 0 && user_border.a > 0) {
+    float corner_radius = data.corner_radius;
+    float half_border = data.border_width / 2.0f;
+
+    if (corner_radius > 0) {
+      D2D1_ROUNDED_RECT stroke_rect = D2D1::RoundedRect(
+          D2D1::RectF(bounds.x + half_border, bounds.y + half_border,
+                      bounds.x + bounds.width - half_border,
+                      bounds.y + bounds.height - half_border),
+          corner_radius, corner_radius);
+      d2d->DrawRoundedRectangle(stroke_rect, get_brush(user_border),
+                                data.border_width);
+    } else {
+      D2D1_RECT_F rect =
+          D2D1::RectF(bounds.x + half_border, bounds.y + half_border,
+                      bounds.x + bounds.width - half_border,
+                      bounds.y + bounds.height - half_border);
+      d2d->DrawRectangle(rect, get_brush(user_border), data.border_width);
+    }
+  }
+
+  if (!data.text_content.empty() && text_renderer_) {
+    render_text(data, bounds);
+  }
+}
+
+} // namespace fluxent::controls

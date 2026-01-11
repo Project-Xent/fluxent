@@ -27,6 +27,9 @@
 // Control rendering (Fluent Design controls)
 #include "fluxent/controls/control_renderer.hpp" // IWYU pragma: export
 
+// Controls
+#include "fluxent/controls/toggle_switch.hpp" // IWYU pragma: export
+
 namespace fluxent {
 
 // Application: optional convenience wrapper around Window/RenderEngine/InputHandler

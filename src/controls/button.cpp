@@ -1,11 +1,13 @@
 #include "fluxent/controls/control_renderer.hpp"
 #include "fluxent/theme/theme_manager.hpp"
+#include "icon_map.hpp" // Added icon map
 #include "renderer_utils.hpp"
 
 #include <cmath>
 
 namespace fluxent::controls {
 
+// Re-using same animation helper
 Color ControlRenderer::animate_button_background(const xent::ViewData *key,
                                                  const Color &target) {
   auto &s = button_bg_transitions_[key];
@@ -47,6 +49,109 @@ Color ControlRenderer::animate_button_background(const xent::ViewData *key,
     has_active_bg_transitions_ = true;
   }
   return s.current;
+}
+
+// Common rendering logic for Button and ToggleButton content (Icon + Text)
+static void draw_button_content(GraphicsPipeline *graphics,
+                                TextRenderer *text_renderer,
+                                const xent::ViewData &data,
+                                const Rect &snapped_bounds,
+                                const Color &text_color) {
+  if (!text_renderer)
+    return;
+
+  // Resolve Icon
+  const wchar_t *icon_code = nullptr;
+  if (!data.icon_name.empty()) {
+    icon_code = get_icon_codepoint(data.icon_name);
+  }
+
+  bool has_icon = (icon_code != nullptr);
+  bool has_text = !data.text_content.empty();
+
+  if (!has_icon && !has_text)
+    return;
+
+  // Prepare styles
+  Color user_text = to_fluxent_color(data.text_color);
+  Color actual_text_color = user_text.a > 0 ? user_text : text_color;
+  float font_size =
+      data.font_size > 0 ? data.font_size : kControlContentThemeFontSize;
+
+  TextStyle text_style;
+  text_style.font_size = font_size;
+  text_style.color = actual_text_color;
+  text_style.alignment = TextAlignment::Center;
+  text_style.paragraph_alignment = ParagraphAlignment::Center;
+  text_style.word_wrap = false;
+
+  TextStyle icon_style = text_style;
+  icon_style.font_family = L"Segoe Fluent Icons"; // Use Fluent Icons
+  // Fallback to MDL2 if needed? Users on older Win10 might need Segoe MDL2
+  // Assets. But user requested "Segoe Fluent Icons".
+  icon_style.font_size =
+      font_size * 1.14f; // Icons often need to be slightly larger to visually
+                         // match text cap height
+
+  // Measure content
+  float icon_width = 0.0f;
+  float text_width = 0.0f;
+  float content_gap = 8.0f; // Gap between icon and text
+
+  if (has_icon) {
+    // Measure single character icon
+    Size icon_size = text_renderer->measure_text(icon_code, icon_style);
+    icon_width = icon_size.width;
+  }
+
+  std::wstring wtext;
+  if (has_text) {
+    wtext = std::wstring(data.text_content.begin(), data.text_content.end());
+    Size text_size = text_renderer->measure_text(wtext, text_style);
+    text_width = text_size.width;
+  }
+
+  float total_content_width = icon_width + text_width;
+  if (has_icon && has_text) {
+    total_content_width += content_gap;
+  }
+
+  // Calculate layout
+  // Content is centered within (snapped_bounds - padding)
+  Rect content_area = snapped_bounds;
+  content_area.x += data.padding_left;
+  content_area.y += data.padding_top;
+  content_area.width = std::max(
+      0.0f, content_area.width - (data.padding_left + data.padding_right));
+  content_area.height = std::max(
+      0.0f, content_area.height - (data.padding_top + data.padding_bottom));
+
+  // Determine starting X to center the total content
+  float start_x =
+      content_area.x + (content_area.width - total_content_width) * 0.5f;
+  float center_y = content_area.y + content_area.height * 0.5f;
+
+  auto d2d = graphics->get_d2d_context();
+  d2d->PushAxisAlignedClip(snapped_bounds.to_d2d(),
+                           D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+  float current_x = start_x;
+
+  if (has_icon) {
+    // Draw Icon
+    // Centering vertically is handled by TextRenderer usually, but we need rect
+    Rect icon_rect(current_x, content_area.y, icon_width, content_area.height);
+    text_renderer->draw_text(icon_code, icon_rect, icon_style);
+    current_x += icon_width + content_gap;
+  }
+
+  if (has_text) {
+    // Draw Text
+    Rect text_rect(current_x, content_area.y, text_width, content_area.height);
+    text_renderer->draw_text(wtext, text_rect, text_style);
+  }
+
+  d2d->PopAxisAlignedClip();
 }
 
 void ControlRenderer::render_button(const xent::ViewData &data,
@@ -167,32 +272,9 @@ void ControlRenderer::render_button(const xent::ViewData &data,
     draw_focus_rect(snapped_bounds, corner_radius);
   }
 
-  if (!data.text_content.empty() && text_renderer_) {
-    Color user_text = to_fluxent_color(data.text_color);
-    Color actual_text_color = user_text.a > 0 ? user_text : text_color;
-
-    std::wstring wtext(data.text_content.begin(), data.text_content.end());
-    TextStyle style;
-    style.font_size =
-        data.font_size > 0 ? data.font_size : kControlContentThemeFontSize;
-    style.word_wrap = false;
-    style.color = actual_text_color;
-    style.alignment = TextAlignment::Center;
-    style.paragraph_alignment = ParagraphAlignment::Center;
-
-    Rect content_bounds = snapped_bounds;
-    content_bounds.x += data.padding_left;
-    content_bounds.y += data.padding_top;
-    content_bounds.width = std::max(
-        0.0f, content_bounds.width - (data.padding_left + data.padding_right));
-    content_bounds.height = std::max(
-        0.0f, content_bounds.height - (data.padding_top + data.padding_bottom));
-
-    d2d->PushAxisAlignedClip(snapped_bounds.to_d2d(),
-                             D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-    text_renderer_->draw_text(wtext, content_bounds, style);
-    d2d->PopAxisAlignedClip();
-  }
+  // Draw Content (Icon + Text)
+  draw_button_content(graphics_, text_renderer_, data, snapped_bounds,
+                      text_color);
 }
 
 void ControlRenderer::render_toggle_button(const xent::ViewData &data,
@@ -303,29 +385,9 @@ void ControlRenderer::render_toggle_button(const xent::ViewData &data,
     draw_focus_rect(snapped_bounds, corner_radius);
   }
 
-  if (!data.text_content.empty() && text_renderer_) {
-    std::wstring wtext(data.text_content.begin(), data.text_content.end());
-    TextStyle style;
-    style.font_size =
-        data.font_size > 0 ? data.font_size : kControlContentThemeFontSize;
-    style.word_wrap = false;
-    style.color = text_color;
-    style.alignment = TextAlignment::Center;
-    style.paragraph_alignment = ParagraphAlignment::Center;
-
-    Rect content_bounds = snapped_bounds;
-    content_bounds.x += data.padding_left;
-    content_bounds.y += data.padding_top;
-    content_bounds.width = std::max(
-        0.0f, content_bounds.width - (data.padding_left + data.padding_right));
-    content_bounds.height = std::max(
-        0.0f, content_bounds.height - (data.padding_top + data.padding_bottom));
-
-    d2d->PushAxisAlignedClip(snapped_bounds.to_d2d(),
-                             D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-    text_renderer_->draw_text(wtext, content_bounds, style);
-    d2d->PopAxisAlignedClip();
-  }
+  // Draw Content (Icon + Text)
+  draw_button_content(graphics_, text_renderer_, data, snapped_bounds,
+                      text_color);
 }
 
 } // namespace fluxent::controls

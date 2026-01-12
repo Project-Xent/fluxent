@@ -135,13 +135,16 @@ xent::View build_ui(App &app) {
                   .background(to_xent_color(theme::res().CardBackgroundDefault))
                   .corner_radius(8)
                   .add(xent::Button{"+1"}
+                           .icon("Add")
                            .role(xent::Semantic::Primary)
                            .on_click(&App::increment, &app))
                   .add(xent::Button{"-1"}
+                           .icon("Minus")
                            .role(xent::Semantic::Secondary)
                            .style(xent::ButtonStyle::Outline)
                            .on_click(&App::decrement, &app))
                   .add(xent::Button{"Reset"}
+                           .icon("Refresh")
                            .role(xent::Semantic::Danger)
                            .style(xent::ButtonStyle::Text)
                            .on_click(&App::reset, &app)))
@@ -150,7 +153,8 @@ xent::View build_ui(App &app) {
                    .align_items(YGAlignCenter)
                    .add(xent::Text{"Toggle: "}.font_size(14).color(
                        to_xent_color(theme::res().TextPrimary)))
-                   .add(xent::ToggleButton{"Sound"}.is_checked(true)))
+                   .add(xent::ToggleButton{"Sound"}.is_checked(true).icon(
+                       "Sound")))
           .add(xent::Text{"Click the buttons!"}.font_size(12).color(
               to_xent_color(theme::res().TextSecondary)));
 

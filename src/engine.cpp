@@ -214,9 +214,8 @@ static void RemapColorInPlace(xent::Color &c,
   }
 }
 
-static void
-RemapViewTreeThemeColors(const std::shared_ptr<xent::ViewData> &data,
-                         const std::vector<ThemeRemapEntry> &map) {
+static void RemapViewTreeThemeColors(xent::View *data,
+                                     const std::vector<ThemeRemapEntry> &map) {
   if (!data)
     return;
   RemapColorInPlace(data->text_color, map);
@@ -224,17 +223,16 @@ RemapViewTreeThemeColors(const std::shared_ptr<xent::ViewData> &data,
   RemapColorInPlace(data->border_color, map);
 
   for (const auto &child : data->children) {
-    RemapViewTreeThemeColors(child, map);
+    RemapViewTreeThemeColors(child.get(), map);
   }
 }
 
-static bool IsZeroPadding(const xent::ViewData &d) {
+static bool IsZeroPadding(const xent::View &d) {
   return d.padding_top == 0.0f && d.padding_right == 0.0f &&
          d.padding_bottom == 0.0f && d.padding_left == 0.0f;
 }
 
-static void
-ApplyButtonDefaultsRecursive(const std::shared_ptr<xent::ViewData> &data) {
+static void ApplyButtonDefaultsRecursive(xent::View *data) {
   if (!data)
     return;
 
@@ -271,7 +269,7 @@ ApplyButtonDefaultsRecursive(const std::shared_ptr<xent::ViewData> &data) {
   }
 
   for (const auto &child : data->children) {
-    ApplyButtonDefaultsRecursive(child);
+    ApplyButtonDefaultsRecursive(child.get());
   }
 }
 
@@ -299,8 +297,8 @@ RenderEngine::RenderEngine(GraphicsPipeline *graphics,
         const auto map = BuildThemeRemap(last_theme_resources_, next);
         last_theme_resources_ = next;
 
-        if (auto root = last_root_data_.lock()) {
-          RemapViewTreeThemeColors(root, map);
+        if (last_root_data_) {
+          RemapViewTreeThemeColors(last_root_data_, map);
         }
 
         if (graphics_) {
@@ -349,7 +347,7 @@ void RenderEngine::RenderFrame(xent::View &root) {
       std::bind(&RenderEngine::MeasureTextCallback, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3));
 
-  auto root_data = root.Data();
+  xent::View *root_data = &root;
   if (root_data) {
     last_root_data_ = root_data;
     ApplyButtonDefaultsRecursive(root_data);
@@ -373,18 +371,15 @@ void RenderEngine::RenderFrame(xent::View &root) {
 
 void RenderEngine::DrawViewRecursive(const xent::View &view, float parent_x,
                                      float parent_y) {
-  auto view_data = view.Data();
-  if (!view_data)
-    return;
-
-  DrawViewDataRecursive(view_data, parent_x, parent_y);
+  // view is the data now.
+  DrawViewDataRecursive(&view, parent_x, parent_y);
 }
 
-void RenderEngine::DrawViewDataRecursive(
-    const std::shared_ptr<xent::ViewData> &data, float parent_x,
-    float parent_y) {
-  if (!data)
+void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
+                                         float parent_y) {
+  if (data == nullptr) {
     return;
+  }
 
   float x = data->LayoutX();
   float y = data->LayoutY();
@@ -398,14 +393,14 @@ void RenderEngine::DrawViewDataRecursive(
     controls::ControlState state;
     if (input_) {
       if (auto hovered = input_->GetHoveredView()) {
-        state.is_hovered = (hovered.get() == data.get());
+        state.is_hovered = (hovered == data);
       }
       if (auto pressed = input_->GetPressedView()) {
-        state.is_pressed = (pressed.get() == data.get());
+        state.is_pressed = (pressed == data);
       }
       if (auto focused = input_->GetFocusedView()) {
         state.is_focused =
-            input_->ShouldShowFocusVisuals() && (focused.get() == data.get());
+            input_->ShouldShowFocusVisuals() && (focused == data);
       }
     }
     control_renderer_->Render(*data, bounds, state);
@@ -422,13 +417,15 @@ void RenderEngine::DrawViewDataRecursive(
   }
 
   for (const auto &child : data->children) {
-    DrawViewDataRecursive(child, abs_x, abs_y);
+    DrawViewDataRecursive(child.get(), abs_x, abs_y);
   }
 }
 
-void RenderEngine::DrawViewBackground(const xent::ViewData &data,
+void RenderEngine::DrawViewBackground(const xent::View &data,
                                       const Rect &bounds) {
-  Color color = convert_color(data.background_color);
+  Color color(data.background_color.r, data.background_color.g,
+              data.background_color.b, data.background_color.a);
+
   if (color.is_transparent())
     return;
 
@@ -441,13 +438,13 @@ void RenderEngine::DrawViewBackground(const xent::ViewData &data,
   }
 }
 
-void RenderEngine::DrawViewBorder(const xent::ViewData &data,
-                                  const Rect &bounds) {
+void RenderEngine::DrawViewBorder(const xent::View &data, const Rect &bounds) {
   float border_width = data.border_width;
   if (border_width <= 0)
     return;
 
-  Color color = convert_color(data.border_color);
+  Color color(data.border_color.r, data.border_color.g, data.border_color.b,
+              data.border_color.a);
   if (color.is_transparent())
     return;
 
@@ -460,21 +457,22 @@ void RenderEngine::DrawViewBorder(const xent::ViewData &data,
   }
 }
 
-void RenderEngine::DrawViewText(const xent::ViewData &data,
-                                const Rect &bounds) {
+void RenderEngine::DrawViewText(const xent::View &data, const Rect &bounds) {
   const std::string &text = data.text_content;
   if (text.empty())
     return;
 
-  std::wstring wtext(text.begin(), text.end());
+  // Use data.text_color
+  Color color(data.text_color.r, data.text_color.g, data.text_color.b,
+              data.text_color.a);
 
-  TextStyle style;
-  style.font_size = data.font_size;
-  style.color = convert_color(data.text_color);
-  style.alignment = TextAlignment::Center;
-  style.paragraph_alignment = ParagraphAlignment::Center;
-
-  text_renderer_->DrawText(wtext, bounds, style);
+  if (text_renderer_) {
+    std::wstring wtext(text.begin(), text.end());
+    TextStyle style;
+    style.font_size = data.font_size;
+    style.color = color;
+    text_renderer_->DrawText(wtext, bounds, style);
+  }
 }
 
 // Primitives

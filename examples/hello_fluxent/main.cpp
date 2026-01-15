@@ -3,7 +3,7 @@
 #include "fluxent/theme/theme_manager.hpp"
 #include <Windows.h>
 #include <cstdint>
-#include <fluxent/controls/toggle_switch.hpp>
+
 #include <fluxent/fluxent.hpp>
 #include <xent/button.hpp>
 #include <xent/checkbox.hpp>
@@ -26,7 +26,8 @@ template <typename T> static xent::Color ToXentColor(const T &c) {
 }
 
 // Forward declare build_ui
-xent::View build_ui(class App &app, fluxent::theme::ThemeManager &tm);
+std::unique_ptr<xent::View> build_ui(class App &app,
+                                     fluxent::theme::ThemeManager &tm);
 
 // Global context
 
@@ -42,7 +43,7 @@ xent::View *g_root_view = nullptr;
 class App {
 public:
   int counter = 0;
-  std::shared_ptr<xent::ViewData> counter_text_data;
+  xent::View *counter_text_data = nullptr;
   std::function<void()> invalidate_callback;
 
   void SetInvalidateCallback(std::function<void()> callback) {
@@ -119,80 +120,124 @@ void on_input_invalidate() {
 
 // Build UI
 
-xent::View build_ui(App &app, fluxent::theme::ThemeManager &tm) {
-  auto counter_text = xent::Text{"Count: 0"}.SetFontSize(36).SetColor(
+std::unique_ptr<xent::View> build_ui(App &app,
+                                     fluxent::theme::ThemeManager &tm) {
+  auto counter_text = std::make_unique<xent::Text>("Count: 0");
+  counter_text->SetFontSize(36).SetColor(
       ToXentColor(tm.Resources().TextPrimary));
 
-  app.counter_text_data = counter_text.Data();
+  app.counter_text_data = counter_text.get();
 
-  xent::View root =
-      xent::VStack{}
-          .Padding(32)
-          .Gap(20)
-          .AlignItems(YGAlignCenter)
-          .JustifyContent(YGJustifyCenter)
-          .Background(ToXentColor(tm.Resources().LayerOnMicaBaseAltTransparent))
-          .Expand()
-          .Add(xent::Text{"Hello, FluXent!"}.SetFontSize(32).SetColor(
-              ToXentColor(tm.Resources().TextPrimary)))
-          .Add(xent::Text{"A modern Windows UI framework"}
-                   .SetFontSize(14)
-                   .SetColor(ToXentColor(tm.Resources().TextSecondary)))
-          .Add(counter_text)
-          .Add(
-              xent::VStack{}
-                  .Padding(20)
-                  .Gap(12)
-                  .AlignItems(YGAlignCenter)
-                  .Background(ToXentColor(tm.Resources().CardBackgroundDefault))
-                  .CornerRadius(8)
-                  .Add(xent::Button{"+1"}
-                           .Icon("Add")
-                           .Role(xent::Semantic::Primary)
-                           .OnClick(&App::increment, &app))
-                  .Add(xent::Button{"-1"}
-                           .Icon("Minus")
-                           .Role(xent::Semantic::Secondary)
-                           .Style(xent::ButtonStyle::Outline)
-                           .OnClick(&App::decrement, &app))
-                  .Add(xent::Button{"Reset"}
-                           .Icon("Refresh")
-                           .Role(xent::Semantic::Danger)
-                           .Style(xent::ButtonStyle::Text)
-                           .OnClick(&App::reset, &app)))
-          .Add(xent::HStack{}
-                   .Gap(10)
-                   .AlignItems(YGAlignCenter)
-                   .Add(xent::Text{"Toggle: "}.SetFontSize(14).SetColor(
-                       ToXentColor(tm.Resources().TextPrimary)))
-                   .Add(xent::ToggleButton{"Sound"}
-                            .IsChecked(true)
-                            .Icon("Mute")
-                            .CheckedIcon("Volume")))
-          .Add(
-              xent::HStack{}
-                  .Gap(40)
-                  .AlignItems(YGAlignFlexStart)
-                  .Add(
-                      xent::VStack{}
-                          .Gap(10)
-                          .Add(
-                              xent::Text{"Checkboxes"}.SetFontSize(14).SetColor(
-                                  ToXentColor(tm.Resources().TextSecondary)))
-                          .Add(xent::CheckBox("Enable Turbo").IsChecked(true))
-                          .Add(xent::CheckBox("Auto-Save")))
-                  .Add(xent::VStack{}
-                           .Gap(10)
-                           .Add(xent::Text{"Radio Group"}
-                                    .SetFontSize(14)
-                                    .SetColor(ToXentColor(
-                                        tm.Resources().TextSecondary)))
-                           .Add(xent::RadioButton("Option 1")
-                                    .Group("G1")
-                                    .IsChecked(true))
-                           .Add(xent::RadioButton("Option 2").Group("G1"))))
-          .Add(xent::Text{"Click the buttons!"}.SetFontSize(12).SetColor(
-              ToXentColor(tm.Resources().TextSecondary)));
+  auto root = std::make_unique<xent::VStack>();
+
+  root->Padding(32)
+      .Gap(20)
+      .AlignItems(YGAlignCenter)
+      .JustifyContent(YGJustifyCenter)
+      .Background(ToXentColor(tm.Resources().LayerOnMicaBaseAltTransparent))
+      .Expand();
+
+  // Add child
+  auto title = std::make_unique<xent::Text>("Hello, FluXent!");
+  title->SetFontSize(32).SetColor(ToXentColor(tm.Resources().TextPrimary));
+  root->Add(std::move(title));
+
+  auto subtitle = std::make_unique<xent::Text>("A modern Windows UI framework");
+  subtitle->SetFontSize(14).SetColor(ToXentColor(tm.Resources().TextSecondary));
+  root->Add(std::move(subtitle));
+
+  root->Add(std::move(counter_text));
+
+  // Button stack
+  auto button_stack = std::make_unique<xent::VStack>();
+  button_stack->Padding(20)
+      .Gap(12)
+      .AlignItems(YGAlignCenter)
+      .Background(ToXentColor(tm.Resources().CardBackgroundDefault))
+      .CornerRadius(8);
+
+  auto btn1 = std::make_unique<xent::Button>("+1");
+  btn1->Icon("Add")
+      .Role(xent::Semantic::Primary)
+      .OnClick(&App::increment, &app);
+  button_stack->Add(std::move(btn1));
+
+  auto btn2 = std::make_unique<xent::Button>("-1");
+  btn2->Icon("Minus")
+      .Role(xent::Semantic::Secondary)
+      .Style(xent::ButtonStyle::Outline)
+      .OnClick(&App::decrement, &app);
+  button_stack->Add(std::move(btn2));
+
+  auto btn3 = std::make_unique<xent::Button>("Reset");
+  btn3->Icon("Refresh")
+      .Role(xent::Semantic::Danger)
+      .Style(xent::ButtonStyle::Text)
+      .OnClick(&App::reset, &app);
+  button_stack->Add(std::move(btn3));
+
+  root->Add(std::move(button_stack));
+
+  // Toggles
+  auto toggle_row = std::make_unique<xent::HStack>();
+  toggle_row->Gap(10).AlignItems(YGAlignCenter);
+
+  auto toggle_label = std::make_unique<xent::Text>("Toggle: ");
+  toggle_label->SetFontSize(14).SetColor(
+      ToXentColor(tm.Resources().TextPrimary));
+  toggle_row->Add(std::move(toggle_label));
+
+  auto toggle_btn = std::make_unique<xent::ToggleButton>("Sound");
+  toggle_btn->IsChecked(true).Icon("Mute").CheckedIcon("Volume");
+  toggle_row->Add(std::move(toggle_btn));
+
+  root->Add(std::move(toggle_row));
+
+  // Checkboxes/Radios
+  auto controls_row = std::make_unique<xent::HStack>();
+  controls_row->Gap(40).AlignItems(YGAlignFlexStart);
+
+  auto check_col = std::make_unique<xent::VStack>();
+  check_col->Gap(10);
+
+  auto check_label = std::make_unique<xent::Text>("Checkboxes");
+  check_label->SetFontSize(14).SetColor(
+      ToXentColor(tm.Resources().TextSecondary));
+  check_col->Add(std::move(check_label));
+
+  auto check1 = std::make_unique<xent::CheckBox>("Enable Turbo");
+  check1->IsChecked(true);
+  check_col->Add(std::move(check1));
+
+  auto check2 = std::make_unique<xent::CheckBox>("Auto-Save");
+  check_col->Add(std::move(check2));
+
+  controls_row->Add(std::move(check_col));
+
+  auto radio_col = std::make_unique<xent::VStack>();
+  radio_col->Gap(10);
+
+  auto radio_label = std::make_unique<xent::Text>("Radio Group");
+  radio_label->SetFontSize(14).SetColor(
+      ToXentColor(tm.Resources().TextSecondary));
+  radio_col->Add(std::move(radio_label));
+
+  auto radio1 = std::make_unique<xent::RadioButton>("Option 1");
+  radio1->Group("G1").IsChecked(true);
+  radio_col->Add(std::move(radio1));
+
+  auto radio2 = std::make_unique<xent::RadioButton>("Option 2");
+  radio2->Group("G1");
+  radio_col->Add(std::move(radio2));
+
+  controls_row->Add(std::move(radio_col));
+
+  root->Add(std::move(controls_row));
+
+  auto click_hint = std::make_unique<xent::Text>("Click the buttons!");
+  click_hint->SetFontSize(12).SetColor(
+      ToXentColor(tm.Resources().TextSecondary));
+  root->Add(std::move(click_hint));
 
   return root;
 }
@@ -225,18 +270,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   input.SetInvalidateCallback(on_input_invalidate);
   app.SetInvalidateCallback(on_window_invalidate);
 
-  xent::View root = build_ui(app, theme_manager);
-  g_root_view = &root;
+  auto root = build_ui(app, theme_manager);
+  g_root_view = root.get();
 
   window.SetRenderCallback(on_window_render);
   window.SetMouseCallback(on_window_mouse_event);
   window.SetResizeCallback(on_window_resize);
 
   window.RequestRender();
-
   window.Run();
 
   g_root_view = nullptr;
-
   return 0;
 }

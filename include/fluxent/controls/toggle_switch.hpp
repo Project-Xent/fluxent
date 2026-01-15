@@ -10,14 +10,14 @@ namespace fluxent::controls {
 // toggled by the fluxent InputHandler without requiring xent-core changes.
 class ToggleSwitch : public xent::View {
 public:
-  ToggleSwitch() { data_->type = xent::ComponentType::ToggleSwitch; }
+  ToggleSwitch() { type = xent::ComponentType::ToggleSwitch; }
 
   ToggleSwitch &IsChecked(bool on) {
-    data_->is_checked = on;
+    is_checked = on;
     return *this;
   }
 
-  bool IsOn() const { return data_ && data_->is_checked; }
+  bool IsOn() const { return is_checked; }
 
   // Fluent forwarding
   ToggleSwitch &Width(float w) {
@@ -50,8 +50,8 @@ public:
   }
 
   template <typename T>
-  ToggleSwitch &on_click(void (T::*method)(), T *instance) {
-    xent::View::on_click(method, instance);
+  ToggleSwitch &OnClick(void (T::*method)(), T *instance) {
+    xent::View::OnClick(method, instance);
     return *this;
   }
 };

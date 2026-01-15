@@ -1,7 +1,7 @@
 #include "fluxent/controls/radio_renderer.hpp"
 #include "common_drawing.hpp"
 #include "renderer_utils.hpp"
-#include <algorithm>
+
 #include <cmath>
 
 namespace fluxent::controls {

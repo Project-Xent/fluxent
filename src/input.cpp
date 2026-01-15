@@ -12,19 +12,22 @@ HitTestResult InputHandler::HitTest(const xent::View &root,
   HitTestResult result;
   result.view_data = nullptr;
 
-  auto root_data = root.Data();
-  if (root_data) {
-    HitTestRecursive(root_data, 0.0f, 0.0f, position, result);
+  const xent::View *root_data = &root;
+  if (root_data != nullptr) {
+    // Cast away const because we need non-const pointer for result
+    HitTestRecursive(const_cast<xent::View *>(root_data), 0.0f, 0.0f, position,
+                     result);
   }
 
   return result;
 }
 
-bool InputHandler::HitTestRecursive(
-    const std::shared_ptr<xent::ViewData> &view_data, float parent_x,
-    float parent_y, const Point &position, HitTestResult &result) {
-  if (!view_data)
+bool InputHandler::HitTestRecursive(xent::View *view_data, float parent_x,
+                                    float parent_y, const Point &position,
+                                    HitTestResult &result) {
+  if (view_data == nullptr) {
     return false;
+  }
 
   float x = view_data->LayoutX();
   float y = view_data->LayoutY();
@@ -42,7 +45,7 @@ bool InputHandler::HitTestRecursive(
 
   const auto &children = view_data->children;
   for (auto it = children.rbegin(); it != children.rend(); ++it) {
-    if (HitTestRecursive(*it, abs_x, abs_y, position, result)) {
+    if (HitTestRecursive(it->get(), abs_x, abs_y, position, result)) {
       return true;
     }
   }
@@ -63,7 +66,7 @@ void InputHandler::HandleMouseEvent(const xent::View &root,
 
   HitTestResult hit_result = HitTest(root, event.position);
 
-  auto current_hovered = hovered_view_.lock();
+  auto current_hovered = hovered_view_;
   if (hit_result.view_data != current_hovered) {
     auto old_hovered = current_hovered;
     hovered_view_ = hit_result.view_data;
@@ -86,13 +89,13 @@ void InputHandler::HandleMouseEvent(const xent::View &root,
         on_invalidate_();
       }
     } else {
-      auto pressed = pressed_view_.lock();
+      auto pressed = pressed_view_;
 
       if (pressed && pressed == hit_result.view_data) {
         DispatchToView(pressed, event);
       }
 
-      pressed_view_.reset();
+      pressed_view_ = nullptr;
 
       if (on_invalidate_) {
         on_invalidate_();
@@ -121,8 +124,8 @@ void InputHandler::HandleKeyEvent(const xent::View &root,
   }
 }
 
-bool InputHandler::DispatchToView(
-    const std::shared_ptr<xent::ViewData> &view_data, const MouseEvent &event) {
+bool InputHandler::DispatchToView(xent::View *view_data,
+                                  const MouseEvent &event) {
   if (!view_data)
     return false;
   (void)event;
@@ -143,9 +146,9 @@ bool InputHandler::DispatchToView(
 
       // Uncheck others in group
       if (!view_data->group_name.empty()) {
-        if (auto parent = view_data->parent.lock()) {
+        if (auto parent = view_data->parent) {
           for (auto &sibling : parent->children) {
-            if (sibling.get() != view_data.get() &&
+            if (sibling.get() != view_data &&
                 sibling->type == xent::ComponentType::RadioButton &&
                 sibling->group_name == view_data->group_name) {
               sibling->is_checked = false;

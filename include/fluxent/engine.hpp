@@ -58,14 +58,14 @@ private:
   void DrawViewRecursive(const xent::View &view, float parent_x,
                          float parent_y);
 
-  void DrawViewDataRecursive(const std::shared_ptr<xent::ViewData> &data,
-                             float parent_x, float parent_y);
+  void DrawViewDataRecursive(const xent::View *data, float parent_x,
+                             float parent_y);
 
-  void DrawViewBackground(const xent::ViewData &data, const Rect &bounds);
+  void DrawViewBackground(const xent::View &data, const Rect &bounds);
 
-  void DrawViewBorder(const xent::ViewData &data, const Rect &bounds);
+  void DrawViewBorder(const xent::View &data, const Rect &bounds);
 
-  void DrawViewText(const xent::ViewData &data, const Rect &bounds);
+  void DrawViewText(const xent::View &data, const Rect &bounds);
 
   ID2D1SolidColorBrush *GetBrush(const Color &color);
 
@@ -90,7 +90,7 @@ private:
   theme::ThemeManager *theme_manager_ = nullptr;
   size_t theme_listener_id_ = 0;
   theme::ThemeResources last_theme_resources_{};
-  std::weak_ptr<xent::ViewData> last_root_data_;
+  xent::View *last_root_data_ = nullptr;
 };
 
 } // namespace fluxent

@@ -7,29 +7,29 @@ InputHandler::InputHandler() = default;
 InputHandler::~InputHandler() = default;
 
 // Hit test
-HitTestResult InputHandler::hit_test(const xent::View &root,
-                                     const Point &position) {
+HitTestResult InputHandler::HitTest(const xent::View &root,
+                                    const Point &position) {
   HitTestResult result;
   result.view_data = nullptr;
 
-  auto root_data = root.data();
+  auto root_data = root.Data();
   if (root_data) {
-    hit_test_recursive(root_data, 0.0f, 0.0f, position, result);
+    HitTestRecursive(root_data, 0.0f, 0.0f, position, result);
   }
 
   return result;
 }
 
-bool InputHandler::hit_test_recursive(
+bool InputHandler::HitTestRecursive(
     const std::shared_ptr<xent::ViewData> &view_data, float parent_x,
     float parent_y, const Point &position, HitTestResult &result) {
   if (!view_data)
     return false;
 
-  float x = view_data->layout_x();
-  float y = view_data->layout_y();
-  float w = view_data->layout_width();
-  float h = view_data->layout_height();
+  float x = view_data->LayoutX();
+  float y = view_data->LayoutY();
+  float w = view_data->LayoutWidth();
+  float h = view_data->LayoutHeight();
 
   float abs_x = parent_x + x;
   float abs_y = parent_y + y;
@@ -42,7 +42,7 @@ bool InputHandler::hit_test_recursive(
 
   const auto &children = view_data->children;
   for (auto it = children.rbegin(); it != children.rend(); ++it) {
-    if (hit_test_recursive(*it, abs_x, abs_y, position, result)) {
+    if (HitTestRecursive(*it, abs_x, abs_y, position, result)) {
       return true;
     }
   }
@@ -56,12 +56,12 @@ bool InputHandler::hit_test_recursive(
 
 // Event handling
 
-void InputHandler::handle_mouse_event(const xent::View &root,
-                                      const MouseEvent &event) {
+void InputHandler::HandleMouseEvent(const xent::View &root,
+                                    const MouseEvent &event) {
   show_focus_visuals_ = false;
   last_mouse_position_ = event.position;
 
-  HitTestResult hit_result = hit_test(root, event.position);
+  HitTestResult hit_result = HitTest(root, event.position);
 
   auto current_hovered = hovered_view_.lock();
   if (hit_result.view_data != current_hovered) {
@@ -89,7 +89,7 @@ void InputHandler::handle_mouse_event(const xent::View &root,
       auto pressed = pressed_view_.lock();
 
       if (pressed && pressed == hit_result.view_data) {
-        dispatch_to_view(pressed, event);
+        DispatchToView(pressed, event);
       }
 
       pressed_view_.reset();
@@ -101,8 +101,8 @@ void InputHandler::handle_mouse_event(const xent::View &root,
   }
 }
 
-void InputHandler::handle_key_event(const xent::View &root,
-                                    const KeyEvent &event) {
+void InputHandler::HandleKeyEvent(const xent::View &root,
+                                  const KeyEvent &event) {
   (void)root;
 
   if (!event.is_down)
@@ -121,20 +121,38 @@ void InputHandler::handle_key_event(const xent::View &root,
   }
 }
 
-bool InputHandler::dispatch_to_view(
+bool InputHandler::DispatchToView(
     const std::shared_ptr<xent::ViewData> &view_data, const MouseEvent &event) {
   if (!view_data)
     return false;
   (void)event;
 
   // Built-in Toggle behavior.
-  if (view_data->component_type == "ToggleSwitch" ||
-      view_data->component_type == "ToggleButton") {
+  if (view_data->type == xent::ComponentType::ToggleSwitch ||
+      view_data->type == xent::ComponentType::ToggleButton ||
+      view_data->type == xent::ComponentType::CheckBox) {
     view_data->is_checked = !view_data->is_checked;
 
     // Sync text_content for ToggleSwitch legacy/debug support
-    if (view_data->component_type == "ToggleSwitch") {
+    if (view_data->type == xent::ComponentType::ToggleSwitch) {
       view_data->text_content = view_data->is_checked ? "1" : "0";
+    }
+  } else if (view_data->type == xent::ComponentType::RadioButton) {
+    if (!view_data->is_checked) {
+      view_data->is_checked = true;
+
+      // Uncheck others in group
+      if (!view_data->group_name.empty()) {
+        if (auto parent = view_data->parent.lock()) {
+          for (auto &sibling : parent->children) {
+            if (sibling.get() != view_data.get() &&
+                sibling->type == xent::ComponentType::RadioButton &&
+                sibling->group_name == view_data->group_name) {
+              sibling->is_checked = false;
+            }
+          }
+        }
+      }
     }
   }
 

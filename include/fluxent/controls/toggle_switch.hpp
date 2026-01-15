@@ -3,7 +3,6 @@
 #include <string>
 #include <xent/view.hpp>
 
-
 namespace fluxent::controls {
 
 // Minimal ToggleSwitch control.
@@ -11,45 +10,42 @@ namespace fluxent::controls {
 // toggled by the fluxent InputHandler without requiring xent-core changes.
 class ToggleSwitch : public xent::View {
 public:
-  ToggleSwitch() { data_->component_type = "ToggleSwitch"; }
+  ToggleSwitch() { data_->type = xent::ComponentType::ToggleSwitch; }
 
-  ToggleSwitch &is_on(bool on) {
+  ToggleSwitch &IsChecked(bool on) {
     data_->is_checked = on;
-    // Keep text_content for debugging or fallback if needed, but primary state
-    // is is_checked
-    data_->text_content = on ? "1" : "0";
     return *this;
   }
 
-  bool is_on() const { return data_ && data_->is_checked; }
+  bool IsOn() const { return data_ && data_->is_checked; }
 
   // Fluent forwarding
-  ToggleSwitch &width(float w) {
-    xent::View::width(w);
+  ToggleSwitch &Width(float w) {
+    xent::View::Width(w);
     return *this;
   }
-  ToggleSwitch &height(float h) {
-    xent::View::height(h);
+  ToggleSwitch &Height(float h) {
+    xent::View::Height(h);
     return *this;
   }
-  ToggleSwitch &margin(float m) {
-    xent::View::margin(m);
+  ToggleSwitch &Margin(float m) {
+    xent::View::Margin(m);
     return *this;
   }
-  ToggleSwitch &padding(float p) {
-    xent::View::padding(p);
+  ToggleSwitch &Padding(float p) {
+    xent::View::Padding(p);
     return *this;
   }
-  ToggleSwitch &padding(float v, float h) {
-    xent::View::padding(v, h);
+  ToggleSwitch &Padding(float v, float h) {
+    xent::View::Padding(v, h);
     return *this;
   }
-  ToggleSwitch &padding(float t, float r, float b, float l) {
-    xent::View::padding(t, r, b, l);
+  ToggleSwitch &Padding(float t, float r, float b, float l) {
+    xent::View::Padding(t, r, b, l);
     return *this;
   }
-  ToggleSwitch &flex_grow(float grow) {
-    xent::View::flex_grow(grow);
+  ToggleSwitch &FlexGrow(float grow) {
+    xent::View::FlexGrow(grow);
     return *this;
   }
 

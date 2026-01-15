@@ -2,83 +2,98 @@
 
 // FluXent Window (Win32)
 
-#include "types.hpp"
 #include "graphics.hpp"
+#include "types.hpp"
 #include <memory>
+
+#include "theme/theme_manager.hpp"
 
 namespace fluxent {
 
 class Window {
 public:
-    explicit Window(const WindowConfig& config = {});
-    ~Window();
-    
-    Window(const Window&) = delete;
-    Window& operator=(const Window&) = delete;
+  explicit Window(theme::ThemeManager *theme_manager,
+                  const WindowConfig &config = {});
+  ~Window();
 
-    HWND get_hwnd() const { return hwnd_; }
-    bool is_valid() const { return hwnd_ != nullptr; }
+  Window(const Window &) = delete;
+  Window &operator=(const Window &) = delete;
 
-    Size get_client_size() const;
+  HWND GetHwnd() const { return hwnd_; }
+  bool IsValid() const { return hwnd_ != nullptr; }
 
-    DpiInfo get_dpi() const { return dpi_; }
+  Size GetClientSize() const;
 
-    void run();
-    bool process_messages();
-    void close();
+  DpiInfo GetDpi() const { return dpi_; }
 
-    void request_render();
+  void Run();
+  bool ProcessMessages();
+  void Close();
 
-    GraphicsPipeline* get_graphics() const { return graphics_.get(); }
+  void RequestRender();
 
-    void set_render_callback(RenderCallback callback) { on_render_ = std::move(callback); }
-    void set_resize_callback(ResizeCallback callback) { on_resize_ = std::move(callback); }
-    void set_dpi_changed_callback(DpiChangedCallback callback) { on_dpi_changed_ = std::move(callback); }
-    void set_mouse_callback(MouseEventCallback callback) { on_mouse_ = std::move(callback); }
-    void set_key_callback(KeyEventCallback callback) { on_key_ = std::move(callback); }
+  GraphicsPipeline *GetGraphics() const { return graphics_.get(); }
 
-    void set_backdrop(BackdropType type);
-    void set_dark_mode(bool enabled);
-    void set_title(const std::wstring& title);
+  void SetRenderCallback(RenderCallback callback) {
+    on_render_ = std::move(callback);
+  }
+  void SetResizeCallback(ResizeCallback callback) {
+    on_resize_ = std::move(callback);
+  }
+  void SetDpiChangedCallback(DpiChangedCallback callback) {
+    on_dpi_changed_ = std::move(callback);
+  }
+  void SetMouseCallback(MouseEventCallback callback) {
+    on_mouse_ = std::move(callback);
+  }
+  void SetKeyCallback(KeyEventCallback callback) {
+    on_key_ = std::move(callback);
+  }
 
-    void set_cursor(HCURSOR cursor);
-    void set_cursor_arrow();
-    void set_cursor_hand();
-    void set_cursor_ibeam();
+  void SetBackdrop(BackdropType type);
+  void SetDarkMode(bool enabled);
+  void SetTitle(const std::wstring &title);
+
+  void SetCursor(HCURSOR cursor);
+  void SetCursorArrow();
+  void SetCursorHand();
+  void SetCursorIbeam();
 
 private:
-    static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
-    LRESULT handle_message(UINT msg, WPARAM wparam, LPARAM lparam);
+  static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam,
+                                     LPARAM lparam);
+  LRESULT HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam);
 
-    // Message handlers
-    void on_create();
-    void on_destroy();
-    void on_size(int width, int height);
-    void on_dpi_changed(UINT dpi, const RECT* suggested_rect);
-    void on_paint();
+  // Message handlers
+  void OnCreate();
+  void OnDestroy();
+  void OnSize(int width, int height);
+  void OnDpiChanged(UINT dpi, const RECT *suggested_rect);
+  void OnPaint();
 
-    // Input handlers
-    void on_mouse_move(int x, int y);
-    void on_mouse_button(MouseButton button, bool is_down, int x, int y);
-    void on_key(UINT vk, bool is_down);
+  // Input handlers
+  void OnMouseMove(int x, int y);
+  void OnMouseButton(MouseButton button, bool is_down, int x, int y);
+  void OnKey(UINT vk, bool is_down);
 
-    void setup_dwm_backdrop();
-    
-    HWND hwnd_ = nullptr;
-    DpiInfo dpi_;
-    WindowConfig config_;
-    HCURSOR current_cursor_ = nullptr;
-    
-    std::unique_ptr<GraphicsPipeline> graphics_;
+  void SetupDwmBackdrop();
 
-    RenderCallback on_render_;
-    ResizeCallback on_resize_;
-    DpiChangedCallback on_dpi_changed_;
-    MouseEventCallback on_mouse_;
-    KeyEventCallback on_key_;
+  HWND hwnd_ = nullptr;
+  DpiInfo dpi_;
+  WindowConfig config_;
+  HCURSOR current_cursor_ = nullptr;
 
-    static constexpr const wchar_t* WINDOW_CLASS_NAME = L"FluXentWindowClass";
-    static bool class_registered_;
+  std::unique_ptr<GraphicsPipeline> graphics_;
+  theme::ThemeManager *theme_manager_;
+
+  RenderCallback on_render_;
+  ResizeCallback on_resize_;
+  DpiChangedCallback on_dpi_changed_;
+  MouseEventCallback on_mouse_;
+  KeyEventCallback on_key_;
+
+  static constexpr const wchar_t *WINDOW_CLASS_NAME = L"FluXentWindowClass";
+  static bool class_registered_;
 };
 
 } // namespace fluxent

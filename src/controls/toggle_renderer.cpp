@@ -1,17 +1,32 @@
-#include "fluxent/controls/control_renderer.hpp"
-#include "fluxent/theme/theme_manager.hpp"
+#include "fluxent/controls/toggle_renderer.hpp"
+#include "common_drawing.hpp"
 #include "renderer_utils.hpp"
-
 #include <cmath>
 
 namespace fluxent::controls {
 
-float ControlRenderer::animate_toggle_progress(const xent::ViewData *key,
-                                               float target) {
-  auto &s = toggle_transitions_[key];
+using Microsoft::WRL::ComPtr;
+
+// Helper from core.cpp
+static Color LerpColor(const Color &a, const Color &b, float t) {
+  return LerpColorSrgb(a, b, t);
+}
+
+void ToggleSwitchRenderer::BeginFrame() { has_active_transitions_ = false; }
+
+bool ToggleSwitchRenderer::EndFrame() {
+  // Note: ToggleSwitch doesn't track frame_buttons_seen_ in the same way
+  // because it isn't part of the shared hover overlay usually,
+  // but garbage collection of states might be needed.
+  return has_active_transitions_;
+}
+
+float ToggleSwitchRenderer::AnimateProgress(const xent::ViewData *key,
+                                            float target) {
+  auto &s = transitions_[key];
   const auto now = std::chrono::steady_clock::now();
 
-  target = std::max(0.0f, std::min(1.0f, target));
+  target = Clamp01(target);
 
   if (!s.initialized) {
     s.initialized = true;
@@ -27,7 +42,7 @@ float ControlRenderer::animate_toggle_progress(const xent::ViewData *key,
   if (s.active) {
     const float elapsed = std::chrono::duration<float>(now - s.start).count();
     const float t =
-        clamp01(elapsed / static_cast<float>(kButtonBrushTransitionSeconds));
+        Clamp01(elapsed / static_cast<float>(kButtonBrushTransitionSeconds));
     s.current = s.from + (s.to - s.from) * t;
     if (t >= 1.0f) {
       s.active = false;
@@ -35,7 +50,7 @@ float ControlRenderer::animate_toggle_progress(const xent::ViewData *key,
     }
   }
 
-  if (std::fabs(target - s.last_target) > 0.0001f) {
+  if (std::abs(target - s.last_target) > 0.0001f) {
     s.from = s.current;
     s.to = target;
     s.last_target = target;
@@ -44,21 +59,21 @@ float ControlRenderer::animate_toggle_progress(const xent::ViewData *key,
   }
 
   if (s.active) {
-    has_active_bg_transitions_ = true;
+    has_active_transitions_ = true;
   }
 
   return s.current;
 }
 
-void ControlRenderer::render_toggle_switch(const xent::ViewData &data,
-                                           const Rect &bounds,
-                                           const ControlState &state) {
-  auto d2d = graphics_->get_d2d_context();
-  const auto &res = theme::res();
+void ToggleSwitchRenderer::Render(const RenderContext &ctx,
+                                  const xent::ViewData &data,
+                                  const Rect &bounds,
+                                  const ControlState &state) {
+  auto d2d = ctx.graphics->GetD2DContext();
+  const auto &res = ctx.Resources();
 
-  const bool is_on_target = (data.text_content == "1");
-  const float progress =
-      animate_toggle_progress(&data, is_on_target ? 1.0f : 0.0f);
+  const bool is_on_target = data.is_checked;
+  const float progress = AnimateProgress(&data, is_on_target ? 1.0f : 0.0f);
 
   const float track_radius =
       std::max(0.0f, std::min(bounds.width, bounds.height) * 0.5f);
@@ -95,15 +110,20 @@ void ControlRenderer::render_toggle_switch(const xent::ViewData &data,
     knob_on = res.TextOnAccentPrimary;
   }
 
-  const Color track_fill = lerp_color_srgb(off_fill, on_fill, progress);
-  const Color knob_fill = lerp_color_srgb(knob_off, knob_on, progress);
+  const Color track_fill = LerpColor(off_fill, on_fill, progress);
+  const Color knob_fill = LerpColor(knob_off, knob_on, progress);
 
-  d2d->FillRoundedRectangle(track_rect, get_brush(track_fill));
+  ComPtr<ID2D1SolidColorBrush> brush;
+  d2d->CreateSolidColorBrush(track_fill.to_d2d(), &brush);
+
+  d2d->FillRoundedRectangle(track_rect, brush.Get());
 
   if (!state.is_disabled && progress < 0.5f) {
-    d2d->DrawRoundedRectangle(track_rect, get_brush(off_stroke), 1.0f);
+    brush->SetColor(off_stroke.to_d2d());
+    d2d->DrawRoundedRectangle(track_rect, brush.Get(), 1.0f);
   } else if (state.is_disabled && progress < 0.5f) {
-    d2d->DrawRoundedRectangle(track_rect, get_brush(off_stroke), 1.0f);
+    brush->SetColor(off_stroke.to_d2d());
+    d2d->DrawRoundedRectangle(track_rect, brush.Get(), 1.0f);
   }
 
   float knob_w = 12.0f;
@@ -135,10 +155,12 @@ void ControlRenderer::render_toggle_switch(const xent::ViewData &data,
   const float knob_radius = std::max(0.0f, std::min(knob_w, knob_h) * 0.5f);
   const D2D1_ROUNDED_RECT knob_rect = D2D1::RoundedRect(
       D2D1::RectF(left, top, right, bottom), knob_radius, knob_radius);
-  d2d->FillRoundedRectangle(knob_rect, get_brush(knob_fill));
+
+  brush->SetColor(knob_fill.to_d2d());
+  d2d->FillRoundedRectangle(knob_rect, brush.Get());
 
   if (state.is_focused && !state.is_disabled) {
-    draw_focus_rect(bounds, track_radius);
+    DrawFocusRect(ctx, bounds, track_radius);
   }
 }
 

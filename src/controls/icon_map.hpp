@@ -11,7 +11,7 @@ struct IconDef {
   const wchar_t *codepoint;
 };
 
-inline const wchar_t *get_icon_codepoint(const std::string &name) {
+inline const wchar_t *GetIconCodepoint(const std::string &name) {
   // Basic subset of Segoe Fluent Icons / MDL2
   if (name == "Accept" || name == "Check")
     return L"\uE8FB";

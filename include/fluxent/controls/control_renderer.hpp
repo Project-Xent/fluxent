@@ -4,106 +4,88 @@
 
 #include "../graphics.hpp"
 #include "../text.hpp"
+
 #include <xent/view.hpp>
 
-#include <chrono>
-#include <unordered_map>
 #include <unordered_set>
 
-namespace fluxent::controls {
+namespace theme {
+class ThemeManager;
+}
 
-// ControlState
-struct ControlState {
-  bool is_hovered = false;
-  bool is_pressed = false;
-  bool is_focused = false;
-  bool is_disabled = false;
-};
+#include "button_renderer.hpp"
+#include "checkbox_renderer.hpp"
+#include "radio_renderer.hpp"
+#include "render_context.hpp"
+#include "toggle_renderer.hpp"
+#include <memory>
+
+namespace fluxent::controls {
 
 // ControlRenderer
 class ControlRenderer {
 public:
-  ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text);
-  ~ControlRenderer() = default;
+  ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
+                  theme::ThemeManager *theme_manager);
+  ~ControlRenderer(); // Defined in .cpp to allow unique_ptr with incomplete
+                      // types if needed
 
-  void begin_frame();
-  void end_frame();
+  void BeginFrame();
+  void EndFrame();
 
-  void render(const xent::ViewData &data, const Rect &bounds,
+  void Render(const xent::ViewData &data, const Rect &bounds,
               const ControlState &state);
 
-  void render_button(const xent::ViewData &data, const Rect &bounds,
-                     const ControlState &state);
+  void RenderButton(const xent::ViewData &data, const Rect &bounds,
+                    const ControlState &state);
 
-  void render_toggle_switch(const xent::ViewData &data, const Rect &bounds,
-                            const ControlState &state);
+  void RenderToggleSwitch(const xent::ViewData &data, const Rect &bounds,
+                          const ControlState &state);
 
-  void render_toggle_button(const xent::ViewData &data, const Rect &bounds,
-                            const ControlState &state);
+  void RenderToggleButton(const xent::ViewData &data, const Rect &bounds,
+                          const ControlState &state);
 
-  void render_text(const xent::ViewData &data, const Rect &bounds);
+  void RenderCheckBox(const xent::ViewData &data, const Rect &bounds,
+                      const ControlState &state);
 
-  void render_card(const xent::ViewData &data, const Rect &bounds);
+  void RenderRadioButton(const xent::ViewData &data, const Rect &bounds,
+                         const ControlState &state);
 
-  void render_divider(const Rect &bounds, bool horizontal = true);
+  void RenderText(const xent::ViewData &data, const Rect &bounds);
 
-  void render_view(const xent::ViewData &data, const Rect &bounds);
+  void RenderCard(const xent::ViewData &data, const Rect &bounds);
+
+  void RenderDivider(const Rect &bounds, bool horizontal = true);
+
+  void RenderView(const xent::ViewData &data, const Rect &bounds);
 
 private:
-  void update_hover_overlay();
-  void ensure_hover_overlay_surface(int width, int height, const Color &color);
+  void UpdateHoverOverlay();
+  void EnsureHoverOverlaySurface(int width, int height, const Color &color);
 
-  ID2D1SolidColorBrush *get_brush(const Color &color);
+  ID2D1SolidColorBrush *GetBrush(const Color &color);
 
   // Elevation border (gradient stroke). `is_accent` selects accent brush.
-  void draw_elevation_border(const Rect &bounds, float corner_radius,
-                             bool is_accent);
+  void DrawElevationBorder(const Rect &bounds, float corner_radius,
+                           bool is_accent);
 
-  // Focus rectangle.
-  void draw_focus_rect(const Rect &bounds, float corner_radius);
+  // Render surface helper (background, border, focus)
+  Rect DrawControlSurface(const Rect &bounds, float corner_radius,
+                          const Color &fill_color, const Color &stroke_color,
+                          bool is_accent, const ControlState &state);
 
-  // WinUI3 ContentPresenter.BackgroundTransition (BrushTransition
-  // Duration=0.083s).
-  Color animate_button_background(const xent::ViewData *key,
-                                  const Color &target);
-
-  // ToggleSwitch knob position transition (0..1).
-  float animate_toggle_progress(const xent::ViewData *key, float target);
-
-  struct ButtonBackgroundTransition {
-    bool initialized = false;
-    bool active = false;
-    Color current = Color::transparent();
-    Color from = Color::transparent();
-    Color to = Color::transparent();
-    Color last_target = Color::transparent();
-    std::chrono::steady_clock::time_point start;
-  };
-
-  struct ToggleProgressTransition {
-    bool initialized = false;
-    bool active = false;
-    float current = 0.0f;
-    float from = 0.0f;
-    float to = 0.0f;
-    float last_target = 0.0f;
-    std::chrono::steady_clock::time_point start;
-  };
+  void DrawFocusRect(const Rect &bounds, float corner_radius);
 
   GraphicsPipeline *graphics_;
   TextRenderer *text_renderer_;
+  theme::ThemeManager *theme_manager_;
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 
   Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>
       control_elevation_border_brush_;
-  Color control_elevation_border_secondary_ = Color::transparent();
-  Color control_elevation_border_default_ = Color::transparent();
   Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>
       control_accent_elevation_border_brush_;
-  Color control_accent_elevation_border_secondary_ = Color::transparent();
-  Color control_accent_elevation_border_default_ = Color::transparent();
 
-  // DirectComposition hover overlay (single overlay reused across buttons).
   Microsoft::WRL::ComPtr<IDCompositionVisual> hover_visual_;
   Microsoft::WRL::ComPtr<IDCompositionSurface> hover_surface_;
   Rect hover_bounds_;
@@ -116,13 +98,17 @@ private:
   int hover_surface_height_ = 0;
   Color hover_surface_color_ = Color::transparent();
 
-  // WinUI3-style BackgroundTransition (BrushTransition) for button backgrounds.
-  std::unordered_map<const xent::ViewData *, ButtonBackgroundTransition>
-      button_bg_transitions_;
-  std::unordered_map<const xent::ViewData *, ToggleProgressTransition>
-      toggle_transitions_;
   std::unordered_set<const xent::ViewData *> frame_buttons_seen_;
-  bool has_active_bg_transitions_ = false;
+
+  uint64_t last_theme_version_ = 0;
+  void CheckResources();
+
+  // Sub-renderers
+  std::unique_ptr<ButtonRenderer> button_renderer_;
+  std::unique_ptr<ToggleSwitchRenderer> toggle_renderer_;
+  std::unique_ptr<CheckBoxRenderer> checkbox_renderer_;
+  std::unique_ptr<RadioButtonRenderer> radio_renderer_;
+  RenderContext ctx_;
 };
 
 } // namespace fluxent::controls

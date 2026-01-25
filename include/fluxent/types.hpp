@@ -25,6 +25,8 @@
 #include <windows.h>
 #include <wrl/client.h>
 
+#include "fluxent/config.hpp"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -146,8 +148,8 @@ enum class BackdropType {
 
 struct WindowConfig {
   std::wstring title = L"FluXent Window";
-  int width = 800;
-  int height = 600;
+  int width = config::Defaults::WindowWidth;
+  int height = config::Defaults::WindowHeight;
   bool dark_mode = true;
   BackdropType backdrop = BackdropType::MicaAlt;
   bool resizable = true;
@@ -158,10 +160,15 @@ struct WindowConfig {
 
 enum class MouseButton { None = 0, Left = 1, Right = 2, Middle = 3 };
 
+enum class InputSource { Mouse, Touch, Pen };
+
 struct MouseEvent {
   Point position;
   MouseButton button = MouseButton::None;
   bool is_down = false;
+  float wheel_delta_x = 0.0f;
+  float wheel_delta_y = 0.0f;
+  InputSource source = InputSource::Mouse;
 };
 
 struct KeyEvent {
@@ -201,15 +208,6 @@ inline Result<void> check_result(HRESULT hr) {
 }
 
 // Fatal error check (replaces exceptions)
-inline void check_hr(HRESULT hr, const char *msg = nullptr) {
-  if (FAILED(hr)) {
-    if (msg) {
-      std::fprintf(stderr, "Fatal: %s (HR: 0x%lX)\n", msg,
-                   static_cast<long>(hr));
-    }
-    std::abort();
-  }
-}
 
 // Keep a version for quick checks if really needed, but generally prefer Result
 // return.

@@ -4,7 +4,7 @@
 #include "fluxent/theme/theme_manager.hpp"
 
 #include <functional>
-#include <stdexcept>
+
 #include <string>
 #include <yoga/Yoga.h>
 
@@ -273,17 +273,102 @@ static void ApplyButtonDefaultsRecursive(xent::View *data) {
   }
 }
 
+static void ClampScrollOffsetsRecursive(xent::View *view) {
+  if (!view)
+    return;
+
+  if (view->type == xent::ComponentType::ScrollView) {
+    // 1. Calculate Content Size (Same logic as Renderer/Input)
+    float max_child_right = 0.0f;
+    float max_child_bottom = 0.0f;
+
+    for (const auto &child : view->children) {
+      float right = child->LayoutX() + child->LayoutWidth();
+      float bottom = child->LayoutY() + child->LayoutHeight();
+      if (right > max_child_right)
+        max_child_right = right;
+      if (bottom > max_child_bottom)
+        max_child_bottom = bottom;
+    }
+
+    float content_w = std::max(view->LayoutWidth(), max_child_right);
+    float content_h = std::max(view->LayoutHeight(), max_child_bottom);
+
+    // 2. Visibility Logic for effective size
+    auto should_show = [](xent::ScrollBarVisibility vis, float content,
+                          float size) {
+      if (vis == xent::ScrollBarVisibility::Hidden ||
+          vis == xent::ScrollBarVisibility::Disabled)
+        return false;
+      if (vis == xent::ScrollBarVisibility::Visible)
+        return true;
+      return content > size + 0.5f;
+    };
+
+    float view_w = view->LayoutWidth();
+    float view_h = view->LayoutHeight();
+
+    bool show_h =
+        should_show(view->horizontal_scrollbar_visibility, content_w, view_w);
+    bool show_v =
+        should_show(view->vertical_scrollbar_visibility, content_h, view_h);
+
+    const float kBarSize = 12.0f;
+
+    float effective_view_w = view_w;
+    float effective_view_h = view_h;
+    if (show_v)
+      effective_view_w -= kBarSize;
+    if (show_h)
+      effective_view_h -= kBarSize;
+
+    // 3. Clamp
+    float max_offset_x = std::max(0.0f, content_w - effective_view_w);
+    float max_offset_y = std::max(0.0f, content_h - effective_view_h);
+
+    if (view->scroll_offset_x > max_offset_x)
+      view->scroll_offset_x = max_offset_x;
+    if (view->scroll_offset_y > max_offset_y)
+      view->scroll_offset_y = max_offset_y;
+
+    // Also enforce >= 0 just in case
+    if (view->scroll_offset_x < 0)
+      view->scroll_offset_x = 0;
+    if (view->scroll_offset_y < 0)
+      view->scroll_offset_y = 0;
+  }
+
+  for (const auto &child : view->children) {
+    ClampScrollOffsetsRecursive(child.get());
+  }
+}
+
+Result<std::unique_ptr<RenderEngine>>
+RenderEngine::Create(GraphicsPipeline *graphics,
+                     theme::ThemeManager *theme_manager) {
+  if (!graphics || !theme_manager)
+    return tl::unexpected(E_INVALIDARG);
+  auto engine =
+      std::unique_ptr<RenderEngine>(new RenderEngine(graphics, theme_manager));
+  auto res = engine->Init();
+  if (!res)
+    return tl::unexpected(res.error());
+  return engine;
+}
+
 RenderEngine::RenderEngine(GraphicsPipeline *graphics,
                            theme::ThemeManager *theme_manager)
-    : graphics_(graphics), theme_manager_(theme_manager) {
-  if (!graphics_) {
-    throw std::invalid_argument("Graphics pipeline cannot be null");
-  }
-  if (!theme_manager_) {
-    throw std::invalid_argument("Theme manager cannot be null");
-  }
+    : graphics_(graphics), theme_manager_(theme_manager) {}
+
+Result<void> RenderEngine::Init() {
   d2d_context_ = graphics_->GetD2DContext();
-  text_renderer_ = std::make_unique<TextRenderer>(graphics_);
+
+  auto tr_res = TextRenderer::Create(graphics_);
+  if (!tr_res)
+    return tl::unexpected(tr_res.error());
+
+  text_renderer_ = std::move(*tr_res);
+
   control_renderer_ = std::make_unique<controls::ControlRenderer>(
       graphics_, text_renderer_.get(), theme_manager_);
 
@@ -305,6 +390,8 @@ RenderEngine::RenderEngine(GraphicsPipeline *graphics,
           graphics_->RequestRedraw();
         }
       });
+
+  return {};
 }
 
 RenderEngine::~RenderEngine() {
@@ -352,6 +439,7 @@ void RenderEngine::RenderFrame(xent::View &root) {
     last_root_data_ = root_data;
     ApplyButtonDefaultsRecursive(root_data);
     root_data->CalculateLayout(size.width, size.height);
+    ClampScrollOffsetsRecursive(root_data);
   }
 
   graphics_->BeginDraw();
@@ -396,7 +484,24 @@ void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
         state.is_hovered = (hovered == data);
       }
       if (auto pressed = input_->GetPressedView()) {
-        state.is_pressed = (pressed == data);
+        if (pressed == data) {
+          // For simple controls (Button, etc.), only show pressed if also
+          // hovered. Sliders/ScrollBars handle their own dragging state
+          // usually, or they stay pressed/captured even if mouse moves out
+          // (e.g. thumb drag). But Button/Toggle should visually unpress if we
+          // drag out.
+          bool is_simple_control =
+              (data->type == xent::ComponentType::Button ||
+               data->type == xent::ComponentType::ToggleButton ||
+               data->type == xent::ComponentType::CheckBox ||
+               data->type == xent::ComponentType::RadioButton);
+
+          if (is_simple_control) {
+            state.is_pressed = state.is_hovered;
+          } else {
+            state.is_pressed = true;
+          }
+        }
       }
       if (auto focused = input_->GetFocusedView()) {
         state.is_focused =
@@ -416,8 +521,40 @@ void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
     DrawRect(bounds, Color(255, 0, 255, 128), 1.0f);
   }
 
+  bool should_clip = (data->type == xent::ComponentType::ScrollView);
+  if (should_clip) {
+    PushClip(bounds);
+    PushTranslation(-data->scroll_offset_x, -data->scroll_offset_y);
+  }
+
   for (const auto &child : data->children) {
     DrawViewDataRecursive(child.get(), abs_x, abs_y);
+  }
+
+  if (should_clip) {
+    PopTransform();
+  }
+
+  // Post-Children Overlay (ScrollBars, etc. drawn on top of children)
+  if (control_renderer_) {
+    controls::ControlState state;
+    if (input_) {
+      if (auto hovered = input_->GetHoveredView()) {
+        state.is_hovered = (hovered == data);
+      }
+      if (auto pressed = input_->GetPressedView()) {
+        state.is_pressed = (pressed == data);
+      }
+      if (auto focused = input_->GetFocusedView()) {
+        state.is_focused =
+            input_->ShouldShowFocusVisuals() && (focused == data);
+      }
+    }
+    control_renderer_->RenderOverlay(*data, bounds, state);
+  }
+
+  if (should_clip) {
+    PopClip();
   }
 }
 

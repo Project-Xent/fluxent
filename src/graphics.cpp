@@ -12,32 +12,49 @@
 
 namespace fluxent {
 
-GraphicsPipeline::GraphicsPipeline() {
-  CreateDeviceIndependentResources();
-  CreateDeviceResources();
+Result<std::unique_ptr<GraphicsPipeline>> GraphicsPipeline::Create() {
+  auto result = std::unique_ptr<GraphicsPipeline>(new GraphicsPipeline());
+  auto init_res = result->Init();
+  if (!init_res) {
+    return tl::unexpected(init_res.error());
+  }
+  return result;
+}
+
+GraphicsPipeline::GraphicsPipeline() = default;
+
+Result<void> GraphicsPipeline::Init() {
+  auto res = CreateDeviceIndependentResources();
+  if (!res)
+    return res;
+
+  return CreateDeviceResources();
 }
 
 GraphicsPipeline::~GraphicsPipeline() = default;
 
-void GraphicsPipeline::CreateDeviceIndependentResources() {
+Result<void> GraphicsPipeline::CreateDeviceIndependentResources() {
   D2D1_FACTORY_OPTIONS options = {};
 #ifdef _DEBUG
   options.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
 #endif
 
-  check_hr(
-      D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                        __uuidof(ID2D1Factory3), &options,
-                        reinterpret_cast<void **>(d2d_factory_.GetAddressOf())),
-      "Failed to create D2D1 Factory");
+  auto hr = D2D1CreateFactory(
+      D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory3), &options,
+      reinterpret_cast<void **>(d2d_factory_.GetAddressOf()));
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(DWriteCreateFactory(
-               DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory3),
-               reinterpret_cast<IUnknown **>(dwrite_factory_.GetAddressOf())),
-           "Failed to create DirectWrite Factory");
+  hr = DWriteCreateFactory(
+      DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory3),
+      reinterpret_cast<IUnknown **>(dwrite_factory_.GetAddressOf()));
+  if (FAILED(hr))
+    return tl::unexpected(hr);
+
+  return {};
 }
 
-void GraphicsPipeline::CreateDeviceResources() {
+Result<void> GraphicsPipeline::CreateDeviceResources() {
   UINT creation_flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #ifdef _DEBUG
   creation_flags |= D3D11_CREATE_DEVICE_DEBUG;
@@ -50,34 +67,43 @@ void GraphicsPipeline::CreateDeviceResources() {
       D3D_FEATURE_LEVEL_10_0,
   };
 
-  check_hr(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-                             creation_flags, feature_levels,
-                             ARRAYSIZE(feature_levels), D3D11_SDK_VERSION,
-                             d3d_device_.GetAddressOf(), nullptr, nullptr),
-           "Failed to create D3D11 Device");
+  auto hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                              creation_flags, feature_levels,
+                              ARRAYSIZE(feature_levels), D3D11_SDK_VERSION,
+                              d3d_device_.GetAddressOf(), nullptr, nullptr);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(d3d_device_.As(&dxgi_device_), "Failed to get DXGI Device");
+  hr = d3d_device_.As(&dxgi_device_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(d2d_factory_->CreateDevice(dxgi_device_.Get(), &d2d_device_),
-           "Failed to create D2D Device");
+  hr = d2d_factory_->CreateDevice(dxgi_device_.Get(), &d2d_device_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(d2d_device_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-                                            &d2d_context_),
-           "Failed to create D2D Device Context");
+  hr = d2d_device_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+                                        &d2d_context_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(d2d_device_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
-                                            &d2d_overlay_context_),
-           "Failed to create D2D Overlay Device Context");
+  hr = d2d_device_->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+                                        &d2d_overlay_context_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(DCompositionCreateDevice(
-               dxgi_device_.Get(), __uuidof(IDCompositionDevice),
-               reinterpret_cast<void **>(dcomp_device_.GetAddressOf())),
-           "Failed to create DirectComposition Device");
+  hr = DCompositionCreateDevice(
+      dxgi_device_.Get(), __uuidof(IDCompositionDevice),
+      reinterpret_cast<void **>(dcomp_device_.GetAddressOf()));
+  if (FAILED(hr))
+    return tl::unexpected(hr);
+
+  return {};
 }
 
-void GraphicsPipeline::AttachToWindow(HWND hwnd) {
+Result<void> GraphicsPipeline::AttachToWindow(HWND hwnd) {
   if (!hwnd) {
-    throw std::invalid_argument("Invalid window handle");
+    return tl::unexpected(E_INVALIDARG);
   }
 
   hwnd_ = hwnd;
@@ -86,7 +112,7 @@ void GraphicsPipeline::AttachToWindow(HWND hwnd) {
   dpi_.dpi_x = static_cast<float>(dpi);
   dpi_.dpi_y = static_cast<float>(dpi);
 
-  CreateWindowSizeResources();
+  return CreateWindowSizeResources();
 }
 
 void GraphicsPipeline::RequestRedraw() {
@@ -95,16 +121,20 @@ void GraphicsPipeline::RequestRedraw() {
   InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
-void GraphicsPipeline::CreateWindowSizeResources() {
+Result<void> GraphicsPipeline::CreateWindowSizeResources() {
   if (!hwnd_ || !dxgi_device_)
-    return;
+    return {};
 
   ReleaseWindowSizeResources();
 
   ComPtr<IDXGIAdapter> adapter;
-  check_hr(dxgi_device_->GetAdapter(&adapter), "Failed to get DXGI Adapter");
-  check_hr(adapter->GetParent(IID_PPV_ARGS(&dxgi_factory_)),
-           "Failed to get DXGI Factory");
+  auto hr = dxgi_device_->GetAdapter(&adapter);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
+
+  hr = adapter->GetParent(IID_PPV_ARGS(&dxgi_factory_));
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
   RECT rc;
   GetClientRect(hwnd_, &rc);
@@ -126,16 +156,18 @@ void GraphicsPipeline::CreateWindowSizeResources() {
       DXGI_ALPHA_MODE_PREMULTIPLIED; // Required for transparency.
   swap_desc.Flags = 0;
 
-  check_hr(dxgi_factory_->CreateSwapChainForComposition(
-               d3d_device_.Get(), &swap_desc, nullptr, &swap_chain_),
-           "Failed to create SwapChain for Composition");
+  hr = dxgi_factory_->CreateSwapChainForComposition(
+      d3d_device_.Get(), &swap_desc, nullptr, &swap_chain_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
   DXGI_RGBA bg_color = {0.0f, 0.0f, 0.0f, 0.0f};
   swap_chain_->SetBackgroundColor(&bg_color);
 
   ComPtr<IDXGISurface> dxgi_surface;
-  check_hr(swap_chain_->GetBuffer(0, IID_PPV_ARGS(&dxgi_surface)),
-           "Failed to get SwapChain back buffer");
+  hr = swap_chain_->GetBuffer(0, IID_PPV_ARGS(&dxgi_surface));
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
   D2D1_BITMAP_PROPERTIES1 bitmap_props = D2D1::BitmapProperties1(
       D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
@@ -143,9 +175,10 @@ void GraphicsPipeline::CreateWindowSizeResources() {
                         D2D1_ALPHA_MODE_PREMULTIPLIED),
       dpi_.dpi_x, dpi_.dpi_y);
 
-  check_hr(d2d_context_->CreateBitmapFromDxgiSurface(
-               dxgi_surface.Get(), &bitmap_props, &d2d_target_bitmap_),
-           "Failed to create D2D bitmap from DXGI surface");
+  hr = d2d_context_->CreateBitmapFromDxgiSurface(
+      dxgi_surface.Get(), &bitmap_props, &d2d_target_bitmap_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
   d2d_context_->SetTarget(d2d_target_bitmap_.Get());
 
@@ -158,25 +191,35 @@ void GraphicsPipeline::CreateWindowSizeResources() {
     d2d_overlay_context_->SetDpi(dpi_.dpi_x, dpi_.dpi_y);
   }
 
-  check_hr(dcomp_device_->CreateTargetForHwnd(hwnd_, TRUE, &dcomp_target_),
-           "Failed to create DComp target");
+  hr = dcomp_device_->CreateTargetForHwnd(hwnd_, TRUE, &dcomp_target_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(dcomp_device_->CreateVisual(&root_visual_),
-           "Failed to create DComp visual");
+  hr = dcomp_device_->CreateVisual(&root_visual_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(dcomp_device_->CreateVisual(&swapchain_visual_),
-           "Failed to create DComp swapchain visual");
+  hr = dcomp_device_->CreateVisual(&swapchain_visual_);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(swapchain_visual_->SetContent(swap_chain_.Get()),
-           "Failed to set DComp swapchain visual content");
+  hr = swapchain_visual_->SetContent(swap_chain_.Get());
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(root_visual_->AddVisual(swapchain_visual_.Get(), FALSE, nullptr),
-           "Failed to add swapchain visual");
+  hr = root_visual_->AddVisual(swapchain_visual_.Get(), FALSE, nullptr);
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(dcomp_target_->SetRoot(root_visual_.Get()),
-           "Failed to set DComp root");
+  hr = dcomp_target_->SetRoot(root_visual_.Get());
+  if (FAILED(hr))
+    return tl::unexpected(hr);
 
-  check_hr(dcomp_device_->Commit(), "Failed to commit DComp");
+  hr = dcomp_device_->Commit();
+  if (FAILED(hr))
+    return tl::unexpected(hr);
+
+  return {};
 }
 
 void GraphicsPipeline::ReleaseWindowSizeResources() {
@@ -200,13 +243,14 @@ void GraphicsPipeline::Resize(int width, int height) {
                                           DXGI_FORMAT_UNKNOWN, 0);
 
   if (FAILED(hr)) {
-    CreateWindowSizeResources();
+    (void)CreateWindowSizeResources();
     return;
   }
 
   ComPtr<IDXGISurface> dxgi_surface;
-  check_hr(swap_chain_->GetBuffer(0, IID_PPV_ARGS(&dxgi_surface)),
-           "Failed to get SwapChain back buffer after resize");
+  HRESULT hr_resize = swap_chain_->GetBuffer(0, IID_PPV_ARGS(&dxgi_surface));
+  if (FAILED(hr_resize))
+    return;
 
   D2D1_BITMAP_PROPERTIES1 bitmap_props = D2D1::BitmapProperties1(
       D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
@@ -214,9 +258,10 @@ void GraphicsPipeline::Resize(int width, int height) {
                         D2D1_ALPHA_MODE_PREMULTIPLIED),
       dpi_.dpi_x, dpi_.dpi_y);
 
-  check_hr(d2d_context_->CreateBitmapFromDxgiSurface(
-               dxgi_surface.Get(), &bitmap_props, &d2d_target_bitmap_),
-           "Failed to create D2D bitmap after resize");
+  hr_resize = d2d_context_->CreateBitmapFromDxgiSurface(
+      dxgi_surface.Get(), &bitmap_props, &d2d_target_bitmap_);
+  if (FAILED(hr_resize))
+    return;
 
   d2d_context_->SetTarget(d2d_target_bitmap_.Get());
 
@@ -251,8 +296,8 @@ void GraphicsPipeline::EndDraw() {
   if (d2d_context_) {
     HRESULT hr = d2d_context_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
-      CreateDeviceResources();
-      CreateWindowSizeResources();
+      (void)CreateDeviceResources();
+      (void)CreateWindowSizeResources();
     }
   }
 }
@@ -261,8 +306,8 @@ void GraphicsPipeline::Present(bool vsync) {
   if (swap_chain_) {
     HRESULT hr = swap_chain_->Present(vsync ? 1 : 0, 0);
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
-      CreateDeviceResources();
-      CreateWindowSizeResources();
+      (void)CreateDeviceResources();
+      (void)CreateWindowSizeResources();
     }
   }
 }

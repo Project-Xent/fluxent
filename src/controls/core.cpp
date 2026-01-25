@@ -2,7 +2,13 @@
 
 #include "fluxent/controls/control_renderer.hpp"
 #include "fluxent/theme/theme_manager.hpp"
-#include "renderer_utils.hpp"
+
+#include "fluxent/controls/button_renderer.hpp"
+#include "fluxent/controls/checkbox_renderer.hpp"
+#include "fluxent/controls/radio_renderer.hpp"
+#include "fluxent/controls/scroll_view_renderer.hpp"
+#include "fluxent/controls/slider_renderer.hpp"
+#include "fluxent/controls/toggle_renderer.hpp"
 
 // Sub-renderers (implementation handled in their own cpp files)
 // Headers are included in control_renderer.hpp
@@ -22,6 +28,8 @@ ControlRenderer::ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
   toggle_renderer_ = std::make_unique<ToggleSwitchRenderer>();
   checkbox_renderer_ = std::make_unique<CheckBoxRenderer>();
   radio_renderer_ = std::make_unique<RadioButtonRenderer>();
+  slider_renderer_ = std::make_unique<SliderRenderer>();
+  scroll_view_renderer_ = std::make_unique<ScrollViewRenderer>();
 
   auto d2d = graphics_->GetD2DContext();
   d2d->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_);
@@ -36,6 +44,8 @@ void ControlRenderer::BeginFrame() {
   toggle_renderer_->BeginFrame();
   checkbox_renderer_->BeginFrame();
   radio_renderer_->BeginFrame();
+  slider_renderer_->BeginFrame();
+  scroll_view_renderer_->BeginFrame();
 
   frame_hovered_button_ = nullptr;
   hover_corner_radius_ = 0.0f;
@@ -62,6 +72,8 @@ void ControlRenderer::EndFrame() {
   active |= toggle_renderer_->EndFrame();
   active |= checkbox_renderer_->EndFrame();
   active |= radio_renderer_->EndFrame();
+  active |= slider_renderer_->EndFrame();
+  active |= scroll_view_renderer_->EndFrame();
 
   if (active && graphics_) {
     graphics_->RequestRedraw();
@@ -93,6 +105,14 @@ void ControlRenderer::Render(const xent::ViewData &data, const Rect &bounds,
     frame_buttons_seen_.insert(&data);
     RenderRadioButton(data, bounds, state);
     break;
+  case xent::ComponentType::Slider:
+    // Slider usually captures input, so maybe track it?
+    // For now just render.
+    RenderSlider(data, bounds, state);
+    break;
+  case xent::ComponentType::ScrollView:
+    RenderScrollView(data, bounds, state);
+    break;
   case xent::ComponentType::Card:
     RenderCard(data, bounds);
     break;
@@ -102,6 +122,14 @@ void ControlRenderer::Render(const xent::ViewData &data, const Rect &bounds,
   default:
     RenderView(data, bounds);
     break;
+  }
+}
+
+void ControlRenderer::RenderOverlay(const xent::ViewData &data,
+                                    const Rect &bounds,
+                                    const ControlState &state) {
+  if (data.type == xent::ComponentType::ScrollView) {
+    scroll_view_renderer_->RenderOverlay(ctx_, data, bounds, state);
   }
 }
 
@@ -155,6 +183,18 @@ void ControlRenderer::RenderRadioButton(const xent::ViewData &data,
   radio_renderer_->Render(ctx_, data, bounds, state);
 }
 
+void ControlRenderer::RenderSlider(const xent::ViewData &data,
+                                   const Rect &bounds,
+                                   const ControlState &state) {
+  slider_renderer_->Render(ctx_, data, bounds, state);
+}
+
+void ControlRenderer::RenderScrollView(const xent::ViewData &data,
+                                       const Rect &bounds,
+                                       const ControlState &state) {
+  scroll_view_renderer_->Render(ctx_, data, bounds, state);
+}
+
 void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
                                                 const Color &color) {
   if (!graphics_)
@@ -173,10 +213,12 @@ void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
 
   if (need_recreate) {
     hover_surface_.Reset();
-    check_hr(dcomp->CreateSurface(width, height, DXGI_FORMAT_B8G8R8A8_UNORM,
-                                  DXGI_ALPHA_MODE_PREMULTIPLIED,
-                                  &hover_surface_),
-             "Failed to create DComp hover surface");
+    hover_surface_.Reset();
+    HRESULT hr =
+        dcomp->CreateSurface(width, height, DXGI_FORMAT_B8G8R8A8_UNORM,
+                             DXGI_ALPHA_MODE_PREMULTIPLIED, &hover_surface_);
+    if (FAILED(hr))
+      return;
 
     hover_surface_width_ = width;
     hover_surface_height_ = height;
@@ -192,9 +234,10 @@ void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
   RECT update = {0, 0, width, height};
   POINT offset = {};
   ComPtr<IDXGISurface> dxgi_surface;
-  check_hr(
-      hover_surface_->BeginDraw(&update, IID_PPV_ARGS(&dxgi_surface), &offset),
-      "Failed to BeginDraw on DComp surface");
+  HRESULT hr =
+      hover_surface_->BeginDraw(&update, IID_PPV_ARGS(&dxgi_surface), &offset);
+  if (FAILED(hr))
+    return;
 
   const auto dpi = graphics_->GetDpi();
   const float scale_x = dpi.dpi_x / 96.0f;
@@ -206,9 +249,9 @@ void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
       dpi.dpi_x, dpi.dpi_y);
 
   ComPtr<ID2D1Bitmap1> bitmap;
-  check_hr(
-      d2d->CreateBitmapFromDxgiSurface(dxgi_surface.Get(), &props, &bitmap),
-      "Failed to create D2D bitmap for DComp surface");
+  hr = d2d->CreateBitmapFromDxgiSurface(dxgi_surface.Get(), &props, &bitmap);
+  if (FAILED(hr))
+    return;
 
   ComPtr<ID2D1Image> old_target;
   d2d->GetTarget(&old_target);
@@ -242,7 +285,7 @@ void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
     d2d->FillRoundedRectangle(rr, overlay_brush.Get());
   }
 
-  HRESULT hr = d2d->EndDraw();
+  hr = d2d->EndDraw();
   d2d->SetTransform(old_transform);
   d2d->SetTarget(old_target.Get());
 
@@ -301,8 +344,9 @@ void ControlRenderer::UpdateHoverOverlay() {
   const float target_opacity = should_show ? 1.0f : 0.0f;
 
   if (!hover_visual_) {
-    check_hr(dcomp->CreateVisual(&hover_visual_),
-             "Failed to create hover visual");
+    HRESULT hr = dcomp->CreateVisual(&hover_visual_);
+    if (FAILED(hr))
+      return;
 #if defined(__IDCompositionVisual3_INTERFACE_DEFINED__)
     if (ComPtr<IDCompositionVisual3> v3;
         SUCCEEDED(hover_visual_.As(&v3)) && v3) {

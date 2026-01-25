@@ -1,20 +1,27 @@
+
 #pragma once
 
 // FluXent graphics pipeline (D3D11/D2D1/DComp)
 
 #include "types.hpp"
+#include <memory>
 
 namespace fluxent {
 
 class GraphicsPipeline {
 public:
-  GraphicsPipeline();
+  static Result<std::unique_ptr<GraphicsPipeline>> Create();
   ~GraphicsPipeline();
 
+private:
+  GraphicsPipeline();
+  Result<void> Init();
+
+public:
   GraphicsPipeline(const GraphicsPipeline &) = delete;
   GraphicsPipeline &operator=(const GraphicsPipeline &) = delete;
 
-  void AttachToWindow(HWND hwnd);
+  Result<void> AttachToWindow(HWND hwnd);
   void Resize(int width, int height);
 
   ID2D1DeviceContext *GetD2DContext() const { return d2d_context_.Get(); }
@@ -57,9 +64,9 @@ public:
   void SetDpi(const DpiInfo &dpi);
 
 private:
-  void CreateDeviceIndependentResources();
-  void CreateDeviceResources();
-  void CreateWindowSizeResources();
+  Result<void> CreateDeviceIndependentResources();
+  Result<void> CreateDeviceResources();
+  Result<void> CreateWindowSizeResources();
   void ReleaseWindowSizeResources();
 
   HWND hwnd_ = nullptr;

@@ -49,6 +49,6 @@ Desktop.ini
 *.swo
 
 # Resources
-/CommonStyles/
+/dev/
 
 .vscode/*

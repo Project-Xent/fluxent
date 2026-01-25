@@ -3,15 +3,26 @@
 #include <functional>
 #include <stdexcept>
 
-
 namespace fluxent {
 
-TextRenderer::TextRenderer(GraphicsPipeline *graphics) : graphics_(graphics) {
-  if (!graphics_) {
-    throw std::invalid_argument("Graphics pipeline cannot be null");
+Result<std::unique_ptr<TextRenderer>>
+TextRenderer::Create(GraphicsPipeline *graphics) {
+  if (!graphics) {
+    return tl::unexpected(E_INVALIDARG);
   }
+  auto tr = std::unique_ptr<TextRenderer>(new TextRenderer(graphics));
+  auto res = tr->Init();
+  if (!res)
+    return tl::unexpected(res.error());
+  return tr;
+}
+
+TextRenderer::TextRenderer(GraphicsPipeline *graphics) : graphics_(graphics) {}
+
+Result<void> TextRenderer::Init() {
   d2d_context_ = graphics_->GetD2DContext();
   dwrite_factory_ = graphics_->GetDWriteFactory();
+  return {};
 }
 
 TextRenderer::~TextRenderer() = default;

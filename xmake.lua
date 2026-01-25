@@ -15,28 +15,12 @@ target("fluxent")
     add_includedirs("include", {public = true})
     add_deps("xent-core")
     
-    add_files("src/graphics.cpp")
-    add_files("src/window.cpp")
-    add_files("src/engine.cpp")
-    add_files("src/input.cpp")
-    add_files("src/text.cpp")
+    add_files("src/*.cpp")
     add_files("src/theme/*.cpp")
     add_files("src/controls/*.cpp")
     
     if is_plat("windows", "mingw") then
-        add_syslinks(
-            "user32",
-            "gdi32",
-            "dcomp",
-            "d2d1",
-            "d3d11",
-            "dxgi",
-            "dwrite",
-            "dwmapi",
-            "ole32",
-            "uuid",
-            "uxtheme"
-        )
+        add_syslinks("user32", "gdi32", "dcomp", "d2d1", "d3d11", "dxgi", "dwrite", "dwmapi", "ole32", "uuid", "uxtheme")
     end
 target_end()
 
@@ -48,7 +32,15 @@ target("hello_fluxent")
     
     if is_plat("windows") then
         add_ldflags("/MANIFEST:EMBED", "/MANIFESTINPUT:" .. path.join(os.projectdir(), "fluxent.manifest"), {force = true})
+        
+        if is_mode("release") then
+            add_ldflags("/DEBUG:NONE", {force = true})
+            add_ldflags("/PDBALTPATH:NONE", {force = true})
+            set_symbols("none")
+            add_ldflags("/OPT:REF", "/OPT:ICF", {force = true})
+        end
     end
+
     if is_mode("release") then
         set_strip("all")
     end

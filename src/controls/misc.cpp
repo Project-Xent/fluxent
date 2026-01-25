@@ -1,6 +1,6 @@
 #include "fluxent/controls/control_renderer.hpp"
 #include "fluxent/theme/theme_manager.hpp"
-#include "renderer_utils.hpp"
+#include "fluxent/controls/renderer_utils.hpp"
 
 namespace fluxent::controls {
 
@@ -32,7 +32,7 @@ void ControlRenderer::RenderCard(const xent::ViewData &data,
   auto d2d = graphics_->GetD2DContext();
   const auto &res = theme_manager_->Resources();
 
-  float corner_radius = data.corner_radius > 0 ? data.corner_radius : 4.0f;
+  float corner_radius = data.corner_radius > 0 ? data.corner_radius : fluxent::config::Layout::DefaultCornerRadius;
 
   D2D1_ROUNDED_RECT rounded_rect =
       D2D1::RoundedRect(D2D1::RectF(bounds.x, bounds.y, bounds.x + bounds.width,

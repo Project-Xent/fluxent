@@ -1,6 +1,8 @@
-#include "fluxent/controls/checkbox_renderer.hpp"
-#include "common_drawing.hpp"
-#include "renderer_utils.hpp"
+#include "fluxent/controls/layout.hpp"
+#include "fluxent/controls/checkbox_renderer.hpp" // Ensure this is first or second
+#include "fluxent/config.hpp"
+#include "fluxent/controls/common_drawing.hpp"
+#include "fluxent/controls/renderer_utils.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -14,16 +16,9 @@ void CheckBoxRenderer::BeginFrame() {
 }
 
 bool CheckBoxRenderer::EndFrame() {
-  for (auto it = check_transitions_.begin(); it != check_transitions_.end();) {
+  for (auto it = states_.begin(); it != states_.end();) {
     if (seen_.find(it->first) == seen_.end()) {
-      it = check_transitions_.erase(it);
-    } else {
-      ++it;
-    }
-  }
-  for (auto it = scale_transitions_.begin(); it != scale_transitions_.end();) {
-    if (seen_.find(it->first) == seen_.end()) {
-      it = scale_transitions_.erase(it);
+      it = states_.erase(it);
     } else {
       ++it;
     }
@@ -33,75 +28,22 @@ bool CheckBoxRenderer::EndFrame() {
 
 float CheckBoxRenderer::AnimateCheckState(const xent::ViewData *key,
                                           bool is_checked) {
-  auto &state = check_transitions_[key];
   float target = is_checked ? 1.0f : 0.0f;
-
-  if (!state.initialized) {
-    state.current = target;
-    state.to = target;
-    state.from = target;
-    state.initialized = true;
-    return target;
-  }
-
-  if (state.to != target) {
-    state.from = state.current;
-    state.to = target;
-    state.start = std::chrono::steady_clock::now();
-    state.active = true;
+  float current;
+  // Using config duration
+  if (states_[key].check_anim.Update(target, fluxent::config::Animation::CheckBox, &current)) {
     has_active_transitions_ = true;
   }
-
-  if (state.active) {
-    auto now = std::chrono::steady_clock::now();
-    double elapsed = std::chrono::duration<double>(now - state.start).count();
-    constexpr double kDuration = 0.250;
-
-    if (elapsed >= kDuration) {
-      state.current = state.to;
-      state.active = false;
-    } else {
-      float t = Clamp01(static_cast<float>(elapsed / kDuration));
-      t = 1.0f - std::pow(1.0f - t, 3.0f);
-      state.current = state.from + (state.to - state.from) * t;
-      has_active_transitions_ = true;
-    }
-  }
-  return state.current;
+  return current;
 }
 
 float CheckBoxRenderer::AnimateFloat(const xent::ViewData *key, float target,
                                      float duration_ms) {
-  auto &state = scale_transitions_[key];
-  if (!state.initialized) {
-    state.current = target;
-    state.to = target;
-    state.from = target;
-    state.initialized = true;
-    return target;
-  }
-  if (std::abs(state.to - target) > 0.001f) {
-    state.from = state.current;
-    state.to = target;
-    state.start = std::chrono::steady_clock::now();
-    state.active = true;
+  float current;
+  if (states_[key].scale_anim.Update(target, duration_ms / 1000.0, &current)) {
     has_active_transitions_ = true;
   }
-  if (state.active) {
-    auto now = std::chrono::steady_clock::now();
-    double elapsed = std::chrono::duration<double>(now - state.start).count();
-    double duration = duration_ms / 1000.0;
-    if (elapsed >= duration) {
-      state.current = state.to;
-      state.active = false;
-    } else {
-      float t = static_cast<float>(elapsed / duration);
-      t = 1.0f - std::pow(1.0f - t, 3.0f);
-      state.current = state.from + (state.to - state.from) * t;
-      has_active_transitions_ = true;
-    }
-  }
-  return state.current;
+  return current;
 }
 
 void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
@@ -113,12 +55,17 @@ void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
   const auto &res = ctx.Resources();
 
   float check_progress = AnimateCheckState(&data, data.is_checked);
+  // Convert seconds to ms for this specific helper signature or update helper
+  // But wait, AnimateFloat takes ms. 
+  // Let's use the explicit second based update in AnimateFloat or just pass converted value.
+  // Actually, AnimateFloat logic: updates using duration_ms / 1000.0.
+  // So we pass ms. config::Animation::CheckBoxPress is seconds (0.100).
+  // So we pass 0.100 * 1000.0.
   float press_scale =
-      AnimateFloat(&data, state.is_pressed ? 0.9f : 1.0f, 100.0f);
+      AnimateFloat(&data, state.is_pressed ? 0.9f : 1.0f, fluxent::config::Animation::CheckBoxPress * 1000.0f);
 
-  const float size = res.CheckBox.Size;
-  const float centerY = bounds.y + bounds.height * 0.5f;
-  const Rect box_rect(bounds.x, centerY - size * 0.5f, size, size);
+  auto layout = CalculateCheckBoxLayout(bounds, res.CheckBox.Size, res.CheckBox.Gap, res.CheckBox.GlyphFontSize);
+  const Rect &box_rect = layout.box_rect;
 
   // Colors based on XAML logic
   Color fill;
@@ -154,7 +101,8 @@ void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
   d2d->SetTransform(
       D2D1::Matrix3x2F::Scale(
           press_scale, press_scale,
-          D2D1::Point2F(box_rect.x + size * 0.5f, box_rect.y + size * 0.5f)) *
+          D2D1::Point2F(box_rect.x + res.CheckBox.Size * 0.5f,
+                        box_rect.y + res.CheckBox.Size * 0.5f)) *
       old);
 
   d2d->FillRoundedRectangle(rr, brush.Get());
@@ -179,15 +127,14 @@ void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
   // Text alignment from XAML RadioButton (typically Leading for CheckBox as
   // well)
   if (!data.text_content.empty()) {
-    Rect text_rect = bounds;
-    text_rect.x += size + res.CheckBox.Gap;
-    text_rect.width -= (size + res.CheckBox.Gap);
+    Rect text_rect = layout.text_rect;
 
     TextStyle style;
     style.color = state.is_disabled ? res.TextDisabled : res.TextPrimary;
-    style.font_size = 14.0f;
+    style.font_size = fluxent::config::Layout::DefaultFontSize;
     style.alignment = TextAlignment::Leading;
     style.paragraph_alignment = ParagraphAlignment::Center;
+    style.word_wrap = false;
 
     std::wstring wtext(data.text_content.begin(), data.text_content.end());
     ctx.text->DrawText(wtext, text_rect, style);

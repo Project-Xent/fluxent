@@ -5,12 +5,19 @@
 #include <chrono>
 #include <unordered_map>
 #include <unordered_set>
+#include <wrl/client.h>
 #include <xent/view.hpp>
+
 
 namespace fluxent::controls {
 
-class ToggleSwitchRenderer {
+class SliderRenderer {
 public:
+  struct SliderState {
+    Animator<float> scale_anim;
+    Animator<Color> color_anim;
+  };
+
   void BeginFrame();
   bool EndFrame();
 
@@ -18,15 +25,16 @@ public:
               const Rect &bounds, const ControlState &state);
 
 private:
-  struct ToggleState {
-    Animator<float> progress_anim;
-  };
-
-  std::unordered_map<const xent::ViewData *, ToggleState> states_;
+  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
+  std::unordered_map<const xent::ViewData *, SliderState> states_;
   std::unordered_set<const xent::ViewData *> seen_;
   bool has_active_transitions_ = false;
 
-  float AnimateProgress(const xent::ViewData *key, float target);
+  // Helpers
+  ID2D1SolidColorBrush *GetBrush(ID2D1DeviceContext *d2d, const Color &color);
+
+  float AnimateScale(const xent::ViewData *key, float target);
+  Color AnimateColor(const xent::ViewData *key, const Color &target);
 };
 
 } // namespace fluxent::controls

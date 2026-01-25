@@ -13,14 +13,19 @@ namespace theme {
 class ThemeManager;
 }
 
-#include "button_renderer.hpp"
-#include "checkbox_renderer.hpp"
-#include "radio_renderer.hpp"
 #include "render_context.hpp"
-#include "toggle_renderer.hpp"
+#include <memory>
 #include <memory>
 
 namespace fluxent::controls {
+
+// Forward declarations
+class ButtonRenderer;
+class CheckBoxRenderer;
+class RadioButtonRenderer;
+class ScrollViewRenderer;
+class SliderRenderer;
+class ToggleSwitchRenderer;
 
 // ControlRenderer
 class ControlRenderer {
@@ -50,6 +55,15 @@ public:
 
   void RenderRadioButton(const xent::ViewData &data, const Rect &bounds,
                          const ControlState &state);
+
+  void RenderSlider(const xent::ViewData &data, const Rect &bounds,
+                    const ControlState &state);
+
+  void RenderScrollView(const xent::ViewData &data, const Rect &bounds,
+                        const ControlState &state);
+
+  void RenderOverlay(const xent::ViewData &data, const Rect &bounds,
+                     const ControlState &state);
 
   void RenderText(const xent::ViewData &data, const Rect &bounds);
 
@@ -108,6 +122,8 @@ private:
   std::unique_ptr<ToggleSwitchRenderer> toggle_renderer_;
   std::unique_ptr<CheckBoxRenderer> checkbox_renderer_;
   std::unique_ptr<RadioButtonRenderer> radio_renderer_;
+  std::unique_ptr<SliderRenderer> slider_renderer_;
+  std::unique_ptr<ScrollViewRenderer> scroll_view_renderer_;
   RenderContext ctx_;
 };
 

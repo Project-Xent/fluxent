@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render_context.hpp"
+#include "fluxent/controls/animation_utils.hpp"
 #include <chrono>
 #include <unordered_map>
 #include <unordered_set>
@@ -21,13 +22,7 @@ public:
 
 private:
   struct ButtonBackgroundTransition {
-    bool initialized = false;
-    bool active = false;
-    Color current = Color::transparent();
-    Color from = Color::transparent();
-    Color to = Color::transparent();
-    Color last_target = Color::transparent();
-    std::chrono::steady_clock::time_point start;
+    Animator<Color> bg_anim;
   };
 
   std::unordered_map<const xent::ViewData *, ButtonBackgroundTransition>

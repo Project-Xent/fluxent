@@ -9,6 +9,8 @@
 #include <xent/checkbox.hpp>
 #include <xent/hstack.hpp>
 #include <xent/radio_button.hpp>
+#include <xent/scroll_view.hpp>
+#include <xent/slider.hpp>
 #include <xent/text.hpp>
 #include <xent/toggle_button.hpp>
 #include <xent/vstack.hpp>
@@ -122,122 +124,162 @@ void on_input_invalidate() {
 
 std::unique_ptr<xent::View> build_ui(App &app,
                                      fluxent::theme::ThemeManager &tm) {
-  auto counter_text = std::make_unique<xent::Text>("Count: 0");
-  counter_text->SetFontSize(36).SetColor(
-      ToXentColor(tm.Resources().TextPrimary));
-
-  app.counter_text_data = counter_text.get();
-
+  // Main Root container
   auto root = std::make_unique<xent::VStack>();
 
-  root->Padding(32)
-      .Gap(20)
-      .AlignItems(YGAlignCenter)
-      .JustifyContent(YGJustifyCenter)
+  root->Padding(0)
+      .AlignItems(YGAlignStretch)
+      .JustifyContent(YGJustifyFlexStart)
       .Background(ToXentColor(tm.Resources().LayerOnMicaBaseAltTransparent))
       .Expand();
 
-  // Add child
+  // ScrollView covering the whole area
+  auto scroll = std::make_unique<xent::ScrollView>();
+  scroll->Expand()
+      .HorizontalScroll(xent::ScrollMode::Auto)
+      .VerticalScroll(xent::ScrollMode::Auto);
+
+  // Main Content holding everything
+  auto content = std::make_unique<xent::VStack>();
+  content->Padding(32)
+      .Gap(30)
+      .AlignItems(YGAlignFlexStart)
+      .JustifyContent(YGJustifyFlexStart)
+      .MinWidth(600); // Trigger generic horizontal scrolling
+
+  // --- Header Section ---
+  auto header_stack = std::make_unique<xent::VStack>();
+  header_stack->Gap(5);
+
   auto title = std::make_unique<xent::Text>("Hello, FluXent!");
   title->SetFontSize(32).SetColor(ToXentColor(tm.Resources().TextPrimary));
-  root->Add(std::move(title));
+  header_stack->Add(std::move(title));
 
   auto subtitle = std::make_unique<xent::Text>("A modern Windows UI framework");
   subtitle->SetFontSize(14).SetColor(ToXentColor(tm.Resources().TextSecondary));
-  root->Add(std::move(subtitle));
+  header_stack->Add(std::move(subtitle));
 
-  root->Add(std::move(counter_text));
+  // Counter Text in header
+  auto counter_text = std::make_unique<xent::Text>("Count: 0");
+  counter_text->SetFontSize(24).SetColor(
+      ToXentColor(tm.Resources().TextPrimary));
+  app.counter_text_data = counter_text.get();
+  header_stack->Add(std::move(counter_text));
 
-  // Button stack
-  auto button_stack = std::make_unique<xent::VStack>();
-  button_stack->Padding(20)
-      .Gap(12)
-      .AlignItems(YGAlignCenter)
+  content->Add(std::move(header_stack));
+
+  // --- Main Controls Row (Left vs Right) ---
+  auto main_row = std::make_unique<xent::HStack>();
+  main_row->Gap(40)
+      .AlignItems(YGAlignFlexStart)
+      .MinWidth(550); // Force minimum width for scrolling
+
+  // LEFT COLUMN: Buttons (+, -, Reset)
+  auto left_col = std::make_unique<xent::VStack>();
+  left_col->Gap(12)
+      .Padding(20)
       .Background(ToXentColor(tm.Resources().CardBackgroundDefault))
-      .CornerRadius(8);
+      .CornerRadius(8)
+      .CornerRadius(8)
+      .Border(1, ToXentColor(tm.Resources().CardStrokeDefault))
+      .MinWidth(120)  // Ensure button column width
+      .FlexShrink(0); // Prevent shrinking to enable scroll
 
   auto btn1 = std::make_unique<xent::Button>("+1");
   btn1->Icon("Add")
       .Role(xent::Semantic::Primary)
       .OnClick(&App::increment, &app);
-  button_stack->Add(std::move(btn1));
+  left_col->Add(std::move(btn1));
 
   auto btn2 = std::make_unique<xent::Button>("-1");
   btn2->Icon("Minus")
       .Role(xent::Semantic::Secondary)
-      .Style(xent::ButtonStyle::Outline)
       .OnClick(&App::decrement, &app);
-  button_stack->Add(std::move(btn2));
+  left_col->Add(std::move(btn2));
 
   auto btn3 = std::make_unique<xent::Button>("Reset");
   btn3->Icon("Refresh")
       .Role(xent::Semantic::Danger)
       .Style(xent::ButtonStyle::Text)
       .OnClick(&App::reset, &app);
-  button_stack->Add(std::move(btn3));
+  left_col->Add(std::move(btn3));
 
-  root->Add(std::move(button_stack));
+  main_row->Add(std::move(left_col));
 
-  // Toggles
-  auto toggle_row = std::make_unique<xent::HStack>();
-  toggle_row->Gap(10).AlignItems(YGAlignCenter);
+  // RIGHT COLUMN: Controls
+  auto right_col = std::make_unique<xent::VStack>();
+  right_col->Gap(24).MinWidth(350).FlexShrink(
+      0); // Prevent shrinking to force scroll
 
-  auto toggle_label = std::make_unique<xent::Text>("Toggle: ");
-  toggle_label->SetFontSize(14).SetColor(
-      ToXentColor(tm.Resources().TextPrimary));
-  toggle_row->Add(std::move(toggle_label));
+  // Right Top: Toggle + Slider
+  auto right_top = std::make_unique<xent::HStack>();
+  right_top->Gap(24).AlignItems(YGAlignCenter);
 
   auto toggle_btn = std::make_unique<xent::ToggleButton>("Sound");
   toggle_btn->IsChecked(true).Icon("Mute").CheckedIcon("Volume");
-  toggle_row->Add(std::move(toggle_btn));
+  right_top->Add(std::move(toggle_btn));
 
-  root->Add(std::move(toggle_row));
-
-  // Checkboxes/Radios
-  auto controls_row = std::make_unique<xent::HStack>();
-  controls_row->Gap(40).AlignItems(YGAlignFlexStart);
-
-  auto check_col = std::make_unique<xent::VStack>();
-  check_col->Gap(10);
-
-  auto check_label = std::make_unique<xent::Text>("Checkboxes");
-  check_label->SetFontSize(14).SetColor(
+  auto slider_stack = std::make_unique<xent::VStack>();
+  slider_stack->Gap(4);
+  auto slider_lbl = std::make_unique<xent::Text>("Volume");
+  slider_lbl->SetFontSize(12).SetColor(
       ToXentColor(tm.Resources().TextSecondary));
-  check_col->Add(std::move(check_label));
+  slider_stack->Add(std::move(slider_lbl));
 
-  auto check1 = std::make_unique<xent::CheckBox>("Enable Turbo");
-  check1->IsChecked(true);
-  check_col->Add(std::move(check1));
+  auto slider = std::make_unique<xent::Slider>();
+  slider->Range(0, 100).Value(60).Width(150);
+  slider_stack->Add(std::move(slider));
 
-  auto check2 = std::make_unique<xent::CheckBox>("Auto-Save");
-  check_col->Add(std::move(check2));
+  right_top->Add(std::move(slider_stack));
+  right_col->Add(std::move(right_top));
 
-  controls_row->Add(std::move(check_col));
+  // Right Bottom: Radio + Checkbox
+  auto right_bottom = std::make_unique<xent::HStack>();
+  right_bottom->Gap(40).AlignItems(YGAlignFlexStart);
 
-  auto radio_col = std::make_unique<xent::VStack>();
-  radio_col->Gap(10);
-
-  auto radio_label = std::make_unique<xent::Text>("Radio Group");
-  radio_label->SetFontSize(14).SetColor(
+  // Radio Group
+  auto radio_group = std::make_unique<xent::VStack>();
+  radio_group->Gap(8);
+  auto radio_lbl = std::make_unique<xent::Text>("Options");
+  radio_lbl->SetFontSize(14).SetColor(
       ToXentColor(tm.Resources().TextSecondary));
-  radio_col->Add(std::move(radio_label));
+  radio_group->Add(std::move(radio_lbl));
 
-  auto radio1 = std::make_unique<xent::RadioButton>("Option 1");
-  radio1->Group("G1").IsChecked(true);
-  radio_col->Add(std::move(radio1));
+  auto r1 = std::make_unique<xent::RadioButton>("Option A");
+  r1->Group("G1").IsChecked(true);
+  auto r2 = std::make_unique<xent::RadioButton>("Option B");
+  r2->Group("G1");
+  radio_group->Add(std::move(r1));
+  radio_group->Add(std::move(r2));
+  right_bottom->Add(std::move(radio_group));
 
-  auto radio2 = std::make_unique<xent::RadioButton>("Option 2");
-  radio2->Group("G1");
-  radio_col->Add(std::move(radio2));
-
-  controls_row->Add(std::move(radio_col));
-
-  root->Add(std::move(controls_row));
-
-  auto click_hint = std::make_unique<xent::Text>("Click the buttons!");
-  click_hint->SetFontSize(12).SetColor(
+  // Checkbox Group
+  auto check_group = std::make_unique<xent::VStack>();
+  check_group->Gap(8);
+  auto check_lbl = std::make_unique<xent::Text>("Settings");
+  check_lbl->SetFontSize(14).SetColor(
       ToXentColor(tm.Resources().TextSecondary));
-  root->Add(std::move(click_hint));
+  check_group->Add(std::move(check_lbl));
+
+  auto c1 = std::make_unique<xent::CheckBox>("Turbo");
+  c1->IsChecked(true);
+  auto c2 = std::make_unique<xent::CheckBox>("Sync");
+  check_group->Add(std::move(c1));
+  check_group->Add(std::move(c2));
+  right_bottom->Add(std::move(check_group));
+
+  right_col->Add(std::move(right_bottom));
+  main_row->Add(std::move(right_col));
+
+  content->Add(std::move(main_row));
+
+  // Add a spacer to force some vertical scrolling if height is small too
+  auto spacer = std::make_unique<xent::View>();
+  spacer->Height(50);
+  content->Add(std::move(spacer));
+
+  scroll->Content(std::move(content));
+  root->Add(std::move(scroll));
 
   return root;
 }
@@ -250,20 +292,28 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   config.backdrop = fluxent::BackdropType::Mica;
 
   fluxent::theme::ThemeManager theme_manager;
-  Window window(&theme_manager, config);
-  if (!window.IsValid()) {
+
+  auto window_res = Window::Create(&theme_manager, config);
+  if (!window_res) {
     return -1;
   }
-  RenderEngine engine(window.GetGraphics(), &theme_manager);
-  engine.SetDebugMode(false);
+  auto window = std::move(*window_res);
+
+  auto engine_res = RenderEngine::Create(window->GetGraphics(), &theme_manager);
+  if (!engine_res) {
+    return -1;
+  }
+  auto engine = std::move(*engine_res);
+
+  engine->SetDebugMode(false);
 
   InputHandler input;
-  engine.SetInputHandler(&input);
+  engine->SetInputHandler(&input);
 
   App app;
 
-  g_window = &window;
-  g_engine = &engine;
+  g_window = window.get();
+  g_engine = engine.get();
   g_input = &input;
   g_app = &app;
 
@@ -273,12 +323,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   auto root = build_ui(app, theme_manager);
   g_root_view = root.get();
 
-  window.SetRenderCallback(on_window_render);
-  window.SetMouseCallback(on_window_mouse_event);
-  window.SetResizeCallback(on_window_resize);
+  window->SetRenderCallback(on_window_render);
+  window->SetMouseCallback(on_window_mouse_event);
+  window->SetResizeCallback(on_window_resize);
 
-  window.RequestRender();
-  window.Run();
+  window->SetDirectManipulationUpdateCallback(
+      [&input, &root](float x, float y, float scale, bool centering) {
+        if (g_root_view) {
+           input.HandleDirectManipulation(*g_root_view, x, y, scale, centering);
+        }
+      });
+
+  window->SetDirectManipulationStatusCallback(
+      [&input](DIRECTMANIPULATION_STATUS status) {
+        if (status == DIRECTMANIPULATION_RUNNING) {
+          input.CancelInteraction();
+        }
+      });
+
+  window->RequestRender();
+  window->Run();
 
   g_root_view = nullptr;
   return 0;

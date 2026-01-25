@@ -15,10 +15,15 @@ namespace fluxent {
 
 class RenderEngine {
 public:
-  explicit RenderEngine(GraphicsPipeline *graphics,
-                        theme::ThemeManager *theme_manager);
+  static Result<std::unique_ptr<RenderEngine>>
+  Create(GraphicsPipeline *graphics, theme::ThemeManager *theme_manager);
   ~RenderEngine();
 
+private:
+  RenderEngine(GraphicsPipeline *graphics, theme::ThemeManager *theme_manager);
+  Result<void> Init();
+
+public:
   RenderEngine(const RenderEngine &) = delete;
   RenderEngine &operator=(const RenderEngine &) = delete;
 

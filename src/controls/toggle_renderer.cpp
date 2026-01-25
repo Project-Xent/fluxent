@@ -1,6 +1,7 @@
 #include "fluxent/controls/toggle_renderer.hpp"
-#include "common_drawing.hpp"
-#include "renderer_utils.hpp"
+#include "fluxent/controls/common_drawing.hpp"
+#include "fluxent/config.hpp"
+#include "fluxent/controls/renderer_utils.hpp"
 #include <cmath>
 
 namespace fluxent::controls {
@@ -12,63 +13,36 @@ static Color LerpColor(const Color &a, const Color &b, float t) {
   return LerpColorSrgb(a, b, t);
 }
 
-void ToggleSwitchRenderer::BeginFrame() { has_active_transitions_ = false; }
+void ToggleSwitchRenderer::BeginFrame() {
+  has_active_transitions_ = false;
+  seen_.clear();
+}
 
 bool ToggleSwitchRenderer::EndFrame() {
-  // Note: ToggleSwitch doesn't track frame_buttons_seen_ in the same way
-  // because it isn't part of the shared hover overlay usually,
-  // but garbage collection of states might be needed.
+  for (auto it = states_.begin(); it != states_.end();) {
+    if (seen_.find(it->first) == seen_.end()) {
+      it = states_.erase(it);
+    } else {
+      ++it;
+    }
+  }
   return has_active_transitions_;
 }
 
 float ToggleSwitchRenderer::AnimateProgress(const xent::ViewData *key,
                                             float target) {
-  auto &s = transitions_[key];
-  const auto now = std::chrono::steady_clock::now();
-
-  target = Clamp01(target);
-
-  if (!s.initialized) {
-    s.initialized = true;
-    s.active = false;
-    s.current = target;
-    s.from = target;
-    s.to = target;
-    s.last_target = target;
-    s.start = now;
-    return target;
-  }
-
-  if (s.active) {
-    const float elapsed = std::chrono::duration<float>(now - s.start).count();
-    const float t =
-        Clamp01(elapsed / static_cast<float>(kButtonBrushTransitionSeconds));
-    s.current = s.from + (s.to - s.from) * t;
-    if (t >= 1.0f) {
-      s.active = false;
-      s.current = s.to;
-    }
-  }
-
-  if (std::abs(target - s.last_target) > 0.0001f) {
-    s.from = s.current;
-    s.to = target;
-    s.last_target = target;
-    s.start = now;
-    s.active = true;
-  }
-
-  if (s.active) {
+  float current;
+  if (states_[key].progress_anim.Update(target, fluxent::config::Animation::Button, &current)) {
     has_active_transitions_ = true;
   }
-
-  return s.current;
+  return current;
 }
 
 void ToggleSwitchRenderer::Render(const RenderContext &ctx,
                                   const xent::ViewData &data,
                                   const Rect &bounds,
                                   const ControlState &state) {
+  seen_.insert(&data);
   auto d2d = ctx.graphics->GetD2DContext();
   const auto &res = ctx.Resources();
 
@@ -126,15 +100,15 @@ void ToggleSwitchRenderer::Render(const RenderContext &ctx,
     d2d->DrawRoundedRectangle(track_rect, brush.Get(), 1.0f);
   }
 
-  float knob_w = 12.0f;
-  float knob_h = 12.0f;
+  float knob_w = fluxent::config::Toggle::KnobSizeNormal;
+  float knob_h = fluxent::config::Toggle::KnobSizeNormal;
   if (!state.is_disabled) {
     if (state.is_pressed) {
-      knob_w = 17.0f;
-      knob_h = 14.0f;
+      knob_w = fluxent::config::Toggle::KnobSizePressedW;
+      knob_h = fluxent::config::Toggle::KnobSizePressedH;
     } else if (state.is_hovered) {
-      knob_w = 14.0f;
-      knob_h = 14.0f;
+      knob_w = fluxent::config::Toggle::KnobSizeHover;
+      knob_h = fluxent::config::Toggle::KnobSizeHover;
     }
   }
 
@@ -143,7 +117,7 @@ void ToggleSwitchRenderer::Render(const RenderContext &ctx,
   float cx = base_cx + progress * travel;
 
   if (!state.is_disabled && state.is_pressed) {
-    cx += (1.0f - 2.0f * progress) * 3.0f;
+    cx += (1.0f - 2.0f * progress) * fluxent::config::Toggle::TravelExtension;
   }
 
   const float cy = bounds.y + bounds.height * 0.5f;

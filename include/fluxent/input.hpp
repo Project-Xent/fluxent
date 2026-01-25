@@ -4,7 +4,7 @@
 
 #include "types.hpp"
 #include <functional>
-#include <memory>
+
 #include <xent/view.hpp>
 
 namespace fluxent {
@@ -33,6 +33,11 @@ public:
 
   void HandleMouseEvent(const xent::View &root, const MouseEvent &event);
   void HandleKeyEvent(const xent::View &root, const KeyEvent &event);
+
+  void HandleDirectManipulation(xent::View &root, float x, float y, float scale,
+                                bool centering);
+
+  void CancelInteraction();
 
   xent::View *GetHoveredView() const { return hovered_view_; }
   xent::View *GetPressedView() const { return pressed_view_; }
@@ -63,10 +68,26 @@ private:
 
   xent::View *hovered_view_ = nullptr;
   xent::View *pressed_view_ = nullptr;
+  Rect pressed_view_bounds_;
   xent::View *focused_view_ = nullptr;
   Point last_mouse_position_;
 
   bool show_focus_visuals_ = false;
+
+  // ScrollBar Dragging State
+  bool is_dragging_h_scrollbar_ = false;
+  bool is_dragging_v_scrollbar_ = false;
+  Point drag_start_mouse_pos_;
+  float drag_start_scroll_offset_ = 0.0f;
+
+  // Slider Dragging State
+  bool is_dragging_slider_thumb_ = false;
+  float slider_thumb_drag_offset_ = 0.0f;
+
+  // Direct Manipulation
+  float dm_last_x_ = 0.0f;
+  float dm_last_y_ = 0.0f;
+  bool dm_active_ = false;
 
   HoverChangedCallback on_hover_changed_;
   InvalidateCallback on_invalidate_;

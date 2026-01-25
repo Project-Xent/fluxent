@@ -3,7 +3,7 @@
 
 namespace fluxent::controls {
 
-void draw_focus_rect(const RenderContext &ctx, const Rect &bounds,
+void DrawFocusRect(const RenderContext &ctx, const Rect &bounds,
                      float corner_radius);
 
 } // namespace fluxent::controls

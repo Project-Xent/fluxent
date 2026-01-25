@@ -1,6 +1,7 @@
 // FluXent Theme Manager implementation
 #include "fluxent/theme/theme_manager.hpp"
 #include "fluxent/theme/colors.hpp"
+#include "fluxent/config.hpp"
 
 #include <xent/button.hpp>
 
@@ -104,12 +105,12 @@ Color ThemeManager::AdjustBrightness(const Color &c, float factor) {
 
 void ThemeManager::SetAccentColor(const Color &base) {
   accent_.base = base;
-  accent_.light1 = AdjustBrightness(base, 1.15f);
-  accent_.light2 = AdjustBrightness(base, 1.30f);
-  accent_.light3 = AdjustBrightness(base, 1.50f);
-  accent_.dark1 = AdjustBrightness(base, 0.85f);
-  accent_.dark2 = AdjustBrightness(base, 0.70f);
-  accent_.dark3 = AdjustBrightness(base, 0.55f);
+  accent_.light1 = AdjustBrightness(base, config::Theme::Lighten1);
+  accent_.light2 = AdjustBrightness(base, config::Theme::Lighten2);
+  accent_.light3 = AdjustBrightness(base, config::Theme::Lighten3);
+  accent_.dark1 = AdjustBrightness(base, config::Theme::Darken1);
+  accent_.dark2 = AdjustBrightness(base, config::Theme::Darken2);
+  accent_.dark3 = AdjustBrightness(base, config::Theme::Darken3);
 
   UpdateAccentResources();
   version_++;

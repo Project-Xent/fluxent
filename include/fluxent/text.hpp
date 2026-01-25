@@ -7,7 +7,6 @@
 #include <string>
 #include <unordered_map>
 
-
 namespace fluxent {
 
 // Alignment
@@ -56,9 +55,15 @@ struct TextStyle {
 
 class TextRenderer {
 public:
-  explicit TextRenderer(GraphicsPipeline *graphics);
+  static Result<std::unique_ptr<TextRenderer>>
+  Create(GraphicsPipeline *graphics);
   ~TextRenderer();
 
+private:
+  explicit TextRenderer(GraphicsPipeline *graphics);
+  Result<void> Init();
+
+public:
   TextRenderer(const TextRenderer &) = delete;
   TextRenderer &operator=(const TextRenderer &) = delete;
 

@@ -1,7 +1,7 @@
 #include "fluxent/controls/button_renderer.hpp"
-#include "common_drawing.hpp"
-#include "icon_map.hpp"
-#include "renderer_utils.hpp"
+#include "fluxent/controls/common_drawing.hpp"
+#include "fluxent/controls/icon_map.hpp"
+#include "fluxent/controls/renderer_utils.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -28,43 +28,11 @@ bool ButtonRenderer::EndFrame() {
 Color ButtonRenderer::AnimateBackground(const xent::ViewData *key,
                                         const Color &target) {
   auto &s = transitions_[key];
-  const auto now = std::chrono::steady_clock::now();
-
-  if (!s.initialized) {
-    s.initialized = true;
-    s.active = false;
-    s.current = target;
-    s.from = target;
-    s.to = target;
-    s.last_target = target;
-    s.start = now;
-    return target;
-  }
-
-  if (s.active) {
-    const float elapsed = std::chrono::duration<float>(now - s.start).count();
-    const float t =
-        Clamp01(elapsed / static_cast<float>(kButtonBrushTransitionSeconds));
-    s.current = LerpColorSrgb(s.from, s.to, t);
-    if (t >= 1.0f) {
-      s.active = false;
-      s.current = s.to;
-    }
-  }
-
-  if (!ColorEqualRgba(target, s.last_target)) {
-    s.from = s.current;
-    s.to = target;
-    s.last_target = target;
-    s.start = now;
-    s.active = true;
-  }
-
-  if (s.active) {
+  Color current;
+  if (s.bg_anim.Update(target, kButtonBrushTransitionSeconds, &current)) {
     has_active_transitions_ = true;
   }
-
-  return s.current;
+  return current;
 }
 
 ID2D1SolidColorBrush *ButtonRenderer::GetBrush(ID2D1DeviceContext *d2d,
@@ -112,12 +80,12 @@ static void DrawButtonContent(const RenderContext &ctx,
 
   TextStyle icon_style = text_style;
   icon_style.font_family = L"Segoe Fluent Icons";
-  icon_style.font_size = font_size * 1.14f;
+  icon_style.font_size = font_size * fluxent::config::Layout::Button::IconSizeMultiplier;
 
   // Measure content
   float icon_width = 0.0f;
   float text_width = 0.0f;
-  float content_gap = 8.0f;
+  float content_gap = fluxent::config::Layout::Button::ContentGap;
 
   if (has_icon) {
     Size icon_size = ctx.text->MeasureText(icon_code, icon_style);
@@ -290,7 +258,7 @@ void ButtonRenderer::Render(const RenderContext &ctx,
   auto d2d = ctx.graphics->GetD2DContext();
   const auto &res = ctx.Resources();
 
-  float corner_radius = data.corner_radius > 0 ? data.corner_radius : 4.0f;
+  float corner_radius = data.corner_radius > 0 ? data.corner_radius : fluxent::config::Layout::DefaultCornerRadius;
   Color user_bg = Color(data.background_color.r, data.background_color.g,
                         data.background_color.b, data.background_color.a);
   bool is_accent =
@@ -415,7 +383,7 @@ void ButtonRenderer::RenderToggleButton(const RenderContext &ctx,
   auto d2d = ctx.graphics->GetD2DContext();
   const auto &res = ctx.Resources();
 
-  float corner_radius = data.corner_radius > 0 ? data.corner_radius : 4.0f;
+  float corner_radius = data.corner_radius > 0 ? data.corner_radius : fluxent::config::Layout::DefaultCornerRadius;
   bool p_checked = data.is_checked;
   bool is_accent = p_checked;
 

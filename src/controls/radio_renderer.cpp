@@ -1,6 +1,7 @@
 #include "fluxent/controls/radio_renderer.hpp"
-#include "common_drawing.hpp"
-#include "renderer_utils.hpp"
+#include "fluxent/controls/common_drawing.hpp"
+#include "fluxent/config.hpp"
+#include "fluxent/controls/renderer_utils.hpp"
 
 #include <cmath>
 
@@ -55,7 +56,7 @@ float RadioButtonRenderer::AnimateCheckState(const xent::ViewData *key,
   if (state.active) {
     auto now = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(now - state.start).count();
-    constexpr double kDuration = 0.250;
+    constexpr double kDuration = fluxent::config::Animation::RadioButton;
 
     if (elapsed >= kDuration) {
       state.current = state.to;
@@ -138,9 +139,9 @@ void RadioButtonRenderer::Render(const RenderContext &ctx,
 
   // The main check glyph size animation
   const float current_glyph_size =
-      AnimateFloat(&data, target_glyph_size, 167.0f); // Fast duration
+      AnimateFloat(&data, target_glyph_size, fluxent::config::Animation::Normal * 1000.0f); // Fast duration
 
-  const float size = 20.0f; // Standard RadioButton circle size
+  const float size = fluxent::config::Layout::RadioButtonSize;
   const float centerY = bounds.y + bounds.height * 0.5f;
   const Rect circle_rect(bounds.x, centerY - size * 0.5f, size, size);
   const D2D1_POINT_2F center =
@@ -196,7 +197,7 @@ void RadioButtonRenderer::Render(const RenderContext &ctx,
     // XAML targets: Width="10", Height="10", Fill="{ThemeResource
     // RadioButtonCheckGlyphFillPressed}" RadioButtonCheckGlyphFillPressed ->
     // TextOnAccentFillColorPrimaryBrush -> TextOnAccentPrimary
-    const float pressed_glyph_radius = 5.0f; // Width 10 / 2
+    const float pressed_glyph_radius = fluxent::config::RadioButton::PressedGlyphSize * 0.5f;
     D2D1_ELLIPSE pressed_glyph =
         D2D1::Ellipse(center, pressed_glyph_radius, pressed_glyph_radius);
 
@@ -213,9 +214,10 @@ void RadioButtonRenderer::Render(const RenderContext &ctx,
 
     TextStyle style;
     style.color = state.is_disabled ? res.TextDisabled : res.TextPrimary;
-    style.font_size = 14.0f;
+    style.font_size = fluxent::config::Layout::DefaultFontSize;
     style.alignment = TextAlignment::Leading;
     style.paragraph_alignment = ParagraphAlignment::Center;
+    style.word_wrap = false;
 
     std::wstring wtext(data.text_content.begin(), data.text_content.end());
     ctx.text->DrawText(wtext, text_rect, style);

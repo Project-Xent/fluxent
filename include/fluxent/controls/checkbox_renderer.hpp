@@ -1,6 +1,7 @@
 #pragma once
 
 #include "render_context.hpp"
+#include "fluxent/controls/animation_utils.hpp"
 #include <chrono>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,28 +18,12 @@ public:
                       const Rect &bounds, const ControlState &state);
 
 private:
-  struct CheckTransition {
-    bool initialized = false;
-    bool active = false;
-    float current = 0.0f;
-    float from = 0.0f;
-    float to = 0.0f;
-    std::chrono::steady_clock::time_point start;
+  struct CheckBoxState {
+    Animator<float> check_anim;
+    Animator<float> scale_anim;
   };
 
-  struct FloatTransition {
-    bool initialized = false;
-    bool active = false;
-    float current = 0.0f;
-    float from = 0.0f;
-    float to = 0.0f;
-    std::chrono::steady_clock::time_point start;
-  };
-
-  std::unordered_map<const xent::ViewData *, CheckTransition>
-      check_transitions_;
-  std::unordered_map<const xent::ViewData *, FloatTransition>
-      scale_transitions_;
+  std::unordered_map<const xent::ViewData *, CheckBoxState> states_;
 
   std::unordered_set<const xent::ViewData *> seen_;
   bool has_active_transitions_ = false;

@@ -12,8 +12,8 @@
 namespace fluxent {
 
 using DirectManipulationUpdateCallback =
-    std::function<void(float x, float y, float scale, bool centering)>;
-using DirectManipulationHitTestCallback = std::function<bool(UINT pointer_id, int x, int y)>;
+    xent::Delegate<void(float x, float y, float scale, bool centering)>;
+using DirectManipulationHitTestCallback = xent::Delegate<bool(UINT pointer_id, int x, int y)>;
 
 class Window {
 public:
@@ -48,43 +48,43 @@ public:
   GraphicsPipeline *GetGraphics() const { return graphics_.get(); }
 
   void SetRenderCallback(RenderCallback callback) {
-    on_render_ = std::move(callback);
+    on_render_ = callback;
   }
   void SetResizeCallback(ResizeCallback callback) {
-    on_resize_ = std::move(callback);
+    on_resize_ = callback;
   }
   void SetDpiChangedCallback(DpiChangedCallback callback) {
-    on_dpi_changed_ = std::move(callback);
+    on_dpi_changed_ = callback;
   }
   void SetMouseCallback(MouseEventCallback callback) {
-    on_mouse_ = std::move(callback);
+    on_mouse_ = callback;
   }
   void SetKeyCallback(KeyEventCallback callback) {
-    on_key_ = std::move(callback);
+    on_key_ = callback;
   }
   void SetCharCallback(CharEventCallback callback) {
-    on_char_ = std::move(callback);
+    on_char_ = callback;
   }
 
-  using ImePositionCallback = std::function<std::tuple<float, float, float>()>;
+  using ImePositionCallback = xent::Delegate<std::tuple<float, float, float>()>;
   void SetImePositionCallback(ImePositionCallback callback) {
-    on_ime_position_ = std::move(callback);
+    on_ime_position_ = callback;
   }
 
-  using ImeCompositionCallback = std::function<void(const std::wstring &)>;
+  using ImeCompositionCallback = xent::Delegate<void(const std::wstring &)>;
   void SetImeCompositionCallback(ImeCompositionCallback callback) {
-    on_ime_composition_ = std::move(callback);
+    on_ime_composition_ = callback;
   }
 
 
   void SetDirectManipulationUpdateCallback(
       DirectManipulationUpdateCallback callback) {
-    on_dm_update_ = std::move(callback);
+    on_dm_update_ = callback;
   }
 
   void SetDirectManipulationHitTestCallback(
       DirectManipulationHitTestCallback callback) {
-    on_dm_hittest_ = std::move(callback);
+    on_dm_hittest_ = callback;
   }
 
   void DispatchDirectManipulationUpdate(float x, float y, float scale,
@@ -95,11 +95,11 @@ public:
   }
 
   using DirectManipulationStatusCallback =
-      std::function<void(DIRECTMANIPULATION_STATUS status)>;
+      xent::Delegate<void(DIRECTMANIPULATION_STATUS status)>;
 
   void SetDirectManipulationStatusCallback(
       DirectManipulationStatusCallback callback) {
-    on_dm_status_ = std::move(callback);
+    on_dm_status_ = callback;
   }
 
   void DispatchDirectManipulationStatusChanged(

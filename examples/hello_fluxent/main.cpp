@@ -1,4 +1,5 @@
-﻿#include "fluxent/theme/theme_manager.hpp"
+﻿#include <fluxent/theme/theme_manager.hpp>
+#include <xent/delegate.hpp>
 #include <Windows.h>
 #include <cstdint>
 
@@ -39,10 +40,10 @@ class App {
 public:
   int counter = 0;
   xent::View *counter_text_data = nullptr;
-  std::function<void()> invalidate_callback;
+  xent::Delegate<void()> invalidate_callback;
 
-  void SetInvalidateCallback(std::function<void()> callback) {
-    invalidate_callback = std::move(callback);
+  void SetInvalidateCallback(xent::Delegate<void()> callback) {
+    invalidate_callback = callback;
   }
 
   void increment() {
@@ -187,12 +188,12 @@ std::unique_ptr<xent::View> build_ui(App &app,
                          // Wait, Padding(vertical, horizontal) -> T=V, B=V, L=H, R=H.
                          // Padding(6, 10).
          .Placeholder("Type something...")
-         .OnTextInput([](const std::string& t){
+         .OnTextInput({nullptr, [](void*, const std::string& t){
              // Debug
              char buf[256];
              sprintf_s(buf, "Input: %s\n", t.c_str());
              OutputDebugStringA(buf);
-         });
+         }});
   // Explicitly use Padding(6, 10) to match standard look
   textbox->Padding(6, 10);
   
@@ -219,20 +220,20 @@ std::unique_ptr<xent::View> build_ui(App &app,
   auto btn1 = std::make_unique<xent::Button>("+1");
   btn1->Icon("Add")
       .Role(xent::Semantic::Primary)
-      .OnClick(&App::increment, &app);
+      .OnClick<App, &App::increment>(&app);
   left_col->Add(std::move(btn1));
 
   auto btn2 = std::make_unique<xent::Button>("-1");
   btn2->Icon("Minus")
       .Role(xent::Semantic::Secondary)
-      .OnClick(&App::decrement, &app);
+      .OnClick<App, &App::decrement>(&app);
   left_col->Add(std::move(btn2));
 
   auto btn3 = std::make_unique<xent::Button>("Reset");
   btn3->Icon("Refresh")
       .Role(xent::Semantic::Danger)
       .Style(xent::ButtonStyle::Text)
-      .OnClick(&App::reset, &app);
+      .OnClick<App, &App::reset>(&app);
   left_col->Add(std::move(btn3));
 
   main_row->Add(std::move(left_col));
@@ -348,68 +349,75 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   g_input = &input;
   g_app = &app;
 
-  input.SetInvalidateCallback(on_input_invalidate);
-  input.SetHoverChangedCallback([&window](xent::View* old_view, xent::View* new_view) {
+  input.SetInvalidateCallback({nullptr, [](void*){ on_input_invalidate(); }});
+  input.SetHoverChangedCallback({window.get(), [](void* ctx, xent::View* old_view, xent::View* new_view) {
     (void)old_view;
+    auto* win_ptr = static_cast<Window*>(ctx);
     if (new_view && new_view->type == xent::ComponentType::TextBox) {
-      window->SetCursorIbeam();
+      win_ptr->SetCursorIbeam();
     } else {
-      window->SetCursorArrow();
+      win_ptr->SetCursorArrow();
     }
-  });
-  app.SetInvalidateCallback(on_window_invalidate);
+  }});
+  app.SetInvalidateCallback({nullptr, [](void*){ on_window_invalidate(); }});
 
   auto root = build_ui(app, theme_manager);
   g_root_view = root.get();
 
-  window->SetRenderCallback(on_window_render);
-  window->SetMouseCallback(on_window_mouse_event);
-  window->SetKeyCallback(on_window_key_event);
-  window->SetCharCallback(on_window_char_event);
-  window->SetResizeCallback(on_window_resize);
+  window->SetRenderCallback({nullptr, [](void*){ on_window_render(); }});
+  window->SetMouseCallback({nullptr, [](void*, const MouseEvent& e){ on_window_mouse_event(e); }});
+  window->SetKeyCallback({nullptr, [](void*, const KeyEvent& e){ on_window_key_event(e); }});
+  window->SetCharCallback({nullptr, [](void*, wchar_t c){ on_window_char_event(c); }});
+  window->SetResizeCallback({nullptr, [](void*, int w, int h){ on_window_resize(w, h); }});
 
   // IME candidate window positioning
-  window->SetImePositionCallback([&input]() -> std::tuple<float, float, float> {
-    auto* focused = input.GetFocusedView();
+  window->SetImePositionCallback({&input, [](void* ctx) -> std::tuple<float, float, float> {
+    auto* input_ptr = static_cast<InputHandler*>(ctx);
+    auto* focused = input_ptr->GetFocusedView();
     if (focused && focused->type == xent::ComponentType::TextBox) {
-      auto bounds = input.GetFocusedViewBounds();
+      auto bounds = input_ptr->GetFocusedViewBounds();
       float x = bounds.x + focused->padding_left;
       float y = bounds.y + focused->padding_top;
       float h = focused->font_size > 0 ? focused->font_size * 1.3f : 18.0f;
       return {x, y, h};
     }
     return {0.f, 0.f, 0.f};
-  });
+  }});
 
   // IME composition text
-  window->SetImeCompositionCallback([&input](const std::wstring& text) {
-      input.SetCompositionText(text);
-  });
+  // IME composition text
+  window->SetImeCompositionCallback({&input, [](void* ctx, const std::wstring& text) {
+      static_cast<InputHandler*>(ctx)->SetCompositionText(text);
+  }});
 
   auto* win_ptr = window.get();
-  input.SetImeStateChangeCallback([win_ptr](bool enable) {
-      if (win_ptr) win_ptr->EnableIme(enable);
-  });
+  input.SetImeStateChangeCallback({win_ptr, [](void* ctx, bool enable) {
+      if (ctx) static_cast<Window*>(ctx)->EnableIme(enable);
+  }});
 
-  input.SetShowTouchKeyboardCallback([win_ptr](bool show) {
-      if (win_ptr) {
-          if (show) win_ptr->ShowTouchKeyboard();
-          else win_ptr->HideTouchKeyboard();
+  input.SetShowTouchKeyboardCallback({win_ptr, [](void* ctx, bool show) {
+      auto* w = static_cast<Window*>(ctx);
+      if (w) {
+          if (show) w->ShowTouchKeyboard();
+          else w->HideTouchKeyboard();
       }
-  });
+  }});
 
   // DM hit test: return false for controls that need direct touch handling
+  // DM hit test: return false for controls that need direct touch handling
+  // Uses globals (g_root_view, g_input, g_window) to avoid complex context
   window->SetDirectManipulationHitTestCallback(
-      [&input, win_ptr](UINT pointer_id, int px, int py) -> bool {
+      {nullptr, [](void*, UINT pointer_id, int px, int py) -> bool {
         (void)pointer_id;
-        if (!g_root_view || !win_ptr) return true;
+        if (!g_root_view || !g_input || !g_window) return true;
 
         // Convert physical pixels to DIPs
-        auto dpi = win_ptr->GetDpi();
+        auto dpi = g_window->GetDpi();
         float dip_x = static_cast<float>(px) / dpi.scale_x();
         float dip_y = static_cast<float>(py) / dpi.scale_y();
 
-        auto hit = input.HitTest(*g_root_view, Point(dip_x, dip_y));
+        // Use g_input
+        auto hit = g_input->HitTest(*g_root_view, Point(dip_x, dip_y));
         if (hit.view_data) {
           auto type = hit.view_data->type;
           // These controls need direct touch; don't let DM capture them
@@ -424,20 +432,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
           }
         }
         return true; // Allow DM for scroll areas
-      });
+      }});
 
   window->SetDirectManipulationUpdateCallback(
-      [&input, &root](float x, float y, float scale, bool centering) {
-        if (g_root_view) {
-           input.HandleDirectManipulation(*g_root_view, x, y, scale, centering);
+      {nullptr, [](void*, float x, float y, float scale, bool centering) {
+        if (g_root_view && g_input) {
+           g_input->HandleDirectManipulation(*g_root_view, x, y, scale, centering);
         }
-      });
+      }});
 
   window->SetDirectManipulationStatusCallback(
-      [&input](DIRECTMANIPULATION_STATUS status) {
+      {&input, [](void* ctx, DIRECTMANIPULATION_STATUS status) {
         if (status == DIRECTMANIPULATION_RUNNING) {
+          auto* input_ptr = static_cast<InputHandler*>(ctx);
           // Only cancel if not interacting with a control that needs touch
-          auto* pressed = input.GetPressedView();
+          auto* pressed = input_ptr->GetPressedView();
           bool is_touch_control = pressed && (
               pressed->type == xent::ComponentType::Slider ||
               pressed->type == xent::ComponentType::ToggleSwitch ||
@@ -447,10 +456,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
               pressed->type == xent::ComponentType::RadioButton ||
               pressed->type == xent::ComponentType::TextBox);
           if (!is_touch_control) {
-            input.CancelInteraction();
+            input_ptr->CancelInteraction();
           }
         }
-      });
+      }});
 
   window->RequestRender();
   window->Run();

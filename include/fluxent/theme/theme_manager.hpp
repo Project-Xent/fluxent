@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../types.hpp"
-#include <functional>
+#include <xent/delegate.hpp>
 #include <vector>
 
 namespace fluxent::theme {
@@ -195,7 +195,7 @@ public:
 
   uint64_t Version() const { return version_; }
 
-  using ThemeChangedCallback = std::function<void(Mode)>;
+  using ThemeChangedCallback = xent::Delegate<void(Mode)>;
   size_t AddThemeChangedListener(ThemeChangedCallback callback);
   void RemoveThemeChangedListener(size_t id);
 

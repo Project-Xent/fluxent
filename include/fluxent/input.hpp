@@ -1,7 +1,7 @@
 #pragma once
 
 #include "types.hpp"
-#include <functional>
+#include <xent/delegate.hpp>
 
 #include <xent/view.hpp>
 
@@ -47,14 +47,14 @@ public:
   bool ShouldShowFocusVisuals() const { return show_focus_visuals_; }
 
   using HoverChangedCallback =
-      std::function<void(xent::View *old_view, xent::View *new_view)>;
+      xent::Delegate<void(xent::View *old_view, xent::View *new_view)>;
   void SetHoverChangedCallback(HoverChangedCallback callback) {
-    on_hover_changed_ = std::move(callback);
+    on_hover_changed_ = callback;
   }
 
-  using InvalidateCallback = std::function<void()>;
+  using InvalidateCallback = xent::Delegate<void()>;
   void SetInvalidateCallback(InvalidateCallback callback) {
-    on_invalidate_ = std::move(callback);
+    on_invalidate_ = callback;
   }
   
   void PerformCopy();
@@ -63,14 +63,14 @@ public:
   void PerformSelectAll();
   void ShowContextMenu(int x, int y);
   
-  using ImeStateChangeCallback = std::function<void(bool enable)>;
+  using ImeStateChangeCallback = xent::Delegate<void(bool enable)>;
   void SetImeStateChangeCallback(ImeStateChangeCallback callback) {
-    on_ime_state_change_ = std::move(callback);
+    on_ime_state_change_ = callback;
   }
 
-  using ShowTouchKeyboardCallback = std::function<void(bool show)>;
+  using ShowTouchKeyboardCallback = xent::Delegate<void(bool show)>;
   void SetShowTouchKeyboardCallback(ShowTouchKeyboardCallback callback) {
-    on_keyboard_ = std::move(callback);
+    on_keyboard_ = callback;
   }
 
 private:

@@ -363,21 +363,23 @@ Result<void> RenderEngine::Init() {
 
   last_theme_resources_ = theme_manager_->Resources();
   theme_listener_id_ =
-      theme_manager_->AddThemeChangedListener([this](theme::Mode) {
-        if (!theme_manager_)
+  theme_listener_id_ =
+      theme_manager_->AddThemeChangedListener({this, [](void* ctx, theme::Mode mode) {
+        auto* engine = static_cast<RenderEngine*>(ctx);
+        if (!engine->theme_manager_)
           return;
-        const auto next = theme_manager_->Resources();
-        const auto map = BuildThemeRemap(last_theme_resources_, next);
-        last_theme_resources_ = next;
+        const auto next = engine->theme_manager_->Resources();
+        const auto map = BuildThemeRemap(engine->last_theme_resources_, next);
+        engine->last_theme_resources_ = next;
 
-        if (last_root_data_) {
-          RemapViewTreeThemeColors(last_root_data_, map);
+        if (engine->last_root_data_) {
+          RemapViewTreeThemeColors(engine->last_root_data_, map);
         }
 
-        if (graphics_) {
-          graphics_->RequestRedraw();
+        if (engine->graphics_) {
+          engine->graphics_->RequestRedraw();
         }
-      });
+      }});
 
   return {};
 }
@@ -446,15 +448,16 @@ void RenderEngine::RenderFrame(xent::View &root) {
 
   Size size = graphics_->GetRenderTargetSize();
   xent::SetTextMeasureFunc(
-      std::bind(&RenderEngine::MeasureTextCallback, this, std::placeholders::_1,
-                std::placeholders::_2, std::placeholders::_3));
-  xent::SetTextHitTestFunc(std::bind(
-      &RenderEngine::TextHitTestCallback, this, std::placeholders::_1,
-      std::placeholders::_2, std::placeholders::_3, std::placeholders::_4,
-      std::placeholders::_5));
-  xent::SetTextCaretRectFunc(std::bind(
-      &RenderEngine::TextCaretRectCallback, this, std::placeholders::_1,
-      std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
+      xent::Delegate<std::pair<float, float>(const std::string &, float, float)>
+      ::From<RenderEngine, &RenderEngine::MeasureTextCallback>(this));
+
+  xent::SetTextHitTestFunc(
+      xent::Delegate<int(const std::string &, float, float, float, float)>
+      ::From<RenderEngine, &RenderEngine::TextHitTestCallback>(this));
+      
+  xent::SetTextCaretRectFunc(
+      xent::Delegate<std::tuple<float, float, float, float>(const std::string &, float, float, int)>
+      ::From<RenderEngine, &RenderEngine::TextCaretRectCallback>(this));
 
   xent::View *root_data = &root;
   if (root_data) {

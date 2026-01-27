@@ -57,37 +57,39 @@ public:
     app->text_renderer_ = std::move(*txt_res);
 
     app->input_.SetInvalidateCallback(
-        [ptr = app.get()]() { ptr->window_->RequestRender(); });
+        {app.get(), [](void *ctx) { static_cast<Application *>(ctx)->window_->RequestRender(); }});
 
-    app->window_->SetMouseCallback([ptr = app.get()](const MouseEvent &e) {
+    app->window_->SetMouseCallback({app.get(), [](void *ctx, const MouseEvent &e) {
+      auto *ptr = static_cast<Application *>(ctx);
       if (ptr->has_root_) {
         ptr->input_.HandleMouseEvent(ptr->root_view_, e);
       }
-    });
+    }});
 
     app->window_->SetDirectManipulationUpdateCallback(
-        [ptr = app.get()](float x, float y, float scale, bool centering) {
-          if (ptr->has_root_) {
-            ptr->input_.HandleDirectManipulation(ptr->root_view_, x, y, scale,
-                                                 centering);
-          }
-        });
+        {app.get(), [](void *ctx, float x, float y, float scale, bool centering) {
+           auto *ptr = static_cast<Application *>(ctx);
+           if (ptr->has_root_) {
+             ptr->input_.HandleDirectManipulation(ptr->root_view_, x, y, scale,
+                                                  centering);
+           }
+         }});
 
     app->window_->SetDirectManipulationHitTestCallback(
-        [ptr = app.get()](UINT pointer_id, int x, int y) -> bool {
-          if (ptr->has_root_) {
-             // We can check if the view at (x,y) is scrollable?
-             // But for now, returning true allows DM to engage if supported.
-             return true;
-          }
-          return false;
-        });
+        {app.get(), [](void *ctx, UINT pointer_id, int x, int y) -> bool {
+           auto *ptr = static_cast<Application *>(ctx);
+           if (ptr->has_root_) {
+              return true;
+           }
+           return false;
+         }});
 
-    app->window_->SetRenderCallback([ptr = app.get()]() {
+    app->window_->SetRenderCallback({app.get(), [](void *ctx) {
+      auto *ptr = static_cast<Application *>(ctx);
       if (ptr->has_root_) {
         ptr->engine_->RenderFrame(ptr->root_view_);
       }
-    });
+    }});
 
     return app;
   }

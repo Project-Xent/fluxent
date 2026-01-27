@@ -25,7 +25,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <functional>
+#include <xent/delegate.hpp>
 #include <optional>
 #include <string>
 
@@ -164,12 +164,12 @@ struct KeyEvent {
   bool shift = false;
 };
 
-using RenderCallback = std::function<void()>;
-using ResizeCallback = std::function<void(int width, int height)>;
-using DpiChangedCallback = std::function<void(DpiInfo dpi)>;
-using MouseEventCallback = std::function<void(const MouseEvent &)>;
-using KeyEventCallback = std::function<void(const KeyEvent &)>;
-using CharEventCallback = std::function<void(wchar_t)>;
+using RenderCallback = xent::Delegate<void()>;
+using ResizeCallback = xent::Delegate<void(int width, int height)>;
+using DpiChangedCallback = xent::Delegate<void(DpiInfo dpi)>;
+using MouseEventCallback = xent::Delegate<void(const MouseEvent &)>;
+using KeyEventCallback = xent::Delegate<void(const KeyEvent &)>;
+using CharEventCallback = xent::Delegate<void(wchar_t)>;
 
 
 } // namespace fluxent

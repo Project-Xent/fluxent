@@ -8,7 +8,6 @@ namespace fluxent::controls {
 
 using Microsoft::WRL::ComPtr;
 
-// Helper from core.cpp
 static Color LerpColor(const Color &a, const Color &b, float t) {
   return LerpColorSrgb(a, b, t);
 }

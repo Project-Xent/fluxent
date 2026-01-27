@@ -10,13 +10,12 @@ namespace fluxent::controls {
 struct SliderLayout {
   Rect track_rect;
   Rect value_rect;
-  Rect thumb_rect; // The touch target/visual thumb
+  Rect thumb_rect;
   float thumb_center_x;
   float track_width;
   float track_start_x;
 };
 
-// Pure function to calculate slider geometry
 inline SliderLayout CalculateSliderLayout(const Rect &bounds, float min,
                                           float max, float value,
                                           float scale = 1.0f) {
@@ -29,29 +28,24 @@ inline SliderLayout CalculateSliderLayout(const Rect &bounds, float min,
   float pct = (range > 0.0f) ? (val - min) / range : 0.0f;
 
   float center_y = bounds.y + bounds.height * 0.5f;
-  
-  // Thumb radius
+
   float outer_radius = SliderThumbSize * 0.5f;
 
-  // Track Layout
   float track_left = bounds.x + outer_radius;
   float track_right = bounds.x + bounds.width - outer_radius;
   float track_w = (std::max)(0.0f, track_right - track_left);
   
   layout.track_width = track_w;
-  layout.track_start_x = track_left; // New field
-  
-  // Thumb Position
+  layout.track_start_x = track_left;
+
   layout.thumb_center_x = track_left + pct * track_w;
 
-  // Rects
   layout.track_rect = Rect(bounds.x, center_y - SliderTrackHeight * 0.5f, 
                            bounds.width, SliderTrackHeight);
                            
   layout.value_rect = Rect(bounds.x, center_y - SliderTrackHeight * 0.5f,
-                           layout.thumb_center_x - bounds.x, SliderTrackHeight); // Width is diff
+                           layout.thumb_center_x - bounds.x, SliderTrackHeight);
 
-  // Visual thumb rect (centered)
   layout.thumb_rect = Rect(layout.thumb_center_x - outer_radius, 
                            center_y - outer_radius,
                            SliderThumbSize, SliderThumbSize);
@@ -81,7 +75,6 @@ inline CheckBoxLayout CalculateCheckBoxLayout(const Rect &bounds, float size,
   return layout;
 }
 
-// ScrollBar Layout Logic
 struct ScrollBarLayout {
   Rect bar_rect;
   Rect track_rect;
@@ -96,8 +89,6 @@ struct ScrollViewLayout {
   float content_height;
 };
 
-// To be used by both Input and Renderer
-// Note: Requires passing determined content size and view size
 inline ScrollViewLayout CalculateScrollViewLayout(
     float view_w, float view_h, 
     float content_w, float content_h,
@@ -107,8 +98,6 @@ inline ScrollViewLayout CalculateScrollViewLayout(
   ScrollViewLayout layout;
   layout.content_width = content_w;
   layout.content_height = content_h;
-  
-  // Visibility is determined by caller (Separatoring Policy from Mechanism)
 
   using namespace fluxent::config::Layout;
 
@@ -116,8 +105,7 @@ inline ScrollViewLayout CalculateScrollViewLayout(
   float effective_h = view_h;
   if (show_v) effective_w -= ScrollBarSize;
   if (show_h) effective_h -= ScrollBarSize;
-  
-  // Vertical
+
   layout.v_bar.visible = show_v;
   if (show_v) {
     layout.v_bar.bar_rect = Rect(view_w - ScrollBarSize, 0, ScrollBarSize, effective_h);
@@ -140,8 +128,7 @@ inline ScrollViewLayout CalculateScrollViewLayout(
       );
     }
   }
-  
-  // Horizontal
+
   layout.h_bar.visible = show_h;
   if (show_h) {
     layout.h_bar.bar_rect = Rect(0, view_h - ScrollBarSize, effective_w, ScrollBarSize);

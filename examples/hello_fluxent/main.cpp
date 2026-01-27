@@ -1,6 +1,4 @@
-﻿// Hello FluXent example
-
-#include "fluxent/theme/theme_manager.hpp"
+﻿#include "fluxent/theme/theme_manager.hpp"
 #include <Windows.h>
 #include <cstdint>
 
@@ -27,11 +25,8 @@ template <typename T> static xent::Color ToXentColor(const T &c) {
   };
 }
 
-// Forward declare build_ui
 std::unique_ptr<xent::View> build_ui(class App &app,
                                      fluxent::theme::ThemeManager &tm);
-
-// Global context
 
 class App;
 Window *g_window = nullptr;
@@ -39,8 +34,6 @@ RenderEngine *g_engine = nullptr;
 InputHandler *g_input = nullptr;
 App *g_app = nullptr;
 xent::View *g_root_view = nullptr;
-
-// App state
 
 class App {
 public:
@@ -86,8 +79,6 @@ public:
   }
 };
 
-// Callbacks
-
 void on_window_render() {
   if (g_engine && g_window && g_root_view) {
     g_engine->RenderFrame(*g_root_view);
@@ -117,6 +108,18 @@ void on_window_invalidate() {
 void on_input_invalidate() {
   if (g_window) {
     g_window->RequestRender();
+  }
+}
+
+void on_window_key_event(const KeyEvent &event) {
+  if (g_input && g_window && g_root_view) {
+    g_input->HandleKeyEvent(*g_root_view, event);
+  }
+}
+
+void on_window_char_event(wchar_t ch) {
+  if (g_input && g_window && g_root_view) {
+    g_input->HandleCharEvent(*g_root_view, ch);
   }
 }
 
@@ -167,6 +170,34 @@ std::unique_ptr<xent::View> build_ui(App &app,
   header_stack->Add(std::move(counter_text));
 
   content->Add(std::move(header_stack));
+
+  // --- TEXTBOX DEMO ---
+  auto textbox_stack = std::make_unique<xent::VStack>();
+  textbox_stack->Gap(8);
+  auto tb_label = std::make_unique<xent::Text>("Input Demo:");
+  tb_label->SetFontSize(14).SetColor(ToXentColor(tm.Resources().TextSecondary));
+  textbox_stack->Add(std::move(tb_label));
+
+  auto textbox = std::make_unique<xent::View>();
+  textbox->type = xent::ComponentType::TextBox;
+  textbox->Width(300).Height(32)
+         .Background(ToXentColor(tm.Resources().ControlFillInputActive)) // Default
+         .CornerRadius(4)
+         .Padding(10, 6) // L,R, T,B? View logic: T,R,B,L = Padding(top, right, bottom, left)
+                         // Wait, Padding(vertical, horizontal) -> T=V, B=V, L=H, R=H.
+                         // Padding(6, 10).
+         .Placeholder("Type something...")
+         .OnTextInput([](const std::string& t){
+             // Debug
+             char buf[256];
+             sprintf_s(buf, "Input: %s\n", t.c_str());
+             OutputDebugStringA(buf);
+         });
+  // Explicitly use Padding(6, 10) to match standard look
+  textbox->Padding(6, 10);
+  
+  textbox_stack->Add(std::move(textbox));
+  content->Add(std::move(textbox_stack));
 
   // --- Main Controls Row (Left vs Right) ---
   auto main_row = std::make_unique<xent::HStack>();
@@ -318,6 +349,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   g_app = &app;
 
   input.SetInvalidateCallback(on_input_invalidate);
+  input.SetHoverChangedCallback([&window](xent::View* old_view, xent::View* new_view) {
+    (void)old_view;
+    if (new_view && new_view->type == xent::ComponentType::TextBox) {
+      window->SetCursorIbeam();
+    } else {
+      window->SetCursorArrow();
+    }
+  });
   app.SetInvalidateCallback(on_window_invalidate);
 
   auto root = build_ui(app, theme_manager);
@@ -325,7 +364,67 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
   window->SetRenderCallback(on_window_render);
   window->SetMouseCallback(on_window_mouse_event);
+  window->SetKeyCallback(on_window_key_event);
+  window->SetCharCallback(on_window_char_event);
   window->SetResizeCallback(on_window_resize);
+
+  // IME candidate window positioning
+  window->SetImePositionCallback([&input]() -> std::tuple<float, float, float> {
+    auto* focused = input.GetFocusedView();
+    if (focused && focused->type == xent::ComponentType::TextBox) {
+      auto bounds = input.GetFocusedViewBounds();
+      float x = bounds.x + focused->padding_left;
+      float y = bounds.y + focused->padding_top;
+      float h = focused->font_size > 0 ? focused->font_size * 1.3f : 18.0f;
+      return {x, y, h};
+    }
+    return {0.f, 0.f, 0.f};
+  });
+
+  // IME composition text
+  window->SetImeCompositionCallback([&input](const std::wstring& text) {
+      input.SetCompositionText(text);
+  });
+
+  auto* win_ptr = window.get();
+  input.SetImeStateChangeCallback([win_ptr](bool enable) {
+      if (win_ptr) win_ptr->EnableIme(enable);
+  });
+
+  input.SetShowTouchKeyboardCallback([win_ptr](bool show) {
+      if (win_ptr) {
+          if (show) win_ptr->ShowTouchKeyboard();
+          else win_ptr->HideTouchKeyboard();
+      }
+  });
+
+  // DM hit test: return false for controls that need direct touch handling
+  window->SetDirectManipulationHitTestCallback(
+      [&input, win_ptr](UINT pointer_id, int px, int py) -> bool {
+        (void)pointer_id;
+        if (!g_root_view || !win_ptr) return true;
+
+        // Convert physical pixels to DIPs
+        auto dpi = win_ptr->GetDpi();
+        float dip_x = static_cast<float>(px) / dpi.scale_x();
+        float dip_y = static_cast<float>(py) / dpi.scale_y();
+
+        auto hit = input.HitTest(*g_root_view, Point(dip_x, dip_y));
+        if (hit.view_data) {
+          auto type = hit.view_data->type;
+          // These controls need direct touch; don't let DM capture them
+          if (type == xent::ComponentType::Slider ||
+              type == xent::ComponentType::ToggleSwitch ||
+              type == xent::ComponentType::Button ||
+              type == xent::ComponentType::ToggleButton ||
+              type == xent::ComponentType::CheckBox ||
+              type == xent::ComponentType::RadioButton ||
+              type == xent::ComponentType::TextBox) {
+            return false;
+          }
+        }
+        return true; // Allow DM for scroll areas
+      });
 
   window->SetDirectManipulationUpdateCallback(
       [&input, &root](float x, float y, float scale, bool centering) {
@@ -337,7 +436,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   window->SetDirectManipulationStatusCallback(
       [&input](DIRECTMANIPULATION_STATUS status) {
         if (status == DIRECTMANIPULATION_RUNNING) {
-          input.CancelInteraction();
+          // Only cancel if not interacting with a control that needs touch
+          auto* pressed = input.GetPressedView();
+          bool is_touch_control = pressed && (
+              pressed->type == xent::ComponentType::Slider ||
+              pressed->type == xent::ComponentType::ToggleSwitch ||
+              pressed->type == xent::ComponentType::Button ||
+              pressed->type == xent::ComponentType::ToggleButton ||
+              pressed->type == xent::ComponentType::CheckBox ||
+              pressed->type == xent::ComponentType::RadioButton ||
+              pressed->type == xent::ComponentType::TextBox);
+          if (!is_touch_control) {
+            input.CancelInteraction();
+          }
         }
       });
 
@@ -347,3 +458,4 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   g_root_view = nullptr;
   return 0;
 }
+

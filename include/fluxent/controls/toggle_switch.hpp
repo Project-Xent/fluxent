@@ -5,9 +5,6 @@
 
 namespace fluxent::controls {
 
-// Minimal ToggleSwitch control.
-// State is stored in ViewData.text_content as "0" (off) / "1" (on) so it can be
-// toggled by the fluxent InputHandler without requiring xent-core changes.
 class ToggleSwitch : public xent::View {
 public:
   ToggleSwitch() { type = xent::ComponentType::ToggleSwitch; }
@@ -19,7 +16,6 @@ public:
 
   bool IsOn() const { return is_checked; }
 
-  // Fluent forwarding
   ToggleSwitch &Width(float w) {
     xent::View::Width(w);
     return *this;

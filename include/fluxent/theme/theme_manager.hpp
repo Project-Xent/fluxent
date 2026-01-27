@@ -1,21 +1,17 @@
 #pragma once
 
-// FluXent theme manager
-
 #include "../types.hpp"
 #include <functional>
 #include <vector>
 
 namespace fluxent::theme {
 
-// Elevation settings
 struct ElevationTheme {
   float Height;
   float GradientStop1;
   float GradientStop2;
 };
 
-// Focus settings
 struct FocusTheme {
   float OuterThickness;
   float InnerThickness;
@@ -38,33 +34,36 @@ struct RadioButtonTheme {
   float GlyphSizePressed;
 };
 
-// ThemeResources
+struct TextBoxTheme {
+  float MinHeight;
+  float MinWidth;
+  float PaddingLeft;
+  float PaddingTop;
+  float PaddingRight;
+  float PaddingBottom;
+};
+
 struct ThemeResources {
-  // Elevation (Moved from magic numbers)
   ElevationTheme Elevation;
 
-  // Focus (Moved from magic numbers)
   FocusTheme Focus;
 
-  // Controls
   CheckBoxTheme CheckBox;
   RadioButtonTheme RadioButton;
+  TextBoxTheme TextBox;
 
   float ControlCornerRadius;
 
-  // Text
   Color TextPrimary;
   Color TextSecondary;
   Color TextTertiary;
   Color TextDisabled;
   Color TextInverse;
 
-  // On-accent text
   Color TextOnAccentPrimary;
   Color TextOnAccentSecondary;
   Color TextOnAccentDisabled;
 
-  // Control fill
   Color ControlFillDefault;
   Color ControlFillSecondary;
   Color ControlFillTertiary;
@@ -73,39 +72,32 @@ struct ThemeResources {
   Color ControlFillTransparent;
   Color ControlFillInputActive;
 
-  // Strong fill
   Color ControlStrongFillDefault;
   Color ControlStrongFillDisabled;
 
-  // Solid fill
   Color ControlSolidFillDefault;
 
-  // Subtle fill
   Color SubtleFillTransparent;
   Color SubtleFillSecondary;
   Color SubtleFillTertiary;
   Color SubtleFillDisabled;
 
-  // Alt fill
   Color ControlAltFillTransparent;
   Color ControlAltFillSecondary;
   Color ControlAltFillTertiary;
   Color ControlAltFillQuarternary;
   Color ControlAltFillDisabled;
 
-  // On-image fill
   Color ControlOnImageFillDefault;
   Color ControlOnImageFillSecondary;
   Color ControlOnImageFillTertiary;
   Color ControlOnImageFillDisabled;
 
-  // Accent fill
   Color AccentDefault;
   Color AccentSecondary;
   Color AccentTertiary;
   Color AccentDisabled;
 
-  // Strokes
   Color ControlStrokeDefault;
   Color ControlStrokeSecondary;
   Color ControlStrokeOnAccentDefault;
@@ -114,30 +106,24 @@ struct ThemeResources {
   Color ControlStrokeOnAccentDisabled;
   Color ControlStrokeForStrongFillWhenOnImage;
 
-  // Strong strokes
   Color ControlStrongStrokeDefault;
   Color ControlStrongStrokeDisabled;
 
-  // Cards
   Color CardStrokeDefault;
   Color CardStrokeDefaultSolid;
   Color CardBackgroundDefault;
   Color CardBackgroundSecondary;
   Color CardBackgroundTertiary;
 
-  // Surface strokes
   Color SurfaceStrokeDefault;
   Color SurfaceStrokeFlyout;
   Color SurfaceStrokeInverse;
 
-  // Focus
   Color FocusStrokeOuter;
   Color FocusStrokeInner;
 
-  // Dividers
   Color DividerStrokeDefault;
 
-  // Backgrounds
   Color SolidBackgroundBase;
   Color SolidBackgroundSecondary;
   Color SolidBackgroundTertiary;
@@ -156,7 +142,6 @@ struct ThemeResources {
   Color LayerOnMicaBaseAltTransparent;
   Color SmokeFillDefault;
 
-  // System
   Color SystemSuccess;
   Color SystemCaution;
   Color SystemCritical;
@@ -171,10 +156,8 @@ struct ThemeResources {
   Color SystemSolidNeutralBackground;
 };
 
-// Theme mode
 enum class Mode { Dark, Light, HighContrast };
 
-// Accent palette
 struct AccentPalette {
   Color base;
   Color light1;
@@ -184,7 +167,6 @@ struct AccentPalette {
   Color dark2;
   Color dark3;
 
-  // Default Windows blue
   static AccentPalette Default() {
     return AccentPalette{
         .base = Color{0, 120, 212, 255},     // #0078D4
@@ -198,7 +180,6 @@ struct AccentPalette {
   }
 };
 
-// ThemeManager
 class ThemeManager {
 public:
   ThemeManager();
@@ -212,12 +193,9 @@ public:
   void SetAccent(const AccentPalette &palette);
   void SetAccentColor(const Color &base);
 
-  // Version increments on any theme change
   uint64_t Version() const { return version_; }
 
   using ThemeChangedCallback = std::function<void(Mode)>;
-  // Registers a callback invoked when mode changes (Dark/Light/HighContrast).
-  // Returns an id that can be used to remove the callback.
   size_t AddThemeChangedListener(ThemeChangedCallback callback);
   void RemoveThemeChangedListener(size_t id);
 
@@ -226,7 +204,6 @@ private:
   void ApplyLightTheme();
   void UpdateAccentResources();
 
-  // Helpers
   static Color AdjustBrightness(const Color &c, float factor);
   static uint8_t ClampColor(int v);
 

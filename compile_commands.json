@@ -1,16 +1,91 @@
 [
 {
   "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
-  "arguments": ["c:\\Users\\Wynn\\llvm-mingw-20251216-ucrt-x86_64\\bin\\x86_64-w64-mingw32-g++.exe", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++20", "-I..\\xent-core\\include", "-Iinclude", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00", "-DUNICODE", "-D_UNICODE", "-I", "C:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\73b690b4e3bb42a0975d319cc3000bd2\\include", "-DNDEBUG", "-o", "build\\.objs\\hello_fluxent\\mingw\\x86_64\\release\\examples\\hello_fluxent\\main.cpp.obj", "examples\\hello_fluxent\\main.cpp"],
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/O2", "/std:c++20", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\test_app\\windows\\x64\\release\\__\\xent-core\\tests\\main.cpp.obj", "..\\xent-core\\tests\\main.cpp"],
+  "file": "..\\xent-core\\tests\\main.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\xent-core\\windows\\x64\\release\\__\\xent-core\\src\\view.cpp.obj", "..\\xent-core\\src\\view.cpp"],
+  "file": "..\\xent-core\\src\\view.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\hello_fluxent\\windows\\x64\\release\\examples\\hello_fluxent\\main.cpp.obj", "examples\\hello_fluxent\\main.cpp"],
   "file": "examples\\hello_fluxent\\main.cpp"
 },
 {
   "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
-  "arguments": ["c:\\Users\\Wynn\\llvm-mingw-20251216-ucrt-x86_64\\bin\\x86_64-w64-mingw32-g++.exe", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++20", "-I..\\xent-core\\include", "-Iinclude", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00", "-DUNICODE", "-D_UNICODE", "-I", "C:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\73b690b4e3bb42a0975d319cc3000bd2\\include", "-DNDEBUG", "-o", "build\\.objs\\fluxent\\mingw\\x86_64\\release\\src\\engine.cpp.obj", "src\\engine.cpp"],
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\engine.cpp.obj", "src\\engine.cpp"],
   "file": "src\\engine.cpp"
 },
 {
   "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
-  "arguments": ["c:\\Users\\Wynn\\llvm-mingw-20251216-ucrt-x86_64\\bin\\x86_64-w64-mingw32-g++.exe", "-c", "-m64", "-fvisibility=hidden", "-fvisibility-inlines-hidden", "-O3", "-std=c++20", "-I..\\xent-core\\include", "-Iinclude", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00", "-DUNICODE", "-D_UNICODE", "-I", "C:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\73b690b4e3bb42a0975d319cc3000bd2\\include", "-DNDEBUG", "-o", "build\\.objs\\fluxent\\mingw\\x86_64\\release\\src\\window.cpp.obj", "src\\window.cpp"],
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\graphics.cpp.obj", "src\\graphics.cpp"],
+  "file": "src\\graphics.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\input.cpp.obj", "src\\input.cpp"],
+  "file": "src\\input.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\text.cpp.obj", "src\\text.cpp"],
+  "file": "src\\text.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\window.cpp.obj", "src\\window.cpp"],
   "file": "src\\window.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\theme\\theme_manager.cpp.obj", "src\\theme\\theme_manager.cpp"],
+  "file": "src\\theme\\theme_manager.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\button_renderer.cpp.obj", "src\\controls\\button_renderer.cpp"],
+  "file": "src\\controls\\button_renderer.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\checkbox_renderer.cpp.obj", "src\\controls\\checkbox_renderer.cpp"],
+  "file": "src\\controls\\checkbox_renderer.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\core.cpp.obj", "src\\controls\\core.cpp"],
+  "file": "src\\controls\\core.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\misc.cpp.obj", "src\\controls\\misc.cpp"],
+  "file": "src\\controls\\misc.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\radio_renderer.cpp.obj", "src\\controls\\radio_renderer.cpp"],
+  "file": "src\\controls\\radio_renderer.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\renderer_commons.cpp.obj", "src\\controls\\renderer_commons.cpp"],
+  "file": "src\\controls\\renderer_commons.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\scroll_view_renderer.cpp.obj", "src\\controls\\scroll_view_renderer.cpp"],
+  "file": "src\\controls\\scroll_view_renderer.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\slider_renderer.cpp.obj", "src\\controls\\slider_renderer.cpp"],
+  "file": "src\\controls\\slider_renderer.cpp"
+},
+{
+  "directory": "C:\\Users\\Wynn\\Xent\\fluxent",
+  "arguments": ["C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\HostX64\\x64\\cl.exe", "/c", "/nologo", "/MD", "/W3", "/WX", "/O2", "/std:c++20", "/Iinclude", "/I..\\xent-core\\include", "/D_WIN32_WINNT=0x0A00", "/DWINVER=0x0A00", "/DUNICODE", "/D_UNICODE", "/DWIN32_LEAN_AND_MEAN", "/DNOMINMAX", "/EHsc", "/IC:\\Users\\Wynn\\AppData\\Local\\.xmake\\packages\\y\\yoga\\v3.2.1\\27a20fcb441742988dfadf66b36211e3\\include", "/DNDEBUG", "/Fobuild\\.objs\\fluxent\\windows\\x64\\release\\src\\controls\\toggle_renderer.cpp.obj", "src\\controls\\toggle_renderer.cpp"],
+  "file": "src\\controls\\toggle_renderer.cpp"
 }]

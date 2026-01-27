@@ -1,7 +1,5 @@
 #pragma once
 
-// FluXent core types
-
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -9,11 +7,8 @@
 #define NOMINMAX
 #endif
 
-// Ensure newer DirectComposition interfaces (e.g. IDCompositionVisual3) are
-// available. Some toolchains (clangd/IntelliSense) default to an older
-// _WIN32_WINNT.
 #ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0A00 // Windows 10
+#define _WIN32_WINNT 0x0A00
 #endif
 
 #include <d2d1_3.h>
@@ -36,17 +31,13 @@
 
 namespace fluxent {
 
-// COM smart pointer alias
 template <typename T> using ComPtr = Microsoft::WRL::ComPtr<T>;
 
-// Forward declarations
 class Window;
 class GraphicsPipeline;
 class RenderEngine;
 class InputHandler;
 class TextRenderer;
-
-// Geometry
 
 struct Point {
   float x = 0.0f;
@@ -92,8 +83,6 @@ struct Rect {
   D2D1_RECT_F to_d2d() const { return D2D1::RectF(x, y, right(), bottom()); }
 };
 
-// Color
-
 struct Color {
   uint8_t r = 0;
   uint8_t g = 0;
@@ -104,7 +93,6 @@ struct Color {
   constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_, uint8_t a_ = 255)
       : r(r_), g(g_), b(b_), a(a_) {}
 
-  // Accepts 0xRRGGBBAA or 0xRRGGBB.
   static constexpr Color from_hex(uint32_t hex, bool has_alpha = false) {
     if (has_alpha) {
       return Color((hex >> 24) & 0xFF, (hex >> 16) & 0xFF, (hex >> 8) & 0xFF,
@@ -120,13 +108,10 @@ struct Color {
 
   constexpr bool is_transparent() const { return a == 0; }
 
-  // Common colors
   static constexpr Color transparent() { return Color(0, 0, 0, 0); }
   static constexpr Color black() { return Color(0, 0, 0, 255); }
   static constexpr Color white() { return Color(255, 255, 255, 255); }
 };
-
-// DPI scale
 
 struct DpiInfo {
   float dpi_x = 96.0f;
@@ -137,13 +122,11 @@ struct DpiInfo {
   float scale() const { return scale_x(); }
 };
 
-// Window configuration
-
 enum class BackdropType {
   None = 0,
-  Mica = 1,    // DWMSBT_MAINWINDOW
-  MicaAlt = 2, // DWMSBT_TABBEDWINDOW
-  Acrylic = 3  // DWMSBT_TRANSIENTWINDOW
+  Mica = 1,
+  MicaAlt = 2,
+  Acrylic = 3
 };
 
 struct WindowConfig {
@@ -153,10 +136,8 @@ struct WindowConfig {
   bool dark_mode = true;
   BackdropType backdrop = BackdropType::MicaAlt;
   bool resizable = true;
-  std::optional<Point> position = std::nullopt; // CW_USEDEFAULT if nullopt
+  std::optional<Point> position = std::nullopt;
 };
-
-// Input events
 
 enum class MouseButton { None = 0, Left = 1, Right = 2, Middle = 3 };
 
@@ -169,6 +150,10 @@ struct MouseEvent {
   float wheel_delta_x = 0.0f;
   float wheel_delta_y = 0.0f;
   InputSource source = InputSource::Mouse;
+  int click_count = 0;
+  bool shift = false;
+  bool ctrl = false;
+  bool alt = false;
 };
 
 struct KeyEvent {
@@ -179,27 +164,22 @@ struct KeyEvent {
   bool shift = false;
 };
 
-// Callbacks
-
 using RenderCallback = std::function<void()>;
 using ResizeCallback = std::function<void(int width, int height)>;
 using DpiChangedCallback = std::function<void(DpiInfo dpi)>;
 using MouseEventCallback = std::function<void(const MouseEvent &)>;
 using KeyEventCallback = std::function<void(const KeyEvent &)>;
+using CharEventCallback = std::function<void(wchar_t)>;
+
 
 } // namespace fluxent
 
-// Error handling
 #include "../../third_party/tl/expected.hpp"
 
 namespace fluxent {
 
-// ... existing types ...
-
-// Error handling
 template <typename T> using Result = tl::expected<T, HRESULT>;
 
-// Helper to bridge HRESULT to Result<void>
 inline Result<void> check_result(HRESULT hr) {
   if (FAILED(hr)) {
     return tl::unexpected(hr);
@@ -207,10 +187,6 @@ inline Result<void> check_result(HRESULT hr) {
   return {};
 }
 
-// Fatal error check (replaces exceptions)
-
-// Keep a version for quick checks if really needed, but generally prefer Result
-// return.
 inline bool succeeded(HRESULT hr) { return SUCCEEDED(hr); }
 
 } // namespace fluxent

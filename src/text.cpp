@@ -1,4 +1,3 @@
-// FluXent Text Renderer - DirectWrite implementation
 #include "fluxent/text.hpp"
 #include <functional>
 #include <stdexcept>
@@ -27,14 +26,12 @@ Result<void> TextRenderer::Init() {
 
 TextRenderer::~TextRenderer() = default;
 
-// Text drawing
-
 void TextRenderer::DrawText(const std::wstring &text, const Rect &bounds,
                             const TextStyle &style) {
   if (text.empty() || !d2d_context_)
     return;
 
-  auto layout = CreateTextLayout(text, style, bounds.width, bounds.height);
+  auto layout = GetOrCreateTextLayout(text, style, bounds.width, bounds.height);
   if (!layout)
     return;
 
@@ -66,15 +63,13 @@ void TextRenderer::DrawTextAt(const std::wstring &text, const Point &position,
                          format, rect, brush);
 }
 
-// Text measurement
-
 Size TextRenderer::MeasureText(const std::wstring &text, const TextStyle &style,
                                float max_width) {
   if (text.empty())
     return Size();
 
   float layout_width = max_width > 0 ? max_width : 100000.0f;
-  auto layout = CreateTextLayout(text, style, layout_width, 100000.0f);
+  auto layout = GetOrCreateTextLayout(text, style, layout_width, 100000.0f);
   if (!layout)
     return Size();
 
@@ -91,7 +86,7 @@ int TextRenderer::GetLineCount(const std::wstring &text, const TextStyle &style,
   if (text.empty())
     return 0;
 
-  auto layout = CreateTextLayout(text, style, max_width, 100000.0f);
+  auto layout = GetOrCreateTextLayout(text, style, max_width, 100000.0f);
   if (!layout)
     return 0;
 
@@ -103,7 +98,72 @@ int TextRenderer::GetLineCount(const std::wstring &text, const TextStyle &style,
   return 0;
 }
 
-// Resource management
+int TextRenderer::HitTestPoint(const std::wstring &text, const TextStyle &style,
+                               float max_width, float x, float y) {
+  if (text.empty())
+    return 0;
+
+  auto layout = GetOrCreateTextLayout(text, style, max_width > 0 ? max_width : 100000.0f,
+                                       100000.0f);
+  if (!layout)
+    return 0;
+
+  BOOL is_trailing;
+  BOOL is_inside;
+  DWRITE_HIT_TEST_METRICS metrics;
+
+  HRESULT hr = layout->HitTestPoint(x, y, &is_trailing, &is_inside, &metrics);
+  if (FAILED(hr))
+    return 0;
+
+  return is_trailing ? metrics.textPosition + 1 : metrics.textPosition;
+}
+
+Rect TextRenderer::GetCaretRect(const std::wstring &text,
+                                const TextStyle &style, float max_width,
+                                int index) {
+  auto layout = GetOrCreateTextLayout(text, style, max_width > 0 ? max_width : 100000.0f,
+                                       100000.0f);
+  if (!layout)
+    return Rect();
+
+  float x, y;
+  DWRITE_HIT_TEST_METRICS metrics;
+  HRESULT hr = layout->HitTestTextPosition(index, FALSE, &x, &y, &metrics);
+  if (FAILED(hr))
+    return Rect();
+  
+  return Rect(x, y, 1.0f, metrics.height);
+}
+
+std::vector<Rect> TextRenderer::GetSelectionRects(const std::wstring &text,
+                                                  const TextStyle &style,
+                                                  float max_width, int start,
+                                                  int end) {
+  if (start >= end) return {};
+  
+  auto layout = GetOrCreateTextLayout(text, style, max_width > 0 ? max_width : 100000.0f,
+                                       100000.0f);
+  if (!layout) return {};
+
+  uint32_t count = 0;
+  layout->HitTestTextRange(start, end - start, 0, 0, nullptr, 0, &count);
+  if (count == 0) return {};
+
+  std::vector<DWRITE_HIT_TEST_METRICS> metrics(count);
+  if (FAILED(layout->HitTestTextRange(start, end - start, 0, 0, metrics.data(),
+                                      count, &count))) {
+    return {};
+  }
+
+  std::vector<Rect> rects;
+  rects.reserve(count);
+  for (const auto &m : metrics) {
+    rects.emplace_back(m.left, m.top, m.width, m.height);
+  }
+  return rects;
+}
+
 
 IDWriteTextFormat *TextRenderer::GetTextFormat(const TextStyle &style) {
   size_t hash = ComputeStyleHash(style);
@@ -197,6 +257,32 @@ TextRenderer::CreateTextLayout(const std::wstring &text, const TextStyle &style,
   return layout;
 }
 
+ComPtr<IDWriteTextLayout>
+TextRenderer::GetOrCreateTextLayout(const std::wstring &text,
+                                    const TextStyle &style, float max_width,
+                                    float max_height) {
+  TextLayoutCacheKey key{text, ComputeStyleHash(style), max_width, max_height};
+
+  auto it = layout_cache_.find(key);
+  if (it != layout_cache_.end()) {
+    return it->second;
+  }
+
+  auto layout = CreateTextLayout(text, style, max_width, max_height);
+  if (!layout)
+    return nullptr;
+
+  EvictLayoutCacheIfNeeded();
+  layout_cache_[key] = layout;
+  return layout;
+}
+
+void TextRenderer::EvictLayoutCacheIfNeeded() {
+  if (layout_cache_.size() >= kMaxLayoutCacheSize) {
+    layout_cache_.clear();
+  }
+}
+
 ID2D1SolidColorBrush *TextRenderer::GetBrush(const Color &color) {
   uint32_t key = (static_cast<uint32_t>(color.r) << 24) |
                  (static_cast<uint32_t>(color.g) << 16) |
@@ -238,6 +324,9 @@ void TextRenderer::HashCombine(size_t &hash, size_t value) {
 void TextRenderer::ClearFormatCache() {
   format_cache_.clear();
   brush_cache_.clear();
+  layout_cache_.clear();
 }
+
+void TextRenderer::ClearLayoutCache() { layout_cache_.clear(); }
 
 } // namespace fluxent

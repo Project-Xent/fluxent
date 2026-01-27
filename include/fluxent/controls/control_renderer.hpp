@@ -1,7 +1,5 @@
 #pragma once
 
-// FluXent control renderer (Fluent-style)
-
 #include "../graphics.hpp"
 #include "../text.hpp"
 
@@ -15,25 +13,23 @@ class ThemeManager;
 
 #include "render_context.hpp"
 #include <memory>
-#include <memory>
 
 namespace fluxent::controls {
 
-// Forward declarations
 class ButtonRenderer;
 class CheckBoxRenderer;
 class RadioButtonRenderer;
 class ScrollViewRenderer;
 class SliderRenderer;
 class ToggleSwitchRenderer;
+class TextBoxRenderer;
 
-// ControlRenderer
+
 class ControlRenderer {
 public:
   ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
                   theme::ThemeManager *theme_manager);
-  ~ControlRenderer(); // Defined in .cpp to allow unique_ptr with incomplete
-                      // types if needed
+  ~ControlRenderer();
 
   void BeginFrame();
   void EndFrame();
@@ -59,8 +55,12 @@ public:
   void RenderSlider(const xent::ViewData &data, const Rect &bounds,
                     const ControlState &state);
 
+  void RenderTextBox(const xent::ViewData &data, const Rect &bounds,
+                     const ControlState &state);
+
   void RenderScrollView(const xent::ViewData &data, const Rect &bounds,
                         const ControlState &state);
+
 
   void RenderOverlay(const xent::ViewData &data, const Rect &bounds,
                      const ControlState &state);
@@ -79,11 +79,9 @@ private:
 
   ID2D1SolidColorBrush *GetBrush(const Color &color);
 
-  // Elevation border (gradient stroke). `is_accent` selects accent brush.
   void DrawElevationBorder(const Rect &bounds, float corner_radius,
                            bool is_accent);
 
-  // Render surface helper (background, border, focus)
   Rect DrawControlSurface(const Rect &bounds, float corner_radius,
                           const Color &fill_color, const Color &stroke_color,
                           bool is_accent, const ControlState &state);
@@ -117,13 +115,14 @@ private:
   uint64_t last_theme_version_ = 0;
   void CheckResources();
 
-  // Sub-renderers
   std::unique_ptr<ButtonRenderer> button_renderer_;
   std::unique_ptr<ToggleSwitchRenderer> toggle_renderer_;
   std::unique_ptr<CheckBoxRenderer> checkbox_renderer_;
   std::unique_ptr<RadioButtonRenderer> radio_renderer_;
   std::unique_ptr<SliderRenderer> slider_renderer_;
+  std::unique_ptr<TextBoxRenderer> textbox_renderer_;
   std::unique_ptr<ScrollViewRenderer> scroll_view_renderer_;
+
   RenderContext ctx_;
 };
 

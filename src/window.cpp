@@ -1,9 +1,13 @@
-// FluXent Window - Win32 window management implementation
 #include "fluxent/window.hpp"
 #include <fluxent/theme/theme_manager.hpp>
 #include "dm_handler.hpp"
 
 #include <windowsx.h>
+#include <shobjidl_core.h>
+#include <shellapi.h>
+#include <objbase.h>
+#include <vector>
+#include <imm.h>
 
 #if defined(_MSC_VER)
 #pragma comment(lib, "user32.lib")
@@ -11,6 +15,8 @@
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "dxguid.lib")
+#pragma comment(lib, "imm32.lib")
+#pragma comment(lib, "shell32.lib")
 #endif
 
 // Win11 DWM constants for old SDK compatibility
@@ -46,8 +52,6 @@
 namespace fluxent {
 
 static theme::Mode query_system_theme_mode() {
-  // Reads
-  // HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme
   DWORD value = 0;
   DWORD dataSize = sizeof(value);
   LSTATUS st = RegGetValueW(
@@ -59,7 +63,6 @@ static theme::Mode query_system_theme_mode() {
     return (value != 0) ? theme::Mode::Light : theme::Mode::Dark;
   }
 
-  // Default to Dark if unknown.
   return theme::Mode::Dark;
 }
 
@@ -69,7 +72,6 @@ Result<std::unique_ptr<Window>>
 Window::Create(theme::ThemeManager *theme_manager, const WindowConfig &config) {
   if (!theme_manager)
     return tl::unexpected(E_INVALIDARG);
-  // Use unique_ptr with private constructor (accessible here)
   auto window = std::unique_ptr<Window>(new Window(theme_manager, config));
   auto res = window->Init();
   if (!res)
@@ -80,12 +82,12 @@ Window::Create(theme::ThemeManager *theme_manager, const WindowConfig &config) {
 Window::Window(theme::ThemeManager *theme_manager, const WindowConfig &config)
     : theme_manager_(theme_manager), config_(config) {
   if (!theme_manager_) {
-    // Should be fatal
     std::abort();
   }
 }
 
 Result<void> Window::Init() {
+  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   HINSTANCE hinstance = GetModuleHandle(nullptr);
 
   SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -142,7 +144,6 @@ Result<void> Window::Init() {
   dpi_.dpi_x = static_cast<float>(dpi);
   dpi_.dpi_y = static_cast<float>(dpi);
 
-  // Initialize theme from system preference and apply to ThemeManager + DWM
   auto sys_mode = query_system_theme_mode();
   theme_manager_->SetMode(sys_mode);
   config_.dark_mode = (sys_mode == theme::Mode::Dark);
@@ -178,8 +179,6 @@ void Window::InitDirectManipulation() {
   hr = result_manager_->CreateViewport(nullptr, hwnd_, IID_PPV_ARGS(&viewport_));
   if (FAILED(hr)) return;
 
-  // Configure Viewport
-  // Enable Pan (Vertical + Horizontal) and Inertia
   DIRECTMANIPULATION_CONFIGURATION config =
       DIRECTMANIPULATION_CONFIGURATION_INTERACTION |
       DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_X |
@@ -189,9 +188,9 @@ void Window::InitDirectManipulation() {
       DIRECTMANIPULATION_CONFIGURATION_RAILS_Y;
 
   viewport_->ActivateConfiguration(config);
-  viewport_->SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE);
+  viewport_->SetViewportOptions(DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE |
+                                DIRECTMANIPULATION_VIEWPORT_OPTIONS_INPUT);
 
-  // Add Event Handler
   auto handler = Microsoft::WRL::Make<DirectManipulationEventHandler>(this);
   viewport_->AddEventHandler(hwnd_, handler.Get(), &viewport_handler_cookie_);
 
@@ -293,8 +292,6 @@ void Window::SetCursorHand() { SetCursor(LoadCursor(nullptr, IDC_HAND)); }
 
 void Window::SetCursorIbeam() { SetCursor(LoadCursor(nullptr, IDC_IBEAM)); }
 
-// Window message handling
-
 LRESULT CALLBACK Window::WindowProc(HWND hwnd, UINT msg, WPARAM wparam,
                                     LPARAM lparam) {
   Window *window = nullptr;
@@ -317,12 +314,9 @@ LRESULT CALLBACK Window::WindowProc(HWND hwnd, UINT msg, WPARAM wparam,
 
 LRESULT Window::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
   switch (msg) {
-  case WM_SETTINGCHANGE:
-    // Re-query system theme and apply.
-    {
+  case WM_SETTINGCHANGE: {
       auto m = query_system_theme_mode();
       theme_manager_->SetMode(m);
-      // Keep DWM dark flag in sync
       SetDarkMode(m == theme::Mode::Dark);
     }
     return 0;
@@ -384,7 +378,6 @@ LRESULT Window::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
   case WM_MOUSEWHEEL: {
     int x = GET_X_LPARAM(lparam);
     int y = GET_Y_LPARAM(lparam);
-    // Convert screen coordinates to client coordinates
     POINT pt = {x, y};
     ScreenToClient(hwnd_, &pt);
     float delta =
@@ -396,7 +389,6 @@ LRESULT Window::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
   case 0x020E: { // WM_MOUSEHWHEEL
     int x = GET_X_LPARAM(lparam);
     int y = GET_Y_LPARAM(lparam);
-    // Convert screen coordinates to client coordinates
     POINT pt = {x, y};
     ScreenToClient(hwnd_, &pt);
     float delta =
@@ -413,16 +405,25 @@ LRESULT Window::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
 
     if (GetPointerType(pointerId, &pointerType)) {
       if (pointerType == PT_TOUCH) {
-        // Direct Manipulation Hook
         if (msg == WM_POINTERDOWN) {
-           // Basic Hit Test logic (if we had specific regions, we would check here)
-           // If we want DM to handle it:
-           if (viewport_) {
-             viewport_->SetContact(pointerId);
-           }
+          if (viewport_) {
+            bool should_contact = true;
+            if (on_dm_hittest_) {
+              POINT pt_check;
+              pt_check.x = GET_X_LPARAM(lparam);
+              pt_check.y = GET_Y_LPARAM(lparam);
+              ScreenToClient(hwnd_, &pt_check);
+              should_contact =
+                  on_dm_hittest_(pointerId, pt_check.x, pt_check.y);
+            }
+
+            if (should_contact) {
+              viewport_->SetContact(pointerId);
+            }
+          }
         }
       }
-      
+
       InputSource source = InputSource::Mouse;
       if (pointerType == PT_TOUCH)
         source = InputSource::Touch;
@@ -434,14 +435,20 @@ LRESULT Window::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
       pt.y = GET_Y_LPARAM(lparam);
       ScreenToClient(hwnd_, &pt);
 
-      MouseButton btn = MouseButton::Left; // Default for touch
-      bool is_down = (msg == WM_POINTERDOWN);
+      MouseButton btn = MouseButton::Left;
+      bool is_down = false;
+
+      if (msg == WM_POINTERDOWN) {
+        is_down = true;
+      } else if (msg == WM_POINTERUPDATE) {
+        btn = MouseButton::None;
+      }
 
       OnPointer(source, pointerId, btn, is_down, pt.x, pt.y);
       if (source == InputSource::Touch)
-        return 0; // Consume Touch
+        return 0;
     }
-    break; // Let default proc handle mouse emulation if not touch
+    break;
   }
 
   case WM_LBUTTONDOWN:
@@ -489,12 +496,137 @@ LRESULT Window::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
   case WM_SYSKEYUP:
     OnKey(static_cast<UINT>(wparam), false);
     return 0;
+
+  case WM_CHAR:
+    if (is_ime_composing_) return 0;
+    OnChar(static_cast<wchar_t>(wparam));
+    return 0;
+
+  case WM_IME_STARTCOMPOSITION: {
+    is_ime_composing_ = true;
+    if (on_ime_position_) {
+      auto [x, y, h] = on_ime_position_();
+
+      x *= dpi_.scale_x();
+      y *= dpi_.scale_y();
+      h *= dpi_.scale_y();
+
+      HIMC himc = ImmGetContext(hwnd_);
+      if (himc) {
+        COMPOSITIONFORM cf = {};
+        cf.dwStyle = CFS_POINT;
+        cf.ptCurrentPos.x = static_cast<LONG>(x);
+        cf.ptCurrentPos.y = static_cast<LONG>(y + h);
+        ImmSetCompositionWindow(himc, &cf);
+        ImmReleaseContext(hwnd_, himc);
+      }
+    }
+    break;
+  }
+
+  case WM_IME_SETCONTEXT:
+    lparam &= ~ISC_SHOWUICOMPOSITIONWINDOW;
+    break;
+
+  case WM_IME_COMPOSITION: {
+    HIMC hIMC = ImmGetContext(hwnd_);
+    if (hIMC) {
+      if (lparam & GCS_RESULTSTR) {
+        LONG len = ImmGetCompositionStringW(hIMC, GCS_RESULTSTR, NULL, 0);
+        if (len > 0) {
+          std::vector<wchar_t> buf(len / sizeof(wchar_t) + 1);
+          ImmGetCompositionStringW(hIMC, GCS_RESULTSTR, buf.data(), len);
+          buf[len / sizeof(wchar_t)] = 0;
+          for (size_t i = 0; i < wcslen(buf.data()); ++i) {
+            OnChar(buf[i]);
+          }
+        }
+      }
+      if (lparam & GCS_COMPSTR) {
+        LONG len = ImmGetCompositionStringW(hIMC, GCS_COMPSTR, NULL, 0);
+        if (len > 0) {
+          std::vector<wchar_t> buf(len / sizeof(wchar_t) + 1);
+          ImmGetCompositionStringW(hIMC, GCS_COMPSTR, buf.data(), len);
+          buf[len / sizeof(wchar_t)] = 0;
+          if (on_ime_composition_) {
+            on_ime_composition_(std::wstring(buf.data()));
+          }
+        } else {
+          if (on_ime_composition_) {
+            on_ime_composition_(L"");
+          }
+        }
+      }
+      ImmReleaseContext(hwnd_, hIMC);
+    }
+    return 0;
+  }
+
+  case WM_IME_ENDCOMPOSITION:
+    is_ime_composing_ = false;
+    if (on_ime_composition_) {
+      on_ime_composition_(L"");
+    }
+    break;
+
   }
 
   return DefWindowProc(hwnd_, msg, wparam, lparam);
 }
 
-void Window::OnCreate() {}
+void Window::OnCreate() {
+  default_himc_ = ImmAssociateContext(hwnd_, nullptr);
+}
+
+void Window::EnableIme(bool enable) {
+  if (enable) {
+    if (default_himc_) ImmAssociateContext(hwnd_, default_himc_);
+  } else {
+    ImmAssociateContext(hwnd_, nullptr);
+  }
+}
+
+// Touch keyboard invocation (undocumented COM approach)
+MIDL_INTERFACE("37c994e7-432b-4834-a2f7-dce1f13b834b")
+ITipInvocation : public IUnknown {
+public:
+  virtual HRESULT STDMETHODCALLTYPE Toggle(HWND hwnd) = 0;
+};
+
+const GUID CLSID_UIHostNoLaunch = {
+    0x4ce576fa,
+    0x83dc,
+    0x4f88,
+    {0x95, 0x1c, 0x9d, 0x07, 0x82, 0xb4, 0xe3, 0x76}};
+
+static bool IsTouchKeyboardVisible() {
+  HWND hwnd = FindWindowW(L"IPTip_Main_Window", nullptr);
+  if (hwnd) {
+    LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+    return (style & WS_VISIBLE) != 0;
+  }
+  return false;
+}
+
+static void ToggleTouchKeyboard(HWND host_hwnd) {
+  ITipInvocation *tip = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_UIHostNoLaunch, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&tip));
+  if (SUCCEEDED(hr)) {
+    tip->Toggle(host_hwnd);
+    tip->Release();
+  }
+}
+
+void Window::ShowTouchKeyboard() {
+  ShellExecuteW(nullptr, L"open", L"C:\\Program Files\\Common Files\\microsoft shared\\ink\\TabTip.exe", nullptr, nullptr, SW_SHOW);
+}
+
+void Window::HideTouchKeyboard() {
+  if (IsTouchKeyboardVisible()) {
+    ToggleTouchKeyboard(hwnd_);
+  }
+}
 
 void Window::OnDestroy() { PostQuitMessage(0); }
 
@@ -549,6 +681,9 @@ void Window::OnMouseMove(int x, int y) {
     event.position = Point(dip_x, dip_y);
     event.button = MouseButton::None;
     event.is_down = false;
+    event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    event.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     on_mouse_(event);
   }
 }
@@ -559,10 +694,26 @@ void Window::OnMouseButton(MouseButton button, bool is_down, int x, int y) {
     float dip_x = x / dpi_scale;
     float dip_y = y / dpi_scale;
 
+    if (is_down && button == MouseButton::Left) {
+      ULONGLONG now = GetTickCount64();
+      if (now - last_click_time_ < GetDoubleClickTime()) {
+        click_count_++;
+      } else {
+        click_count_ = 1;
+      }
+      last_click_time_ = now;
+    } else if (is_down) {
+       click_count_ = 1; // Reset for other buttons
+    }
+
     MouseEvent event;
     event.position = Point(dip_x, dip_y);
     event.button = button;
     event.is_down = is_down;
+    event.click_count = click_count_;
+    event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    event.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     on_mouse_(event);
   }
 }
@@ -579,6 +730,9 @@ void Window::OnMouseWheel(float delta_x, float delta_y, int x, int y) {
     event.is_down = false;
     event.wheel_delta_x = delta_x;
     event.wheel_delta_y = delta_y;
+    event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    event.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     on_mouse_(event);
   }
 }
@@ -595,6 +749,9 @@ void Window::OnPointer(InputSource source, UINT32 pointer_id,
     event.button = button;
     event.is_down = is_down;
     event.source = source;
+    event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    event.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     on_mouse_(event);
   }
 }
@@ -611,4 +768,11 @@ void Window::OnKey(UINT vk, bool is_down) {
   }
 }
 
+void Window::OnChar(wchar_t ch) {
+  if (on_char_) {
+    on_char_(ch);
+  }
+}
+
 } // namespace fluxent
+

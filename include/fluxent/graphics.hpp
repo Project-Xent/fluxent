@@ -1,8 +1,6 @@
 
 #pragma once
 
-// FluXent graphics pipeline (D3D11/D2D1/DComp)
-
 #include "types.hpp"
 #include <memory>
 
@@ -25,6 +23,7 @@ public:
   void Resize(int width, int height);
 
   ID2D1DeviceContext *GetD2DContext() const { return d2d_context_.Get(); }
+  ID2D1Factory *GetD2DFactory() const { return d2d_factory_.Get(); }
 
   IDWriteFactory *GetDWriteFactory() const { return dwrite_factory_.Get(); }
 

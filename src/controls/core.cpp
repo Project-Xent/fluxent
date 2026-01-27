@@ -9,6 +9,8 @@
 #include "fluxent/controls/scroll_view_renderer.hpp"
 #include "fluxent/controls/slider_renderer.hpp"
 #include "fluxent/controls/toggle_renderer.hpp"
+#include "fluxent/controls/textbox_renderer.hpp"
+
 
 // Sub-renderers (implementation handled in their own cpp files)
 // Headers are included in control_renderer.hpp
@@ -29,7 +31,9 @@ ControlRenderer::ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
   checkbox_renderer_ = std::make_unique<CheckBoxRenderer>();
   radio_renderer_ = std::make_unique<RadioButtonRenderer>();
   slider_renderer_ = std::make_unique<SliderRenderer>();
+  textbox_renderer_ = std::make_unique<TextBoxRenderer>();
   scroll_view_renderer_ = std::make_unique<ScrollViewRenderer>();
+
 
   auto d2d = graphics_->GetD2DContext();
   d2d->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_);
@@ -45,7 +49,9 @@ void ControlRenderer::BeginFrame() {
   checkbox_renderer_->BeginFrame();
   radio_renderer_->BeginFrame();
   slider_renderer_->BeginFrame();
+  textbox_renderer_->BeginFrame();
   scroll_view_renderer_->BeginFrame();
+
 
   frame_hovered_button_ = nullptr;
   hover_corner_radius_ = 0.0f;
@@ -73,7 +79,9 @@ void ControlRenderer::EndFrame() {
   active |= checkbox_renderer_->EndFrame();
   active |= radio_renderer_->EndFrame();
   active |= slider_renderer_->EndFrame();
+  active |= textbox_renderer_->EndFrame();
   active |= scroll_view_renderer_->EndFrame();
+
 
   if (active && graphics_) {
     graphics_->RequestRedraw();
@@ -110,6 +118,11 @@ void ControlRenderer::Render(const xent::ViewData &data, const Rect &bounds,
     // For now just render.
     RenderSlider(data, bounds, state);
     break;
+  case xent::ComponentType::TextBox:
+    frame_buttons_seen_.insert(&data); // Treat as interactive
+    RenderTextBox(data, bounds, state);
+    break;
+
   case xent::ComponentType::ScrollView:
     RenderScrollView(data, bounds, state);
     break;
@@ -187,6 +200,28 @@ void ControlRenderer::RenderSlider(const xent::ViewData &data,
                                    const Rect &bounds,
                                    const ControlState &state) {
   slider_renderer_->Render(ctx_, data, bounds, state);
+}
+
+void ControlRenderer::RenderTextBox(const xent::ViewData &data,
+                                    const Rect &bounds,
+                                    const ControlState &state) {
+  if (bounds.contains(state.mouse_x, state.mouse_y)) {
+    frame_hovered_button_ = &data;
+    hover_bounds_ = bounds;
+    // float corner_radius = data.corner_radius > 0 ? data.corner_radius :
+    // theme_manager_->Resources().ControlCornerRadius;
+    // Hover overlay might NOT be desired for TextBox (it changes border usually).
+    // WinUI TextBox hover effect is border change, not overlay.
+    // So we skip overlay for TextBox or handle it inside renderer.
+    // Fluxent CheckBox uses overlay. Button uses overlay.
+    // TextBoxRenderer handles hover state visually in DrawChrome.
+    // So we DO NOT set frame_hovered_button_ here?
+    // If we set it, `UpdateHoverOverlay` will draw a semi-transparent box on top.
+    // This is probably WRONG for TextBox (background shouldn't be covered).
+    // So I comment it out.
+    // frame_hovered_button_ = &data;
+  }
+  textbox_renderer_->Render(ctx_, data, bounds, state);
 }
 
 void ControlRenderer::RenderScrollView(const xent::ViewData &data,

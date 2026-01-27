@@ -1,0 +1,10 @@
+CompileFlags:
+  Add: [
+    "-fms-extensions",
+    "-fms-compatibility",
+    "-fdelayed-template-parsing",
+    "-fms-compatibility-version=19",
+    "-D_CRT_SECURE_NO_WARNINGS",
+    "--target=x86_64-pc-windows-msvc"
+  ]
+  Compiler: cl.exe

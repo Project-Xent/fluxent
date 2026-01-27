@@ -1,10 +1,9 @@
 #pragma once
 
-// FluXent Window (Win32)
-
 #include "graphics.hpp"
 #include "types.hpp"
 #include <memory>
+#include <tuple>
 
 #include "theme/theme_manager.hpp"
 
@@ -12,10 +11,9 @@
 
 namespace fluxent {
 
-// Direct Manipulation Callbacks
 using DirectManipulationUpdateCallback =
     std::function<void(float x, float y, float scale, bool centering)>;
-using DirectManipulationHitTestCallback = std::function<bool(UINT pointer_id)>;
+using DirectManipulationHitTestCallback = std::function<bool(UINT pointer_id, int x, int y)>;
 
 class Window {
 public:
@@ -37,6 +35,9 @@ public:
   Size GetClientSize() const;
 
   DpiInfo GetDpi() const { return dpi_; }
+  void EnableIme(bool enable);
+  void ShowTouchKeyboard();
+  void HideTouchKeyboard();
 
   void Run();
   bool ProcessMessages();
@@ -61,6 +62,20 @@ public:
   void SetKeyCallback(KeyEventCallback callback) {
     on_key_ = std::move(callback);
   }
+  void SetCharCallback(CharEventCallback callback) {
+    on_char_ = std::move(callback);
+  }
+
+  using ImePositionCallback = std::function<std::tuple<float, float, float>()>;
+  void SetImePositionCallback(ImePositionCallback callback) {
+    on_ime_position_ = std::move(callback);
+  }
+
+  using ImeCompositionCallback = std::function<void(const std::wstring &)>;
+  void SetImeCompositionCallback(ImeCompositionCallback callback) {
+    on_ime_composition_ = std::move(callback);
+  }
+
 
   void SetDirectManipulationUpdateCallback(
       DirectManipulationUpdateCallback callback) {
@@ -108,22 +123,22 @@ private:
                                      LPARAM lparam);
   LRESULT HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam);
 
-  // Message handlers
   void OnCreate();
   void OnDestroy();
   void OnSize(int width, int height);
   void OnDpiChanged(UINT dpi, const RECT *suggested_rect);
   void OnPaint();
 
-  // Input handlers
   void OnMouseMove(int x, int y);
   void OnMouseButton(MouseButton button, bool is_down, int x, int y);
   void OnMouseWheel(float delta_x, float delta_y, int x, int y);
   void OnPointer(InputSource source, UINT32 pointer_id, MouseButton button,
                  bool is_down, int x, int y);
   void OnKey(UINT vk, bool is_down);
+  void OnChar(wchar_t ch);
 
   void SetupDwmBackdrop();
+
 
   HWND hwnd_ = nullptr;
   DpiInfo dpi_;
@@ -138,11 +153,20 @@ private:
   DpiChangedCallback on_dpi_changed_;
   MouseEventCallback on_mouse_;
   KeyEventCallback on_key_;
+  CharEventCallback on_char_;
+  ImePositionCallback on_ime_position_;
+  ImeCompositionCallback on_ime_composition_;
+  bool is_ime_composing_ = false;
+  HIMC default_himc_ = nullptr;
+
+  ULONGLONG last_click_time_ = 0;
+  int click_count_ = 0;
+
 
   static constexpr const wchar_t *WINDOW_CLASS_NAME = L"FluXentWindowClass";
+
   static bool class_registered_;
 
-  // Direct Manipulation
   void InitDirectManipulation();
 
   ComPtr<IDirectManipulationManager> result_manager_;

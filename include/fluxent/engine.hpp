@@ -1,7 +1,5 @@
 #pragma once
 
-// FluXent render engine
-
 #include "controls/control_renderer.hpp"
 #include "fluxent/theme/theme_manager.hpp"
 #include "graphics.hpp"
@@ -55,10 +53,19 @@ public:
 
   TextRenderer *GetTextRenderer() const { return text_renderer_.get(); }
 
+  void InvalidateLayout() { layout_dirty_ = true; }
+
 private:
-  // Text measurement callback (no lambda).
   std::pair<float, float> MeasureTextCallback(const std::string &text,
                                               float font_size, float max_width);
+
+  int TextHitTestCallback(const std::string &text, float font_size,
+                          float max_width, float x, float y);
+
+  std::tuple<float, float, float, float>
+  TextCaretRectCallback(const std::string &text, float font_size,
+                        float max_width, int cursor_index);
+
 
   void DrawViewRecursive(const xent::View &view, float parent_x,
                          float parent_y);
@@ -88,8 +95,11 @@ private:
   std::unordered_map<uint32_t, ComPtr<ID2D1SolidColorBrush>> brush_cache_;
 
   std::vector<D2D1_MATRIX_3X2_F> transform_stack_;
+  std::vector<Rect> clip_stack_;
 
   bool debug_mode_ = false;
+  bool layout_dirty_ = true;
+  Size last_size_{};
 
   // Theme sync
   theme::ThemeManager *theme_manager_ = nullptr;

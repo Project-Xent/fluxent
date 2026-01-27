@@ -1,4 +1,3 @@
-// FluXent Theme Manager implementation
 #include "fluxent/theme/theme_manager.hpp"
 #include "fluxent/theme/colors.hpp"
 #include "fluxent/config.hpp"
@@ -20,16 +19,10 @@ static xent::Color ToXentColor(const Color &c) {
 
 static void SyncXentButtonPaletteFromTheme(const ThemeResources &r) {
   xent::ButtonPalette p;
-  // Map semantic roles to Fluent/WinUI-ish theme tokens.
   p.primary = ToXentColor(r.AccentDefault);
-  // Secondary should behave like a default WinUI3 button (i.e., no explicit
-  // background override).
   p.secondary = ToXentColor(r.ControlFillTransparent);
   p.success = ToXentColor(r.SystemSuccess);
   p.warning = ToXentColor(r.SystemCaution);
-  // Danger should follow WinUI system critical color:
-  // Light: deep red, Dark: light pink (see
-  // CommonStyles/Common_themeresources_any.xaml).
   p.danger = ToXentColor(r.SystemCritical);
   xent::SetButtonPalette(p);
 }
@@ -82,8 +75,6 @@ void ThemeManager::SetAccent(const AccentPalette &palette) {
   version_++;
 }
 
-// Helper functions
-
 uint8_t ThemeManager::ClampColor(int v) {
   return static_cast<uint8_t>(v > 255 ? 255 : (v < 0 ? 0 : v));
 }
@@ -100,8 +91,6 @@ Color ThemeManager::AdjustBrightness(const Color &c, float factor) {
                  ClampColor(static_cast<int>(c.b * factor)), c.a};
   }
 }
-
-// Theme setup
 
 void ThemeManager::SetAccentColor(const Color &base) {
   accent_.base = base;
@@ -135,7 +124,6 @@ void ThemeManager::UpdateAccentResources() {
               static_cast<uint8_t>(accent_.dark1.a * 0.8f)};
   }
 
-  // Keep xent-core semantic role colors aligned to the active theme.
   SyncXentButtonPaletteFromTheme(resources_);
 }
 

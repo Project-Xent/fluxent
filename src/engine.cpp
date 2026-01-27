@@ -1,7 +1,7 @@
-// FluXent Render Engine implementation
 #include "fluxent/engine.hpp"
 #include "fluxent/input.hpp"
 #include "fluxent/theme/theme_manager.hpp"
+#include "fluxent/utils.hpp"
 
 #include <functional>
 
@@ -33,8 +33,6 @@ struct ThemeRemapEntry {
 static std::vector<ThemeRemapEntry>
 BuildThemeRemap(const theme::ThemeResources &from,
                 const theme::ThemeResources &to) {
-  // Note: include every ThemeResources field so any view that "baked" a theme
-  // token can be updated by matching old RGBA -> new RGBA.
   return {
       {ToXentColor(from.TextPrimary), ToXentColor(to.TextPrimary)},
       {ToXentColor(from.TextSecondary), ToXentColor(to.TextSecondary)},
@@ -239,21 +237,15 @@ static void ApplyButtonDefaultsRecursive(xent::View *data) {
   switch (data->type) {
   case xent::ComponentType::Button:
   case xent::ComponentType::ToggleButton: {
-    // WinUI3 DefaultButtonStyle content padding: 5,11,6,11 (T,R,B,L)
     if (IsZeroPadding(*data)) {
       data->padding_top = 5.0f;
       data->padding_right = 11.0f;
       data->padding_bottom = 6.0f;
       data->padding_left = 11.0f;
     }
-    // NOTE: WinUI3 does not set a default MinHeight/MinWidth for Button in
-    // XAML. Keep framework defaults (0) unless the app sets constraints
-    // explicitly.
   } break;
 
   case xent::ComponentType::ToggleSwitch: {
-    // Default size for the switch track in WinUI3 template is 40x20.
-    // Ensure it's visible even when used without explicit width/height.
     const YGValue w = YGNodeStyleGetWidth(data->node.get());
     const YGValue h = YGNodeStyleGetHeight(data->node.get());
     if (w.unit == YGUnitUndefined) {
@@ -278,7 +270,6 @@ static void ClampScrollOffsetsRecursive(xent::View *view) {
     return;
 
   if (view->type == xent::ComponentType::ScrollView) {
-    // 1. Calculate Content Size (Same logic as Renderer/Input)
     float max_child_right = 0.0f;
     float max_child_bottom = 0.0f;
 
@@ -294,7 +285,6 @@ static void ClampScrollOffsetsRecursive(xent::View *view) {
     float content_w = std::max(view->LayoutWidth(), max_child_right);
     float content_h = std::max(view->LayoutHeight(), max_child_bottom);
 
-    // 2. Visibility Logic for effective size
     auto should_show = [](xent::ScrollBarVisibility vis, float content,
                           float size) {
       if (vis == xent::ScrollBarVisibility::Hidden ||
@@ -322,7 +312,6 @@ static void ClampScrollOffsetsRecursive(xent::View *view) {
     if (show_h)
       effective_view_h -= kBarSize;
 
-    // 3. Clamp
     float max_offset_x = std::max(0.0f, content_w - effective_view_w);
     float max_offset_y = std::max(0.0f, content_h - effective_view_h);
 
@@ -372,7 +361,6 @@ Result<void> RenderEngine::Init() {
   control_renderer_ = std::make_unique<controls::ControlRenderer>(
       graphics_, text_renderer_.get(), theme_manager_);
 
-  // Initialize theme snapshot and subscribe for automatic UI updates.
   last_theme_resources_ = theme_manager_->Resources();
   theme_listener_id_ =
       theme_manager_->AddThemeChangedListener([this](theme::Mode) {
@@ -401,14 +389,13 @@ RenderEngine::~RenderEngine() {
   }
 }
 
-// Text measurement callback
 std::pair<float, float>
 RenderEngine::MeasureTextCallback(const std::string &text, float font_size,
                                   float max_width) {
   if (text.empty())
     return {0.0f, 0.0f};
 
-  std::wstring wtext(text.begin(), text.end());
+  std::wstring wtext = ToWide(text);
 
   TextStyle style;
   style.font_size = font_size;
@@ -416,6 +403,34 @@ RenderEngine::MeasureTextCallback(const std::string &text, float font_size,
   Size measured = text_renderer_->MeasureText(wtext, style,
                                               max_width > 0 ? max_width : 0.0f);
   return {measured.width, measured.height};
+}
+
+int RenderEngine::TextHitTestCallback(const std::string &text, float font_size,
+                                      float max_width, float x, float y) {
+  if (text.empty())
+    return 0;
+
+  std::wstring wtext = ToWide(text);
+
+  TextStyle style;
+  style.font_size = font_size;
+
+  return text_renderer_->HitTestPoint(wtext, style,
+                                      max_width > 0 ? max_width : 0.0f, x, y);
+}
+
+std::tuple<float, float, float, float>
+RenderEngine::TextCaretRectCallback(const std::string &text, float font_size,
+                                    float max_width, int cursor_index) {
+  std::wstring wtext = ToWide(text);
+
+  TextStyle style;
+  style.font_size = font_size;
+
+  Rect r = text_renderer_->GetCaretRect(wtext, style,
+                                        max_width > 0 ? max_width : 0.0f,
+                                        cursor_index);
+  return {r.x, r.y, r.width, r.height};
 }
 
 void RenderEngine::Render(const xent::View &root) {
@@ -433,6 +448,13 @@ void RenderEngine::RenderFrame(xent::View &root) {
   xent::SetTextMeasureFunc(
       std::bind(&RenderEngine::MeasureTextCallback, this, std::placeholders::_1,
                 std::placeholders::_2, std::placeholders::_3));
+  xent::SetTextHitTestFunc(std::bind(
+      &RenderEngine::TextHitTestCallback, this, std::placeholders::_1,
+      std::placeholders::_2, std::placeholders::_3, std::placeholders::_4,
+      std::placeholders::_5));
+  xent::SetTextCaretRectFunc(std::bind(
+      &RenderEngine::TextCaretRectCallback, this, std::placeholders::_1,
+      std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
 
   xent::View *root_data = &root;
   if (root_data) {
@@ -459,7 +481,6 @@ void RenderEngine::RenderFrame(xent::View &root) {
 
 void RenderEngine::DrawViewRecursive(const xent::View &view, float parent_x,
                                      float parent_y) {
-  // view is the data now.
   DrawViewDataRecursive(&view, parent_x, parent_y);
 }
 
@@ -485,11 +506,6 @@ void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
       }
       if (auto pressed = input_->GetPressedView()) {
         if (pressed == data) {
-          // For simple controls (Button, etc.), only show pressed if also
-          // hovered. Sliders/ScrollBars handle their own dragging state
-          // usually, or they stay pressed/captured even if mouse moves out
-          // (e.g. thumb drag). But Button/Toggle should visually unpress if we
-          // drag out.
           bool is_simple_control =
               (data->type == xent::ComponentType::Button ||
                data->type == xent::ComponentType::ToggleButton ||
@@ -504,8 +520,10 @@ void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
         }
       }
       if (auto focused = input_->GetFocusedView()) {
-        state.is_focused =
-            input_->ShouldShowFocusVisuals() && (focused == data);
+        if (focused == data) {
+          state.is_focused = (data->type == xent::ComponentType::TextBox) ||
+                             input_->ShouldShowFocusVisuals();
+        }
       }
     }
     control_renderer_->Render(*data, bounds, state);
@@ -535,7 +553,6 @@ void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
     PopTransform();
   }
 
-  // Post-Children Overlay (ScrollBars, etc. drawn on top of children)
   if (control_renderer_) {
     controls::ControlState state;
     if (input_) {
@@ -546,8 +563,10 @@ void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
         state.is_pressed = (pressed == data);
       }
       if (auto focused = input_->GetFocusedView()) {
-        state.is_focused =
-            input_->ShouldShowFocusVisuals() && (focused == data);
+        if (focused == data) {
+          state.is_focused = (data->type == xent::ComponentType::TextBox) ||
+                             input_->ShouldShowFocusVisuals();
+        }
       }
     }
     control_renderer_->RenderOverlay(*data, bounds, state);
@@ -599,20 +618,17 @@ void RenderEngine::DrawViewText(const xent::View &data, const Rect &bounds) {
   if (text.empty())
     return;
 
-  // Use data.text_color
   Color color(data.text_color.r, data.text_color.g, data.text_color.b,
               data.text_color.a);
 
   if (text_renderer_) {
-    std::wstring wtext(text.begin(), text.end());
+    std::wstring wtext = ToWide(text);
     TextStyle style;
     style.font_size = data.font_size;
     style.color = color;
     text_renderer_->DrawText(wtext, bounds, style);
   }
 }
-
-// Primitives
 
 void RenderEngine::FillRect(const Rect &rect, const Color &color) {
   if (!d2d_context_)
@@ -661,8 +677,6 @@ void RenderEngine::DrawRoundedRect(const Rect &rect, float radius,
   }
 }
 
-// Clipping
-
 void RenderEngine::PushClip(const Rect &rect) {
   if (d2d_context_) {
     d2d_context_->PushAxisAlignedClip(rect.to_d2d(),
@@ -675,8 +689,6 @@ void RenderEngine::PopClip() {
     d2d_context_->PopAxisAlignedClip();
   }
 }
-
-// Transform
 
 void RenderEngine::PushTransform(const D2D1_MATRIX_3X2_F &transform) {
   if (!d2d_context_)
@@ -701,8 +713,6 @@ void RenderEngine::PopTransform() {
 void RenderEngine::PushTranslation(float x, float y) {
   PushTransform(D2D1::Matrix3x2F::Translation(x, y));
 }
-
-// Resources
 
 ID2D1SolidColorBrush *RenderEngine::GetBrush(const Color &color) {
   uint32_t key = (static_cast<uint32_t>(color.r) << 24) |

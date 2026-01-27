@@ -65,6 +65,24 @@ public:
       }
     });
 
+    app->window_->SetDirectManipulationUpdateCallback(
+        [ptr = app.get()](float x, float y, float scale, bool centering) {
+          if (ptr->has_root_) {
+            ptr->input_.HandleDirectManipulation(ptr->root_view_, x, y, scale,
+                                                 centering);
+          }
+        });
+
+    app->window_->SetDirectManipulationHitTestCallback(
+        [ptr = app.get()](UINT pointer_id, int x, int y) -> bool {
+          if (ptr->has_root_) {
+             // We can check if the view at (x,y) is scrollable?
+             // But for now, returning true allows DM to engage if supported.
+             return true;
+          }
+          return false;
+        });
+
     app->window_->SetRenderCallback([ptr = app.get()]() {
       if (ptr->has_root_) {
         ptr->engine_->RenderFrame(ptr->root_view_);

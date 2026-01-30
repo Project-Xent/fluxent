@@ -1,5 +1,5 @@
 #include "fluxent/controls/layout.hpp"
-#include "fluxent/controls/checkbox_renderer.hpp" // Ensure this is first or second
+#include "fluxent/controls/checkbox_renderer.hpp"
 #include "fluxent/config.hpp"
 #include "fluxent/controls/common_drawing.hpp"
 #include "fluxent/controls/renderer_utils.hpp"
@@ -30,7 +30,6 @@ float CheckBoxRenderer::AnimateCheckState(const xent::ViewData *key,
                                           bool is_checked) {
   float target = is_checked ? 1.0f : 0.0f;
   float current;
-  // Using config duration
   if (states_[key].check_anim.Update(target, fluxent::config::Animation::CheckBox, &current)) {
     has_active_transitions_ = true;
   }
@@ -46,6 +45,17 @@ float CheckBoxRenderer::AnimateFloat(const xent::ViewData *key, float target,
   return current;
 }
 
+CheckBoxVisualState CheckBoxRenderer::DetermineVisualState(bool is_checked,
+                                                            const ControlState& state) {
+  if (state.is_pressed) {
+    return is_checked ? CheckBoxVisualState::PressedOn : CheckBoxVisualState::PressedOff;
+  } else if (state.is_hovered) {
+    return is_checked ? CheckBoxVisualState::PointerOverOn : CheckBoxVisualState::PointerOverOff;
+  } else {
+    return is_checked ? CheckBoxVisualState::NormalOn : CheckBoxVisualState::NormalOff;
+  }
+}
+
 void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
                                       const xent::ViewData &data,
                                       const Rect &bounds,
@@ -54,20 +64,23 @@ void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
   auto d2d = ctx.graphics->GetD2DContext();
   const auto &res = ctx.Resources();
 
-  float check_progress = AnimateCheckState(&data, data.is_checked);
-  // Convert seconds to ms for this specific helper signature or update helper
-  // But wait, AnimateFloat takes ms. 
-  // Let's use the explicit second based update in AnimateFloat or just pass converted value.
-  // Actually, AnimateFloat logic: updates using duration_ms / 1000.0.
-  // So we pass ms. config::Animation::CheckBoxPress is seconds (0.100).
-  // So we pass 0.100 * 1000.0.
   float press_scale =
       AnimateFloat(&data, state.is_pressed ? 0.9f : 1.0f, fluxent::config::Animation::CheckBoxPress * 1000.0f);
 
   auto layout = CalculateCheckBoxLayout(bounds, res.CheckBox.Size, res.CheckBox.Gap, res.CheckBox.GlyphFontSize);
   const Rect &box_rect = layout.box_rect;
 
-  // Colors based on XAML logic
+  auto& cb_state = states_[&data];
+  CheckBoxVisualState new_visual_state = DetermineVisualState(data.is_checked, state);
+  bool state_changed = false;
+  if (new_visual_state != cb_state.visual_state) {
+    cb_state.prev_visual_state = cb_state.visual_state;
+    cb_state.visual_state = new_visual_state;
+    cb_state.state_changed = true;
+    state_changed = true;
+    has_active_transitions_ = true;
+  }
+
   Color fill;
   Color stroke;
   Color glyph_color = res.TextOnAccentPrimary;
@@ -111,7 +124,8 @@ void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
     d2d->DrawRoundedRectangle(rr, brush.Get(), 1.0f);
   }
 
-  // Draw Checkmark Glyph (\uE73E from Segoe Fluent Icons)
+  // Draw checkmark using Segoe Fluent Icons
+  float check_progress = AnimateCheckState(&data, data.is_checked);
   if (check_progress > 0.01f) {
     TextStyle icon_style;
     icon_style.font_family = L"Segoe Fluent Icons";
@@ -124,8 +138,6 @@ void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
 
   d2d->SetTransform(old);
 
-  // Text alignment from XAML RadioButton (typically Leading for CheckBox as
-  // well)
   if (!data.text_content.empty()) {
     Rect text_rect = layout.text_rect;
 
@@ -143,6 +155,8 @@ void CheckBoxRenderer::RenderCheckBox(const RenderContext &ctx,
   if (state.is_focused && !state.is_disabled) {
     DrawFocusRect(ctx, box_rect, res.CheckBox.CornerRadius);
   }
+
+  cb_state.state_changed = false;
 }
 
 } // namespace fluxent::controls

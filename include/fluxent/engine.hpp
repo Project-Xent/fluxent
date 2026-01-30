@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <xent/view.hpp>
 
+#include "fluxent/plugin_manager.hpp"
+
 namespace fluxent {
 
 class RenderEngine {
@@ -24,6 +26,8 @@ private:
 public:
   RenderEngine(const RenderEngine &) = delete;
   RenderEngine &operator=(const RenderEngine &) = delete;
+
+  PluginManager *GetPluginManager() const { return plugin_manager_.get(); }
 
   void Render(const xent::View &root);
 
@@ -90,6 +94,7 @@ private:
   std::unique_ptr<TextRenderer> text_renderer_;
 
   std::unique_ptr<controls::ControlRenderer> control_renderer_;
+  std::unique_ptr<PluginManager> plugin_manager_;
   InputHandler *input_ = nullptr;
 
   std::unordered_map<uint32_t, ComPtr<ID2D1SolidColorBrush>> brush_cache_;

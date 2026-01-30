@@ -2,6 +2,8 @@
 
 #include "fluxent/controls/control_renderer.hpp"
 #include "fluxent/theme/theme_manager.hpp"
+#include "fluxent/plugin_manager.hpp"
+#include "fluxent/config.hpp"
 
 #include "fluxent/controls/button_renderer.hpp"
 #include "fluxent/controls/checkbox_renderer.hpp"
@@ -22,10 +24,11 @@
 namespace fluxent::controls {
 
 ControlRenderer::ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
-                                 theme::ThemeManager *theme_manager)
+                                 theme::ThemeManager *theme_manager,
+                                 PluginManager *plugin_manager)
     : graphics_(graphics), text_renderer_(text), theme_manager_(theme_manager) {
 
-  ctx_ = {graphics, text, theme_manager};
+  ctx_ = {graphics, text, theme_manager, plugin_manager};
   button_renderer_ = std::make_unique<ButtonRenderer>();
   toggle_renderer_ = std::make_unique<ToggleSwitchRenderer>();
   checkbox_renderer_ = std::make_unique<CheckBoxRenderer>();
@@ -82,7 +85,6 @@ void ControlRenderer::EndFrame() {
   active |= textbox_renderer_->EndFrame();
   active |= scroll_view_renderer_->EndFrame();
 
-
   if (active && graphics_) {
     graphics_->RequestRedraw();
   }
@@ -131,6 +133,13 @@ void ControlRenderer::Render(const xent::ViewData &data, const Rect &bounds,
     break;
   case xent::ComponentType::Divider:
     RenderDivider(bounds, true);
+    break;
+  case xent::ComponentType::Custom:
+    if (ctx_.plugins) {
+      if (auto *plugin = ctx_.plugins->Get(data.extension_type)) {
+        plugin->Render(data, ctx_, bounds);
+      }
+    }
     break;
   default:
     RenderView(data, bounds);

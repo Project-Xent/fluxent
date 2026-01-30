@@ -109,7 +109,6 @@ private:
   bool is_dragging_h_scrollbar_ = false;
   bool is_dragging_v_scrollbar_ = false;
   Point drag_start_mouse_pos_;
-  float drag_start_scroll_offset_ = 0.0f;
 
   bool is_dragging_slider_thumb_ = false;
   float slider_thumb_drag_offset_ = 0.0f;

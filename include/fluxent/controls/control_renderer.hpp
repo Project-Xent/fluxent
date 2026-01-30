@@ -5,10 +5,15 @@
 
 #include <xent/view.hpp>
 
+#include <chrono>
 #include <unordered_set>
 
 namespace theme {
 class ThemeManager;
+}
+
+namespace fluxent {
+class PluginManager;
 }
 
 #include "render_context.hpp"
@@ -28,7 +33,8 @@ class TextBoxRenderer;
 class ControlRenderer {
 public:
   ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
-                  theme::ThemeManager *theme_manager);
+                  theme::ThemeManager *theme_manager,
+                  PluginManager *plugin_manager = nullptr);
   ~ControlRenderer();
 
   void BeginFrame();

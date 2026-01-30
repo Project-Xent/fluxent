@@ -357,9 +357,10 @@ Result<void> RenderEngine::Init() {
     return tl::unexpected(tr_res.error());
 
   text_renderer_ = std::move(*tr_res);
+  plugin_manager_ = std::make_unique<PluginManager>();
 
   control_renderer_ = std::make_unique<controls::ControlRenderer>(
-      graphics_, text_renderer_.get(), theme_manager_);
+      graphics_, text_renderer_.get(), theme_manager_, plugin_manager_.get());
 
   last_theme_resources_ = theme_manager_->Resources();
   theme_listener_id_ =

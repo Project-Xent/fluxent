@@ -4,6 +4,10 @@
 #include "../text.hpp"
 #include "../theme/theme_manager.hpp"
 
+namespace fluxent {
+class PluginManager;
+}
+
 namespace fluxent::controls {
 
 struct ControlState {
@@ -19,6 +23,7 @@ struct RenderContext {
   GraphicsPipeline *graphics;
   TextRenderer *text;
   theme::ThemeManager *theme_manager;
+  PluginManager *plugins;
 
   const theme::ThemeResources &Resources() const {
     return theme_manager->Resources();

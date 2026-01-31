@@ -4,9 +4,11 @@
 #include "types.hpp"
 #include <memory>
 
-namespace fluxent {
+namespace fluxent
+{
 
-class GraphicsPipeline {
+class GraphicsPipeline
+{
 public:
   static Result<std::unique_ptr<GraphicsPipeline>> Create();
   ~GraphicsPipeline();
@@ -20,7 +22,7 @@ public:
   GraphicsPipeline &operator=(const GraphicsPipeline &) = delete;
 
   Result<void> AttachToWindow(HWND hwnd);
-  void Resize(int width, int height);
+  Result<void> Resize(int width, int height);
 
   ID2D1DeviceContext *GetD2DContext() const { return d2d_context_.Get(); }
   ID2D1Factory *GetD2DFactory() const { return d2d_factory_.Get(); }
@@ -43,9 +45,7 @@ public:
   // DirectComposition access (for compositor-driven animations/layers)
   IDCompositionDevice *GetDCompDevice() const { return dcomp_device_.Get(); }
   IDCompositionVisual *GetDCompRootVisual() const { return root_visual_.Get(); }
-  ID2D1DeviceContext *GetD2DOverlayContext() const {
-    return d2d_overlay_context_.Get();
-  }
+  ID2D1DeviceContext *GetD2DOverlayContext() const { return d2d_overlay_context_.Get(); }
 
   // Inserts a visual above the swapchain visual.
   void AddOverlayVisual(IDCompositionVisual *visual);
@@ -61,6 +61,8 @@ public:
 
   DpiInfo GetDpi() const { return dpi_; }
   void SetDpi(const DpiInfo &dpi);
+  HRESULT GetLastError() const { return last_hr_; }
+  void ClearLastError() { last_hr_ = S_OK; }
 
 private:
   Result<void> CreateDeviceIndependentResources();
@@ -92,6 +94,8 @@ private:
 
   // DWrite
   ComPtr<IDWriteFactory3> dwrite_factory_;
+
+  HRESULT last_hr_ = S_OK;
 };
 
 } // namespace fluxent

@@ -5,34 +5,37 @@
 #include <cmath>
 #include <xent/color.hpp>
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
 static constexpr double kButtonBrushTransitionSeconds = 0.083;
 static constexpr float kControlContentThemeFontSize = 14.0f;
 
-inline Color ToFluXentColor(const xent::Color &c) {
-  return Color(c.r, c.g, c.b, c.a);
-}
+inline Color ToFluXentColor(const xent::Color &c) { return Color(c.r, c.g, c.b, c.a); }
 
-inline bool ColorEqualRgba(const Color &a, const Color &b) {
+inline bool ColorEqualRgba(const Color &a, const Color &b)
+{
   return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
 
 inline float Clamp01(float v) { return std::max(0.0f, std::min(1.0f, v)); }
 
-inline float SrgbToLinear(float c) {
+inline float SrgbToLinear(float c)
+{
   if (c <= 0.04045f)
     return c / 12.92f;
   return std::pow((c + 0.055f) / 1.055f, 2.4f);
 }
 
-inline float LinearToSrgb(float c) {
+inline float LinearToSrgb(float c)
+{
   if (c <= 0.0031308f)
     return 12.92f * c;
   return 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
 }
 
-inline Color LerpColorSrgb(const Color &a, const Color &b, float t) {
+inline Color LerpColorSrgb(const Color &a, const Color &b, float t)
+{
   t = Clamp01(t);
 
   const float ar = a.r / 255.0f;

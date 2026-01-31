@@ -4,29 +4,34 @@
 #include <xent/delegate.hpp>
 #include <vector>
 
-namespace fluxent::theme {
+namespace fluxent::theme
+{
 
-struct ElevationTheme {
+struct ElevationTheme
+{
   float Height;
   float GradientStop1;
   float GradientStop2;
 };
 
-struct FocusTheme {
+struct FocusTheme
+{
   float OuterThickness;
   float InnerThickness;
   float OuterPadding;
   float InnerPadding;
 };
 
-struct CheckBoxTheme {
+struct CheckBoxTheme
+{
   float Size;
   float Gap;
   float CornerRadius;
   float GlyphFontSize;
 };
 
-struct RadioButtonTheme {
+struct RadioButtonTheme
+{
   float Size;
   float Gap;
   float GlyphSize;
@@ -34,7 +39,8 @@ struct RadioButtonTheme {
   float GlyphSizePressed;
 };
 
-struct TextBoxTheme {
+struct TextBoxTheme
+{
   float MinHeight;
   float MinWidth;
   float PaddingLeft;
@@ -43,7 +49,8 @@ struct TextBoxTheme {
   float PaddingBottom;
 };
 
-struct ThemeResources {
+struct ThemeResources
+{
   ElevationTheme Elevation;
 
   FocusTheme Focus;
@@ -156,9 +163,15 @@ struct ThemeResources {
   Color SystemSolidNeutralBackground;
 };
 
-enum class Mode { Dark, Light, HighContrast };
+enum class Mode
+{
+  Dark,
+  Light,
+  HighContrast
+};
 
-struct AccentPalette {
+struct AccentPalette
+{
   Color base;
   Color light1;
   Color light2;
@@ -167,7 +180,8 @@ struct AccentPalette {
   Color dark2;
   Color dark3;
 
-  static AccentPalette Default() {
+  static AccentPalette Default()
+  {
     return AccentPalette{
         .base = Color{0, 120, 212, 255},     // #0078D4
         .light1 = Color{26, 137, 228, 255},  // #1A89E4
@@ -180,7 +194,8 @@ struct AccentPalette {
   }
 };
 
-class ThemeManager {
+class ThemeManager
+{
 public:
   ThemeManager();
 

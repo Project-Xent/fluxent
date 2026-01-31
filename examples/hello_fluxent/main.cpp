@@ -17,7 +17,8 @@
 
 using namespace fluxent;
 
-template <typename T> static xent::Color ToXentColor(const T &c) {
+template <typename T> static xent::Color ToXentColor(const T &c)
+{
   return xent::Color{
       static_cast<std::uint8_t>(c.r),
       static_cast<std::uint8_t>(c.g),
@@ -26,8 +27,7 @@ template <typename T> static xent::Color ToXentColor(const T &c) {
   };
 }
 
-std::unique_ptr<xent::View> build_ui(class App &app,
-                                     fluxent::theme::ThemeManager &tm);
+std::unique_ptr<xent::View> build_ui(class App &app, fluxent::theme::ThemeManager &tm);
 
 class App;
 Window *g_window = nullptr;
@@ -36,43 +36,51 @@ InputHandler *g_input = nullptr;
 App *g_app = nullptr;
 xent::View *g_root_view = nullptr;
 
-class App {
+class App
+{
 public:
   int counter = 0;
   xent::View *counter_text_data = nullptr;
   xent::Delegate<void()> invalidate_callback;
 
-  void SetInvalidateCallback(xent::Delegate<void()> callback) {
-    invalidate_callback = callback;
-  }
+  void SetInvalidateCallback(xent::Delegate<void()> callback) { invalidate_callback = callback; }
 
-  void increment() {
+  void increment()
+  {
     counter++;
-    if (counter_text_data && invalidate_callback) {
+    if (counter_text_data && invalidate_callback)
+    {
       counter_text_data->text_content = "Count: " + std::to_string(counter);
-      if (counter_text_data->node) {
+      if (counter_text_data->node)
+      {
         YGNodeMarkDirty(counter_text_data->node.get());
       }
       invalidate_callback();
     }
   }
 
-  void decrement() {
+  void decrement()
+  {
     counter--;
-    if (counter_text_data && invalidate_callback) {
+    if (counter_text_data && invalidate_callback)
+    {
       counter_text_data->text_content = "Count: " + std::to_string(counter);
-      if (counter_text_data->node) {
+      if (counter_text_data->node)
+      {
         YGNodeMarkDirty(counter_text_data->node.get());
       }
       invalidate_callback();
     }
   }
 
-  void reset() {
+  void reset()
+  {
     counter = 0;
-    if (counter_text_data && invalidate_callback) {
+    if (counter_text_data && invalidate_callback)
+    {
       counter_text_data->text_content = "Count: " + std::to_string(counter);
-      if (counter_text_data->node) {
+      if (counter_text_data->node)
+      {
         YGNodeMarkDirty(counter_text_data->node.get());
       }
       invalidate_callback();
@@ -80,54 +88,68 @@ public:
   }
 };
 
-void on_window_render() {
-  if (g_engine && g_window && g_root_view) {
+void on_window_render()
+{
+  if (g_engine && g_window && g_root_view)
+  {
     g_engine->RenderFrame(*g_root_view);
   }
 }
 
-void on_window_mouse_event(const MouseEvent &event) {
-  if (g_input && g_window && g_root_view) {
+void on_window_mouse_event(const MouseEvent &event)
+{
+  if (g_input && g_window && g_root_view)
+  {
     g_input->HandleMouseEvent(*g_root_view, event);
   }
 }
 
-void on_window_resize(int width, int height) {
+void on_window_resize(int width, int height)
+{
   (void)width;
   (void)height;
-  if (g_window) {
+  if (g_window)
+  {
     g_window->RequestRender();
   }
 }
 
-void on_window_invalidate() {
-  if (g_window) {
+void on_window_invalidate()
+{
+  if (g_window)
+  {
     g_window->RequestRender();
   }
 }
 
-void on_input_invalidate() {
-  if (g_window) {
+void on_input_invalidate()
+{
+  if (g_window)
+  {
     g_window->RequestRender();
   }
 }
 
-void on_window_key_event(const KeyEvent &event) {
-  if (g_input && g_window && g_root_view) {
+void on_window_key_event(const KeyEvent &event)
+{
+  if (g_input && g_window && g_root_view)
+  {
     g_input->HandleKeyEvent(*g_root_view, event);
   }
 }
 
-void on_window_char_event(wchar_t ch) {
-  if (g_input && g_window && g_root_view) {
+void on_window_char_event(wchar_t ch)
+{
+  if (g_input && g_window && g_root_view)
+  {
     g_input->HandleCharEvent(*g_root_view, ch);
   }
 }
 
 // Build UI
 
-std::unique_ptr<xent::View> build_ui(App &app,
-                                     fluxent::theme::ThemeManager &tm) {
+std::unique_ptr<xent::View> build_ui(App &app, fluxent::theme::ThemeManager &tm)
+{
   // Main Root container
   auto root = std::make_unique<xent::VStack>();
 
@@ -139,9 +161,7 @@ std::unique_ptr<xent::View> build_ui(App &app,
 
   // ScrollView covering the whole area
   auto scroll = std::make_unique<xent::ScrollView>();
-  scroll->Expand()
-      .HorizontalScroll(xent::ScrollMode::Auto)
-      .VerticalScroll(xent::ScrollMode::Auto);
+  scroll->Expand().HorizontalScroll(xent::ScrollMode::Auto).VerticalScroll(xent::ScrollMode::Auto);
 
   // Main Content holding everything
   auto content = std::make_unique<xent::VStack>();
@@ -165,8 +185,7 @@ std::unique_ptr<xent::View> build_ui(App &app,
 
   // Counter Text in header
   auto counter_text = std::make_unique<xent::Text>("Count: 0");
-  counter_text->SetFontSize(24).SetColor(
-      ToXentColor(tm.Resources().TextPrimary));
+  counter_text->SetFontSize(24).SetColor(ToXentColor(tm.Resources().TextPrimary));
   app.counter_text_data = counter_text.get();
   header_stack->Add(std::move(counter_text));
 
@@ -181,30 +200,29 @@ std::unique_ptr<xent::View> build_ui(App &app,
 
   auto textbox = std::make_unique<xent::View>();
   textbox->type = xent::ComponentType::TextBox;
-  textbox->Width(300).Height(32)
-         .Background(ToXentColor(tm.Resources().ControlFillInputActive)) // Default
-         .CornerRadius(4)
-         .Padding(10, 6) // L,R, T,B? View logic: T,R,B,L = Padding(top, right, bottom, left)
-                         // Wait, Padding(vertical, horizontal) -> T=V, B=V, L=H, R=H.
-                         // Padding(6, 10).
-         .Placeholder("Type something...")
-         .OnTextInput({nullptr, [](void*, const std::string& t){
-             // Debug
-             char buf[256];
-             sprintf_s(buf, "Input: %s\n", t.c_str());
-             OutputDebugStringA(buf);
-         }});
+  textbox->Width(300)
+      .Height(32)
+      .Background(ToXentColor(tm.Resources().ControlFillInputActive)) // Default
+      .CornerRadius(4)
+      .Padding(10, 6) // L,R, T,B? View logic: T,R,B,L = Padding(top, right, bottom, left)
+                      // Wait, Padding(vertical, horizontal) -> T=V, B=V, L=H, R=H.
+                      // Padding(6, 10).
+      .Placeholder("Type something...")
+      .OnTextInput({nullptr, [](void *, const std::string &t)
+                    {
+                      // Debug
+                      std::string msg = "Input: " + t + "\n";
+                      OutputDebugStringA(msg.c_str());
+                    }});
   // Explicitly use Padding(6, 10) to match standard look
   textbox->Padding(6, 10);
-  
+
   textbox_stack->Add(std::move(textbox));
   content->Add(std::move(textbox_stack));
 
   // --- Main Controls Row (Left vs Right) ---
   auto main_row = std::make_unique<xent::HStack>();
-  main_row->Gap(40)
-      .AlignItems(YGAlignFlexStart)
-      .MinWidth(550); // Force minimum width for scrolling
+  main_row->Gap(40).AlignItems(YGAlignFlexStart).MinWidth(550); // Force minimum width for scrolling
 
   // LEFT COLUMN: Buttons (+, -, Reset)
   auto left_col = std::make_unique<xent::VStack>();
@@ -218,15 +236,11 @@ std::unique_ptr<xent::View> build_ui(App &app,
       .FlexShrink(0); // Prevent shrinking to enable scroll
 
   auto btn1 = std::make_unique<xent::Button>("+1");
-  btn1->Icon("Add")
-      .Role(xent::Semantic::Primary)
-      .OnClick<App, &App::increment>(&app);
+  btn1->Icon("Add").Role(xent::Semantic::Primary).OnClick<App, &App::increment>(&app);
   left_col->Add(std::move(btn1));
 
   auto btn2 = std::make_unique<xent::Button>("-1");
-  btn2->Icon("Minus")
-      .Role(xent::Semantic::Secondary)
-      .OnClick<App, &App::decrement>(&app);
+  btn2->Icon("Minus").Role(xent::Semantic::Secondary).OnClick<App, &App::decrement>(&app);
   left_col->Add(std::move(btn2));
 
   auto btn3 = std::make_unique<xent::Button>("Reset");
@@ -240,8 +254,7 @@ std::unique_ptr<xent::View> build_ui(App &app,
 
   // RIGHT COLUMN: Controls
   auto right_col = std::make_unique<xent::VStack>();
-  right_col->Gap(24).MinWidth(350).FlexShrink(
-      0); // Prevent shrinking to force scroll
+  right_col->Gap(24).MinWidth(350).FlexShrink(0); // Prevent shrinking to force scroll
 
   // Right Top: Toggle + Slider
   auto right_top = std::make_unique<xent::HStack>();
@@ -254,8 +267,7 @@ std::unique_ptr<xent::View> build_ui(App &app,
   auto slider_stack = std::make_unique<xent::VStack>();
   slider_stack->Gap(4);
   auto slider_lbl = std::make_unique<xent::Text>("Volume");
-  slider_lbl->SetFontSize(12).SetColor(
-      ToXentColor(tm.Resources().TextSecondary));
+  slider_lbl->SetFontSize(12).SetColor(ToXentColor(tm.Resources().TextSecondary));
   slider_stack->Add(std::move(slider_lbl));
 
   auto slider = std::make_unique<xent::Slider>();
@@ -273,8 +285,7 @@ std::unique_ptr<xent::View> build_ui(App &app,
   auto radio_group = std::make_unique<xent::VStack>();
   radio_group->Gap(8);
   auto radio_lbl = std::make_unique<xent::Text>("Options");
-  radio_lbl->SetFontSize(14).SetColor(
-      ToXentColor(tm.Resources().TextSecondary));
+  radio_lbl->SetFontSize(14).SetColor(ToXentColor(tm.Resources().TextSecondary));
   radio_group->Add(std::move(radio_lbl));
 
   auto r1 = std::make_unique<xent::RadioButton>("Option A");
@@ -289,8 +300,7 @@ std::unique_ptr<xent::View> build_ui(App &app,
   auto check_group = std::make_unique<xent::VStack>();
   check_group->Gap(8);
   auto check_lbl = std::make_unique<xent::Text>("Settings");
-  check_lbl->SetFontSize(14).SetColor(
-      ToXentColor(tm.Resources().TextSecondary));
+  check_lbl->SetFontSize(14).SetColor(ToXentColor(tm.Resources().TextSecondary));
   check_group->Add(std::move(check_lbl));
 
   auto c1 = std::make_unique<xent::CheckBox>("Turbo");
@@ -316,7 +326,8 @@ std::unique_ptr<xent::View> build_ui(App &app,
   return root;
 }
 
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
+{
   WindowConfig config;
   config.title = L"Hello FluXent";
   config.width = 400;
@@ -326,13 +337,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   fluxent::theme::ThemeManager theme_manager;
 
   auto window_res = Window::Create(&theme_manager, config);
-  if (!window_res) {
+  if (!window_res)
+  {
     return -1;
   }
   auto window = std::move(*window_res);
 
   auto engine_res = RenderEngine::Create(window->GetGraphics(), &theme_manager);
-  if (!engine_res) {
+  if (!engine_res)
+  {
     return -1;
   }
   auto engine = std::move(*engine_res);
@@ -349,117 +362,143 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   g_input = &input;
   g_app = &app;
 
-  input.SetInvalidateCallback({nullptr, [](void*){ on_input_invalidate(); }});
-  input.SetHoverChangedCallback({window.get(), [](void* ctx, xent::View* old_view, xent::View* new_view) {
-    (void)old_view;
-    auto* win_ptr = static_cast<Window*>(ctx);
-    if (new_view && new_view->type == xent::ComponentType::TextBox) {
-      win_ptr->SetCursorIbeam();
-    } else {
-      win_ptr->SetCursorArrow();
-    }
-  }});
-  app.SetInvalidateCallback({nullptr, [](void*){ on_window_invalidate(); }});
+  input.SetInvalidateCallback({nullptr, [](void *) { on_input_invalidate(); }});
+  input.SetHoverChangedCallback({window.get(),
+                                 [](void *ctx, xent::View *old_view, xent::View *new_view)
+                                 {
+                                   (void)old_view;
+                                   auto *win_ptr = static_cast<Window *>(ctx);
+                                   if (new_view && new_view->type == xent::ComponentType::TextBox)
+                                   {
+                                     win_ptr->SetCursorIbeam();
+                                   }
+                                   else
+                                   {
+                                     win_ptr->SetCursorArrow();
+                                   }
+                                 }});
+  app.SetInvalidateCallback({nullptr, [](void *) { on_window_invalidate(); }});
 
   auto root = build_ui(app, theme_manager);
   g_root_view = root.get();
 
-  window->SetRenderCallback({nullptr, [](void*){ on_window_render(); }});
-  window->SetMouseCallback({nullptr, [](void*, const MouseEvent& e){ on_window_mouse_event(e); }});
-  window->SetKeyCallback({nullptr, [](void*, const KeyEvent& e){ on_window_key_event(e); }});
-  window->SetCharCallback({nullptr, [](void*, wchar_t c){ on_window_char_event(c); }});
-  window->SetResizeCallback({nullptr, [](void*, int w, int h){ on_window_resize(w, h); }});
+  window->SetRenderCallback({nullptr, [](void *) { on_window_render(); }});
+  window->SetMouseCallback(
+      {nullptr, [](void *, const MouseEvent &e) { on_window_mouse_event(e); }});
+  window->SetKeyCallback({nullptr, [](void *, const KeyEvent &e) { on_window_key_event(e); }});
+  window->SetCharCallback({nullptr, [](void *, wchar_t c) { on_window_char_event(c); }});
+  window->SetCopyCallback(
+      {&input, [](void *ctx) { static_cast<InputHandler *>(ctx)->PerformCopy(); }});
+  window->SetCutCallback(
+      {&input, [](void *ctx) { static_cast<InputHandler *>(ctx)->PerformCut(); }});
+  window->SetPasteCallback(
+      {&input, [](void *ctx) { static_cast<InputHandler *>(ctx)->PerformPaste(); }});
+  window->SetResizeCallback({nullptr, [](void *, int w, int h) { on_window_resize(w, h); }});
 
   // IME candidate window positioning
-  window->SetImePositionCallback({&input, [](void* ctx) -> std::tuple<float, float, float> {
-    auto* input_ptr = static_cast<InputHandler*>(ctx);
-    auto* focused = input_ptr->GetFocusedView();
-    if (focused && focused->type == xent::ComponentType::TextBox) {
-      auto bounds = input_ptr->GetFocusedViewBounds();
-      float x = bounds.x + focused->padding_left;
-      float y = bounds.y + focused->padding_top;
-      float h = focused->font_size > 0 ? focused->font_size * 1.3f : 18.0f;
-      return {x, y, h};
-    }
-    return {0.f, 0.f, 0.f};
-  }});
+  window->SetImePositionCallback({&input, [](void *ctx) -> std::tuple<float, float, float>
+                                  {
+                                    auto *input_ptr = static_cast<InputHandler *>(ctx);
+                                    auto *focused = input_ptr->GetFocusedView();
+                                    if (focused && focused->type == xent::ComponentType::TextBox)
+                                    {
+                                      auto bounds = input_ptr->GetFocusedViewBounds();
+                                      float x = bounds.x + focused->padding_left;
+                                      float y = bounds.y + focused->padding_top;
+                                      float h = focused->font_size > 0 ? focused->font_size * 1.3f
+                                                                       : 18.0f;
+                                      return {x, y, h};
+                                    }
+                                    return {0.f, 0.f, 0.f};
+                                  }});
 
   // IME composition text
   // IME composition text
-  window->SetImeCompositionCallback({&input, [](void* ctx, const std::wstring& text) {
-      static_cast<InputHandler*>(ctx)->SetCompositionText(text);
-  }});
+  window->SetImeCompositionCallback(
+      {&input, [](void *ctx, const std::wstring &text)
+       { static_cast<InputHandler *>(ctx)->SetCompositionText(text); }});
 
-  auto* win_ptr = window.get();
-  input.SetImeStateChangeCallback({win_ptr, [](void* ctx, bool enable) {
-      if (ctx) static_cast<Window*>(ctx)->EnableIme(enable);
-  }});
+  auto *win_ptr = window.get();
+  input.SetImeStateChangeCallback({win_ptr, [](void *ctx, bool enable)
+                                   {
+                                     if (ctx)
+                                       static_cast<Window *>(ctx)->EnableIme(enable);
+                                   }});
 
-  input.SetShowTouchKeyboardCallback({win_ptr, [](void* ctx, bool show) {
-      auto* w = static_cast<Window*>(ctx);
-      if (w) {
-          if (show) w->ShowTouchKeyboard();
-          else w->HideTouchKeyboard();
-      }
-  }});
+  input.SetShowTouchKeyboardCallback({win_ptr, [](void *ctx, bool show)
+                                      {
+                                        auto *w = static_cast<Window *>(ctx);
+                                        if (w)
+                                        {
+                                          if (show)
+                                            w->ShowTouchKeyboard();
+                                          else
+                                            w->HideTouchKeyboard();
+                                        }
+                                      }});
 
   // DM hit test: return false for controls that need direct touch handling
   // DM hit test: return false for controls that need direct touch handling
   // Uses globals (g_root_view, g_input, g_window) to avoid complex context
   window->SetDirectManipulationHitTestCallback(
-      {nullptr, [](void*, UINT pointer_id, int px, int py) -> bool {
-        (void)pointer_id;
-        if (!g_root_view || !g_input || !g_window) return true;
+      {nullptr, [](void *, UINT pointer_id, int px, int py) -> bool
+       {
+         (void)pointer_id;
+         if (!g_root_view || !g_input || !g_window)
+           return true;
 
-        // Convert physical pixels to DIPs
-        auto dpi = g_window->GetDpi();
-        float dip_x = static_cast<float>(px) / dpi.scale_x();
-        float dip_y = static_cast<float>(py) / dpi.scale_y();
+         // Convert physical pixels to DIPs
+         auto dpi = g_window->GetDpi();
+         float dip_x = static_cast<float>(px) / dpi.scale_x();
+         float dip_y = static_cast<float>(py) / dpi.scale_y();
 
-        // Use g_input
-        auto hit = g_input->HitTest(*g_root_view, Point(dip_x, dip_y));
-        if (hit.view_data) {
-          auto type = hit.view_data->type;
-          // These controls need direct touch; don't let DM capture them
-          if (type == xent::ComponentType::Slider ||
-              type == xent::ComponentType::ToggleSwitch ||
-              type == xent::ComponentType::Button ||
-              type == xent::ComponentType::ToggleButton ||
-              type == xent::ComponentType::CheckBox ||
-              type == xent::ComponentType::RadioButton ||
-              type == xent::ComponentType::TextBox) {
-            return false;
-          }
-        }
-        return true; // Allow DM for scroll areas
-      }});
+         // Use g_input
+         auto hit = g_input->HitTest(*g_root_view, Point(dip_x, dip_y));
+         if (hit.view_data)
+         {
+           auto type = hit.view_data->type;
+           // These controls need direct touch; don't let DM capture them
+           if (type == xent::ComponentType::Slider || type == xent::ComponentType::ToggleSwitch ||
+               type == xent::ComponentType::Button || type == xent::ComponentType::ToggleButton ||
+               type == xent::ComponentType::CheckBox || type == xent::ComponentType::RadioButton ||
+               type == xent::ComponentType::TextBox)
+           {
+             return false;
+           }
+         }
+         return true; // Allow DM for scroll areas
+       }});
 
   window->SetDirectManipulationUpdateCallback(
-      {nullptr, [](void*, float x, float y, float scale, bool centering) {
-        if (g_root_view && g_input) {
+      {nullptr, [](void *, float x, float y, float scale, bool centering)
+       {
+         if (g_root_view && g_input)
+         {
            g_input->HandleDirectManipulation(*g_root_view, x, y, scale, centering);
-        }
-      }});
+         }
+       }});
 
   window->SetDirectManipulationStatusCallback(
-      {&input, [](void* ctx, DIRECTMANIPULATION_STATUS status) {
-        if (status == DIRECTMANIPULATION_RUNNING) {
-          auto* input_ptr = static_cast<InputHandler*>(ctx);
-          // Only cancel if not interacting with a control that needs touch
-          auto* pressed = input_ptr->GetPressedView();
-          bool is_touch_control = pressed && (
-              pressed->type == xent::ComponentType::Slider ||
-              pressed->type == xent::ComponentType::ToggleSwitch ||
-              pressed->type == xent::ComponentType::Button ||
-              pressed->type == xent::ComponentType::ToggleButton ||
-              pressed->type == xent::ComponentType::CheckBox ||
-              pressed->type == xent::ComponentType::RadioButton ||
-              pressed->type == xent::ComponentType::TextBox);
-          if (!is_touch_control) {
-            input_ptr->CancelInteraction();
-          }
-        }
-      }});
+      {&input, [](void *ctx, DIRECTMANIPULATION_STATUS status)
+       {
+         if (status == DIRECTMANIPULATION_RUNNING)
+         {
+           auto *input_ptr = static_cast<InputHandler *>(ctx);
+           // Only cancel if not interacting with a control that needs touch
+           auto *pressed = input_ptr->GetPressedView();
+           bool is_touch_control = pressed && (pressed->type == xent::ComponentType::Slider ||
+                                               pressed->type == xent::ComponentType::ToggleSwitch ||
+                                               pressed->type == xent::ComponentType::Button ||
+                                               pressed->type == xent::ComponentType::ToggleButton ||
+                                               pressed->type == xent::ComponentType::CheckBox ||
+                                               pressed->type == xent::ComponentType::RadioButton ||
+                                               pressed->type == xent::ComponentType::TextBox);
+           if (!is_touch_control)
+           {
+             input_ptr->CancelInteraction();
+           }
+         }
+       }});
 
   window->RequestRender();
   window->Run();
@@ -467,4 +506,3 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
   g_root_view = nullptr;
   return 0;
 }
-

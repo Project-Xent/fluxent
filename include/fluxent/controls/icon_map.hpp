@@ -3,15 +3,18 @@
 #include <cwchar>
 #include <string>
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
 // Mapping from common icon names (Segoe Fluent Icons / MDL2) to Unicode
 // codepoints. We use wide characters for D2D compatibility.
-struct IconDef {
+struct IconDef
+{
   const wchar_t *codepoint;
 };
 
-inline const wchar_t *GetIconCodepoint(const std::string &name) {
+inline const wchar_t *GetIconCodepoint(const std::string &name)
+{
   // Basic subset of Segoe Fluent Icons / MDL2
   if (name == "Accept" || name == "Check")
     return L"\uE8FB";

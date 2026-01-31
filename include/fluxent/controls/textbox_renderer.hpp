@@ -5,26 +5,28 @@
 #include <unordered_map>
 #include <xent/view.hpp>
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
-class TextBoxRenderer {
+class TextBoxRenderer
+{
 public:
   void BeginFrame();
   bool EndFrame();
 
-  void Render(const RenderContext &ctx, const xent::View &data,
-              const Rect &bounds, const ControlState &state);
+  void Render(const RenderContext &ctx, const xent::View &data, const Rect &bounds,
+              const ControlState &state);
 
 private:
-  void DrawElevationBorder(const RenderContext &ctx, const Rect &bounds,
-                           float corner_radius, bool is_focused,
-                           bool is_hovered);
+  void DrawElevationBorder(const RenderContext &ctx, const Rect &bounds, float corner_radius,
+                           bool is_focused, bool is_hovered);
 
-  Rect DrawChrome(const RenderContext &ctx, const Rect &bounds,
-                  const ControlState &state, float corner_radius);
+  Rect DrawChrome(const RenderContext &ctx, const Rect &bounds, const ControlState &state,
+                  float corner_radius);
 
   // Caret blink state per TextBox
-  struct CaretState {
+  struct CaretState
+  {
     std::chrono::steady_clock::time_point last_toggle;
     bool visible = true;
   };
@@ -33,4 +35,3 @@ private:
 };
 
 } // namespace fluxent::controls
-

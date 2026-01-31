@@ -6,9 +6,11 @@
 
 #include <algorithm>
 
-namespace fluxent::theme {
+namespace fluxent::theme
+{
 
-static xent::Color ToXentColor(const Color &c) {
+static xent::Color ToXentColor(const Color &c)
+{
   return xent::Color{
       static_cast<std::uint8_t>(c.r),
       static_cast<std::uint8_t>(c.g),
@@ -17,7 +19,8 @@ static xent::Color ToXentColor(const Color &c) {
   };
 }
 
-static void SyncXentButtonPaletteFromTheme(const ThemeResources &r) {
+static void SyncXentButtonPaletteFromTheme(const ThemeResources &r)
+{
   xent::ButtonPalette p;
   p.primary = ToXentColor(r.AccentDefault);
   p.secondary = ToXentColor(r.ControlFillTransparent);
@@ -29,26 +32,29 @@ static void SyncXentButtonPaletteFromTheme(const ThemeResources &r) {
 
 ThemeManager::ThemeManager() { ApplyDarkTheme(); }
 
-size_t ThemeManager::AddThemeChangedListener(ThemeChangedCallback callback) {
+size_t ThemeManager::AddThemeChangedListener(ThemeChangedCallback callback)
+{
   const size_t id = next_listener_id_++;
   theme_changed_listeners_.push_back({id, std::move(callback)});
   return id;
 }
 
-void ThemeManager::RemoveThemeChangedListener(size_t id) {
-  theme_changed_listeners_.erase(
-      std::remove_if(theme_changed_listeners_.begin(),
-                     theme_changed_listeners_.end(),
-                     [id](const auto &p) { return p.first == id; }),
-      theme_changed_listeners_.end());
+void ThemeManager::RemoveThemeChangedListener(size_t id)
+{
+  theme_changed_listeners_.erase(std::remove_if(theme_changed_listeners_.begin(),
+                                                theme_changed_listeners_.end(),
+                                                [id](const auto &p) { return p.first == id; }),
+                                 theme_changed_listeners_.end());
 }
 
-void ThemeManager::SetMode(Mode mode) {
+void ThemeManager::SetMode(Mode mode)
+{
   if (mode_ == mode)
     return;
   mode_ = mode;
 
-  switch (mode) {
+  switch (mode)
+  {
   case Mode::Dark:
     ApplyDarkTheme();
     break;
@@ -63,36 +69,44 @@ void ThemeManager::SetMode(Mode mode) {
   UpdateAccentResources();
   version_++;
 
-  for (auto &[id, cb] : theme_changed_listeners_) {
+  for (auto &[id, cb] : theme_changed_listeners_)
+  {
     if (cb)
       cb(mode);
   }
 }
 
-void ThemeManager::SetAccent(const AccentPalette &palette) {
+void ThemeManager::SetAccent(const AccentPalette &palette)
+{
   accent_ = palette;
   UpdateAccentResources();
   version_++;
 }
 
-uint8_t ThemeManager::ClampColor(int v) {
+uint8_t ThemeManager::ClampColor(int v)
+{
   return static_cast<uint8_t>(v > 255 ? 255 : (v < 0 ? 0 : v));
 }
 
-Color ThemeManager::AdjustBrightness(const Color &c, float factor) {
-  if (factor > 1.0f) {
+Color ThemeManager::AdjustBrightness(const Color &c, float factor)
+{
+  if (factor > 1.0f)
+  {
     float t = factor - 1.0f;
     return Color{ClampColor(static_cast<int>(c.r + (255 - c.r) * t)),
                  ClampColor(static_cast<int>(c.g + (255 - c.g) * t)),
                  ClampColor(static_cast<int>(c.b + (255 - c.b) * t)), c.a};
-  } else {
+  }
+  else
+  {
     return Color{ClampColor(static_cast<int>(c.r * factor)),
                  ClampColor(static_cast<int>(c.g * factor)),
                  ClampColor(static_cast<int>(c.b * factor)), c.a};
   }
 }
 
-void ThemeManager::SetAccentColor(const Color &base) {
+void ThemeManager::SetAccentColor(const Color &base)
+{
   accent_.base = base;
   accent_.light1 = AdjustBrightness(base, config::Theme::Lighten1);
   accent_.light2 = AdjustBrightness(base, config::Theme::Lighten2);
@@ -105,35 +119,41 @@ void ThemeManager::SetAccentColor(const Color &base) {
   version_++;
 }
 
-void ThemeManager::UpdateAccentResources() {
-  if (mode_ == Mode::Dark) {
+void ThemeManager::UpdateAccentResources()
+{
+  if (mode_ == Mode::Dark)
+  {
     resources_.AccentDefault = accent_.light2;
-    resources_.AccentSecondary =
-        Color{accent_.light2.r, accent_.light2.g, accent_.light2.b,
-              static_cast<uint8_t>(accent_.light2.a * 0.9f)};
-    resources_.AccentTertiary =
-        Color{accent_.light2.r, accent_.light2.g, accent_.light2.b,
-              static_cast<uint8_t>(accent_.light2.a * 0.8f)};
-  } else {
+    resources_.AccentSecondary = Color{accent_.light2.r, accent_.light2.g, accent_.light2.b,
+                                       static_cast<uint8_t>(accent_.light2.a *
+                                                            config::Theme::AccentSecondaryAlpha)};
+    resources_.AccentTertiary = Color{accent_.light2.r, accent_.light2.g, accent_.light2.b,
+                                      static_cast<uint8_t>(accent_.light2.a *
+                                                           config::Theme::AccentTertiaryAlpha)};
+  }
+  else
+  {
     resources_.AccentDefault = accent_.dark1;
-    resources_.AccentSecondary =
-        Color{accent_.dark1.r, accent_.dark1.g, accent_.dark1.b,
-              static_cast<uint8_t>(accent_.dark1.a * 0.9f)};
-    resources_.AccentTertiary =
-        Color{accent_.dark1.r, accent_.dark1.g, accent_.dark1.b,
-              static_cast<uint8_t>(accent_.dark1.a * 0.8f)};
+    resources_.AccentSecondary = Color{accent_.dark1.r, accent_.dark1.g, accent_.dark1.b,
+                                       static_cast<uint8_t>(accent_.dark1.a *
+                                                            config::Theme::AccentSecondaryAlpha)};
+    resources_.AccentTertiary = Color{accent_.dark1.r, accent_.dark1.g, accent_.dark1.b,
+                                      static_cast<uint8_t>(accent_.dark1.a *
+                                                           config::Theme::AccentTertiaryAlpha)};
   }
 
   SyncXentButtonPaletteFromTheme(resources_);
 }
 
-void ThemeManager::ApplyDarkTheme() {
+void ThemeManager::ApplyDarkTheme()
+{
   resources_ = kDarkPalette;
   UpdateAccentResources();
   version_++;
 }
 
-void ThemeManager::ApplyLightTheme() {
+void ThemeManager::ApplyLightTheme()
+{
   resources_ = kLightPalette;
   UpdateAccentResources();
   version_++;

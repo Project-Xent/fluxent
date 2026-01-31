@@ -4,43 +4,48 @@
 #include "fluxent/controls/renderer_utils.hpp"
 #include <cmath>
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
 using Microsoft::WRL::ComPtr;
 
-static Color LerpColor(const Color &a, const Color &b, float t) {
-  return LerpColorSrgb(a, b, t);
-}
+static Color LerpColor(const Color &a, const Color &b, float t) { return LerpColorSrgb(a, b, t); }
 
-void ToggleSwitchRenderer::BeginFrame() {
+void ToggleSwitchRenderer::BeginFrame()
+{
   has_active_transitions_ = false;
   seen_.clear();
 }
 
-bool ToggleSwitchRenderer::EndFrame() {
-  for (auto it = states_.begin(); it != states_.end();) {
-    if (seen_.find(it->first) == seen_.end()) {
+bool ToggleSwitchRenderer::EndFrame()
+{
+  for (auto it = states_.begin(); it != states_.end();)
+  {
+    if (seen_.find(it->first) == seen_.end())
+    {
       it = states_.erase(it);
-    } else {
+    }
+    else
+    {
       ++it;
     }
   }
   return has_active_transitions_;
 }
 
-float ToggleSwitchRenderer::AnimateProgress(const xent::ViewData *key,
-                                            float target) {
+float ToggleSwitchRenderer::AnimateProgress(const xent::ViewData *key, float target)
+{
   float current;
-  if (states_[key].progress_anim.Update(target, fluxent::config::Animation::Button, &current)) {
+  if (states_[key].progress_anim.Update(target, fluxent::config::Animation::Button, &current))
+  {
     has_active_transitions_ = true;
   }
   return current;
 }
 
-void ToggleSwitchRenderer::Render(const RenderContext &ctx,
-                                  const xent::ViewData &data,
-                                  const Rect &bounds,
-                                  const ControlState &state) {
+void ToggleSwitchRenderer::Render(const RenderContext &ctx, const xent::ViewData &data,
+                                  const Rect &bounds, const ControlState &state)
+{
   seen_.insert(&data);
   auto d2d = ctx.graphics->GetD2DContext();
   const auto &res = ctx.Resources();
@@ -48,12 +53,10 @@ void ToggleSwitchRenderer::Render(const RenderContext &ctx,
   const bool is_on_target = data.is_checked;
   const float progress = AnimateProgress(&data, is_on_target ? 1.0f : 0.0f);
 
-  const float track_radius =
-      std::max(0.0f, std::min(bounds.width, bounds.height) * 0.5f);
-  const D2D1_ROUNDED_RECT track_rect =
-      D2D1::RoundedRect(D2D1::RectF(bounds.x, bounds.y, bounds.x + bounds.width,
-                                    bounds.y + bounds.height),
-                        track_radius, track_radius);
+  const float track_radius = std::max(0.0f, std::min(bounds.width, bounds.height) * 0.5f);
+  const D2D1_ROUNDED_RECT track_rect = D2D1::RoundedRect(
+      D2D1::RectF(bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height),
+      track_radius, track_radius);
 
   Color off_fill;
   Color off_stroke;
@@ -61,20 +64,28 @@ void ToggleSwitchRenderer::Render(const RenderContext &ctx,
   Color knob_off;
   Color knob_on;
 
-  if (state.is_disabled) {
+  if (state.is_disabled)
+  {
     off_fill = res.ControlAltFillDisabled;
     off_stroke = res.ControlStrongStrokeDisabled;
     on_fill = res.AccentDisabled;
     knob_off = res.TextDisabled;
     knob_on = res.TextOnAccentDisabled;
-  } else {
-    if (state.is_pressed) {
+  }
+  else
+  {
+    if (state.is_pressed)
+    {
       off_fill = res.ControlAltFillQuarternary;
       on_fill = res.AccentTertiary;
-    } else if (state.is_hovered) {
+    }
+    else if (state.is_hovered)
+    {
       off_fill = res.ControlAltFillTertiary;
       on_fill = res.AccentSecondary;
-    } else {
+    }
+    else
+    {
       off_fill = res.ControlAltFillSecondary;
       on_fill = res.AccentDefault;
     }
@@ -91,21 +102,28 @@ void ToggleSwitchRenderer::Render(const RenderContext &ctx,
 
   d2d->FillRoundedRectangle(track_rect, brush.Get());
 
-  if (!state.is_disabled && progress < 0.5f) {
+  if (!state.is_disabled && progress < 0.5f)
+  {
     brush->SetColor(off_stroke.to_d2d());
     d2d->DrawRoundedRectangle(track_rect, brush.Get(), 1.0f);
-  } else if (state.is_disabled && progress < 0.5f) {
+  }
+  else if (state.is_disabled && progress < 0.5f)
+  {
     brush->SetColor(off_stroke.to_d2d());
     d2d->DrawRoundedRectangle(track_rect, brush.Get(), 1.0f);
   }
 
   float knob_w = fluxent::config::Toggle::KnobSizeNormal;
   float knob_h = fluxent::config::Toggle::KnobSizeNormal;
-  if (!state.is_disabled) {
-    if (state.is_pressed) {
+  if (!state.is_disabled)
+  {
+    if (state.is_pressed)
+    {
       knob_w = fluxent::config::Toggle::KnobSizePressedW;
       knob_h = fluxent::config::Toggle::KnobSizePressedH;
-    } else if (state.is_hovered) {
+    }
+    else if (state.is_hovered)
+    {
       knob_w = fluxent::config::Toggle::KnobSizeHover;
       knob_h = fluxent::config::Toggle::KnobSizeHover;
     }
@@ -115,7 +133,8 @@ void ToggleSwitchRenderer::Render(const RenderContext &ctx,
   const float base_cx = bounds.x + bounds.height * 0.5f;
   float cx = base_cx + progress * travel;
 
-  if (!state.is_disabled && state.is_pressed) {
+  if (!state.is_disabled && state.is_pressed)
+  {
     cx += (1.0f - 2.0f * progress) * fluxent::config::Toggle::TravelExtension;
   }
 
@@ -126,13 +145,14 @@ void ToggleSwitchRenderer::Render(const RenderContext &ctx,
   const float bottom = cy + knob_h * 0.5f;
 
   const float knob_radius = std::max(0.0f, std::min(knob_w, knob_h) * 0.5f);
-  const D2D1_ROUNDED_RECT knob_rect = D2D1::RoundedRect(
-      D2D1::RectF(left, top, right, bottom), knob_radius, knob_radius);
+  const D2D1_ROUNDED_RECT knob_rect =
+      D2D1::RoundedRect(D2D1::RectF(left, top, right, bottom), knob_radius, knob_radius);
 
   brush->SetColor(knob_fill.to_d2d());
   d2d->FillRoundedRectangle(knob_rect, brush.Get());
 
-  if (state.is_focused && !state.is_disabled) {
+  if (state.is_focused && !state.is_disabled)
+  {
     DrawFocusRect(ctx, bounds, track_radius);
   }
 }

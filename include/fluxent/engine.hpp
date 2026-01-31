@@ -1,20 +1,25 @@
 #pragma once
 
+#include <memory>
+#include <unordered_map>
+
+#include <xent/view.hpp>
+
 #include "controls/control_renderer.hpp"
 #include "fluxent/theme/theme_manager.hpp"
 #include "graphics.hpp"
 #include "text.hpp"
 #include "types.hpp"
-#include <memory>
-#include <unordered_map>
-#include <xent/view.hpp>
 
-namespace fluxent {
+#include "fluxent/plugin_manager.hpp"
+namespace fluxent
+{
 
-class RenderEngine {
+class RenderEngine
+{
 public:
-  static Result<std::unique_ptr<RenderEngine>>
-  Create(GraphicsPipeline *graphics, theme::ThemeManager *theme_manager);
+  static Result<std::unique_ptr<RenderEngine>> Create(GraphicsPipeline *graphics,
+                                                      theme::ThemeManager *theme_manager);
   ~RenderEngine();
 
 private:
@@ -25,6 +30,8 @@ public:
   RenderEngine(const RenderEngine &) = delete;
   RenderEngine &operator=(const RenderEngine &) = delete;
 
+  PluginManager *GetPluginManager() const { return plugin_manager_.get(); }
+
   void Render(const xent::View &root);
 
   void RenderFrame(xent::View &root);
@@ -33,8 +40,7 @@ public:
 
   void FillRect(const Rect &rect, const Color &color);
   void FillRoundedRect(const Rect &rect, float radius, const Color &color);
-  void DrawRect(const Rect &rect, const Color &color,
-                float stroke_width = 1.0f);
+  void DrawRect(const Rect &rect, const Color &color, float stroke_width = 1.0f);
   void DrawRoundedRect(const Rect &rect, float radius, const Color &color,
                        float stroke_width = 1.0f);
 
@@ -56,22 +62,19 @@ public:
   void InvalidateLayout() { layout_dirty_ = true; }
 
 private:
-  std::pair<float, float> MeasureTextCallback(const std::string &text,
-                                              float font_size, float max_width);
+  std::pair<float, float> MeasureTextCallback(const std::string &text, float font_size,
+                                              float max_width);
 
-  int TextHitTestCallback(const std::string &text, float font_size,
-                          float max_width, float x, float y);
+  int TextHitTestCallback(const std::string &text, float font_size, float max_width, float x,
+                          float y);
 
-  std::tuple<float, float, float, float>
-  TextCaretRectCallback(const std::string &text, float font_size,
-                        float max_width, int cursor_index);
+  std::tuple<float, float, float, float> TextCaretRectCallback(const std::string &text,
+                                                               float font_size, float max_width,
+                                                               int cursor_index);
 
+  void DrawViewRecursive(const xent::View &view, float parent_x, float parent_y);
 
-  void DrawViewRecursive(const xent::View &view, float parent_x,
-                         float parent_y);
-
-  void DrawViewDataRecursive(const xent::View *data, float parent_x,
-                             float parent_y);
+  void DrawViewDataRecursive(const xent::View *data, float parent_x, float parent_y);
 
   void DrawViewBackground(const xent::View &data, const Rect &bounds);
 
@@ -81,15 +84,14 @@ private:
 
   ID2D1SolidColorBrush *GetBrush(const Color &color);
 
-  static Color convert_color(const xent::Color &c) {
-    return Color(c.r, c.g, c.b, c.a);
-  }
+  static Color convert_color(const xent::Color &c) { return Color(c.r, c.g, c.b, c.a); }
 
   GraphicsPipeline *graphics_;
   ID2D1DeviceContext *d2d_context_ = nullptr;
   std::unique_ptr<TextRenderer> text_renderer_;
 
   std::unique_ptr<controls::ControlRenderer> control_renderer_;
+  std::unique_ptr<PluginManager> plugin_manager_;
   InputHandler *input_ = nullptr;
 
   std::unordered_map<uint32_t, ComPtr<ID2D1SolidColorBrush>> brush_cache_;
@@ -108,4 +110,4 @@ private:
   xent::View *last_root_data_ = nullptr;
 };
 
-} // namespace fluxent
+}

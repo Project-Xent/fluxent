@@ -9,16 +9,18 @@
 
 #include <directmanipulation.h>
 
-namespace fluxent {
+namespace fluxent
+{
 
 using DirectManipulationUpdateCallback =
     xent::Delegate<void(float x, float y, float scale, bool centering)>;
 using DirectManipulationHitTestCallback = xent::Delegate<bool(UINT pointer_id, int x, int y)>;
 
-class Window {
+class Window
+{
 public:
-  static Result<std::unique_ptr<Window>>
-  Create(theme::ThemeManager *theme_manager, const WindowConfig &config = {});
+  static Result<std::unique_ptr<Window>> Create(theme::ThemeManager *theme_manager,
+                                                const WindowConfig &config = {});
   ~Window();
 
 private:
@@ -38,6 +40,8 @@ public:
   void EnableIme(bool enable);
   void ShowTouchKeyboard();
   void HideTouchKeyboard();
+  HRESULT GetLastSystemError() const { return last_system_error_; }
+  void ClearLastSystemError() { last_system_error_ = S_OK; }
 
   void Run();
   bool ProcessMessages();
@@ -47,64 +51,55 @@ public:
 
   GraphicsPipeline *GetGraphics() const { return graphics_.get(); }
 
-  void SetRenderCallback(RenderCallback callback) {
-    on_render_ = callback;
-  }
-  void SetResizeCallback(ResizeCallback callback) {
-    on_resize_ = callback;
-  }
-  void SetDpiChangedCallback(DpiChangedCallback callback) {
-    on_dpi_changed_ = callback;
-  }
-  void SetMouseCallback(MouseEventCallback callback) {
-    on_mouse_ = callback;
-  }
-  void SetKeyCallback(KeyEventCallback callback) {
-    on_key_ = callback;
-  }
-  void SetCharCallback(CharEventCallback callback) {
-    on_char_ = callback;
-  }
+  void SetRenderCallback(RenderCallback callback) { on_render_ = callback; }
+  void SetResizeCallback(ResizeCallback callback) { on_resize_ = callback; }
+  void SetDpiChangedCallback(DpiChangedCallback callback) { on_dpi_changed_ = callback; }
+  void SetMouseCallback(MouseEventCallback callback) { on_mouse_ = callback; }
+  void SetKeyCallback(KeyEventCallback callback) { on_key_ = callback; }
+  void SetCharCallback(CharEventCallback callback) { on_char_ = callback; }
+  using ClipboardCallback = xent::Delegate<void()>;
+  void SetCopyCallback(ClipboardCallback callback) { on_copy_ = callback; }
+  void SetCutCallback(ClipboardCallback callback) { on_cut_ = callback; }
+  void SetPasteCallback(ClipboardCallback callback) { on_paste_ = callback; }
 
   using ImePositionCallback = xent::Delegate<std::tuple<float, float, float>()>;
-  void SetImePositionCallback(ImePositionCallback callback) {
-    on_ime_position_ = callback;
-  }
+  void SetImePositionCallback(ImePositionCallback callback) { on_ime_position_ = callback; }
 
   using ImeCompositionCallback = xent::Delegate<void(const std::wstring &)>;
-  void SetImeCompositionCallback(ImeCompositionCallback callback) {
+  void SetImeCompositionCallback(ImeCompositionCallback callback)
+  {
     on_ime_composition_ = callback;
   }
 
-
-  void SetDirectManipulationUpdateCallback(
-      DirectManipulationUpdateCallback callback) {
+  void SetDirectManipulationUpdateCallback(DirectManipulationUpdateCallback callback)
+  {
     on_dm_update_ = callback;
   }
 
-  void SetDirectManipulationHitTestCallback(
-      DirectManipulationHitTestCallback callback) {
+  void SetDirectManipulationHitTestCallback(DirectManipulationHitTestCallback callback)
+  {
     on_dm_hittest_ = callback;
   }
 
-  void DispatchDirectManipulationUpdate(float x, float y, float scale,
-                                        bool centering) {
-    if (on_dm_update_) {
+  void DispatchDirectManipulationUpdate(float x, float y, float scale, bool centering)
+  {
+    if (on_dm_update_)
+    {
       on_dm_update_(x, y, scale, centering);
     }
   }
 
-  using DirectManipulationStatusCallback =
-      xent::Delegate<void(DIRECTMANIPULATION_STATUS status)>;
+  using DirectManipulationStatusCallback = xent::Delegate<void(DIRECTMANIPULATION_STATUS status)>;
 
-  void SetDirectManipulationStatusCallback(
-      DirectManipulationStatusCallback callback) {
+  void SetDirectManipulationStatusCallback(DirectManipulationStatusCallback callback)
+  {
     on_dm_status_ = callback;
   }
 
-  void DispatchDirectManipulationStatusChanged(
-      DIRECTMANIPULATION_STATUS status) {
-    if (on_dm_status_) {
+  void DispatchDirectManipulationStatusChanged(DIRECTMANIPULATION_STATUS status)
+  {
+    if (on_dm_status_)
+    {
       on_dm_status_(status);
     }
   }
@@ -119,9 +114,12 @@ public:
   void SetCursorIbeam();
 
 private:
-  static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam,
-                                     LPARAM lparam);
+  static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
   LRESULT HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam);
+
+  // Message handling helpers (extracted from HandleMessage to reduce size)
+  bool HandlePointerMessage(UINT msg, WPARAM wparam, LPARAM lparam);
+  bool HandleImeMessage(UINT msg, WPARAM wparam, LPARAM lparam);
 
   void OnCreate();
   void OnDestroy();
@@ -132,13 +130,13 @@ private:
   void OnMouseMove(int x, int y);
   void OnMouseButton(MouseButton button, bool is_down, int x, int y);
   void OnMouseWheel(float delta_x, float delta_y, int x, int y);
-  void OnPointer(InputSource source, UINT32 pointer_id, MouseButton button,
-                 bool is_down, int x, int y);
+  void OnPointer(InputSource source, UINT32 pointer_id, MouseButton button, bool is_down, int x,
+                 int y);
   void OnKey(UINT vk, bool is_down);
   void OnChar(wchar_t ch);
 
   void SetupDwmBackdrop();
-
+  void SetSystemError(HRESULT hr) { last_system_error_ = hr; }
 
   HWND hwnd_ = nullptr;
   DpiInfo dpi_;
@@ -154,24 +152,29 @@ private:
   MouseEventCallback on_mouse_;
   KeyEventCallback on_key_;
   CharEventCallback on_char_;
+  ClipboardCallback on_copy_;
+  ClipboardCallback on_cut_;
+  ClipboardCallback on_paste_;
   ImePositionCallback on_ime_position_;
   ImeCompositionCallback on_ime_composition_;
   bool is_ime_composing_ = false;
   HIMC default_himc_ = nullptr;
+  HRESULT last_system_error_ = S_OK;
+  bool com_initialized_ = false;
 
   ULONGLONG last_click_time_ = 0;
   int click_count_ = 0;
-
 
   static constexpr const wchar_t *WINDOW_CLASS_NAME = L"FluXentWindowClass";
 
   static bool class_registered_;
 
-  void InitDirectManipulation();
+  Result<void> InitDirectManipulation();
 
   ComPtr<IDirectManipulationManager> result_manager_;
   ComPtr<IDirectManipulationViewport> viewport_;
   DWORD viewport_handler_cookie_ = 0;
+  bool dm_enabled_ = false;
 
   DirectManipulationUpdateCallback on_dm_update_;
   DirectManipulationHitTestCallback on_dm_hittest_;

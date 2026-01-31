@@ -30,23 +30,24 @@
 // Controls
 #include "fluxent/controls/toggle_switch.hpp" // IWYU pragma: export
 
-namespace fluxent {
+namespace fluxent
+{
 
 // Application: optional convenience wrapper around
 // Window/RenderEngine/InputHandler
 
-class Application {
+class Application
+{
 public:
-  static Result<std::unique_ptr<Application>>
-  Create(const WindowConfig &config = {}) {
+  static Result<std::unique_ptr<Application>> Create(const WindowConfig &config = {})
+  {
     auto app = std::unique_ptr<Application>(new Application());
     auto win_res = Window::Create(&app->theme_manager_, config);
     if (!win_res)
       return tl::unexpected(win_res.error());
     app->window_ = std::move(*win_res);
 
-    auto eng_res =
-        RenderEngine::Create(app->window_->GetGraphics(), &app->theme_manager_);
+    auto eng_res = RenderEngine::Create(app->window_->GetGraphics(), &app->theme_manager_);
     if (!eng_res)
       return tl::unexpected(eng_res.error());
     app->engine_ = std::move(*eng_res);
@@ -59,42 +60,50 @@ public:
     app->input_.SetInvalidateCallback(
         {app.get(), [](void *ctx) { static_cast<Application *>(ctx)->window_->RequestRender(); }});
 
-    app->window_->SetMouseCallback({app.get(), [](void *ctx, const MouseEvent &e) {
-      auto *ptr = static_cast<Application *>(ctx);
-      if (ptr->has_root_) {
-        ptr->input_.HandleMouseEvent(ptr->root_view_, e);
-      }
-    }});
+    app->window_->SetMouseCallback({app.get(), [](void *ctx, const MouseEvent &e)
+                                    {
+                                      auto *ptr = static_cast<Application *>(ctx);
+                                      if (ptr->has_root_)
+                                      {
+                                        ptr->input_.HandleMouseEvent(ptr->root_view_, e);
+                                      }
+                                    }});
 
     app->window_->SetDirectManipulationUpdateCallback(
-        {app.get(), [](void *ctx, float x, float y, float scale, bool centering) {
+        {app.get(), [](void *ctx, float x, float y, float scale, bool centering)
+         {
            auto *ptr = static_cast<Application *>(ctx);
-           if (ptr->has_root_) {
-             ptr->input_.HandleDirectManipulation(ptr->root_view_, x, y, scale,
-                                                  centering);
+           if (ptr->has_root_)
+           {
+             ptr->input_.HandleDirectManipulation(ptr->root_view_, x, y, scale, centering);
            }
          }});
 
     app->window_->SetDirectManipulationHitTestCallback(
-        {app.get(), [](void *ctx, UINT pointer_id, int x, int y) -> bool {
+        {app.get(), [](void *ctx, UINT pointer_id, int x, int y) -> bool
+         {
            auto *ptr = static_cast<Application *>(ctx);
-           if (ptr->has_root_) {
-              return true;
+           if (ptr->has_root_)
+           {
+             return true;
            }
            return false;
          }});
 
-    app->window_->SetRenderCallback({app.get(), [](void *ctx) {
-      auto *ptr = static_cast<Application *>(ctx);
-      if (ptr->has_root_) {
-        ptr->engine_->RenderFrame(ptr->root_view_);
-      }
-    }});
+    app->window_->SetRenderCallback({app.get(), [](void *ctx)
+                                     {
+                                       auto *ptr = static_cast<Application *>(ctx);
+                                       if (ptr->has_root_)
+                                       {
+                                         ptr->engine_->RenderFrame(ptr->root_view_);
+                                       }
+                                     }});
 
     return app;
   }
 
-  void SetRoot(xent::View root) {
+  void SetRoot(xent::View root)
+  {
     root_view_ = std::move(root);
     has_root_ = true;
     window_->RequestRender();

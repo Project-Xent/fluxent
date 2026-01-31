@@ -1,13 +1,16 @@
 #pragma once
 
 #include "types.hpp"
+#include "text_edit.hpp"
 #include <xent/delegate.hpp>
 
 #include <xent/view.hpp>
 
-namespace fluxent {
+namespace fluxent
+{
 
-struct HitTestResult {
+struct HitTestResult
+{
   xent::View *view_data;
   Rect bounds;
   Point local_position;
@@ -15,9 +18,8 @@ struct HitTestResult {
   bool hit() const { return view_data != nullptr; }
 };
 
-// InputHandler
-
-class InputHandler {
+class InputHandler
+{
 public:
   InputHandler();
   ~InputHandler();
@@ -31,12 +33,10 @@ public:
   void HandleKeyEvent(const xent::View &root, const KeyEvent &event);
   void HandleCharEvent(const xent::View &root, wchar_t ch);
 
-
-  void HandleDirectManipulation(xent::View &root, float x, float y, float scale,
-                                bool centering);
+  void HandleDirectManipulation(xent::View &root, float x, float y, float scale, bool centering);
 
   void CancelInteraction();
-  
+
   void SetCompositionText(const std::wstring &text);
 
   xent::View *GetHoveredView() const { return hovered_view_; }
@@ -46,32 +46,30 @@ public:
 
   bool ShouldShowFocusVisuals() const { return show_focus_visuals_; }
 
-  using HoverChangedCallback =
-      xent::Delegate<void(xent::View *old_view, xent::View *new_view)>;
-  void SetHoverChangedCallback(HoverChangedCallback callback) {
-    on_hover_changed_ = callback;
-  }
+  using HoverChangedCallback = xent::Delegate<void(xent::View *old_view, xent::View *new_view)>;
+  void SetHoverChangedCallback(HoverChangedCallback callback) { on_hover_changed_ = callback; }
 
   using InvalidateCallback = xent::Delegate<void()>;
-  void SetInvalidateCallback(InvalidateCallback callback) {
+  void SetInvalidateCallback(InvalidateCallback callback)
+  {
     on_invalidate_ = callback;
+    text_edit_.SetInvalidateCallback(callback);
   }
-  
+
   void PerformCopy();
   void PerformCut();
   void PerformPaste();
   void PerformSelectAll();
   void ShowContextMenu(int x, int y);
-  
+
   using ImeStateChangeCallback = xent::Delegate<void(bool enable)>;
-  void SetImeStateChangeCallback(ImeStateChangeCallback callback) {
+  void SetImeStateChangeCallback(ImeStateChangeCallback callback)
+  {
     on_ime_state_change_ = callback;
   }
 
   using ShowTouchKeyboardCallback = xent::Delegate<void(bool show)>;
-  void SetShowTouchKeyboardCallback(ShowTouchKeyboardCallback callback) {
-    on_keyboard_ = callback;
-  }
+  void SetShowTouchKeyboardCallback(ShowTouchKeyboardCallback callback) { on_keyboard_ = callback; }
 
 private:
   bool HitTestRecursive(xent::View *view_data, float parent_x, float parent_y,
@@ -81,21 +79,15 @@ private:
 
   void EnsureCursorVisible();
 
-  struct EditHistory {
-    std::string text;
-    int start;
-    int end;
-  };
+  bool HandleVerticalScrollbarDrag(const MouseEvent &event);
+  bool HandleHorizontalScrollbarDrag(const MouseEvent &event);
+  bool HandleActiveTextBoxUpdate(const MouseEvent &event);
+  bool HandlePressedViewPressLogic(const HitTestResult &hit_result, const MouseEvent &event);
+  bool HandleWheelScroll(const xent::View &root, const HitTestResult &hit_result,
+                         const MouseEvent &event);
+  void UpdateHoverIfChanged(const HitTestResult &hit_result);
 
-  void PushUndoState();
-  void Undo();
-  void Redo();
-
-  std::vector<EditHistory> undo_stack_;
-  std::vector<EditHistory> redo_stack_;
-
-  ULONGLONG last_typing_time_ = 0;
-  bool last_op_was_typing_ = false;
+  TextEditController text_edit_;
 
   xent::View *hovered_view_ = nullptr;
   xent::View *pressed_view_ = nullptr;
@@ -109,7 +101,6 @@ private:
   bool is_dragging_h_scrollbar_ = false;
   bool is_dragging_v_scrollbar_ = false;
   Point drag_start_mouse_pos_;
-  float drag_start_scroll_offset_ = 0.0f;
 
   bool is_dragging_slider_thumb_ = false;
   float slider_thumb_drag_offset_ = 0.0f;
@@ -124,4 +115,4 @@ private:
   ShowTouchKeyboardCallback on_keyboard_;
 };
 
-} // namespace fluxent
+}

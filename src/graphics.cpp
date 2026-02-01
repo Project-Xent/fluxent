@@ -3,6 +3,9 @@
 #include "fluxent/config.hpp"
 #include "fluxent/graphics.hpp"
 
+#include "fluxent/config.hpp"
+#include "fluxent/graphics.hpp"
+
 #if defined(_MSC_VER)
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d2d1.lib")

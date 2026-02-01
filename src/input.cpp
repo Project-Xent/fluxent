@@ -590,7 +590,6 @@ void InputHandler::HandleMouseEvent(const xent::View &root, const MouseEvent &ev
             on_keyboard_(false);
           }
         }
-      }
 
       if (HandlePressedViewPressLogic(hit_result, event))
       {

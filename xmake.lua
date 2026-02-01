@@ -3,17 +3,20 @@ set_project("fluxent")
 add_rules("mode.debug", "mode.release")
 set_languages("c++20")
 
+-- Use xent-core from xmake-repo packages
+add_requires("xent-core")
+add_requires("tl_expected")
+
 -- Enable modern Windows API (Windows 10+)
 add_defines("_WIN32_WINNT=0x0A00", "WINVER=0x0A00", "UNICODE", "_UNICODE")
 add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
-
-includes("../xent-core")
 
 target("fluxent")
     set_kind("static")
     set_warnings("all", "error")
     add_includedirs("include", {public = true})
-    add_deps("xent-core")
+    add_packages("xent-core", {public = true})
+    add_packages("tl_expected", {public = true})
     
     add_files("src/*.cpp")
     add_files("src/theme/*.cpp")

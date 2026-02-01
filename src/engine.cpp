@@ -1,22 +1,24 @@
+#include <string>
+#include <vector>
+
+#include <yoga/Yoga.h>
+
+#include "fluxent/config.hpp"
 #include "fluxent/engine.hpp"
 #include "fluxent/input.hpp"
 #include "fluxent/theme/theme_manager.hpp"
 #include "fluxent/utils.hpp"
 
-#include <functional>
+namespace fluxent
+{
 
-#include <string>
-#include <yoga/Yoga.h>
-
-#include <vector>
-
-namespace fluxent {
-
-static bool ColorEqual(const xent::Color &a, const xent::Color &b) {
+static bool ColorEqual(const xent::Color &a, const xent::Color &b)
+{
   return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
 
-static xent::Color ToXentColor(const Color &c) {
+static xent::Color ToXentColor(const Color &c)
+{
   return xent::Color{
       static_cast<std::uint8_t>(c.r),
       static_cast<std::uint8_t>(c.g),
@@ -25,255 +27,327 @@ static xent::Color ToXentColor(const Color &c) {
   };
 }
 
-struct ThemeRemapEntry {
+struct ThemeRemapEntry
+{
   xent::Color from;
   xent::Color to;
 };
 
-static std::vector<ThemeRemapEntry>
-BuildThemeRemap(const theme::ThemeResources &from,
-                const theme::ThemeResources &to) {
-  return {
-      {ToXentColor(from.TextPrimary), ToXentColor(to.TextPrimary)},
-      {ToXentColor(from.TextSecondary), ToXentColor(to.TextSecondary)},
-      {ToXentColor(from.TextTertiary), ToXentColor(to.TextTertiary)},
-      {ToXentColor(from.TextDisabled), ToXentColor(to.TextDisabled)},
-      {ToXentColor(from.TextInverse), ToXentColor(to.TextInverse)},
+static void AppendThemeRemap(std::vector<ThemeRemapEntry> &map, const theme::ThemeResources &from,
+                             const theme::ThemeResources &to)
+{
+  using ColorMember = Color theme::ThemeResources::*;
+  static const ColorMember kMembers[] = {
+      &theme::ThemeResources::TextPrimary,
+      &theme::ThemeResources::TextSecondary,
+      &theme::ThemeResources::TextTertiary,
+      &theme::ThemeResources::TextDisabled,
+      &theme::ThemeResources::TextInverse,
 
-      {ToXentColor(from.TextOnAccentPrimary),
-       ToXentColor(to.TextOnAccentPrimary)},
-      {ToXentColor(from.TextOnAccentSecondary),
-       ToXentColor(to.TextOnAccentSecondary)},
-      {ToXentColor(from.TextOnAccentDisabled),
-       ToXentColor(to.TextOnAccentDisabled)},
+      &theme::ThemeResources::TextOnAccentPrimary,
+      &theme::ThemeResources::TextOnAccentSecondary,
+      &theme::ThemeResources::TextOnAccentDisabled,
 
-      {ToXentColor(from.ControlFillDefault),
-       ToXentColor(to.ControlFillDefault)},
-      {ToXentColor(from.ControlFillSecondary),
-       ToXentColor(to.ControlFillSecondary)},
-      {ToXentColor(from.ControlFillTertiary),
-       ToXentColor(to.ControlFillTertiary)},
-      {ToXentColor(from.ControlFillQuarternary),
-       ToXentColor(to.ControlFillQuarternary)},
-      {ToXentColor(from.ControlFillDisabled),
-       ToXentColor(to.ControlFillDisabled)},
-      {ToXentColor(from.ControlFillTransparent),
-       ToXentColor(to.ControlFillTransparent)},
-      {ToXentColor(from.ControlFillInputActive),
-       ToXentColor(to.ControlFillInputActive)},
+      &theme::ThemeResources::ControlFillDefault,
+      &theme::ThemeResources::ControlFillSecondary,
+      &theme::ThemeResources::ControlFillTertiary,
+      &theme::ThemeResources::ControlFillQuarternary,
+      &theme::ThemeResources::ControlFillDisabled,
+      &theme::ThemeResources::ControlFillTransparent,
+      &theme::ThemeResources::ControlFillInputActive,
 
-      {ToXentColor(from.ControlStrongFillDefault),
-       ToXentColor(to.ControlStrongFillDefault)},
-      {ToXentColor(from.ControlStrongFillDisabled),
-       ToXentColor(to.ControlStrongFillDisabled)},
+      &theme::ThemeResources::ControlStrongFillDefault,
+      &theme::ThemeResources::ControlStrongFillDisabled,
 
-      {ToXentColor(from.ControlSolidFillDefault),
-       ToXentColor(to.ControlSolidFillDefault)},
+      &theme::ThemeResources::ControlSolidFillDefault,
 
-      {ToXentColor(from.SubtleFillTransparent),
-       ToXentColor(to.SubtleFillTransparent)},
-      {ToXentColor(from.SubtleFillSecondary),
-       ToXentColor(to.SubtleFillSecondary)},
-      {ToXentColor(from.SubtleFillTertiary),
-       ToXentColor(to.SubtleFillTertiary)},
-      {ToXentColor(from.SubtleFillDisabled),
-       ToXentColor(to.SubtleFillDisabled)},
+      &theme::ThemeResources::SubtleFillTransparent,
+      &theme::ThemeResources::SubtleFillSecondary,
+      &theme::ThemeResources::SubtleFillTertiary,
+      &theme::ThemeResources::SubtleFillDisabled,
 
-      {ToXentColor(from.ControlAltFillTransparent),
-       ToXentColor(to.ControlAltFillTransparent)},
-      {ToXentColor(from.ControlAltFillSecondary),
-       ToXentColor(to.ControlAltFillSecondary)},
-      {ToXentColor(from.ControlAltFillTertiary),
-       ToXentColor(to.ControlAltFillTertiary)},
-      {ToXentColor(from.ControlAltFillQuarternary),
-       ToXentColor(to.ControlAltFillQuarternary)},
-      {ToXentColor(from.ControlAltFillDisabled),
-       ToXentColor(to.ControlAltFillDisabled)},
+      &theme::ThemeResources::ControlAltFillTransparent,
+      &theme::ThemeResources::ControlAltFillSecondary,
+      &theme::ThemeResources::ControlAltFillTertiary,
+      &theme::ThemeResources::ControlAltFillQuarternary,
+      &theme::ThemeResources::ControlAltFillDisabled,
 
-      {ToXentColor(from.ControlOnImageFillDefault),
-       ToXentColor(to.ControlOnImageFillDefault)},
-      {ToXentColor(from.ControlOnImageFillSecondary),
-       ToXentColor(to.ControlOnImageFillSecondary)},
-      {ToXentColor(from.ControlOnImageFillTertiary),
-       ToXentColor(to.ControlOnImageFillTertiary)},
-      {ToXentColor(from.ControlOnImageFillDisabled),
-       ToXentColor(to.ControlOnImageFillDisabled)},
+      &theme::ThemeResources::ControlOnImageFillDefault,
+      &theme::ThemeResources::ControlOnImageFillSecondary,
+      &theme::ThemeResources::ControlOnImageFillTertiary,
+      &theme::ThemeResources::ControlOnImageFillDisabled,
 
-      {ToXentColor(from.AccentDefault), ToXentColor(to.AccentDefault)},
-      {ToXentColor(from.AccentSecondary), ToXentColor(to.AccentSecondary)},
-      {ToXentColor(from.AccentTertiary), ToXentColor(to.AccentTertiary)},
-      {ToXentColor(from.AccentDisabled), ToXentColor(to.AccentDisabled)},
+      &theme::ThemeResources::AccentDefault,
+      &theme::ThemeResources::AccentSecondary,
+      &theme::ThemeResources::AccentTertiary,
+      &theme::ThemeResources::AccentDisabled,
 
-      {ToXentColor(from.ControlStrokeDefault),
-       ToXentColor(to.ControlStrokeDefault)},
-      {ToXentColor(from.ControlStrokeSecondary),
-       ToXentColor(to.ControlStrokeSecondary)},
-      {ToXentColor(from.ControlStrokeOnAccentDefault),
-       ToXentColor(to.ControlStrokeOnAccentDefault)},
-      {ToXentColor(from.ControlStrokeOnAccentSecondary),
-       ToXentColor(to.ControlStrokeOnAccentSecondary)},
-      {ToXentColor(from.ControlStrokeOnAccentTertiary),
-       ToXentColor(to.ControlStrokeOnAccentTertiary)},
-      {ToXentColor(from.ControlStrokeOnAccentDisabled),
-       ToXentColor(to.ControlStrokeOnAccentDisabled)},
-      {ToXentColor(from.ControlStrokeForStrongFillWhenOnImage),
-       ToXentColor(to.ControlStrokeForStrongFillWhenOnImage)},
+      &theme::ThemeResources::ControlStrokeDefault,
+      &theme::ThemeResources::ControlStrokeSecondary,
+      &theme::ThemeResources::ControlStrokeOnAccentDefault,
+      &theme::ThemeResources::ControlStrokeOnAccentSecondary,
+      &theme::ThemeResources::ControlStrokeOnAccentTertiary,
+      &theme::ThemeResources::ControlStrokeOnAccentDisabled,
+      &theme::ThemeResources::ControlStrokeForStrongFillWhenOnImage,
 
-      {ToXentColor(from.ControlStrongStrokeDefault),
-       ToXentColor(to.ControlStrongStrokeDefault)},
-      {ToXentColor(from.ControlStrongStrokeDisabled),
-       ToXentColor(to.ControlStrongStrokeDisabled)},
+      &theme::ThemeResources::ControlStrongStrokeDefault,
+      &theme::ThemeResources::ControlStrongStrokeDisabled,
 
-      {ToXentColor(from.CardStrokeDefault), ToXentColor(to.CardStrokeDefault)},
-      {ToXentColor(from.CardStrokeDefaultSolid),
-       ToXentColor(to.CardStrokeDefaultSolid)},
-      {ToXentColor(from.CardBackgroundDefault),
-       ToXentColor(to.CardBackgroundDefault)},
-      {ToXentColor(from.CardBackgroundSecondary),
-       ToXentColor(to.CardBackgroundSecondary)},
-      {ToXentColor(from.CardBackgroundTertiary),
-       ToXentColor(to.CardBackgroundTertiary)},
+      &theme::ThemeResources::CardStrokeDefault,
+      &theme::ThemeResources::CardStrokeDefaultSolid,
+      &theme::ThemeResources::CardBackgroundDefault,
+      &theme::ThemeResources::CardBackgroundSecondary,
+      &theme::ThemeResources::CardBackgroundTertiary,
 
-      {ToXentColor(from.SurfaceStrokeDefault),
-       ToXentColor(to.SurfaceStrokeDefault)},
-      {ToXentColor(from.SurfaceStrokeFlyout),
-       ToXentColor(to.SurfaceStrokeFlyout)},
-      {ToXentColor(from.SurfaceStrokeInverse),
-       ToXentColor(to.SurfaceStrokeInverse)},
+      &theme::ThemeResources::SurfaceStrokeDefault,
+      &theme::ThemeResources::SurfaceStrokeFlyout,
+      &theme::ThemeResources::SurfaceStrokeInverse,
 
-      {ToXentColor(from.FocusStrokeOuter), ToXentColor(to.FocusStrokeOuter)},
-      {ToXentColor(from.FocusStrokeInner), ToXentColor(to.FocusStrokeInner)},
+      &theme::ThemeResources::FocusStrokeOuter,
+      &theme::ThemeResources::FocusStrokeInner,
 
-      {ToXentColor(from.DividerStrokeDefault),
-       ToXentColor(to.DividerStrokeDefault)},
+      &theme::ThemeResources::DividerStrokeDefault,
 
-      {ToXentColor(from.SolidBackgroundBase),
-       ToXentColor(to.SolidBackgroundBase)},
-      {ToXentColor(from.SolidBackgroundSecondary),
-       ToXentColor(to.SolidBackgroundSecondary)},
-      {ToXentColor(from.SolidBackgroundTertiary),
-       ToXentColor(to.SolidBackgroundTertiary)},
-      {ToXentColor(from.SolidBackgroundQuarternary),
-       ToXentColor(to.SolidBackgroundQuarternary)},
-      {ToXentColor(from.SolidBackgroundQuinary),
-       ToXentColor(to.SolidBackgroundQuinary)},
-      {ToXentColor(from.SolidBackgroundSenary),
-       ToXentColor(to.SolidBackgroundSenary)},
-      {ToXentColor(from.SolidBackgroundTransparent),
-       ToXentColor(to.SolidBackgroundTransparent)},
-      {ToXentColor(from.SolidBackgroundBaseAlt),
-       ToXentColor(to.SolidBackgroundBaseAlt)},
-      {ToXentColor(from.LayerFillDefault), ToXentColor(to.LayerFillDefault)},
-      {ToXentColor(from.LayerFillAlt), ToXentColor(to.LayerFillAlt)},
-      {ToXentColor(from.LayerOnAcrylicFillDefault),
-       ToXentColor(to.LayerOnAcrylicFillDefault)},
-      {ToXentColor(from.LayerOnAccentAcrylicFillDefault),
-       ToXentColor(to.LayerOnAccentAcrylicFillDefault)},
-      {ToXentColor(from.LayerOnMicaBaseAltDefault),
-       ToXentColor(to.LayerOnMicaBaseAltDefault)},
-      {ToXentColor(from.LayerOnMicaBaseAltSecondary),
-       ToXentColor(to.LayerOnMicaBaseAltSecondary)},
-      {ToXentColor(from.LayerOnMicaBaseAltTertiary),
-       ToXentColor(to.LayerOnMicaBaseAltTertiary)},
-      {ToXentColor(from.LayerOnMicaBaseAltTransparent),
-       ToXentColor(to.LayerOnMicaBaseAltTransparent)},
-      {ToXentColor(from.SmokeFillDefault), ToXentColor(to.SmokeFillDefault)},
+      &theme::ThemeResources::SolidBackgroundBase,
+      &theme::ThemeResources::SolidBackgroundSecondary,
+      &theme::ThemeResources::SolidBackgroundTertiary,
+      &theme::ThemeResources::SolidBackgroundQuarternary,
+      &theme::ThemeResources::SolidBackgroundQuinary,
+      &theme::ThemeResources::SolidBackgroundSenary,
+      &theme::ThemeResources::SolidBackgroundTransparent,
+      &theme::ThemeResources::SolidBackgroundBaseAlt,
+      &theme::ThemeResources::LayerFillDefault,
+      &theme::ThemeResources::LayerFillAlt,
+      &theme::ThemeResources::LayerOnAcrylicFillDefault,
+      &theme::ThemeResources::LayerOnAccentAcrylicFillDefault,
+      &theme::ThemeResources::LayerOnMicaBaseAltDefault,
+      &theme::ThemeResources::LayerOnMicaBaseAltSecondary,
+      &theme::ThemeResources::LayerOnMicaBaseAltTertiary,
+      &theme::ThemeResources::LayerOnMicaBaseAltTransparent,
+      &theme::ThemeResources::SmokeFillDefault,
 
-      {ToXentColor(from.SystemSuccess), ToXentColor(to.SystemSuccess)},
-      {ToXentColor(from.SystemCaution), ToXentColor(to.SystemCaution)},
-      {ToXentColor(from.SystemCritical), ToXentColor(to.SystemCritical)},
-      {ToXentColor(from.SystemNeutral), ToXentColor(to.SystemNeutral)},
-      {ToXentColor(from.SystemSolidNeutral),
-       ToXentColor(to.SystemSolidNeutral)},
-      {ToXentColor(from.SystemAttentionBackground),
-       ToXentColor(to.SystemAttentionBackground)},
-      {ToXentColor(from.SystemSuccessBackground),
-       ToXentColor(to.SystemSuccessBackground)},
-      {ToXentColor(from.SystemCautionBackground),
-       ToXentColor(to.SystemCautionBackground)},
-      {ToXentColor(from.SystemCriticalBackground),
-       ToXentColor(to.SystemCriticalBackground)},
-      {ToXentColor(from.SystemNeutralBackground),
-       ToXentColor(to.SystemNeutralBackground)},
-      {ToXentColor(from.SystemSolidAttentionBackground),
-       ToXentColor(to.SystemSolidAttentionBackground)},
-      {ToXentColor(from.SystemSolidNeutralBackground),
-       ToXentColor(to.SystemSolidNeutralBackground)},
+      &theme::ThemeResources::SystemSuccess,
+      &theme::ThemeResources::SystemCaution,
+      &theme::ThemeResources::SystemCritical,
+      &theme::ThemeResources::SystemNeutral,
+      &theme::ThemeResources::SystemSolidNeutral,
+      &theme::ThemeResources::SystemAttentionBackground,
+      &theme::ThemeResources::SystemSuccessBackground,
+      &theme::ThemeResources::SystemCautionBackground,
+      &theme::ThemeResources::SystemCriticalBackground,
+      &theme::ThemeResources::SystemNeutralBackground,
+      &theme::ThemeResources::SystemSolidAttentionBackground,
+      &theme::ThemeResources::SystemSolidNeutralBackground,
   };
+
+  for (const auto &m : kMembers)
+  {
+    map.push_back({ToXentColor(from.*m), ToXentColor(to.*m)});
+  }
 }
 
-static void RemapColorInPlace(xent::Color &c,
-                              const std::vector<ThemeRemapEntry> &map) {
-  for (const auto &e : map) {
-    if (ColorEqual(c, e.from)) {
+static std::vector<ThemeRemapEntry> BuildThemeRemap(const theme::ThemeResources &from,
+                                                    const theme::ThemeResources &to)
+{
+  std::vector<ThemeRemapEntry> map;
+  AppendThemeRemap(map, from, to);
+  return map;
+}
+
+static controls::ControlState ComputeControlState(InputHandler *input, const xent::View *data,
+                                                  bool overlayMode)
+{
+  controls::ControlState state;
+  if (!input)
+    return state;
+
+  if (auto hovered = input->GetHoveredView())
+  {
+    state.is_hovered = (hovered == data);
+  }
+  if (auto pressed = input->GetPressedView())
+  {
+    if (pressed == data)
+    {
+      if (overlayMode)
+      {
+        state.is_pressed = true;
+      }
+      else
+      {
+        bool is_simple_control = (data->type == xent::ComponentType::Button ||
+                                  data->type == xent::ComponentType::ToggleButton ||
+                                  data->type == xent::ComponentType::CheckBox ||
+                                  data->type == xent::ComponentType::RadioButton);
+
+        if (is_simple_control)
+        {
+          state.is_pressed = state.is_hovered;
+        }
+        else
+        {
+          state.is_pressed = true;
+        }
+      }
+    }
+  }
+  if (auto focused = input->GetFocusedView())
+  {
+    if (focused == data)
+    {
+      state.is_focused =
+          (data->type == xent::ComponentType::TextBox) || input->ShouldShowFocusVisuals();
+    }
+  }
+
+  return state;
+}
+
+static void RemapColorInPlace(xent::Color &c, const std::vector<ThemeRemapEntry> &map)
+{
+  for (const auto &e : map)
+  {
+    if (ColorEqual(c, e.from))
+    {
       c = e.to;
       return;
     }
   }
 }
 
-static void RemapViewTreeThemeColors(xent::View *data,
-                                     const std::vector<ThemeRemapEntry> &map) {
+static void RemapViewTreeThemeColors(xent::View *data, const std::vector<ThemeRemapEntry> &map)
+{
   if (!data)
     return;
   RemapColorInPlace(data->text_color, map);
   RemapColorInPlace(data->background_color, map);
   RemapColorInPlace(data->border_color, map);
 
-  for (const auto &child : data->children) {
+  for (const auto &child : data->children)
+  {
     RemapViewTreeThemeColors(child.get(), map);
   }
 }
 
-static bool IsZeroPadding(const xent::View &d) {
-  return d.padding_top == 0.0f && d.padding_right == 0.0f &&
-         d.padding_bottom == 0.0f && d.padding_left == 0.0f;
+static bool IsZeroPadding(const xent::View &d)
+{
+  return d.padding_top == 0.0f && d.padding_right == 0.0f && d.padding_bottom == 0.0f &&
+         d.padding_left == 0.0f;
 }
 
-static void ApplyButtonDefaultsRecursive(xent::View *data) {
+static void SetDefaultButtonPadding(xent::View *data)
+{
+  if (IsZeroPadding(*data))
+  {
+    data->padding_top = fluxent::config::Layout::DefaultButtonPaddingTop;
+    data->padding_right = fluxent::config::Layout::DefaultButtonPaddingRight;
+    data->padding_bottom = fluxent::config::Layout::DefaultButtonPaddingBottom;
+    data->padding_left = fluxent::config::Layout::DefaultButtonPaddingLeft;
+  }
+}
+
+static void EnsureToggleSwitchSize(xent::View *data)
+{
+  const YGValue w = YGNodeStyleGetWidth(data->node.get());
+  const YGValue h = YGNodeStyleGetHeight(data->node.get());
+  if (w.unit == YGUnitUndefined)
+  {
+    YGNodeStyleSetWidth(data->node.get(), fluxent::config::Layout::ToggleSwitchDefaultWidth);
+  }
+  if (h.unit == YGUnitUndefined)
+  {
+    YGNodeStyleSetHeight(data->node.get(), fluxent::config::Layout::ToggleSwitchDefaultHeight);
+  }
+}
+
+static bool ShouldShowScrollbar(xent::ScrollBarVisibility vis, float content, float size)
+{
+  if (vis == xent::ScrollBarVisibility::Hidden || vis == xent::ScrollBarVisibility::Disabled)
+    return false;
+  if (vis == xent::ScrollBarVisibility::Visible)
+    return true;
+  return content > size + fluxent::config::Input::ScrollVisibilityEpsilon;
+}
+
+static std::pair<float, float> ComputeMaxOffsets(xent::View *view, float barSize)
+{
+  float max_child_right = 0.0f;
+  float max_child_bottom = 0.0f;
+
+  for (const auto &child : view->children)
+  {
+    float right = child->LayoutX() + child->LayoutWidth();
+    float bottom = child->LayoutY() + child->LayoutHeight();
+    if (right > max_child_right)
+      max_child_right = right;
+    if (bottom > max_child_bottom)
+      max_child_bottom = bottom;
+  }
+
+  float content_w = std::max(view->LayoutWidth(), max_child_right);
+  float content_h = std::max(view->LayoutHeight(), max_child_bottom);
+
+  float view_w = view->LayoutWidth();
+  float view_h = view->LayoutHeight();
+
+  bool show_h = ShouldShowScrollbar(view->horizontal_scrollbar_visibility, content_w, view_w);
+  bool show_v = ShouldShowScrollbar(view->vertical_scrollbar_visibility, content_h, view_h);
+
+  float effective_view_w = view_w;
+  float effective_view_h = view_h;
+  if (show_v)
+    effective_view_w -= barSize;
+  if (show_h)
+    effective_view_h -= barSize;
+
+  float max_offset_x = std::max(0.0f, content_w - effective_view_w);
+  float max_offset_y = std::max(0.0f, content_h - effective_view_h);
+
+  return {max_offset_x, max_offset_y};
+}
+
+static void ApplyButtonDefaultsRecursive(xent::View *data)
+{
   if (!data)
     return;
 
-  switch (data->type) {
+  switch (data->type)
+  {
   case xent::ComponentType::Button:
-  case xent::ComponentType::ToggleButton: {
-    if (IsZeroPadding(*data)) {
-      data->padding_top = 5.0f;
-      data->padding_right = 11.0f;
-      data->padding_bottom = 6.0f;
-      data->padding_left = 11.0f;
-    }
-  } break;
+  case xent::ComponentType::ToggleButton:
+  {
+    SetDefaultButtonPadding(data);
+  }
+  break;
 
-  case xent::ComponentType::ToggleSwitch: {
-    const YGValue w = YGNodeStyleGetWidth(data->node.get());
-    const YGValue h = YGNodeStyleGetHeight(data->node.get());
-    if (w.unit == YGUnitUndefined) {
-      YGNodeStyleSetWidth(data->node.get(), 40.0f);
-    }
-    if (h.unit == YGUnitUndefined) {
-      YGNodeStyleSetHeight(data->node.get(), 20.0f);
-    }
-  } break;
+  case xent::ComponentType::ToggleSwitch:
+  {
+    EnsureToggleSwitchSize(data);
+  }
+  break;
 
   default:
     break;
   }
 
-  for (const auto &child : data->children) {
+  for (const auto &child : data->children)
+  {
     ApplyButtonDefaultsRecursive(child.get());
   }
 }
 
-static void ClampScrollOffsetsRecursive(xent::View *view) {
+static void ClampScrollOffsetsRecursive(xent::View *view)
+{
   if (!view)
     return;
 
-  if (view->type == xent::ComponentType::ScrollView) {
+  if (view->type == xent::ComponentType::ScrollView)
+  {
     float max_child_right = 0.0f;
     float max_child_bottom = 0.0f;
 
-    for (const auto &child : view->children) {
+    for (const auto &child : view->children)
+    {
       float right = child->LayoutX() + child->LayoutWidth();
       float bottom = child->LayoutY() + child->LayoutHeight();
       if (right > max_child_right)
@@ -282,38 +356,8 @@ static void ClampScrollOffsetsRecursive(xent::View *view) {
         max_child_bottom = bottom;
     }
 
-    float content_w = std::max(view->LayoutWidth(), max_child_right);
-    float content_h = std::max(view->LayoutHeight(), max_child_bottom);
-
-    auto should_show = [](xent::ScrollBarVisibility vis, float content,
-                          float size) {
-      if (vis == xent::ScrollBarVisibility::Hidden ||
-          vis == xent::ScrollBarVisibility::Disabled)
-        return false;
-      if (vis == xent::ScrollBarVisibility::Visible)
-        return true;
-      return content > size + 0.5f;
-    };
-
-    float view_w = view->LayoutWidth();
-    float view_h = view->LayoutHeight();
-
-    bool show_h =
-        should_show(view->horizontal_scrollbar_visibility, content_w, view_w);
-    bool show_v =
-        should_show(view->vertical_scrollbar_visibility, content_h, view_h);
-
-    const float kBarSize = 12.0f;
-
-    float effective_view_w = view_w;
-    float effective_view_h = view_h;
-    if (show_v)
-      effective_view_w -= kBarSize;
-    if (show_h)
-      effective_view_h -= kBarSize;
-
-    float max_offset_x = std::max(0.0f, content_w - effective_view_w);
-    float max_offset_y = std::max(0.0f, content_h - effective_view_h);
+    const float kBarSize = fluxent::config::Layout::ScrollBarSize;
+    auto [max_offset_x, max_offset_y] = ComputeMaxOffsets(view, kBarSize);
 
     if (view->scroll_offset_x > max_offset_x)
       view->scroll_offset_x = max_offset_x;
@@ -327,29 +371,31 @@ static void ClampScrollOffsetsRecursive(xent::View *view) {
       view->scroll_offset_y = 0;
   }
 
-  for (const auto &child : view->children) {
+  for (const auto &child : view->children)
+  {
     ClampScrollOffsetsRecursive(child.get());
   }
 }
 
-Result<std::unique_ptr<RenderEngine>>
-RenderEngine::Create(GraphicsPipeline *graphics,
-                     theme::ThemeManager *theme_manager) {
+Result<std::unique_ptr<RenderEngine>> RenderEngine::Create(GraphicsPipeline *graphics,
+                                                           theme::ThemeManager *theme_manager)
+{
   if (!graphics || !theme_manager)
     return tl::unexpected(E_INVALIDARG);
-  auto engine =
-      std::unique_ptr<RenderEngine>(new RenderEngine(graphics, theme_manager));
+  auto engine = std::unique_ptr<RenderEngine>(new RenderEngine(graphics, theme_manager));
   auto res = engine->Init();
   if (!res)
     return tl::unexpected(res.error());
   return engine;
 }
 
-RenderEngine::RenderEngine(GraphicsPipeline *graphics,
-                           theme::ThemeManager *theme_manager)
-    : graphics_(graphics), theme_manager_(theme_manager) {}
+RenderEngine::RenderEngine(GraphicsPipeline *graphics, theme::ThemeManager *theme_manager)
+    : graphics_(graphics), theme_manager_(theme_manager)
+{
+}
 
-Result<void> RenderEngine::Init() {
+Result<void> RenderEngine::Init()
+{
   d2d_context_ = graphics_->GetD2DContext();
 
   auto tr_res = TextRenderer::Create(graphics_);
@@ -358,43 +404,46 @@ Result<void> RenderEngine::Init() {
 
   text_renderer_ = std::move(*tr_res);
   plugin_manager_ = std::make_unique<PluginManager>();
-
   control_renderer_ = std::make_unique<controls::ControlRenderer>(
       graphics_, text_renderer_.get(), theme_manager_, plugin_manager_.get());
 
   last_theme_resources_ = theme_manager_->Resources();
-  theme_listener_id_ =
-  theme_listener_id_ =
-      theme_manager_->AddThemeChangedListener({this, [](void* ctx, theme::Mode mode) {
-        auto* engine = static_cast<RenderEngine*>(ctx);
-        if (!engine->theme_manager_)
-          return;
-        const auto next = engine->theme_manager_->Resources();
-        const auto map = BuildThemeRemap(engine->last_theme_resources_, next);
-        engine->last_theme_resources_ = next;
+  theme_listener_id_ = theme_listener_id_ = theme_manager_->AddThemeChangedListener(
+      {this, [](void *ctx, theme::Mode mode)
+       {
+         auto *engine = static_cast<RenderEngine *>(ctx);
+         if (!engine->theme_manager_)
+           return;
+         const auto next = engine->theme_manager_->Resources();
+         const auto map = BuildThemeRemap(engine->last_theme_resources_, next);
+         engine->last_theme_resources_ = next;
 
-        if (engine->last_root_data_) {
-          RemapViewTreeThemeColors(engine->last_root_data_, map);
-        }
+         if (engine->last_root_data_)
+         {
+           RemapViewTreeThemeColors(engine->last_root_data_, map);
+         }
 
-        if (engine->graphics_) {
-          engine->graphics_->RequestRedraw();
-        }
-      }});
+         if (engine->graphics_)
+         {
+           engine->graphics_->RequestRedraw();
+         }
+       }});
 
   return {};
 }
 
-RenderEngine::~RenderEngine() {
-  if (theme_listener_id_ != 0 && theme_manager_) {
+RenderEngine::~RenderEngine()
+{
+  if (theme_listener_id_ != 0 && theme_manager_)
+  {
     theme_manager_->RemoveThemeChangedListener(theme_listener_id_);
     theme_listener_id_ = 0;
   }
 }
 
-std::pair<float, float>
-RenderEngine::MeasureTextCallback(const std::string &text, float font_size,
-                                  float max_width) {
+std::pair<float, float> RenderEngine::MeasureTextCallback(const std::string &text, float font_size,
+                                                          float max_width)
+{
   if (text.empty())
     return {0.0f, 0.0f};
 
@@ -403,13 +452,13 @@ RenderEngine::MeasureTextCallback(const std::string &text, float font_size,
   TextStyle style;
   style.font_size = font_size;
 
-  Size measured = text_renderer_->MeasureText(wtext, style,
-                                              max_width > 0 ? max_width : 0.0f);
+  Size measured = text_renderer_->MeasureText(wtext, style, max_width > 0 ? max_width : 0.0f);
   return {measured.width, measured.height};
 }
 
-int RenderEngine::TextHitTestCallback(const std::string &text, float font_size,
-                                      float max_width, float x, float y) {
+int RenderEngine::TextHitTestCallback(const std::string &text, float font_size, float max_width,
+                                      float x, float y)
+{
   if (text.empty())
     return 0;
 
@@ -418,50 +467,54 @@ int RenderEngine::TextHitTestCallback(const std::string &text, float font_size,
   TextStyle style;
   style.font_size = font_size;
 
-  return text_renderer_->HitTestPoint(wtext, style,
-                                      max_width > 0 ? max_width : 0.0f, x, y);
+  return text_renderer_->HitTestPoint(wtext, style, max_width > 0 ? max_width : 0.0f, x, y);
 }
 
-std::tuple<float, float, float, float>
-RenderEngine::TextCaretRectCallback(const std::string &text, float font_size,
-                                    float max_width, int cursor_index) {
+std::tuple<float, float, float, float> RenderEngine::TextCaretRectCallback(const std::string &text,
+                                                                           float font_size,
+                                                                           float max_width,
+                                                                           int cursor_index)
+{
   std::wstring wtext = ToWide(text);
 
   TextStyle style;
   style.font_size = font_size;
 
-  Rect r = text_renderer_->GetCaretRect(wtext, style,
-                                        max_width > 0 ? max_width : 0.0f,
-                                        cursor_index);
+  Rect r =
+      text_renderer_->GetCaretRect(wtext, style, max_width > 0 ? max_width : 0.0f, cursor_index);
   return {r.x, r.y, r.width, r.height};
 }
 
-void RenderEngine::Render(const xent::View &root) {
+void RenderEngine::Render(const xent::View &root)
+{
   if (!d2d_context_)
     return;
 
   DrawViewRecursive(root, 0.0f, 0.0f);
 }
 
-void RenderEngine::RenderFrame(xent::View &root) {
+void RenderEngine::RenderFrame(xent::View &root)
+{
   if (!graphics_)
     return;
 
   Size size = graphics_->GetRenderTargetSize();
   xent::SetTextMeasureFunc(
-      xent::Delegate<std::pair<float, float>(const std::string &, float, float)>
-      ::From<RenderEngine, &RenderEngine::MeasureTextCallback>(this));
+      xent::Delegate<std::pair<float, float>(const std::string &, float, float)>::From<
+          RenderEngine, &RenderEngine::MeasureTextCallback>(this));
 
   xent::SetTextHitTestFunc(
-      xent::Delegate<int(const std::string &, float, float, float, float)>
-      ::From<RenderEngine, &RenderEngine::TextHitTestCallback>(this));
-      
+      xent::Delegate<int(const std::string &, float, float, float,
+                         float)>::From<RenderEngine, &RenderEngine::TextHitTestCallback>(this));
+
   xent::SetTextCaretRectFunc(
-      xent::Delegate<std::tuple<float, float, float, float>(const std::string &, float, float, int)>
-      ::From<RenderEngine, &RenderEngine::TextCaretRectCallback>(this));
+      xent::Delegate<std::tuple<float, float, float, float>(
+          const std::string &, float, float,
+          int)>::From<RenderEngine, &RenderEngine::TextCaretRectCallback>(this));
 
   xent::View *root_data = &root;
-  if (root_data) {
+  if (root_data)
+  {
     last_root_data_ = root_data;
     ApplyButtonDefaultsRecursive(root_data);
     root_data->CalculateLayout(size.width, size.height);
@@ -471,26 +524,29 @@ void RenderEngine::RenderFrame(xent::View &root) {
   graphics_->BeginDraw();
   graphics_->Clear(Color::transparent());
 
-  if (control_renderer_) {
+  if (control_renderer_)
+  {
     control_renderer_->BeginFrame();
   }
   Render(root);
   graphics_->EndDraw();
 
-  if (control_renderer_) {
+  if (control_renderer_)
+  {
     control_renderer_->EndFrame();
   }
   graphics_->Present();
 }
 
-void RenderEngine::DrawViewRecursive(const xent::View &view, float parent_x,
-                                     float parent_y) {
+void RenderEngine::DrawViewRecursive(const xent::View &view, float parent_x, float parent_y)
+{
   DrawViewDataRecursive(&view, parent_x, parent_y);
 }
 
-void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
-                                         float parent_y) {
-  if (data == nullptr) {
+void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x, float parent_y)
+{
+  if (data == nullptr)
+  {
     return;
   }
 
@@ -502,130 +558,108 @@ void RenderEngine::DrawViewDataRecursive(const xent::View *data, float parent_x,
   float abs_y = parent_y + y;
   Rect bounds(abs_x, abs_y, w, h);
 
-  if (control_renderer_ && data->type != xent::ComponentType::View) {
-    controls::ControlState state;
-    if (input_) {
-      if (auto hovered = input_->GetHoveredView()) {
-        state.is_hovered = (hovered == data);
-      }
-      if (auto pressed = input_->GetPressedView()) {
-        if (pressed == data) {
-          bool is_simple_control =
-              (data->type == xent::ComponentType::Button ||
-               data->type == xent::ComponentType::ToggleButton ||
-               data->type == xent::ComponentType::CheckBox ||
-               data->type == xent::ComponentType::RadioButton);
-
-          if (is_simple_control) {
-            state.is_pressed = state.is_hovered;
-          } else {
-            state.is_pressed = true;
-          }
-        }
-      }
-      if (auto focused = input_->GetFocusedView()) {
-        if (focused == data) {
-          state.is_focused = (data->type == xent::ComponentType::TextBox) ||
-                             input_->ShouldShowFocusVisuals();
-        }
-      }
-    }
+  if (control_renderer_ && data->type != xent::ComponentType::View)
+  {
+    controls::ControlState state = ComputeControlState(input_, data, false);
     control_renderer_->Render(*data, bounds, state);
-  } else if (control_renderer_) {
+  }
+  else if (control_renderer_)
+  {
     control_renderer_->RenderView(*data, bounds);
-  } else {
+  }
+  else
+  {
     DrawViewBackground(*data, bounds);
     DrawViewBorder(*data, bounds);
     DrawViewText(*data, bounds);
   }
 
-  if (debug_mode_) {
+  if (debug_mode_)
+  {
     DrawRect(bounds, Color(255, 0, 255, 128), 1.0f);
   }
 
   bool should_clip = (data->type == xent::ComponentType::ScrollView);
-  if (should_clip) {
+  if (should_clip)
+  {
     PushClip(bounds);
     PushTranslation(-data->scroll_offset_x, -data->scroll_offset_y);
   }
 
-  for (const auto &child : data->children) {
+  for (const auto &child : data->children)
+  {
     DrawViewDataRecursive(child.get(), abs_x, abs_y);
   }
 
-  if (should_clip) {
+  if (should_clip)
+  {
     PopTransform();
   }
 
-  if (control_renderer_) {
-    controls::ControlState state;
-    if (input_) {
-      if (auto hovered = input_->GetHoveredView()) {
-        state.is_hovered = (hovered == data);
-      }
-      if (auto pressed = input_->GetPressedView()) {
-        state.is_pressed = (pressed == data);
-      }
-      if (auto focused = input_->GetFocusedView()) {
-        if (focused == data) {
-          state.is_focused = (data->type == xent::ComponentType::TextBox) ||
-                             input_->ShouldShowFocusVisuals();
-        }
-      }
-    }
+  if (control_renderer_)
+  {
+    controls::ControlState state = ComputeControlState(input_, data, true);
     control_renderer_->RenderOverlay(*data, bounds, state);
   }
 
-  if (should_clip) {
+  if (should_clip)
+  {
     PopClip();
   }
 }
 
-void RenderEngine::DrawViewBackground(const xent::View &data,
-                                      const Rect &bounds) {
-  Color color(data.background_color.r, data.background_color.g,
-              data.background_color.b, data.background_color.a);
+void RenderEngine::DrawViewBackground(const xent::View &data, const Rect &bounds)
+{
+  Color color(data.background_color.r, data.background_color.g, data.background_color.b,
+              data.background_color.a);
 
   if (color.is_transparent())
     return;
 
   float radius = data.corner_radius;
 
-  if (radius > 0) {
+  if (radius > 0)
+  {
     FillRoundedRect(bounds, radius, color);
-  } else {
+  }
+  else
+  {
     FillRect(bounds, color);
   }
 }
 
-void RenderEngine::DrawViewBorder(const xent::View &data, const Rect &bounds) {
+void RenderEngine::DrawViewBorder(const xent::View &data, const Rect &bounds)
+{
   float border_width = data.border_width;
   if (border_width <= 0)
     return;
 
-  Color color(data.border_color.r, data.border_color.g, data.border_color.b,
-              data.border_color.a);
+  Color color(data.border_color.r, data.border_color.g, data.border_color.b, data.border_color.a);
   if (color.is_transparent())
     return;
 
   float radius = data.corner_radius;
 
-  if (radius > 0) {
+  if (radius > 0)
+  {
     DrawRoundedRect(bounds, radius, color, border_width);
-  } else {
+  }
+  else
+  {
     DrawRect(bounds, color, border_width);
   }
 }
 
-void RenderEngine::DrawViewText(const xent::View &data, const Rect &bounds) {
+void RenderEngine::DrawViewText(const xent::View &data, const Rect &bounds)
+{
   const std::string &text = data.text_content;
   if (text.empty())
     return;
 
-  Color color(data.text_color.r, data.text_color.g, data.text_color.b,
-              data.text_color.a);
+  Color color(data.text_color.r, data.text_color.g, data.text_color.b, data.text_color.a);
 
-  if (text_renderer_) {
+  if (text_renderer_)
+  {
     std::wstring wtext = ToWide(text);
     TextStyle style;
     style.font_size = data.font_size;
@@ -634,67 +668,75 @@ void RenderEngine::DrawViewText(const xent::View &data, const Rect &bounds) {
   }
 }
 
-void RenderEngine::FillRect(const Rect &rect, const Color &color) {
+void RenderEngine::FillRect(const Rect &rect, const Color &color)
+{
   if (!d2d_context_)
     return;
 
   auto *brush = GetBrush(color);
-  if (brush) {
+  if (brush)
+  {
     d2d_context_->FillRectangle(rect.to_d2d(), brush);
   }
 }
 
-void RenderEngine::FillRoundedRect(const Rect &rect, float radius,
-                                   const Color &color) {
+void RenderEngine::FillRoundedRect(const Rect &rect, float radius, const Color &color)
+{
   if (!d2d_context_)
     return;
 
   auto *brush = GetBrush(color);
-  if (brush) {
-    D2D1_ROUNDED_RECT rounded =
-        D2D1::RoundedRect(rect.to_d2d(), radius, radius);
+  if (brush)
+  {
+    D2D1_ROUNDED_RECT rounded = D2D1::RoundedRect(rect.to_d2d(), radius, radius);
     d2d_context_->FillRoundedRectangle(rounded, brush);
   }
 }
 
-void RenderEngine::DrawRect(const Rect &rect, const Color &color,
-                            float stroke_width) {
+void RenderEngine::DrawRect(const Rect &rect, const Color &color, float stroke_width)
+{
   if (!d2d_context_)
     return;
 
   auto *brush = GetBrush(color);
-  if (brush) {
+  if (brush)
+  {
     d2d_context_->DrawRectangle(rect.to_d2d(), brush, stroke_width);
   }
 }
 
-void RenderEngine::DrawRoundedRect(const Rect &rect, float radius,
-                                   const Color &color, float stroke_width) {
+void RenderEngine::DrawRoundedRect(const Rect &rect, float radius, const Color &color,
+                                   float stroke_width)
+{
   if (!d2d_context_)
     return;
 
   auto *brush = GetBrush(color);
-  if (brush) {
-    D2D1_ROUNDED_RECT rounded =
-        D2D1::RoundedRect(rect.to_d2d(), radius, radius);
+  if (brush)
+  {
+    D2D1_ROUNDED_RECT rounded = D2D1::RoundedRect(rect.to_d2d(), radius, radius);
     d2d_context_->DrawRoundedRectangle(rounded, brush, stroke_width);
   }
 }
 
-void RenderEngine::PushClip(const Rect &rect) {
-  if (d2d_context_) {
-    d2d_context_->PushAxisAlignedClip(rect.to_d2d(),
-                                      D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+void RenderEngine::PushClip(const Rect &rect)
+{
+  if (d2d_context_)
+  {
+    d2d_context_->PushAxisAlignedClip(rect.to_d2d(), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
   }
 }
 
-void RenderEngine::PopClip() {
-  if (d2d_context_) {
+void RenderEngine::PopClip()
+{
+  if (d2d_context_)
+  {
     d2d_context_->PopAxisAlignedClip();
   }
 }
 
-void RenderEngine::PushTransform(const D2D1_MATRIX_3X2_F &transform) {
+void RenderEngine::PushTransform(const D2D1_MATRIX_3X2_F &transform)
+{
   if (!d2d_context_)
     return;
 
@@ -706,7 +748,8 @@ void RenderEngine::PushTransform(const D2D1_MATRIX_3X2_F &transform) {
   d2d_context_->SetTransform(combined);
 }
 
-void RenderEngine::PopTransform() {
+void RenderEngine::PopTransform()
+{
   if (!d2d_context_ || transform_stack_.empty())
     return;
 
@@ -714,23 +757,25 @@ void RenderEngine::PopTransform() {
   transform_stack_.pop_back();
 }
 
-void RenderEngine::PushTranslation(float x, float y) {
+void RenderEngine::PushTranslation(float x, float y)
+{
   PushTransform(D2D1::Matrix3x2F::Translation(x, y));
 }
 
-ID2D1SolidColorBrush *RenderEngine::GetBrush(const Color &color) {
-  uint32_t key = (static_cast<uint32_t>(color.r) << 24) |
-                 (static_cast<uint32_t>(color.g) << 16) |
-                 (static_cast<uint32_t>(color.b) << 8) |
-                 static_cast<uint32_t>(color.a);
+ID2D1SolidColorBrush *RenderEngine::GetBrush(const Color &color)
+{
+  uint32_t key = (static_cast<uint32_t>(color.r) << 24) | (static_cast<uint32_t>(color.g) << 16) |
+                 (static_cast<uint32_t>(color.b) << 8) | static_cast<uint32_t>(color.a);
 
   auto it = brush_cache_.find(key);
-  if (it != brush_cache_.end()) {
+  if (it != brush_cache_.end())
+  {
     return it->second.Get();
   }
 
   ComPtr<ID2D1SolidColorBrush> brush;
-  if (d2d_context_) {
+  if (d2d_context_)
+  {
     d2d_context_->CreateSolidColorBrush(color.to_d2d(), &brush);
     brush_cache_[key] = brush;
     return brush.Get();

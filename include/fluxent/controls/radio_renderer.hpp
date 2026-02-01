@@ -6,18 +6,21 @@
 #include <unordered_set>
 #include <xent/view.hpp>
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
-class RadioButtonRenderer {
+class RadioButtonRenderer
+{
 public:
   void BeginFrame();
   bool EndFrame();
 
-  void Render(const RenderContext &ctx, const xent::ViewData &data,
-              const Rect &bounds, const ControlState &state);
+  void Render(const RenderContext &ctx, const xent::ViewData &data, const Rect &bounds,
+              const ControlState &state);
 
 private:
-  struct CheckTransition {
+  struct CheckTransition
+  {
     bool initialized = false;
     bool active = false;
     float current = 0.0f;
@@ -26,7 +29,8 @@ private:
     std::chrono::steady_clock::time_point start;
   };
 
-  struct FloatTransition {
+  struct FloatTransition
+  {
     bool initialized = false;
     bool active = false;
     float current = 0.0f;
@@ -35,17 +39,16 @@ private:
     std::chrono::steady_clock::time_point start;
   };
 
-  std::unordered_map<const xent::ViewData *, CheckTransition>
-      check_transitions_;
-  std::unordered_map<const xent::ViewData *, FloatTransition>
-      scale_transitions_;
+  std::unordered_map<const xent::ViewData *, CheckTransition> check_transitions_;
+  std::unordered_map<const xent::ViewData *, FloatTransition> scale_transitions_;
 
   std::unordered_set<const xent::ViewData *> seen_;
   bool has_active_transitions_ = false;
 
   float AnimateCheckState(const xent::ViewData *key, bool is_checked);
   float AnimateFloat(const xent::ViewData *key, float target,
-                     float duration_ms = 83.0f);
+                     float duration_ms =
+                         static_cast<float>(fluxent::config::Animation::Fast * 1000.0));
 };
 
 } // namespace fluxent::controls

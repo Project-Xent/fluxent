@@ -7,18 +7,21 @@
 #include <unordered_set>
 #include <xent/view.hpp>
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
-class ToggleSwitchRenderer {
+class ToggleSwitchRenderer
+{
 public:
   void BeginFrame();
   bool EndFrame();
 
-  void Render(const RenderContext &ctx, const xent::ViewData &data,
-              const Rect &bounds, const ControlState &state);
+  void Render(const RenderContext &ctx, const xent::ViewData &data, const Rect &bounds,
+              const ControlState &state);
 
 private:
-  struct ToggleState {
+  struct ToggleState
+  {
     Animator<float> progress_anim;
   };
 

@@ -8,12 +8,14 @@
 #include <wrl/client.h>
 #include <xent/view.hpp>
 
+namespace fluxent::controls
+{
 
-namespace fluxent::controls {
-
-class SliderRenderer {
+class SliderRenderer
+{
 public:
-  struct SliderState {
+  struct SliderState
+  {
     Animator<float> scale_anim;
     Animator<Color> color_anim;
   };
@@ -21,8 +23,8 @@ public:
   void BeginFrame();
   bool EndFrame();
 
-  void Render(const RenderContext &ctx, const xent::ViewData &data,
-              const Rect &bounds, const ControlState &state);
+  void Render(const RenderContext &ctx, const xent::ViewData &data, const Rect &bounds,
+              const ControlState &state);
 
 private:
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;

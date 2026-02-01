@@ -1,7 +1,8 @@
 #pragma once
 #include <d2d1.h>
 
-namespace fluxent::controls::constants {
+namespace fluxent::controls::constants
+{
 
 constexpr float kControlCornerRadius = 4.0f;
 constexpr float kFocusStrokeThicknessOuter = 2.0f;
@@ -33,4 +34,3 @@ constexpr float kTextBoxPaddingRight = 6.0f;
 constexpr float kTextBoxPaddingBottom = 6.0f;
 
 } // namespace fluxent::controls::constants
-

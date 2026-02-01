@@ -1,33 +1,39 @@
 #pragma once
 
-#include "render_context.hpp"
-#include "fluxent/controls/animation_utils.hpp"
 #include <chrono>
 #include <unordered_map>
 #include <unordered_set>
+
 #include <xent/view.hpp>
 
-namespace fluxent::controls {
+#include "fluxent/controls/animation_utils.hpp"
+#include "render_context.hpp"
 
-enum class CheckBoxVisualState {
-  NormalOff,
-  NormalOn,
-  PointerOverOff,
-  PointerOverOn,
-  PressedOff,
-  PressedOn
-};
+namespace fluxent::controls
+{
 
-class CheckBoxRenderer {
+class CheckBoxRenderer
+{
 public:
   void BeginFrame();
   bool EndFrame();
 
-  void RenderCheckBox(const RenderContext &ctx, const xent::ViewData &data,
-                      const Rect &bounds, const ControlState &state);
+  void RenderCheckBox(const RenderContext &ctx, const xent::ViewData &data, const Rect &bounds,
+                      const ControlState &state);
 
 private:
-  struct CheckBoxState {
+  enum class CheckBoxVisualState
+  {
+    NormalOff,
+    NormalOn,
+    PointerOverOff,
+    PointerOverOn,
+    PressedOff,
+    PressedOn
+  };
+
+  struct CheckBoxState
+  {
     Animator<float> check_anim;
     Animator<float> scale_anim;
     CheckBoxVisualState visual_state = CheckBoxVisualState::NormalOff;
@@ -41,10 +47,9 @@ private:
 
   float AnimateCheckState(const xent::ViewData *key, bool is_checked);
   float AnimateFloat(const xent::ViewData *key, float target,
-                     float duration_ms = 83.0f);
-
-  static CheckBoxVisualState DetermineVisualState(bool is_checked,
-                                                   const ControlState& state);
+                     float duration_ms =
+                         static_cast<float>(fluxent::config::Animation::Fast * 1000.0));
+  static CheckBoxVisualState DetermineVisualState(bool is_checked, const ControlState &state);
 };
 
 } // namespace fluxent::controls

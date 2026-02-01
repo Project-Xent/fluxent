@@ -4,13 +4,16 @@
 #include "../text.hpp"
 #include "../theme/theme_manager.hpp"
 
-namespace fluxent {
+namespace fluxent
+{
 class PluginManager;
 }
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
-struct ControlState {
+struct ControlState
+{
   bool is_hovered = false;
   bool is_pressed = false;
   bool is_focused = false;
@@ -19,17 +22,16 @@ struct ControlState {
   float mouse_y = 0.0f;
 };
 
-struct RenderContext {
+struct RenderContext
+{
   GraphicsPipeline *graphics;
   TextRenderer *text;
   theme::ThemeManager *theme_manager;
   PluginManager *plugins;
 
-  const theme::ThemeResources &Resources() const {
-    return theme_manager->Resources();
-  }
+  const theme::ThemeResources &Resources() const { return theme_manager->Resources(); }
 
   theme::Mode Mode() const { return theme_manager->GetMode(); }
 };
 
-} // namespace fluxent::controls
+}

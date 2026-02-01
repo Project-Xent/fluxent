@@ -1,14 +1,14 @@
 #pragma once
 
-#include "../graphics.hpp"
-#include "../text.hpp"
+#include <unordered_set>
 
 #include <xent/view.hpp>
 
-#include <chrono>
-#include <unordered_set>
+#include "../graphics.hpp"
+#include "../text.hpp"
 
-namespace theme {
+namespace theme
+{
 class ThemeManager;
 }
 
@@ -19,7 +19,8 @@ class PluginManager;
 #include "render_context.hpp"
 #include <memory>
 
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
 class ButtonRenderer;
 class CheckBoxRenderer;
@@ -29,8 +30,8 @@ class SliderRenderer;
 class ToggleSwitchRenderer;
 class TextBoxRenderer;
 
-
-class ControlRenderer {
+class ControlRenderer
+{
 public:
   ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
                   theme::ThemeManager *theme_manager,
@@ -40,11 +41,9 @@ public:
   void BeginFrame();
   void EndFrame();
 
-  void Render(const xent::ViewData &data, const Rect &bounds,
-              const ControlState &state);
+  void Render(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
-  void RenderButton(const xent::ViewData &data, const Rect &bounds,
-                    const ControlState &state);
+  void RenderButton(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
   void RenderToggleSwitch(const xent::ViewData &data, const Rect &bounds,
                           const ControlState &state);
@@ -52,24 +51,17 @@ public:
   void RenderToggleButton(const xent::ViewData &data, const Rect &bounds,
                           const ControlState &state);
 
-  void RenderCheckBox(const xent::ViewData &data, const Rect &bounds,
-                      const ControlState &state);
+  void RenderCheckBox(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
-  void RenderRadioButton(const xent::ViewData &data, const Rect &bounds,
-                         const ControlState &state);
+  void RenderRadioButton(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
-  void RenderSlider(const xent::ViewData &data, const Rect &bounds,
-                    const ControlState &state);
+  void RenderSlider(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
-  void RenderTextBox(const xent::ViewData &data, const Rect &bounds,
-                     const ControlState &state);
+  void RenderTextBox(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
-  void RenderScrollView(const xent::ViewData &data, const Rect &bounds,
-                        const ControlState &state);
+  void RenderScrollView(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
-
-  void RenderOverlay(const xent::ViewData &data, const Rect &bounds,
-                     const ControlState &state);
+  void RenderOverlay(const xent::ViewData &data, const Rect &bounds, const ControlState &state);
 
   void RenderText(const xent::ViewData &data, const Rect &bounds);
 
@@ -80,17 +72,15 @@ public:
   void RenderView(const xent::ViewData &data, const Rect &bounds);
 
 private:
-  void UpdateHoverOverlay();
-  void EnsureHoverOverlaySurface(int width, int height, const Color &color);
+  Result<void> UpdateHoverOverlay();
+  Result<void> EnsureHoverOverlaySurface(int width, int height, const Color &color);
 
   ID2D1SolidColorBrush *GetBrush(const Color &color);
 
-  void DrawElevationBorder(const Rect &bounds, float corner_radius,
-                           bool is_accent);
+  void DrawElevationBorder(const Rect &bounds, float corner_radius, bool is_accent);
 
-  Rect DrawControlSurface(const Rect &bounds, float corner_radius,
-                          const Color &fill_color, const Color &stroke_color,
-                          bool is_accent, const ControlState &state);
+  Rect DrawControlSurface(const Rect &bounds, float corner_radius, const Color &fill_color,
+                          const Color &stroke_color, bool is_accent, const ControlState &state);
 
   void DrawFocusRect(const Rect &bounds, float corner_radius);
 
@@ -99,10 +89,8 @@ private:
   theme::ThemeManager *theme_manager_;
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush_;
 
-  Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>
-      control_elevation_border_brush_;
-  Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush>
-      control_accent_elevation_border_brush_;
+  Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> control_elevation_border_brush_;
+  Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> control_accent_elevation_border_brush_;
 
   Microsoft::WRL::ComPtr<IDCompositionVisual> hover_visual_;
   Microsoft::WRL::ComPtr<IDCompositionSurface> hover_surface_;

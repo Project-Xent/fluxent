@@ -1,33 +1,27 @@
+#include <cmath>
+#include <dcomp.h>
 #include <memory>
 
-#include "fluxent/controls/control_renderer.hpp"
-#include "fluxent/theme/theme_manager.hpp"
-#include "fluxent/plugin_manager.hpp"
 #include "fluxent/config.hpp"
-
 #include "fluxent/controls/button_renderer.hpp"
 #include "fluxent/controls/checkbox_renderer.hpp"
+#include "fluxent/controls/control_renderer.hpp"
 #include "fluxent/controls/radio_renderer.hpp"
 #include "fluxent/controls/scroll_view_renderer.hpp"
 #include "fluxent/controls/slider_renderer.hpp"
-#include "fluxent/controls/toggle_renderer.hpp"
 #include "fluxent/controls/textbox_renderer.hpp"
+#include "fluxent/controls/toggle_renderer.hpp"
+#include "fluxent/plugin_manager.hpp"
+#include "fluxent/theme/theme_manager.hpp"
 
-
-// Sub-renderers (implementation handled in their own cpp files)
-// Headers are included in control_renderer.hpp
-
-// DirectComposition
-#include <cmath>
-#include <dcomp.h>
-
-namespace fluxent::controls {
+namespace fluxent::controls
+{
 
 ControlRenderer::ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
                                  theme::ThemeManager *theme_manager,
                                  PluginManager *plugin_manager)
-    : graphics_(graphics), text_renderer_(text), theme_manager_(theme_manager) {
-
+    : graphics_(graphics), text_renderer_(text), theme_manager_(theme_manager)
+{
   ctx_ = {graphics, text, theme_manager, plugin_manager};
   button_renderer_ = std::make_unique<ButtonRenderer>();
   toggle_renderer_ = std::make_unique<ToggleSwitchRenderer>();
@@ -37,14 +31,14 @@ ControlRenderer::ControlRenderer(GraphicsPipeline *graphics, TextRenderer *text,
   textbox_renderer_ = std::make_unique<TextBoxRenderer>();
   scroll_view_renderer_ = std::make_unique<ScrollViewRenderer>();
 
-
   auto d2d = graphics_->GetD2DContext();
   d2d->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &brush_);
 }
 
 ControlRenderer::~ControlRenderer() = default;
 
-void ControlRenderer::BeginFrame() {
+void ControlRenderer::BeginFrame()
+{
   CheckResources(); // Check theme version
 
   button_renderer_->BeginFrame();
@@ -55,15 +49,16 @@ void ControlRenderer::BeginFrame() {
   textbox_renderer_->BeginFrame();
   scroll_view_renderer_->BeginFrame();
 
-
   frame_hovered_button_ = nullptr;
   hover_corner_radius_ = 0.0f;
   frame_buttons_seen_.clear();
 }
 
-void ControlRenderer::CheckResources() {
+void ControlRenderer::CheckResources()
+{
   uint64_t current_version = theme_manager_->Version();
-  if (current_version != last_theme_version_) {
+  if (current_version != last_theme_version_)
+  {
     // Theme changed, invalidate cached resources
     brush_->SetColor(D2D1::ColorF(0, 0, 0, 0));
     control_elevation_border_brush_.Reset();
@@ -73,8 +68,9 @@ void ControlRenderer::CheckResources() {
   }
 }
 
-void ControlRenderer::EndFrame() {
-  UpdateHoverOverlay();
+void ControlRenderer::EndFrame()
+{
+  (void)UpdateHoverOverlay();
 
   bool active = false;
   active |= button_renderer_->EndFrame();
@@ -85,14 +81,17 @@ void ControlRenderer::EndFrame() {
   active |= textbox_renderer_->EndFrame();
   active |= scroll_view_renderer_->EndFrame();
 
-  if (active && graphics_) {
+  if (active && graphics_)
+  {
     graphics_->RequestRedraw();
   }
 }
 
 void ControlRenderer::Render(const xent::ViewData &data, const Rect &bounds,
-                             const ControlState &state) {
-  switch (data.type) {
+                             const ControlState &state)
+{
+  switch (data.type)
+  {
   case xent::ComponentType::Button:
     frame_buttons_seen_.insert(&data);
     RenderButton(data, bounds, state);
@@ -135,8 +134,10 @@ void ControlRenderer::Render(const xent::ViewData &data, const Rect &bounds,
     RenderDivider(bounds, true);
     break;
   case xent::ComponentType::Custom:
-    if (ctx_.plugins) {
-      if (auto *plugin = ctx_.plugins->Get(data.extension_type)) {
+    if (ctx_.plugins)
+    {
+      if (auto *plugin = ctx_.plugins->Get(data.extension_type))
+      {
         plugin->Render(data, ctx_, bounds);
       }
     }
@@ -147,18 +148,20 @@ void ControlRenderer::Render(const xent::ViewData &data, const Rect &bounds,
   }
 }
 
-void ControlRenderer::RenderOverlay(const xent::ViewData &data,
-                                    const Rect &bounds,
-                                    const ControlState &state) {
-  if (data.type == xent::ComponentType::ScrollView) {
+void ControlRenderer::RenderOverlay(const xent::ViewData &data, const Rect &bounds,
+                                    const ControlState &state)
+{
+  if (data.type == xent::ComponentType::ScrollView)
+  {
     scroll_view_renderer_->RenderOverlay(ctx_, data, bounds, state);
   }
 }
 
-void ControlRenderer::RenderButton(const xent::ViewData &data,
-                                   const Rect &bounds,
-                                   const ControlState &state) {
-  if (bounds.contains(state.mouse_x, state.mouse_y)) {
+void ControlRenderer::RenderButton(const xent::ViewData &data, const Rect &bounds,
+                                   const ControlState &state)
+{
+  if (bounds.contains(state.mouse_x, state.mouse_y))
+  {
     frame_hovered_button_ = &data;
     hover_bounds_ = bounds;
     hover_corner_radius_ = theme_manager_->Resources().ControlCornerRadius;
@@ -166,10 +169,11 @@ void ControlRenderer::RenderButton(const xent::ViewData &data,
   button_renderer_->Render(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::RenderToggleButton(const xent::ViewData &data,
-                                         const Rect &bounds,
-                                         const ControlState &state) {
-  if (bounds.contains(state.mouse_x, state.mouse_y)) {
+void ControlRenderer::RenderToggleButton(const xent::ViewData &data, const Rect &bounds,
+                                         const ControlState &state)
+{
+  if (bounds.contains(state.mouse_x, state.mouse_y))
+  {
     frame_hovered_button_ = &data;
     hover_bounds_ = bounds;
     hover_corner_radius_ = theme_manager_->Resources().ControlCornerRadius;
@@ -177,16 +181,17 @@ void ControlRenderer::RenderToggleButton(const xent::ViewData &data,
   button_renderer_->RenderToggleButton(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::RenderToggleSwitch(const xent::ViewData &data,
-                                         const Rect &bounds,
-                                         const ControlState &state) {
+void ControlRenderer::RenderToggleSwitch(const xent::ViewData &data, const Rect &bounds,
+                                         const ControlState &state)
+{
   toggle_renderer_->Render(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::RenderCheckBox(const xent::ViewData &data,
-                                     const Rect &bounds,
-                                     const ControlState &state) {
-  if (bounds.contains(state.mouse_x, state.mouse_y)) {
+void ControlRenderer::RenderCheckBox(const xent::ViewData &data, const Rect &bounds,
+                                     const ControlState &state)
+{
+  if (bounds.contains(state.mouse_x, state.mouse_y))
+  {
     frame_hovered_button_ = &data;
     hover_bounds_ = bounds;
     hover_corner_radius_ = theme_manager_->Resources().CheckBox.CornerRadius;
@@ -194,10 +199,11 @@ void ControlRenderer::RenderCheckBox(const xent::ViewData &data,
   checkbox_renderer_->RenderCheckBox(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::RenderRadioButton(const xent::ViewData &data,
-                                        const Rect &bounds,
-                                        const ControlState &state) {
-  if (bounds.contains(state.mouse_x, state.mouse_y)) {
+void ControlRenderer::RenderRadioButton(const xent::ViewData &data, const Rect &bounds,
+                                        const ControlState &state)
+{
+  if (bounds.contains(state.mouse_x, state.mouse_y))
+  {
     frame_hovered_button_ = &data;
     hover_bounds_ = bounds;
     hover_corner_radius_ = theme_manager_->Resources().CheckBox.CornerRadius;
@@ -205,16 +211,17 @@ void ControlRenderer::RenderRadioButton(const xent::ViewData &data,
   radio_renderer_->Render(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::RenderSlider(const xent::ViewData &data,
-                                   const Rect &bounds,
-                                   const ControlState &state) {
+void ControlRenderer::RenderSlider(const xent::ViewData &data, const Rect &bounds,
+                                   const ControlState &state)
+{
   slider_renderer_->Render(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::RenderTextBox(const xent::ViewData &data,
-                                    const Rect &bounds,
-                                    const ControlState &state) {
-  if (bounds.contains(state.mouse_x, state.mouse_y)) {
+void ControlRenderer::RenderTextBox(const xent::ViewData &data, const Rect &bounds,
+                                    const ControlState &state)
+{
+  if (bounds.contains(state.mouse_x, state.mouse_y))
+  {
     frame_hovered_button_ = &data;
     hover_bounds_ = bounds;
     // float corner_radius = data.corner_radius > 0 ? data.corner_radius :
@@ -233,69 +240,67 @@ void ControlRenderer::RenderTextBox(const xent::ViewData &data,
   textbox_renderer_->Render(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::RenderScrollView(const xent::ViewData &data,
-                                       const Rect &bounds,
-                                       const ControlState &state) {
+void ControlRenderer::RenderScrollView(const xent::ViewData &data, const Rect &bounds,
+                                       const ControlState &state)
+{
   scroll_view_renderer_->Render(ctx_, data, bounds, state);
 }
 
-void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
-                                                const Color &color) {
+Result<void> ControlRenderer::EnsureHoverOverlaySurface(int width, int height, const Color &color)
+{
   if (!graphics_)
-    return;
+    return {};
 
-  width = std::max(1, width);
-  height = std::max(1, height);
+  width = std::max(fluxent::config::Render::MinSurfaceSize, width);
+  height = std::max(fluxent::config::Render::MinSurfaceSize, height);
 
   auto *dcomp = graphics_->GetDCompDevice();
   auto *d2d = graphics_->GetD2DOverlayContext();
   if (!dcomp || !d2d)
-    return;
+    return {};
 
-  bool need_recreate = !hover_surface_ || hover_surface_width_ != width ||
-                       hover_surface_height_ != height;
+  bool need_recreate =
+      !hover_surface_ || hover_surface_width_ != width || hover_surface_height_ != height;
 
-  if (need_recreate) {
+  if (need_recreate)
+  {
     hover_surface_.Reset();
     hover_surface_.Reset();
-    HRESULT hr =
-        dcomp->CreateSurface(width, height, DXGI_FORMAT_B8G8R8A8_UNORM,
-                             DXGI_ALPHA_MODE_PREMULTIPLIED, &hover_surface_);
+    HRESULT hr = dcomp->CreateSurface(width, height, DXGI_FORMAT_B8G8R8A8_UNORM,
+                                      DXGI_ALPHA_MODE_PREMULTIPLIED, &hover_surface_);
     if (FAILED(hr))
-      return;
+      return tl::unexpected(hr);
 
     hover_surface_width_ = width;
     hover_surface_height_ = height;
     hover_surface_color_ = Color::transparent();
   }
 
-  if (!need_recreate && hover_surface_color_.r == color.r &&
-      hover_surface_color_.g == color.g && hover_surface_color_.b == color.b &&
-      hover_surface_color_.a == color.a) {
-    return;
+  if (!need_recreate && hover_surface_color_.r == color.r && hover_surface_color_.g == color.g &&
+      hover_surface_color_.b == color.b && hover_surface_color_.a == color.a)
+  {
+    return {};
   }
 
   RECT update = {0, 0, width, height};
   POINT offset = {};
   ComPtr<IDXGISurface> dxgi_surface;
-  HRESULT hr =
-      hover_surface_->BeginDraw(&update, IID_PPV_ARGS(&dxgi_surface), &offset);
+  HRESULT hr = hover_surface_->BeginDraw(&update, IID_PPV_ARGS(&dxgi_surface), &offset);
   if (FAILED(hr))
-    return;
+    return tl::unexpected(hr);
 
   const auto dpi = graphics_->GetDpi();
-  const float scale_x = dpi.dpi_x / 96.0f;
-  const float scale_y = dpi.dpi_y / 96.0f;
+  const float scale_x = dpi.dpi_x / fluxent::config::Render::DpiBase;
+  const float scale_y = dpi.dpi_y / fluxent::config::Render::DpiBase;
   D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
       D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-      D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
-                        D2D1_ALPHA_MODE_PREMULTIPLIED),
-      dpi.dpi_x, dpi.dpi_y);
+      D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), dpi.dpi_x,
+      dpi.dpi_y);
 
   ComPtr<ID2D1Bitmap1> bitmap;
   hr = d2d->CreateBitmapFromDxgiSurface(dxgi_surface.Get(), &props, &bitmap);
   if (FAILED(hr))
-    return;
+    return tl::unexpected(hr);
 
   ComPtr<ID2D1Image> old_target;
   d2d->GetTarget(&old_target);
@@ -303,29 +308,26 @@ void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
 
   D2D1_MATRIX_3X2_F old_transform;
   d2d->GetTransform(&old_transform);
-  const float offset_x_dip =
-      scale_x > 0.0f ? (static_cast<float>(offset.x) / scale_x) : 0.0f;
-  const float offset_y_dip =
-      scale_y > 0.0f ? (static_cast<float>(offset.y) / scale_y) : 0.0f;
+  const float offset_x_dip = scale_x > 0.0f ? (static_cast<float>(offset.x) / scale_x) : 0.0f;
+  const float offset_y_dip = scale_y > 0.0f ? (static_cast<float>(offset.y) / scale_y) : 0.0f;
   d2d->SetTransform(D2D1::Matrix3x2F::Translation(offset_x_dip, offset_y_dip));
 
   d2d->BeginDraw();
   d2d->Clear(D2D1::ColorF(0, 0, 0, 0));
 
-  const float width_dip = scale_x > 0.0f ? (static_cast<float>(width) / scale_x)
-                                         : static_cast<float>(width);
-  const float height_dip = scale_y > 0.0f
-                               ? (static_cast<float>(height) / scale_y)
-                               : static_cast<float>(height);
+  const float width_dip =
+      scale_x > 0.0f ? (static_cast<float>(width) / scale_x) : static_cast<float>(width);
+  const float height_dip =
+      scale_y > 0.0f ? (static_cast<float>(height) / scale_y) : static_cast<float>(height);
 
   float radius = std::max(0.0f, hover_corner_radius_);
   radius = std::min(radius, std::min(width_dip, height_dip) * 0.5f);
 
   ComPtr<ID2D1SolidColorBrush> overlay_brush;
-  if (SUCCEEDED(d2d->CreateSolidColorBrush(color.to_d2d(), &overlay_brush)) &&
-      overlay_brush) {
-    D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(
-        D2D1::RectF(0.0f, 0.0f, width_dip, height_dip), radius, radius);
+  if (SUCCEEDED(d2d->CreateSolidColorBrush(color.to_d2d(), &overlay_brush)) && overlay_brush)
+  {
+    D2D1_ROUNDED_RECT rr =
+        D2D1::RoundedRect(D2D1::RectF(0.0f, 0.0f, width_dip, height_dip), radius, radius);
     d2d->FillRoundedRectangle(rr, overlay_brush.Get());
   }
 
@@ -335,10 +337,13 @@ void ControlRenderer::EnsureHoverOverlaySurface(int width, int height,
 
   hover_surface_->EndDraw();
   hover_surface_color_ = color;
+
+  return {};
 }
 
-static void AnimateOpacity(GraphicsPipeline *graphics,
-                           IDCompositionVisual *visual, float from, float to) {
+static void AnimateOpacity(GraphicsPipeline *graphics, IDCompositionVisual *visual, float from,
+                           float to)
+{
   if (!graphics || !visual)
     return;
   (void)from;
@@ -349,14 +354,16 @@ static void AnimateOpacity(GraphicsPipeline *graphics,
     return;
 
   ComPtr<IDCompositionVisual3> v3;
-  if (FAILED(visual->QueryInterface(IID_PPV_ARGS(&v3))) || !v3) {
+  if (FAILED(visual->QueryInterface(IID_PPV_ARGS(&v3))) || !v3)
+  {
     visual->SetOpacity(to);
     graphics->Commit();
     return;
   }
 
   ComPtr<IDCompositionAnimation> anim;
-  if (FAILED(dcomp->CreateAnimation(&anim)) || !anim) {
+  if (FAILED(dcomp->CreateAnimation(&anim)) || !anim)
+  {
     v3->SetOpacity(to);
     graphics->Commit();
     return;
@@ -376,41 +383,46 @@ static void AnimateOpacity(GraphicsPipeline *graphics,
 #endif
 }
 
-void ControlRenderer::UpdateHoverOverlay() {
+Result<void> ControlRenderer::UpdateHoverOverlay()
+{
   if (!graphics_)
-    return;
+    return {};
 
   auto *dcomp = graphics_->GetDCompDevice();
   if (!dcomp)
-    return;
+    return {};
 
   const bool should_show = (frame_hovered_button_ != nullptr);
   const float target_opacity = should_show ? 1.0f : 0.0f;
 
-  if (!hover_visual_) {
+  if (!hover_visual_)
+  {
     HRESULT hr = dcomp->CreateVisual(&hover_visual_);
     if (FAILED(hr))
-      return;
+      return tl::unexpected(hr);
 #if defined(__IDCompositionVisual3_INTERFACE_DEFINED__)
-    if (ComPtr<IDCompositionVisual3> v3;
-        SUCCEEDED(hover_visual_.As(&v3)) && v3) {
+    if (ComPtr<IDCompositionVisual3> v3; SUCCEEDED(hover_visual_.As(&v3)) && v3)
+    {
       v3->SetOpacity(0.0f);
     }
 #endif
   }
 
-  if (!hover_visual_added_) {
+  if (!hover_visual_added_)
+  {
     graphics_->AddOverlayVisual(hover_visual_.Get());
     hover_visual_added_ = true;
   }
 
   const auto dpi = graphics_->GetDpi();
-  const float scale_x = dpi.dpi_x / 96.0f;
-  const float scale_y = dpi.dpi_y / 96.0f;
+  const float scale_x = dpi.dpi_x / fluxent::config::Render::DpiBase;
+  const float scale_y = dpi.dpi_y / fluxent::config::Render::DpiBase;
 
-  if (should_show) {
+  if (should_show)
+  {
     Color overlay;
-    switch (theme_manager_->GetMode()) {
+    switch (theme_manager_->GetMode())
+    {
     case theme::Mode::Light:
       overlay = Color(0xCD, 0xCD, 0xCD, 0xD1);
       break;
@@ -419,34 +431,36 @@ void ControlRenderer::UpdateHoverOverlay() {
       break;
     }
 
-    const int width_px = std::max(
-        1, static_cast<int>(std::lround(hover_bounds_.width * scale_x)));
-    const int height_px = std::max(
-        1, static_cast<int>(std::lround(hover_bounds_.height * scale_y)));
+    const int width_px = std::max(1, static_cast<int>(std::lround(hover_bounds_.width * scale_x)));
+    const int height_px =
+        std::max(1, static_cast<int>(std::lround(hover_bounds_.height * scale_y)));
 
-    EnsureHoverOverlaySurface(width_px, height_px, overlay);
+    (void)EnsureHoverOverlaySurface(width_px, height_px, overlay);
 
-    if (hover_surface_) {
+    if (hover_surface_)
+    {
       hover_visual_->SetContent(hover_surface_.Get());
     }
 
-    hover_visual_->SetOffsetX(
-        static_cast<float>(std::lround(hover_bounds_.x * scale_x)));
-    hover_visual_->SetOffsetY(
-        static_cast<float>(std::lround(hover_bounds_.y * scale_y)));
+    hover_visual_->SetOffsetX(static_cast<float>(std::lround(hover_bounds_.x * scale_x)));
+    hover_visual_->SetOffsetY(static_cast<float>(std::lround(hover_bounds_.y * scale_y)));
   }
 
-  if (target_opacity != hover_opacity_) {
+  if (target_opacity != hover_opacity_)
+  {
     const float from = hover_opacity_;
     hover_opacity_ = target_opacity;
     AnimateOpacity(graphics_, hover_visual_.Get(), from, target_opacity);
   }
+  return {};
 }
 
-ID2D1SolidColorBrush *ControlRenderer::GetBrush(const Color &color) {
-  if (brush_) {
-    brush_->SetColor(D2D1::ColorF(color.r / 255.0f, color.g / 255.0f,
-                                  color.b / 255.0f, color.a / 255.0f));
+ID2D1SolidColorBrush *ControlRenderer::GetBrush(const Color &color)
+{
+  if (brush_)
+  {
+    brush_->SetColor(
+        D2D1::ColorF(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f));
   }
   return brush_.Get();
 }

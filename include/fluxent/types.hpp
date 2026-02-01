@@ -29,7 +29,8 @@
 #include <optional>
 #include <string>
 
-namespace fluxent {
+namespace fluxent
+{
 
 template <typename T> using ComPtr = Microsoft::WRL::ComPtr<T>;
 
@@ -39,7 +40,8 @@ class RenderEngine;
 class InputHandler;
 class TextRenderer;
 
-struct Point {
+struct Point
+{
   float x = 0.0f;
   float y = 0.0f;
 
@@ -49,7 +51,8 @@ struct Point {
   D2D1_POINT_2F to_d2d() const { return D2D1::Point2F(x, y); }
 };
 
-struct Size {
+struct Size
+{
   float width = 0.0f;
   float height = 0.0f;
 
@@ -59,22 +62,23 @@ struct Size {
   D2D1_SIZE_F to_d2d() const { return D2D1::SizeF(width, height); }
 };
 
-struct Rect {
+struct Rect
+{
   float x = 0.0f;
   float y = 0.0f;
   float width = 0.0f;
   float height = 0.0f;
 
   constexpr Rect() = default;
-  constexpr Rect(float x_, float y_, float w, float h)
-      : x(x_), y(y_), width(w), height(h) {}
+  constexpr Rect(float x_, float y_, float w, float h) : x(x_), y(y_), width(w), height(h) {}
 
   constexpr float left() const { return x; }
   constexpr float top() const { return y; }
   constexpr float right() const { return x + width; }
   constexpr float bottom() const { return y + height; }
 
-  constexpr bool contains(float px, float py) const {
+  constexpr bool contains(float px, float py) const
+  {
     return px >= x && px < right() && py >= y && py < bottom();
   }
 
@@ -83,26 +87,32 @@ struct Rect {
   D2D1_RECT_F to_d2d() const { return D2D1::RectF(x, y, right(), bottom()); }
 };
 
-struct Color {
+struct Color
+{
   uint8_t r = 0;
   uint8_t g = 0;
   uint8_t b = 0;
   uint8_t a = 255;
 
   constexpr Color() = default;
-  constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_, uint8_t a_ = 255)
-      : r(r_), g(g_), b(b_), a(a_) {}
+  constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_, uint8_t a_ = 255) : r(r_), g(g_), b(b_), a(a_)
+  {
+  }
 
-  static constexpr Color from_hex(uint32_t hex, bool has_alpha = false) {
-    if (has_alpha) {
-      return Color((hex >> 24) & 0xFF, (hex >> 16) & 0xFF, (hex >> 8) & 0xFF,
-                   hex & 0xFF);
-    } else {
+  static constexpr Color from_hex(uint32_t hex, bool has_alpha = false)
+  {
+    if (has_alpha)
+    {
+      return Color((hex >> 24) & 0xFF, (hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF);
+    }
+    else
+    {
       return Color((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, 255);
     }
   }
 
-  D2D1_COLOR_F to_d2d() const {
+  D2D1_COLOR_F to_d2d() const
+  {
     return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
   }
 
@@ -113,7 +123,8 @@ struct Color {
   static constexpr Color white() { return Color(255, 255, 255, 255); }
 };
 
-struct DpiInfo {
+struct DpiInfo
+{
   float dpi_x = 96.0f;
   float dpi_y = 96.0f;
 
@@ -122,14 +133,16 @@ struct DpiInfo {
   float scale() const { return scale_x(); }
 };
 
-enum class BackdropType {
+enum class BackdropType
+{
   None = 0,
   Mica = 1,
   MicaAlt = 2,
   Acrylic = 3
 };
 
-struct WindowConfig {
+struct WindowConfig
+{
   std::wstring title = L"FluXent Window";
   int width = config::Defaults::WindowWidth;
   int height = config::Defaults::WindowHeight;
@@ -139,11 +152,23 @@ struct WindowConfig {
   std::optional<Point> position = std::nullopt;
 };
 
-enum class MouseButton { None = 0, Left = 1, Right = 2, Middle = 3 };
+enum class MouseButton
+{
+  None = 0,
+  Left = 1,
+  Right = 2,
+  Middle = 3
+};
 
-enum class InputSource { Mouse, Touch, Pen };
+enum class InputSource
+{
+  Mouse,
+  Touch,
+  Pen
+};
 
-struct MouseEvent {
+struct MouseEvent
+{
   Point position;
   MouseButton button = MouseButton::None;
   bool is_down = false;
@@ -156,7 +181,8 @@ struct MouseEvent {
   bool alt = false;
 };
 
-struct KeyEvent {
+struct KeyEvent
+{
   UINT virtual_key = 0;
   bool is_down = false;
   bool alt = false;
@@ -171,17 +197,19 @@ using MouseEventCallback = xent::Delegate<void(const MouseEvent &)>;
 using KeyEventCallback = xent::Delegate<void(const KeyEvent &)>;
 using CharEventCallback = xent::Delegate<void(wchar_t)>;
 
-
 } // namespace fluxent
 
-#include "../../third_party/tl/expected.hpp"
+#include <tl/expected.hpp>
 
-namespace fluxent {
+namespace fluxent
+{
 
 template <typename T> using Result = tl::expected<T, HRESULT>;
 
-inline Result<void> check_result(HRESULT hr) {
-  if (FAILED(hr)) {
+inline Result<void> check_result(HRESULT hr)
+{
+  if (FAILED(hr))
+  {
     return tl::unexpected(hr);
   }
   return {};

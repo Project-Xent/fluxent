@@ -1,0 +1,46 @@
+# xmake
+build/
+.xmake/
+
+# Clangd
+.cache/
+
+# Compile commands (generated)
+compile_commands.json
+
+# Object / binary artifacts
+*.obj
+*.o
+*.a
+*.lib
+*.exp
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.idb
+*.pch
+*.dSYM/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.opendb
+*.ipch
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+
+# OS junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*.swo

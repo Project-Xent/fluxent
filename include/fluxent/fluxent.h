@@ -66,6 +66,38 @@ XentNodeId flux_create_checkbox(XentContext *ctx, FluxNodeStore *store,
                                 void (*on_change)(void *, FluxCheckState),
                                 void *userdata);
 
+XentNodeId flux_create_radio(XentContext *ctx, FluxNodeStore *store,
+                             XentNodeId parent, const char *label,
+                             bool checked,
+                             void (*on_change)(void *, FluxCheckState),
+                             void *userdata);
+
+XentNodeId flux_create_switch(XentContext *ctx, FluxNodeStore *store,
+                              XentNodeId parent, const char *label,
+                              bool on,
+                              void (*on_change)(void *, FluxCheckState),
+                              void *userdata);
+
+XentNodeId flux_create_progress(XentContext *ctx, FluxNodeStore *store,
+                                XentNodeId parent,
+                                float value, float max_value);
+
+XentNodeId flux_create_card(XentContext *ctx, FluxNodeStore *store,
+                            XentNodeId parent);
+
+XentNodeId flux_create_divider(XentContext *ctx, FluxNodeStore *store,
+                               XentNodeId parent);
+
+XentNodeId flux_create_textbox(XentContext *ctx, FluxNodeStore *store,
+                               XentNodeId parent, const char *placeholder,
+                               void (*on_change)(void *, const char *),
+                               void *userdata);
+
+XentNodeId flux_app_create_textbox(FluxApp *app, XentNodeId parent,
+                                   const char *placeholder,
+                                   void (*on_change)(void *, const char *),
+                                   void *userdata);
+
 #ifdef __cplusplus
 }
 #endif

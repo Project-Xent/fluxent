@@ -504,7 +504,7 @@ void flux_text_draw(FluxTextRenderer *tr, ID2D1RenderTarget *rt,
     origin.x = bounds->x;
     origin.y = bounds->y;
     ID2D1RenderTarget_DrawTextLayout(rt, origin, layout,
-        (ID2D1Brush *)tr->shared_brush, D2D1_DRAW_TEXT_OPTIONS_NONE);
+        (ID2D1Brush *)tr->shared_brush, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
 
     /* Do NOT release layout — cache owns it */
     free_wbuf(wtext, stack);

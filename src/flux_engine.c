@@ -48,6 +48,10 @@ typedef struct CollectFrame {
     float              abs_y;
     bool               main_emitted;
     bool               is_scroll;
+    float              scroll_off_x;
+    float              scroll_off_y;
+    float              viewport_w;
+    float              viewport_h;
     FluxRenderSnapshot snapshot;
     FluxControlState   state;
     XentNodeId         current_child;
@@ -115,7 +119,11 @@ static void collect_commands(FluxEngine *eng, XentContext *ctx, XentNodeId root)
                     FluxScrollData *sd = (FluxScrollData *)nd->component_data;
                     clip_cmd.scroll_x = sd->scroll_x;
                     clip_cmd.scroll_y = sd->scroll_y;
+                    frame->scroll_off_x = sd->scroll_x;
+                    frame->scroll_off_y = sd->scroll_y;
                 }
+                frame->viewport_w = rect.width;
+                frame->viewport_h = rect.height;
                 flux_command_buffer_push(&eng->commands, &clip_cmd);
             }
 
@@ -128,6 +136,25 @@ static void collect_commands(FluxEngine *eng, XentContext *ctx, XentNodeId root)
             /* There's a child to process — push a new frame for it */
             XentNodeId child = frame->current_child;
             frame->current_child = xent_get_next_sibling(ctx, child);
+
+            /* Viewport culling: skip children entirely outside the scroll viewport */
+            if (frame->is_scroll) {
+                XentRect child_rect = {0};
+                xent_get_layout_rect(ctx, child, &child_rect);
+
+                float vis_left   = frame->abs_x + frame->scroll_off_x;
+                float vis_top    = frame->abs_y + frame->scroll_off_y;
+                float vis_right  = vis_left + frame->viewport_w;
+                float vis_bottom = vis_top  + frame->viewport_h;
+
+                if (child_rect.x + child_rect.width  < vis_left  ||
+                    child_rect.x                      > vis_right ||
+                    child_rect.y + child_rect.height  < vis_top   ||
+                    child_rect.y                      > vis_bottom) {
+                    /* Child is completely outside the visible scroll region */
+                    continue;
+                }
+            }
 
             /* Grow stack if needed */
             if (stack_top == stack_cap) {

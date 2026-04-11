@@ -47,6 +47,9 @@ typedef struct FluxCacheEntry {
     FluxTween           focus_anim;
     FluxTween           check_anim;
     FluxTween           slider_anim;
+    FluxTween           progress_anim;
+    FluxTween           scroll_anim_x;
+    FluxTween           scroll_anim_y;
     FluxColorTween      color_anim;
 } FluxCacheEntry;
 

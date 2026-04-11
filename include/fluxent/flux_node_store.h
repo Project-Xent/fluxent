@@ -39,6 +39,16 @@ typedef struct FluxNodeData {
     void             *on_focus_ctx;
     void            (*on_blur)(void *ctx);
     void             *on_blur_ctx;
+    void            (*on_pointer_down)(void *ctx, float x, float y, int click_count);
+    void             *on_pointer_down_ctx;
+    void            (*on_key)(void *ctx, unsigned int vk, bool down);
+    void             *on_key_ctx;
+    void            (*on_char)(void *ctx, wchar_t ch);
+    void             *on_char_ctx;
+    void            (*on_ime_composition)(void *ctx, const wchar_t *text, uint32_t len, uint32_t cursor);
+    void             *on_ime_composition_ctx;
+    void            (*on_context_menu)(void *ctx, float x, float y);
+    void             *on_context_menu_ctx;
 } FluxNodeData;
 
 typedef struct FluxNodeStore FluxNodeStore;

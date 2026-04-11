@@ -120,14 +120,25 @@ typedef struct FluxTextBoxData {
     float       font_size;
     FluxColor   text_color;
     FluxColor   placeholder_color;
+    FluxColor   selection_color;
     uint32_t    cursor_position;
     uint32_t    selection_start;
     uint32_t    selection_end;
     float       scroll_offset_x;
+    uint32_t    max_length;
     bool        enabled;
+    bool        readonly;
     bool        multiline;
+
+    /* IME composition state */
+    const wchar_t *composition_text;
+    uint32_t       composition_length;
+    uint32_t       composition_cursor;
+
     void      (*on_change)(void *ctx, const char *text);
     void       *on_change_ctx;
+    void      (*on_submit)(void *ctx);
+    void       *on_submit_ctx;
 } FluxTextBoxData;
 
 typedef struct FluxProgressData {

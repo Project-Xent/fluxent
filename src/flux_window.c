@@ -4,6 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <objbase.h>
+#include <imm.h>
+#ifdef _MSC_VER
+#pragma comment(lib, "imm32.lib")
+#endif
 
 #ifndef COBJMACROS
 #define COBJMACROS
@@ -40,6 +44,10 @@ struct FluxWindow {
     FluxGraphics *gfx;
     bool render_requested;
     bool com_initialized;
+    int cursor_type;
+    HCURSOR cursor_arrow;
+    HCURSOR cursor_ibeam;
+    HCURSOR cursor_hand;
 
     FluxRenderCallback on_render;
     void *render_ctx;
@@ -53,6 +61,12 @@ struct FluxWindow {
     void *key_ctx;
     FluxCharCallback on_char;
     void *char_ctx;
+    FluxImeCompositionCallback on_ime_composition;
+    void *ime_composition_ctx;
+    FluxContextMenuCallback on_context_menu;
+    void *context_menu_ctx;
+    FluxScrollCallback on_scroll;
+    void *scroll_ctx;
     FluxSettingChangedCallback on_setting_changed;
     void *setting_changed_ctx;
 };
@@ -84,7 +98,21 @@ static LRESULT CALLBACK flux_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     switch (msg) {
     case WM_CREATE:
+        win->cursor_arrow = LoadCursorW(NULL, IDC_ARROW);
+        win->cursor_ibeam = LoadCursorW(NULL, IDC_IBEAM);
+        win->cursor_hand  = LoadCursorW(NULL, IDC_HAND);
         return 0;
+
+    case WM_SETCURSOR:
+        if (LOWORD(lp) == HTCLIENT) {
+            switch (win->cursor_type) {
+            case 1:  SetCursor(win->cursor_ibeam); break;
+            case 2:  SetCursor(win->cursor_hand);  break;
+            default: SetCursor(win->cursor_arrow);  break;
+            }
+            return TRUE;
+        }
+        break;
 
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -185,6 +213,8 @@ static LRESULT CALLBACK flux_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         float y = (float)GET_Y_LPARAM(lp) / scale;
         if (win->on_mouse)
             win->on_mouse(win->mouse_ctx, x, y, 1, false);
+        if (win->on_context_menu)
+            win->on_context_menu(win->context_menu_ctx, x, y);
         return 0;
     }
 
@@ -205,6 +235,35 @@ static LRESULT CALLBACK flux_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             win->on_char(win->char_ctx, (wchar_t)wp);
         return 0;
 
+    case WM_IME_STARTCOMPOSITION:
+        return 0;
+
+    case WM_IME_COMPOSITION: {
+        if (win->on_ime_composition && (lp & GCS_COMPSTR)) {
+            HIMC hImc = ImmGetContext(hwnd);
+            if (hImc) {
+                LONG comp_len = ImmGetCompositionStringW(hImc, GCS_COMPSTR, NULL, 0);
+                if (comp_len > 0) {
+                    wchar_t *comp_buf = (wchar_t *)_alloca(comp_len + sizeof(wchar_t));
+                    ImmGetCompositionStringW(hImc, GCS_COMPSTR, comp_buf, comp_len);
+                    comp_buf[comp_len / sizeof(wchar_t)] = 0;
+                    int cursor_pos = (int)ImmGetCompositionStringW(hImc, GCS_CURSORPOS, NULL, 0);
+                    win->on_ime_composition(win->ime_composition_ctx, comp_buf, cursor_pos);
+                } else {
+                    win->on_ime_composition(win->ime_composition_ctx, NULL, 0);
+                }
+                ImmReleaseContext(hwnd, hImc);
+            }
+        }
+        /* Fall through to DefWindowProc so the system still generates WM_CHAR for committed text */
+        break;
+    }
+
+    case WM_IME_ENDCOMPOSITION:
+        if (win->on_ime_composition)
+            win->on_ime_composition(win->ime_composition_ctx, NULL, 0);
+        break;
+
     case WM_SETTINGCHANGE:
     case WM_THEMECHANGED:
         if (win->on_setting_changed)
@@ -218,6 +277,20 @@ static LRESULT CALLBACK flux_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             win->render_requested = true;
         }
         return 0;
+
+    case WM_MOUSEWHEEL: {
+        float scale = win->dpi.dpi_x / 96.0f;
+        POINT pt;
+        pt.x = GET_X_LPARAM(lp);
+        pt.y = GET_Y_LPARAM(lp);
+        ScreenToClient(hwnd, &pt);
+        float x = (float)pt.x / scale;
+        float y = (float)pt.y / scale;
+        float delta = (float)GET_WHEEL_DELTA_WPARAM(wp) / 120.0f;
+        if (win->on_scroll)
+            win->on_scroll(win->scroll_ctx, x, y, delta);
+        return 0;
+    }
 
     default:
         break;
@@ -390,6 +463,24 @@ void flux_window_set_setting_changed_callback(FluxWindow *win, FluxSettingChange
     win->setting_changed_ctx = ctx;
 }
 
+void flux_window_set_ime_composition_callback(FluxWindow *win, FluxImeCompositionCallback cb, void *ctx) {
+    if (!win) return;
+    win->on_ime_composition = cb;
+    win->ime_composition_ctx = ctx;
+}
+
+void flux_window_set_context_menu_callback(FluxWindow *win, FluxContextMenuCallback cb, void *ctx) {
+    if (!win) return;
+    win->on_context_menu = cb;
+    win->context_menu_ctx = ctx;
+}
+
+void flux_window_set_scroll_callback(FluxWindow *win, FluxScrollCallback cb, void *ctx) {
+    if (!win) return;
+    win->on_scroll = cb;
+    win->scroll_ctx = ctx;
+}
+
 void flux_window_set_backdrop(FluxWindow *win, int backdrop_type) {
     if (!win || !win->hwnd) return;
     DWORD bd = DWMSBT_NONE;
@@ -413,6 +504,43 @@ void flux_window_set_dark_mode(FluxWindow *win, bool enabled) {
 void flux_window_set_title(FluxWindow *win, const wchar_t *title) {
     if (!win || !win->hwnd || !title) return;
     SetWindowTextW(win->hwnd, title);
+}
+
+void flux_window_set_ime_position(FluxWindow *win, int x, int y, int height) {
+    if (!win || !win->hwnd) return;
+    HIMC hImc = ImmGetContext(win->hwnd);
+    if (!hImc) return;
+
+    COMPOSITIONFORM cf;
+    cf.dwStyle = CFS_POINT;
+    cf.ptCurrentPos.x = x;
+    cf.ptCurrentPos.y = y;
+    ImmSetCompositionWindow(hImc, &cf);
+
+    CANDIDATEFORM cand;
+    cand.dwIndex = 0;
+    cand.dwStyle = CFS_CANDIDATEPOS;
+    cand.ptCurrentPos.x = x;
+    cand.ptCurrentPos.y = y + height;
+    ImmSetCandidateWindow(hImc, &cand);
+
+    ImmReleaseContext(win->hwnd, hImc);
+}
+
+void flux_window_set_cursor(FluxWindow *win, int cursor_type) {
+    if (!win) return;
+    if (win->cursor_type == cursor_type) return;
+    win->cursor_type = cursor_type;
+    /* Force an immediate visual update */
+    if (win->hwnd) {
+        HCURSOR c;
+        switch (cursor_type) {
+        case 1:  c = win->cursor_ibeam; break;
+        case 2:  c = win->cursor_hand;  break;
+        default: c = win->cursor_arrow;  break;
+        }
+        SetCursor(c);
+    }
 }
 
 void flux_window_request_render(FluxWindow *win) {

@@ -65,6 +65,7 @@ void flux_snapshot_build(FluxRenderSnapshot *snap,
         snap->min_value     = s->min_value;
         snap->max_value     = s->max_value;
         snap->current_value = s->current_value;
+        snap->step          = s->step;
         snap->enabled       = s->enabled;
         break;
     }
@@ -80,6 +81,11 @@ void flux_snapshot_build(FluxRenderSnapshot *snap,
         snap->selection_end   = tb->selection_end;
         snap->scroll_offset_x = tb->scroll_offset_x;
         snap->enabled         = tb->enabled;
+        snap->composition_text   = tb->composition_text;
+        snap->composition_length = tb->composition_length;
+        snap->composition_cursor = tb->composition_cursor;
+        snap->selection_color    = tb->selection_color;
+        snap->readonly           = tb->readonly;
         break;
     }
     case XENT_CONTROL_SCROLL: {
@@ -94,8 +100,9 @@ void flux_snapshot_build(FluxRenderSnapshot *snap,
     }
     case XENT_CONTROL_PROGRESS: {
         const FluxProgressData *p = (const FluxProgressData *)nd->component_data;
-        snap->current_value = p->value;
-        snap->max_value     = p->max_value;
+        snap->current_value   = p->value;
+        snap->max_value       = p->max_value;
+        snap->indeterminate   = p->indeterminate;
         break;
     }
     default:

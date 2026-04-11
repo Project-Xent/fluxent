@@ -56,8 +56,8 @@
 
 #define FLUX_TEXTBOX_PAD_L         10.0f
 #define FLUX_TEXTBOX_PAD_T         5.0f
-#define FLUX_TEXTBOX_PAD_R         10.0f
-#define FLUX_TEXTBOX_PAD_B         7.0f
+#define FLUX_TEXTBOX_PAD_R         6.0f
+#define FLUX_TEXTBOX_PAD_B         6.0f
 
 #define FLUX_ELEVATION_HEIGHT      3.0f
 #define FLUX_ELEVATION_STOP1       0.33f

@@ -39,6 +39,7 @@ typedef struct FluxRenderSnapshot {
     float min_value;
     float max_value;
     float current_value;
+    float step;
 
     float scroll_x, scroll_y;
     float scroll_content_w, scroll_content_h;
@@ -49,6 +50,14 @@ typedef struct FluxRenderSnapshot {
     uint32_t selection_start;
     uint32_t selection_end;
     float    scroll_offset_x;
+
+    const wchar_t *composition_text;
+    uint32_t       composition_length;
+    uint32_t       composition_cursor;
+
+    FluxColor  selection_color;
+    bool       readonly;
+    bool       indeterminate;
 
     bool enabled;
 } FluxRenderSnapshot;

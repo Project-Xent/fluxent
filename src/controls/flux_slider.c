@@ -45,6 +45,36 @@ void flux_draw_slider(const FluxRenderContext *rc,
     FluxRect track = { track_left, cy - track_h * 0.5f, track_w, track_h };
     flux_fill_rounded_rect(rc, &track, track_h * 0.5f, track_bg);
 
+    /* Draw tick marks at each step position along the track */
+    if (snap->step > 0.0f && range > 0.0f) {
+        int num_steps = (int)(range / snap->step);
+        if (num_steps > 0 && num_steps <= 100) {
+            /* Tick color: same hue as track_bg but slightly more opaque */
+            uint8_t old_alpha = (uint8_t)(track_bg.rgba & 0xFF);
+            uint8_t new_alpha = old_alpha < 0xD0 ? (uint8_t)(old_alpha + 0x30) : 0xFF;
+            FluxColor tick_color = flux_color_rgba(
+                (uint8_t)((track_bg.rgba >> 24) & 0xFF),
+                (uint8_t)((track_bg.rgba >> 16) & 0xFF),
+                (uint8_t)((track_bg.rgba >> 8) & 0xFF),
+                new_alpha);
+
+            float tick_half_h = 4.0f;
+            float thumb_cur_x = track_left + track_w * pct;
+
+            for (int i = 0; i <= num_steps; i++) {
+                float tick_pct = (float)i / (float)num_steps;
+                float tick_x = track_left + track_w * tick_pct;
+
+                /* Skip tick if it overlaps the current thumb position */
+                if (fabsf(tick_x - thumb_cur_x) < 2.0f)
+                    continue;
+
+                flux_draw_line(rc, tick_x, cy - tick_half_h,
+                               tick_x, cy + tick_half_h, tick_color, 1.0f);
+            }
+        }
+    }
+
     /* Draw value fill */
     float val_w = track_w * pct;
     if (val_w > 0.0f) {

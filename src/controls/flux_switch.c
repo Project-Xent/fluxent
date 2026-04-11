@@ -23,31 +23,38 @@ void flux_draw_switch(const FluxRenderContext *rc,
         if (animating && rc->animations_active)
             *rc->animations_active = true;
     }
+
     float toggle_t = ce ? ce->check_anim.current : (on ? 1.0f : 0.0f);
+    float hover_t  = ce ? ce->hover_anim.current : (state->hovered ? 1.0f : 0.0f);
+    float press_t  = ce ? ce->press_anim.current : (state->pressed ? 1.0f : 0.0f);
 
-    /* ── Track fill ─────────────────────────────────────────────────── */
+    /* ── Track fill — interpolate through normal → hover → press ────── */
 
-    FluxColor off_color;
-    FluxColor on_color;
+    FluxColor off_normal, off_hover, off_press;
+    FluxColor on_normal,  on_hover,  on_press;
 
     if (!state->enabled) {
-        off_color = t ? t->ctrl_alt_fill_disabled : flux_color_rgba(0, 0, 0, 0);
-        on_color  = t ? t->accent_disabled        : flux_color_rgba(0, 0, 0, 0x37);
-    } else if (state->pressed) {
-        off_color = t ? t->ctrl_alt_fill_quarternary : flux_color_rgba(0, 0, 0, 0x12);
-        on_color  = t ? t->accent_tertiary           : flux_color_rgba(0, 120, 212, 0xCC);
-    } else if (state->hovered) {
-        off_color = t ? t->ctrl_alt_fill_tertiary : flux_color_rgba(0, 0, 0, 0x0F);
-        on_color  = t ? t->accent_secondary       : flux_color_rgba(0, 120, 212, 0xE6);
+        off_normal = off_hover = off_press = t ? t->ctrl_alt_fill_disabled : flux_color_rgba(0, 0, 0, 0);
+        on_normal  = on_hover  = on_press  = t ? t->accent_disabled        : flux_color_rgba(0, 0, 0, 0x37);
     } else {
-        off_color = t ? t->ctrl_alt_fill_secondary : flux_color_rgba(0, 0, 0, 0x06);
-        on_color  = t ? t->accent_default          : flux_color_rgb(0, 120, 212);
+        off_normal = t ? t->ctrl_alt_fill_secondary   : flux_color_rgba(0, 0, 0, 0x06);
+        off_hover  = t ? t->ctrl_alt_fill_tertiary    : flux_color_rgba(0, 0, 0, 0x0F);
+        off_press  = t ? t->ctrl_alt_fill_quarternary : flux_color_rgba(0, 0, 0, 0x12);
+        on_normal  = t ? t->accent_default            : flux_color_rgb(0, 120, 212);
+        on_hover   = t ? t->accent_secondary          : flux_color_rgba(0, 120, 212, 0xE6);
+        on_press   = t ? t->accent_tertiary           : flux_color_rgba(0, 120, 212, 0xCC);
     }
+
+    /* Blend normal→hover, then that result→press */
+    FluxColor off_color = flux_anim_lerp_color(
+        flux_anim_lerp_color(off_normal, off_hover, hover_t), off_press, press_t);
+    FluxColor on_color = flux_anim_lerp_color(
+        flux_anim_lerp_color(on_normal, on_hover, hover_t), on_press, press_t);
 
     FluxColor track_fill = flux_anim_lerp_color(off_color, on_color, toggle_t);
     flux_fill_rounded_rect(rc, &track, track_r, track_fill);
 
-    /* ── Off-state stroke (fades out as toggle_t → 0.5) ─────────── */
+    /* ── Off-state stroke (fades out as toggle_t → 0.5) ─────────────── */
 
     if (toggle_t < 0.5f) {
         FluxColor off_stroke = !state->enabled
@@ -61,39 +68,41 @@ void flux_draw_switch(const FluxRenderContext *rc,
         flux_draw_rounded_rect(rc, &track, track_r, off_stroke, 1.0f);
     }
 
-    /* ── Thumb position ─────────────────────────────────────────────── */
+    /* ── Thumb position ──────────────────────────────────────────────── */
 
     float off_x = track.x + track_r;
     float on_x  = track.x + track_w - track_r;
     float thumb_x = flux_anim_mixf(off_x, on_x, toggle_t);
 
-    if (state->enabled && state->pressed) {
-        thumb_x += (1.0f - 2.0f * toggle_t) * FLUX_TOGGLE_TRAVEL_EXT;
-    }
+    /* Travel extension: animate with press_t instead of snapping */
+    if (state->enabled)
+        thumb_x += (1.0f - 2.0f * toggle_t) * FLUX_TOGGLE_TRAVEL_EXT * press_t;
 
-    /* ── Knob color ─────────────────────────────────────────────────── */
+    /* ── Knob color ──────────────────────────────────────────────────── */
 
     FluxColor knob_off, knob_on;
     if (!state->enabled) {
-        knob_off = t ? t->text_disabled            : flux_color_rgba(0, 0, 0, 0x5C);
-        knob_on  = t ? t->text_on_accent_disabled  : flux_color_rgb(255, 255, 255);
+        knob_off = t ? t->text_disabled           : flux_color_rgba(0, 0, 0, 0x5C);
+        knob_on  = t ? t->text_on_accent_disabled : flux_color_rgb(255, 255, 255);
     } else {
-        knob_off = t ? t->text_secondary            : flux_color_rgba(0, 0, 0, 0x9E);
-        knob_on  = t ? t->text_on_accent_primary    : flux_color_rgb(255, 255, 255);
+        knob_off = t ? t->text_secondary          : flux_color_rgba(0, 0, 0, 0x9E);
+        knob_on  = t ? t->text_on_accent_primary  : flux_color_rgb(255, 255, 255);
     }
     FluxColor thumb_fill = flux_anim_lerp_color(knob_off, knob_on, toggle_t);
 
-    /* ── Knob size ──────────────────────────────────────────────────── */
-
+    /* ── Knob size — interpolate through normal → hover → press ─────── */
+    /*
+     * Normal 12×12, Hover 14×14, Press 17×14.
+     * Use hover_t and press_t so size changes animate with the same
+     * easing as position, instead of snapping on state transitions.
+     */
     float knob_w, knob_h;
     if (!state->enabled) {
-        knob_w = 12.0f; knob_h = 12.0f;
-    } else if (state->pressed) {
-        knob_w = 17.0f; knob_h = 14.0f;
-    } else if (state->hovered) {
-        knob_w = 14.0f; knob_h = 14.0f;
+        knob_w = 12.0f;
+        knob_h = 12.0f;
     } else {
-        knob_w = 12.0f; knob_h = 12.0f;
+        knob_w = 12.0f + (14.0f - 12.0f) * hover_t + (17.0f - 14.0f) * press_t;
+        knob_h = 12.0f + (14.0f - 12.0f) * hover_t + (14.0f - 14.0f) * press_t;
     }
 
     float knob_radius = flux_minf(knob_w, knob_h) * 0.5f;
@@ -105,7 +114,7 @@ void flux_draw_switch(const FluxRenderContext *rc,
     };
     flux_fill_rounded_rect(rc, &knob_rect, knob_radius, thumb_fill);
 
-    /* ── Focus rect ─────────────────────────────────────────────────── */
+    /* ── Focus rect ──────────────────────────────────────────────────── */
 
     if (state->focused && state->enabled)
         flux_draw_focus_rect(rc, &track, track_r);

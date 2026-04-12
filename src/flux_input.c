@@ -101,12 +101,27 @@ void flux_input_pointer_move(FluxInput *input, XentNodeId root, float px, float 
     if (new_hovered != input->hovered) {
         if (input->hovered != XENT_NODE_INVALID) {
             FluxNodeData *old = flux_node_store_get(input->store, input->hovered);
-            if (old) old->state.hovered = 0;
+            if (old) {
+                old->state.hovered = 0;
+                old->hover_local_x = -1.0f;
+                old->hover_local_y = -1.0f;
+            }
         }
         if (new_hovered != XENT_NODE_INVALID && hit.data) {
             hit.data->state.hovered = 1;
         }
         input->hovered = new_hovered;
+    }
+
+    /* Update hover local coordinates on the currently hovered node */
+    if (input->hovered != XENT_NODE_INVALID) {
+        FluxNodeData *hnd = flux_node_store_get(input->store, input->hovered);
+        if (hnd) {
+            XentRect hrect = {0};
+            xent_get_layout_rect(input->ctx, input->hovered, &hrect);
+            hnd->hover_local_x = px - hrect.x;
+            hnd->hover_local_y = py - hrect.y;
+        }
     }
 
     /* During a drag, forward pointer_move to the pressed node so that
@@ -131,6 +146,32 @@ void flux_input_pointer_down(FluxInput *input, XentNodeId root, float px, float 
     }
 
     FluxHitResult hit = hit_test_recursive(input->ctx, root, px, py, 0.0f, 0.0f);
+
+    /* NumberBox spin-button intercept: ONLY block spin area clicks.
+       Spin clicks synthesize VK_UP/VK_DOWN via on_key — no pressed, no focus.
+       X (delete) button clicks are NOT intercepted here — they pass through
+       to on_pointer_down normally so the control gets focused and tb_on_pointer_down
+       handles the clear-text logic. */
+    if (hit.node != XENT_NODE_INVALID && hit.data) {
+        XentControlType nb_ct = xent_get_control_type(input->ctx, hit.node);
+        if (nb_ct == XENT_CONTROL_NUMBER_BOX) {
+            bool spin_inline = xent_get_semantic_expanded(input->ctx, hit.node);
+            if (spin_inline) {
+                XentRect nb_rect = {0};
+                xent_get_layout_rect(input->ctx, hit.node, &nb_rect);
+                float spin_start = nb_rect.width - 76.0f;
+                if (hit.local.x >= spin_start) {
+                    bool up = (hit.local.x < spin_start + 40.0f);
+                    if (hit.data->on_key) {
+                        hit.data->on_key(hit.data->on_key_ctx,
+                                         up ? 0x26u /* VK_UP */ : 0x28u /* VK_DOWN */,
+                                         true);
+                    }
+                    return; /* consumed — no pressed, no focus, no on_pointer_down */
+                }
+            }
+        }
+    }
 
     /* Double/triple click detection */
     DWORD now_ms = GetTickCount();
@@ -196,6 +237,11 @@ void flux_input_pointer_up(FluxInput *input, XentNodeId root, float px, float py
         FluxNodeData *nd = flux_node_store_get(input->store, input->pressed);
         if (nd) {
             nd->state.pressed = 0;
+
+            /* PasswordBox: clear reveal on mouse release (press-to-reveal behavior) */
+            if (xent_get_control_type(input->ctx, input->pressed) == XENT_CONTROL_PASSWORD_BOX) {
+                xent_set_semantic_checked(input->ctx, input->pressed, 0);
+            }
 
             FluxHitResult hit = hit_test_recursive(input->ctx, root, px, py, 0.0f, 0.0f);
             if (hit.node == input->pressed && nd->on_click) {
@@ -271,20 +317,34 @@ void flux_input_scroll(FluxInput *input, XentNodeId root, float px, float py, fl
     FluxHitResult hit = hit_test_recursive(input->ctx, root, px, py, 0.0f, 0.0f);
     if (hit.node == XENT_NODE_INVALID) return;
 
-    /* Walk up the tree to find the nearest scroll container ancestor */
+    /* Walk up the tree to find a handler */
     XentNodeId node = hit.node;
     while (node != XENT_NODE_INVALID) {
-        if (xent_get_control_type(input->ctx, node) == XENT_CONTROL_SCROLL) {
+        XentControlType ct = xent_get_control_type(input->ctx, node);
+
+        /* NumberBox: scroll wheel steps value when focused (WinUI OnNumberBoxScroll) */
+        if (ct == XENT_CONTROL_NUMBER_BOX) {
+            FluxNodeData *nd = flux_node_store_get(input->store, node);
+            if (nd && nd->state.focused && nd->on_key) {
+                /* Simulate Up/Down arrow key press */
+                if (delta > 0)
+                    nd->on_key(nd->on_key_ctx, 0x26 /* VK_UP */, true);
+                else if (delta < 0)
+                    nd->on_key(nd->on_key_ctx, 0x28 /* VK_DOWN */, true);
+            }
+            return; /* handled */
+        }
+
+        /* ScrollView: adjust scroll offset */
+        if (ct == XENT_CONTROL_SCROLL) {
             FluxNodeData *nd = flux_node_store_get(input->store, node);
             if (nd && nd->component_data) {
                 FluxScrollData *sd = (FluxScrollData *)nd->component_data;
-                /* Scroll by delta * line height (48px per notch, WinUI3-like) */
                 float scroll_amount = -delta * 48.0f;
                 sd->scroll_y += scroll_amount;
 
                 if (sd->scroll_y < 0.0f) sd->scroll_y = 0.0f;
 
-                /* Clamp to max using the viewport height from layout rect */
                 XentRect rect = {0};
                 xent_get_layout_rect(input->ctx, node, &rect);
                 float max_y = sd->content_h - rect.height;
@@ -293,6 +353,218 @@ void flux_input_scroll(FluxInput *input, XentNodeId root, float px, float py, fl
             }
             return; /* handled */
         }
+
         node = xent_get_parent(input->ctx, node);
+    }
+}
+
+/* ---- Focus Navigation ---- */
+
+/* DFS collect all visible, focusable nodes */
+static void collect_focusable(XentContext *ctx, XentNodeId node,
+                              XentNodeId *out, uint32_t *count, uint32_t max_count) {
+    if (node == XENT_NODE_INVALID || *count >= max_count) return;
+
+    /* Only include alive, focusable, and enabled nodes */
+    if (xent_get_focusable(ctx, node) && xent_get_semantic_enabled(ctx, node)) {
+        /* Check visibility: node should have non-zero layout rect */
+        XentRect rect = {0};
+        xent_get_layout_rect(ctx, node, &rect);
+        if (rect.width > 0.0f && rect.height > 0.0f) {
+            out[*count] = node;
+            (*count)++;
+        }
+    }
+
+    /* Recurse into children */
+    XentNodeId child = xent_get_first_child(ctx, node);
+    while (child != XENT_NODE_INVALID && *count < max_count) {
+        collect_focusable(ctx, child, out, count, max_count);
+        child = xent_get_next_sibling(ctx, child);
+    }
+}
+
+/* Comparison function for sorting by tab_index (stable by insertion order) */
+static XentContext *s_sort_ctx = NULL;
+
+static int compare_tab_index(const void *a, const void *b) {
+    XentNodeId na = *(const XentNodeId *)a;
+    XentNodeId nb = *(const XentNodeId *)b;
+    int32_t ta = xent_get_tab_index(s_sort_ctx, na);
+    int32_t tb = xent_get_tab_index(s_sort_ctx, nb);
+
+    /* tab_index == 0 means "natural order" (treat as large value) */
+    int32_t ea = (ta == 0) ? 0x7FFFFFFF : ta;
+    int32_t eb = (tb == 0) ? 0x7FFFFFFF : tb;
+
+    if (ea != eb) return (ea < eb) ? -1 : 1;
+    /* Stable: preserve document order (lower id first) */
+    return (na < nb) ? -1 : (na > nb) ? 1 : 0;
+}
+
+void flux_input_tab(FluxInput *input, XentNodeId root, bool shift) {
+    if (!input || root == XENT_NODE_INVALID) return;
+
+    /* Collect focusable nodes */
+    XentNodeId focusable[512];
+    uint32_t count = 0;
+    collect_focusable(input->ctx, root, focusable, &count, 512);
+
+    if (count == 0) return;
+
+    /* Filter out negative tab_index (they are programmatic-only, skip Tab) */
+    XentNodeId tab_order[512];
+    uint32_t tab_count = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        int32_t ti = xent_get_tab_index(input->ctx, focusable[i]);
+        if (ti >= 0) {
+            tab_order[tab_count++] = focusable[i];
+        }
+    }
+    if (tab_count == 0) return;
+
+    /* Sort by tab_index */
+    s_sort_ctx = input->ctx;
+    qsort(tab_order, tab_count, sizeof(XentNodeId), compare_tab_index);
+    s_sort_ctx = NULL;
+
+    /* Find current focused node in the sorted list */
+    int current_idx = -1;
+    for (uint32_t i = 0; i < tab_count; i++) {
+        if (tab_order[i] == input->focused) {
+            current_idx = (int)i;
+            break;
+        }
+    }
+
+    /* Calculate next index */
+    int next_idx;
+    if (current_idx < 0) {
+        next_idx = shift ? (int)tab_count - 1 : 0;
+    } else if (shift) {
+        next_idx = (current_idx - 1 + (int)tab_count) % (int)tab_count;
+    } else {
+        next_idx = (current_idx + 1) % (int)tab_count;
+    }
+
+    XentNodeId next_node = tab_order[next_idx];
+
+    /* Blur old */
+    if (input->focused != XENT_NODE_INVALID) {
+        FluxNodeData *old = flux_node_store_get(input->store, input->focused);
+        if (old) {
+            old->state.focused = 0;
+            if (old->on_blur) old->on_blur(old->on_blur_ctx);
+        }
+    }
+
+    /* Focus new */
+    input->focused = next_node;
+    FluxNodeData *nd = flux_node_store_get(input->store, next_node);
+    if (nd) {
+        nd->state.focused = 1;
+        if (nd->on_focus) nd->on_focus(nd->on_focus_ctx);
+    }
+}
+
+void flux_input_arrow(FluxInput *input, XentNodeId root, int direction) {
+    if (!input || root == XENT_NODE_INVALID) return;
+    if (input->focused == XENT_NODE_INVALID) return;
+
+    /* Get parent of focused node to find siblings */
+    XentNodeId parent = xent_get_parent(input->ctx, input->focused);
+    if (parent == XENT_NODE_INVALID) return;
+
+    /* Collect focusable siblings */
+    XentNodeId siblings[128];
+    uint32_t sib_count = 0;
+    XentNodeId child = xent_get_first_child(input->ctx, parent);
+    while (child != XENT_NODE_INVALID && sib_count < 128) {
+        if (xent_get_focusable(input->ctx, child) &&
+            xent_get_semantic_enabled(input->ctx, child)) {
+            siblings[sib_count++] = child;
+        }
+        child = xent_get_next_sibling(input->ctx, child);
+    }
+
+    if (sib_count <= 1) return;
+
+    /* Find current in siblings */
+    int cur = -1;
+    for (uint32_t i = 0; i < sib_count; i++) {
+        if (siblings[i] == input->focused) {
+            cur = (int)i;
+            break;
+        }
+    }
+    if (cur < 0) return;
+
+    /* Determine direction: left/up = -1, right/down = +1 */
+    int delta = 0;
+    if (direction == 0x25 || direction == 0x26) delta = -1;  /* VK_LEFT, VK_UP */
+    if (direction == 0x27 || direction == 0x28) delta = +1;  /* VK_RIGHT, VK_DOWN */
+    if (delta == 0) return;
+
+    int next = (cur + delta + (int)sib_count) % (int)sib_count;
+    XentNodeId next_node = siblings[next];
+
+    /* Blur old */
+    FluxNodeData *old = flux_node_store_get(input->store, input->focused);
+    if (old) {
+        old->state.focused = 0;
+        if (old->on_blur) old->on_blur(old->on_blur_ctx);
+    }
+
+    /* Focus new */
+    input->focused = next_node;
+    FluxNodeData *nd = flux_node_store_get(input->store, next_node);
+    if (nd) {
+        nd->state.focused = 1;
+        if (nd->on_focus) nd->on_focus(nd->on_focus_ctx);
+    }
+}
+
+void flux_input_activate(FluxInput *input) {
+    if (!input || input->focused == XENT_NODE_INVALID) return;
+
+    FluxNodeData *nd = flux_node_store_get(input->store, input->focused);
+    if (nd && nd->on_click) {
+        nd->on_click(nd->on_click_ctx);
+    }
+}
+
+void flux_input_escape(FluxInput *input) {
+    if (!input) return;
+
+    if (input->focused != XENT_NODE_INVALID) {
+        FluxNodeData *nd = flux_node_store_get(input->store, input->focused);
+        if (nd) {
+            nd->state.focused = 0;
+            if (nd->on_blur) nd->on_blur(nd->on_blur_ctx);
+        }
+        input->focused = XENT_NODE_INVALID;
+    }
+}
+
+void flux_input_set_focus(FluxInput *input, XentNodeId node) {
+    if (!input) return;
+
+    /* Blur old */
+    if (input->focused != XENT_NODE_INVALID && input->focused != node) {
+        FluxNodeData *old = flux_node_store_get(input->store, input->focused);
+        if (old) {
+            old->state.focused = 0;
+            if (old->on_blur) old->on_blur(old->on_blur_ctx);
+        }
+    }
+
+    /* Focus new */
+    input->focused = node;
+    if (node != XENT_NODE_INVALID) {
+        FluxNodeData *nd = flux_node_store_get(input->store, node);
+        if (nd) {
+            nd->state.focused = 1;
+            if (nd->on_focus) nd->on_focus(nd->on_focus_ctx);
+        }
     }
 }

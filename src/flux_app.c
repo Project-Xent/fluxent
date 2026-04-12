@@ -5,10 +5,34 @@
 #include "fluxent/flux_text.h"
 #include "flux_render_internal.h"
 #include "fluxent/flux_theme.h"
+#include "fluxent/flux_popup.h"
 
 #include <math.h>
+#include <shellapi.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* ── Renderer forward declarations (for lazy registration) ─────────── */
+extern void flux_draw_container(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_text(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_button(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_toggle(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_checkbox(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_radio(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_switch(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_slider(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_textbox(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_scroll(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_scroll_overlay(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *);
+extern void flux_draw_progress(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_card(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_divider(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_hyperlink(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_password_box(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_number_box(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_progress_ring(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
+extern void flux_draw_info_badge(const FluxRenderContext *, const FluxRenderSnapshot *, const FluxRect *, const FluxControlState *);
 
 /* Frame timing via QueryPerformanceCounter */
 static int64_t flux_perf_freq(void) {
@@ -148,15 +172,84 @@ static void app_mouse(void *ctx, float x, float y, int button, bool down) {
         if (hovered != XENT_NODE_INVALID) {
             XentControlType ct = xent_get_control_type(app->ctx, hovered);
             switch (ct) {
-            case XENT_CONTROL_TEXT_INPUT:
-                cursor = FLUX_CURSOR_IBEAM;
+            case XENT_CONTROL_TEXT_INPUT: {
+                /* I-beam in text area; arrow over delete button */
+                FluxNodeData *tb_nd = flux_node_store_get(app->store, hovered);
+                bool tb_in_btn = false;
+                if (tb_nd && tb_nd->hover_local_x >= 0.0f && tb_nd->state.focused) {
+                    XentRect tb_rect = {0};
+                    xent_get_layout_rect(app->ctx, hovered, &tb_rect);
+                    /* Check if text present (content pointer is non-null and non-empty) */
+                    FluxTextBoxData *tbd = (FluxTextBoxData *)tb_nd->component_data;
+                    bool has_text_cur = (tbd && tbd->content && tbd->content[0]);
+                    if (has_text_cur && !tbd->readonly) {
+                        float del_start = tb_rect.width - 30.0f;
+                        if (tb_nd->hover_local_x >= del_start)
+                            tb_in_btn = true;
+                    }
+                }
+                cursor = tb_in_btn ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
                 break;
+            }
+            case XENT_CONTROL_PASSWORD_BOX: {
+                /* Arrow over reveal button (rightmost 30px when focused+has_text),
+                   I-beam everywhere else — mirrors TextBox delete-button logic. */
+                FluxNodeData *pb_nd = flux_node_store_get(app->store, hovered);
+                bool pb_in_btn = false;
+                if (pb_nd && pb_nd->state.focused) {
+                    FluxPasswordBoxData *pbd = (FluxPasswordBoxData *)pb_nd->component_data;
+                    bool has_text_pb = (pbd && pbd->content && pbd->content[0]);
+                    if (has_text_pb) {
+                        XentRect pb_rect = {0};
+                        xent_get_layout_rect(app->ctx, hovered, &pb_rect);
+                        float reveal_start = pb_rect.width - 30.0f; /* PB_REVEAL_BTN_W */
+                        if (pb_nd->hover_local_x >= reveal_start)
+                            pb_in_btn = true;
+                    }
+                }
+                cursor = pb_in_btn ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
+                break;
+            }
+            case XENT_CONTROL_NUMBER_BOX: {
+                /* I-beam in text area; arrow over spin buttons or delete button */
+                FluxNodeData *nb_nd = flux_node_store_get(app->store, hovered);
+                bool in_btn_area = false;
+                if (nb_nd && nb_nd->hover_local_x >= 0.0f) {
+                    XentRect nb_rect = {0};
+                    xent_get_layout_rect(app->ctx, hovered, &nb_rect);
+                    bool spin_inline = xent_get_semantic_expanded(app->ctx, hovered);
+                    float spin_w = spin_inline ? 76.0f : 0.0f;
+
+                    /* Spin area: rightmost 76px when inline */
+                    if (spin_inline) {
+                        float spin_start = nb_rect.width - spin_w;
+                        if (nb_nd->hover_local_x >= spin_start)
+                            in_btn_area = true;
+                    }
+
+                    /* X button: 34px to the left of spin area (or right edge) */
+                    if (!in_btn_area && nb_nd->state.focused) {
+                        FluxTextBoxData *nbd = (FluxTextBoxData *)nb_nd->component_data;
+                        bool has_text_nb = (nbd && nbd->content && nbd->content[0] && !nbd->readonly);
+                        if (has_text_nb) {
+                            float del_start = nb_rect.width - 40.0f - spin_w;
+                            float del_end = del_start + 40.0f;
+                            if (nb_nd->hover_local_x >= del_start && nb_nd->hover_local_x < del_end)
+                                in_btn_area = true;
+                        }
+                    }
+                }
+                cursor = in_btn_area ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
+                break;
+            }
             case XENT_CONTROL_BUTTON:
             case XENT_CONTROL_TOGGLE_BUTTON:
             case XENT_CONTROL_CHECKBOX:
             case XENT_CONTROL_RADIO:
             case XENT_CONTROL_SWITCH:
             case XENT_CONTROL_SLIDER:
+            case XENT_CONTROL_HYPERLINK:
+            case XENT_CONTROL_REPEAT_BUTTON:
                 cursor = FLUX_CURSOR_HAND;
                 break;
             default:
@@ -190,8 +283,56 @@ static void app_setting_changed(void *ctx) {
 static void app_key(void *ctx, unsigned int vk, bool down) {
     FluxApp *app = (FluxApp *)ctx;
     if (!app || !app->input) return;
-    if (down)
+
+    if (down) {
+        /* Focus navigation keys */
+        switch (vk) {
+        case VK_TAB:
+            flux_input_tab(app->input, app->root,
+                           (GetKeyState(VK_SHIFT) & 0x8000) != 0);
+            flux_window_request_render(app->window);
+            return;
+        case VK_LEFT: case VK_UP: case VK_RIGHT: case VK_DOWN: {
+            /* Only use arrow keys for focus navigation if the focused node
+               is NOT a text input (text inputs need arrow keys for cursor). */
+            XentNodeId focused = flux_input_get_focused(app->input);
+            if (focused != XENT_NODE_INVALID && app->ctx) {
+                XentControlType ct = xent_get_control_type(app->ctx, focused);
+                if (ct != XENT_CONTROL_TEXT_INPUT &&
+                    ct != XENT_CONTROL_PASSWORD_BOX &&
+                    ct != XENT_CONTROL_NUMBER_BOX) {
+                    flux_input_arrow(app->input, app->root, (int)vk);
+                    flux_window_request_render(app->window);
+                    return;
+                }
+            }
+            break;
+        }
+        case VK_RETURN:
+        case VK_SPACE: {
+            XentNodeId focused = flux_input_get_focused(app->input);
+            if (focused != XENT_NODE_INVALID && app->ctx) {
+                XentControlType ct = xent_get_control_type(app->ctx, focused);
+                /* Don't intercept Enter/Space for text inputs */
+                if (ct != XENT_CONTROL_TEXT_INPUT &&
+                    ct != XENT_CONTROL_PASSWORD_BOX &&
+                    ct != XENT_CONTROL_NUMBER_BOX) {
+                    flux_input_activate(app->input);
+                    flux_window_request_render(app->window);
+                    return;
+                }
+            }
+            break;
+        }
+        case VK_ESCAPE:
+            flux_input_escape(app->input);
+            flux_window_request_render(app->window);
+            return;
+        default:
+            break;
+        }
         flux_input_key_down(app->input, vk);
+    }
     flux_window_request_render(app->window);
 }
 
@@ -236,6 +377,15 @@ HRESULT flux_app_create(const FluxAppConfig *cfg, FluxApp **out) {
     if (!app) return E_OUTOFMEMORY;
 
     app->root = XENT_NODE_INVALID;
+
+    /* Register core renderers that have no dedicated flux_create_*() factory */
+    flux_register_renderer(XENT_CONTROL_CONTAINER,  flux_draw_container, NULL);
+    flux_register_renderer(XENT_CONTROL_SCROLL,     flux_draw_scroll,    flux_draw_scroll_overlay);
+    flux_register_renderer(XENT_CONTROL_IMAGE,      flux_draw_container, NULL);
+    flux_register_renderer(XENT_CONTROL_LIST,       flux_draw_container, NULL);
+    flux_register_renderer(XENT_CONTROL_TAB,        flux_draw_container, NULL);
+    flux_register_renderer(XENT_CONTROL_CANVAS,     flux_draw_container, NULL);
+    flux_register_renderer(XENT_CONTROL_CUSTOM,     flux_draw_container, NULL);
 
     FluxWindowConfig wcfg;
     memset(&wcfg, 0, sizeof(wcfg));
@@ -352,6 +502,8 @@ XentNodeId flux_create_button(XentContext *ctx, FluxNodeStore *store,
                               XentNodeId parent, const char *label,
                               void (*on_click)(void *), void *userdata) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_BUTTON, flux_draw_button, NULL);
+    flux_register_renderer(XENT_CONTROL_TOGGLE_BUTTON, flux_draw_toggle, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_BUTTON);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -383,6 +535,7 @@ XentNodeId flux_create_text(XentContext *ctx, FluxNodeStore *store,
                             XentNodeId parent, const char *content,
                             float font_size) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_TEXT, flux_draw_text, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_TEXT);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -453,6 +606,7 @@ XentNodeId flux_create_slider(XentContext *ctx, FluxNodeStore *store,
                               float min, float max, float value,
                               void (*on_change)(void *, float), void *userdata) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_SLIDER, flux_draw_slider, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_SLIDER);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -498,6 +652,7 @@ XentNodeId flux_create_checkbox(XentContext *ctx, FluxNodeStore *store,
                                 void (*on_change)(void *, FluxCheckState),
                                 void *userdata) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_CHECKBOX, flux_draw_checkbox, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_CHECKBOX);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -531,6 +686,7 @@ XentNodeId flux_create_radio(XentContext *ctx, FluxNodeStore *store,
                              void (*on_change)(void *, FluxCheckState),
                              void *userdata) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_RADIO, flux_draw_radio, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_RADIO);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -564,6 +720,7 @@ XentNodeId flux_create_switch(XentContext *ctx, FluxNodeStore *store,
                               void (*on_change)(void *, FluxCheckState),
                               void *userdata) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_SWITCH, flux_draw_switch, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_SWITCH);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -595,6 +752,7 @@ XentNodeId flux_create_progress(XentContext *ctx, FluxNodeStore *store,
                                 XentNodeId parent,
                                 float value, float max_value) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_PROGRESS, flux_draw_progress, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_PROGRESS);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -618,6 +776,7 @@ XentNodeId flux_create_progress(XentContext *ctx, FluxNodeStore *store,
 XentNodeId flux_create_card(XentContext *ctx, FluxNodeStore *store,
                             XentNodeId parent) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_CARD, flux_draw_card, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_CARD);
     return node;
@@ -626,6 +785,7 @@ XentNodeId flux_create_card(XentContext *ctx, FluxNodeStore *store,
 XentNodeId flux_create_divider(XentContext *ctx, FluxNodeStore *store,
                                XentNodeId parent) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_DIVIDER, flux_draw_divider, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_DIVIDER);
     return node;
@@ -674,6 +834,22 @@ typedef struct FluxTextBoxInputData {
 
     /* Surrogate pair buffering for U+10000+ characters (emoji, CJK ext, etc.) */
     wchar_t          high_surrogate;
+
+    /* ---- NumberBox extension (valid when control_type == NUMBER_BOX) ---- */
+    double           nb_value;              /* current numeric Value (NaN = empty) */
+    double           nb_minimum;            /* default: -1e308 */
+    double           nb_maximum;            /* default: 1e308 */
+    double           nb_small_change;       /* default: 1.0 (arrows, spin buttons) */
+    double           nb_large_change;       /* default: 10.0 (PageUp/PageDown) */
+    bool             nb_is_wrap_enabled;    /* default: false */
+    uint8_t          nb_spin_placement;     /* FluxNBSpinPlacement: 0=Hidden, 2=Inline */
+    uint8_t          nb_validation;         /* FluxNBValidation: 0=Overwrite, 1=Disabled */
+    bool             nb_value_updating;     /* re-entrancy guard */
+    bool             nb_text_updating;      /* re-entrancy guard */
+    void           (*nb_on_value_change)(void *ctx, double value);
+    void            *nb_on_value_change_ctx;
+    bool             nb_stepping;           /* true after keyboard step — suppress caret/selection */
+    bool             nb_focus_from_click;   /* set by pointer_down so on_focus knows not to enter stepping */
 } FluxTextBoxInputData;
 
 static void tb_ensure_cap(FluxTextBoxInputData *tb, uint32_t needed) {
@@ -1088,6 +1264,12 @@ static void tb_perform_paste(FluxTextBoxInputData *tb) {
     tb_notify_change(tb);
 }
 
+/* Forward declarations for NumberBox core logic (defined after tb_on_context_menu) */
+static bool nb_is_number_box(FluxTextBoxInputData *tb);
+static void nb_update_text_to_value(FluxTextBoxInputData *tb);
+static void nb_validate_input(FluxTextBoxInputData *tb);
+static void nb_step_value(FluxTextBoxInputData *tb, double change);
+
 /* ---- TextBox key handler ---- */
 static void tb_on_key(void *ctx, unsigned int vk, bool down) {
     if (!down) return;
@@ -1198,9 +1380,70 @@ static void tb_on_key(void *ctx, unsigned int vk, bool down) {
         tb_notify_change(tb);
         break;
 
+    /* ---- NumberBox keyboard shortcuts (WinUI OnNumberBoxKeyDown) ---- */
+    case VK_UP:
+        if (nb_is_number_box(tb)) {
+            nb_step_value(tb, tb->nb_small_change);
+            tb->nb_stepping = true;
+            tb->base.readonly = true;
+            tb->base.selection_start = 0;
+            tb->base.selection_end   = 0;
+            tb->base.cursor_position = 0;
+            return; /* consume — don't let textbox handle it */
+        }
+        break;
+    case VK_DOWN:
+        if (nb_is_number_box(tb)) {
+            nb_step_value(tb, -tb->nb_small_change);
+            tb->nb_stepping = true;
+            tb->base.readonly = true;
+            tb->base.selection_start = 0;
+            tb->base.selection_end   = 0;
+            tb->base.cursor_position = 0;
+            return;
+        }
+        break;
+    case VK_PRIOR: /* PageUp */
+        if (nb_is_number_box(tb)) {
+            nb_step_value(tb, tb->nb_large_change);
+            tb->nb_stepping = true;
+            tb->base.readonly = true;
+            tb->base.selection_start = 0;
+            tb->base.selection_end   = 0;
+            tb->base.cursor_position = 0;
+            return;
+        }
+        break;
+    case VK_NEXT: /* PageDown */
+        if (nb_is_number_box(tb)) {
+            nb_step_value(tb, -tb->nb_large_change);
+            tb->nb_stepping = true;
+            tb->base.readonly = true;
+            tb->base.selection_start = 0;
+            tb->base.selection_end   = 0;
+            tb->base.cursor_position = 0;
+            return;
+        }
+        break;
+
     case VK_RETURN:
+        if (nb_is_number_box(tb)) {
+            tb->nb_stepping = false;
+            tb->base.readonly = false;
+            nb_validate_input(tb);
+            return;
+        }
         if (tb->base.on_submit)
             tb->base.on_submit(tb->base.on_submit_ctx);
+        break;
+
+    case VK_ESCAPE:
+        if (nb_is_number_box(tb)) {
+            tb->nb_stepping = false;
+            tb->base.readonly = false;
+            nb_update_text_to_value(tb); /* revert to current Value */
+            return;
+        }
         break;
 
     case 'A':
@@ -1259,6 +1502,12 @@ static void tb_on_char(void *ctx, wchar_t ch) {
     FluxTextBoxInputData *tb = (FluxTextBoxInputData *)ctx;
     if (!tb->base.enabled) return;
     if (tb->base.readonly) return;
+
+    /* NumberBox: typing a character exits stepping mode → enter edit mode */
+    if (nb_is_number_box(tb) && tb->nb_stepping) {
+        tb->nb_stepping = false;
+        tb->base.readonly = false;
+    }
     uint32_t old_cursor = tb->base.cursor_position;
 
     /* Filter control characters */
@@ -1354,6 +1603,49 @@ static void tb_on_char(void *ctx, wchar_t ch) {
         tb_update_ime_position(tb);
 }
 
+/* ---- PasswordBox: build mask string for hit-testing ---- */
+/* Each codepoint → ● (U+25CF = 3 UTF-8 bytes: E2 97 8F) */
+static uint32_t pb_build_mask(const char *src, uint32_t src_len, char *dst, uint32_t dst_cap) {
+    uint32_t out = 0;
+    const unsigned char *p = (const unsigned char *)src;
+    const unsigned char *end = p + src_len;
+    while (p < end && *p) {
+        int skip;
+        if (*p < 0x80)       skip = 1;
+        else if (*p < 0xE0)  skip = 2;
+        else if (*p < 0xF0)  skip = 3;
+        else                 skip = 4;
+        if (out + 3 < dst_cap) {
+            dst[out++] = (char)0xE2;
+            dst[out++] = (char)0x97;
+            dst[out++] = (char)0x8F;
+        }
+        for (int i = 0; i < skip && p < end; i++) p++;
+    }
+    if (out < dst_cap) dst[out] = '\0';
+    else if (dst_cap > 0) dst[dst_cap - 1] = '\0';
+    return out;
+}
+
+/* Convert a byte offset in mask text back to byte offset in original text.
+   Mask: each codepoint is 3 bytes. Original: variable-length. */
+static uint32_t pb_mask_offset_to_original(const char *original, uint32_t mask_byte_offset) {
+    /* mask_byte_offset / 3 = codepoint index. Walk original to find that codepoint's byte offset. */
+    uint32_t target_cp = mask_byte_offset / 3;
+    uint32_t cp = 0;
+    const unsigned char *p = (const unsigned char *)original;
+    while (*p && cp < target_cp) {
+        int skip;
+        if (*p < 0x80)       skip = 1;
+        else if (*p < 0xE0)  skip = 2;
+        else if (*p < 0xF0)  skip = 3;
+        else                 skip = 4;
+        for (int i = 0; i < skip && *p; i++) p++;
+        cp++;
+    }
+    return (uint32_t)(p - (const unsigned char *)original);
+}
+
 /* ---- TextBox click handler (position cursor via drag) ---- */
 /* ---- TextBox drag handler (position cursor / extend selection) ---- */
 static void tb_on_pointer_move(void *ctx, float local_x, float local_y) {
@@ -1371,10 +1663,67 @@ static void tb_on_pointer_move(void *ctx, float local_x, float local_y) {
     xent_get_layout_rect(tb->ctx, tb->node, &rect);
     float max_w = rect.width - 10.0f - 6.0f;
 
-    int u16_pos = flux_text_hit_test(tr, tb->buffer, &ts,
+    /* TextBox / NumberBox: limit drag hit-test to text column (exclude buttons on right) */
+    XentControlType move_ct = xent_get_control_type(tb->ctx, tb->node);
+    if (move_ct == XENT_CONTROL_NUMBER_BOX) {
+        /* NumberBox: always subtract spin area (if inline) + X button (if visible) */
+        float reserved_mv = 0.0f;
+        if (tb->nb_spin_placement == 2) reserved_mv += 76.0f;
+        bool has_text_mv_nb = (tb->buffer && tb->buf_len > 0);
+        FluxNodeData *nd_mv_nb = flux_node_store_get(tb->store, tb->node);
+        bool mv_nb_focused = (nd_mv_nb && nd_mv_nb->state.focused);
+        if (has_text_mv_nb && mv_nb_focused && !tb->base.readonly)
+            reserved_mv += 40.0f;
+        if (reserved_mv > 0.0f)
+            max_w = (rect.width - reserved_mv) - 10.0f - 6.0f;
+    } else if (move_ct == XENT_CONTROL_TEXT_INPUT) {
+        bool has_text_mv_tb = (tb->buffer && tb->buf_len > 0);
+        FluxNodeData *nd_mv_tb = flux_node_store_get(tb->store, tb->node);
+        bool mv_tb_focused = (nd_mv_tb && nd_mv_tb->state.focused);
+        if (has_text_mv_tb && mv_tb_focused && !tb->base.readonly) {
+            max_w = (rect.width - 30.0f) - 10.0f - 6.0f;
+        }
+    }
+
+    /* PasswordBox: limit drag hit-test to Column 0 when reveal button is visible */
+    if (move_ct == XENT_CONTROL_PASSWORD_BOX) {
+        bool has_text_mv = (tb->buffer && tb->buf_len > 0);
+        FluxNodeData *nd_mv = flux_node_store_get(tb->store, tb->node);
+        bool mv_focused = (nd_mv && nd_mv->state.focused);
+        if (has_text_mv && mv_focused) {
+            max_w = (rect.width - 30.0f) - 10.0f - 6.0f;
+        }
+    }
+
+    /* NumberBox: limit drag hit-test to Column 0 when spin buttons visible */
+    if (move_ct == XENT_CONTROL_NUMBER_BOX) {
+        if (tb->nb_spin_placement == 2) { /* Inline */
+            max_w = (rect.width - 76.0f) - 10.0f - 6.0f;
+        }
+    }
+
+    /* For PasswordBox, hit-test against masked text (unless revealed) */
+    bool move_use_mask = (move_ct == XENT_CONTROL_PASSWORD_BOX && tb->buf_len > 0
+                          && !xent_get_semantic_checked(tb->ctx, tb->node));
+    char move_mask[2048];
+    const char *hit_text = tb->buffer;
+    if (move_use_mask) {
+        pb_build_mask(tb->buffer, tb->buf_len, move_mask, sizeof(move_mask));
+        hit_text = move_mask;
+    }
+
+    int u16_pos = flux_text_hit_test(tr, hit_text, &ts,
                                       max_w + tb->base.scroll_offset_x,
                                       text_x, 0.0f);
-    uint32_t byte_pos = tb_utf16_to_byte_offset(tb->buffer, (uint32_t)u16_pos);
+
+    uint32_t byte_pos;
+    if (move_use_mask) {
+        /* Convert mask UTF-16 position → mask byte offset → original byte offset */
+        uint32_t mask_byte = tb_utf16_to_byte_offset(hit_text, (uint32_t)u16_pos);
+        byte_pos = pb_mask_offset_to_original(tb->buffer, mask_byte);
+    } else {
+        byte_pos = tb_utf16_to_byte_offset(tb->buffer, (uint32_t)u16_pos);
+    }
 
     if (tb->dragging) {
         /* Drag selection: anchor stays, cursor moves */
@@ -1394,8 +1743,91 @@ static void tb_on_pointer_down(void *ctx, float local_x, float local_y, int clic
     FluxTextBoxInputData *tb = (FluxTextBoxInputData *)ctx;
     FluxTextRenderer *tr = tb->app ? tb->app->text : NULL;
     if (!tb->base.enabled || !tr) return;
-    (void)local_y;
+
     uint32_t old_cursor = tb->base.cursor_position;
+
+    XentControlType ct = xent_get_control_type(tb->ctx, tb->node);
+
+    /* --- TextBox / NumberBox: check if click is on the DeleteButton (X) ---
+       TextBox: Width=30, visible when has_text && focused && !readonly
+       NumberBox: MinWidth=34, visible only when spin buttons NOT inline */
+    {
+        bool del_eligible = false;
+        float del_w = 30.0f;
+        float del_right_offset = 0.0f; /* extra offset for spin buttons to the right */
+        if (ct == XENT_CONTROL_TEXT_INPUT) {
+            del_eligible = true;
+        } else if (ct == XENT_CONTROL_NUMBER_BOX) {
+            del_eligible = true;
+            del_w = 40.0f;
+            /* When spin inline, X sits left of the 76px spin area */
+            if (tb->nb_spin_placement == 2)
+                del_right_offset = 76.0f;
+        }
+        if (del_eligible) {
+            bool has_text_del = (tb->buffer && tb->buf_len > 0);
+            FluxNodeData *nd_del = flux_node_store_get(tb->store, tb->node);
+            bool del_focused = (nd_del && nd_del->state.focused);
+            bool show_delete = has_text_del && del_focused && !tb->base.readonly;
+            if (show_delete) {
+                XentRect rect = {0};
+                xent_get_layout_rect(tb->ctx, tb->node, &rect);
+                float delete_x = rect.width - del_w - del_right_offset;
+                float delete_x_end = delete_x + del_w;
+                if (local_x >= delete_x && local_x < delete_x_end) {
+                    /* Clear all text */
+                    if (nb_is_number_box(tb) && tb->nb_stepping) {
+                        tb->nb_stepping = false;
+                        tb->base.readonly = false;
+                    }
+                    tb_push_undo(tb);
+                    tb->last_op_was_typing = false;
+                    tb->buffer[0] = '\0';
+                    tb->buf_len = 0;
+                    tb->base.content = tb->buffer;
+                    tb->base.cursor_position = 0;
+                    tb->base.selection_start = 0;
+                    tb->base.selection_end   = 0;
+                    tb_update_scroll(tb);
+                    tb_notify_change(tb);
+                    return;
+                }
+            }
+        }
+    }
+
+    /* --- PasswordBox: check if click is on the reveal button --- */
+    if (ct == XENT_CONTROL_PASSWORD_BOX) {
+        XentRect rect = {0};
+        xent_get_layout_rect(tb->ctx, tb->node, &rect);
+        /* WinUI: RevealButton visible only when has_text AND focused */
+        bool has_text_pb = (tb->buffer && tb->buf_len > 0);
+        FluxNodeData *nd_pb = flux_node_store_get(tb->store, tb->node);
+        bool pb_focused = (nd_pb && nd_pb->state.focused);
+        bool show_reveal = has_text_pb && pb_focused;
+        if (show_reveal) {
+            float reveal_x = rect.width - 30.0f;
+            if (local_x >= reveal_x) {
+                /* Press-to-reveal: set checked=1 on press (cleared on pointer_up / blur) */
+                xent_set_semantic_checked(tb->ctx, tb->node, 1);
+                return;
+            }
+        }
+    }
+
+    /* NumberBox spin-button clicks are fully intercepted at the input layer
+       (flux_input_pointer_down) — they never reach here.  Only text-area
+       clicks arrive, so exit stepping mode → enter edit mode. */
+    if (nb_is_number_box(tb)) {
+        /* Tell the upcoming on_focus call that this focus came from a click,
+           so it should NOT enter stepping mode. */
+        tb->nb_focus_from_click = true;
+        if (tb->nb_stepping) {
+            tb->nb_stepping = false;
+            tb->base.readonly = false;
+        }
+    }
+    (void)local_y;
 
     float text_x = local_x - 10.0f;
     text_x += tb->base.scroll_offset_x;
@@ -1406,10 +1838,64 @@ static void tb_on_pointer_down(void *ctx, float local_x, float local_y, int clic
     xent_get_layout_rect(tb->ctx, tb->node, &rect);
     float max_w = rect.width - 10.0f - 6.0f;
 
-    int u16_pos = flux_text_hit_test(tr, tb->buffer, &ts,
+    /* TextBox / NumberBox: limit hit-test to text column (exclude buttons on right) */
+    if (ct == XENT_CONTROL_NUMBER_BOX) {
+        float reserved_dn = 0.0f;
+        if (tb->nb_spin_placement == 2) reserved_dn += 76.0f;
+        bool has_text_dn = (tb->buffer && tb->buf_len > 0);
+        FluxNodeData *nd_dn = flux_node_store_get(tb->store, tb->node);
+        bool dn_focused = (nd_dn && nd_dn->state.focused);
+        if (has_text_dn && dn_focused && !tb->base.readonly)
+            reserved_dn += 40.0f;
+        if (reserved_dn > 0.0f)
+            max_w = (rect.width - reserved_dn) - 10.0f - 6.0f;
+    } else if (ct == XENT_CONTROL_TEXT_INPUT) {
+        bool has_text_del2 = (tb->buffer && tb->buf_len > 0);
+        FluxNodeData *nd_del2 = flux_node_store_get(tb->store, tb->node);
+        bool del2_focused = (nd_del2 && nd_del2->state.focused);
+        if (has_text_del2 && del2_focused && !tb->base.readonly) {
+            max_w = (rect.width - 30.0f) - 10.0f - 6.0f;
+        }
+    }
+
+    /* PasswordBox: limit hit-test to Column 0 when reveal button is visible */
+    if (ct == XENT_CONTROL_PASSWORD_BOX) {
+        bool has_text_pb2 = (tb->buffer && tb->buf_len > 0);
+        FluxNodeData *nd_pb2 = flux_node_store_get(tb->store, tb->node);
+        bool pb2_focused = (nd_pb2 && nd_pb2->state.focused);
+        if (has_text_pb2 && pb2_focused) {
+            max_w = (rect.width - 30.0f) - 10.0f - 6.0f;
+        }
+    }
+
+    /* NumberBox: limit hit-test to Column 0 when spin buttons visible */
+    if (ct == XENT_CONTROL_NUMBER_BOX) {
+        if (tb->nb_spin_placement == 2) { /* Inline */
+            max_w = (rect.width - 76.0f) - 10.0f - 6.0f;
+        }
+    }
+
+    /* For PasswordBox, hit-test against masked text (unless revealed) */
+    bool down_use_mask = (ct == XENT_CONTROL_PASSWORD_BOX && tb->buf_len > 0
+                          && !xent_get_semantic_checked(tb->ctx, tb->node));
+    char down_mask[2048];
+    const char *hit_text = tb->buffer;
+    if (down_use_mask) {
+        pb_build_mask(tb->buffer, tb->buf_len, down_mask, sizeof(down_mask));
+        hit_text = down_mask;
+    }
+
+    int u16_pos = flux_text_hit_test(tr, hit_text, &ts,
                                       max_w + tb->base.scroll_offset_x,
                                       text_x, 0.0f);
-    uint32_t byte_pos = tb_utf16_to_byte_offset(tb->buffer, (uint32_t)u16_pos);
+
+    uint32_t byte_pos;
+    if (down_use_mask) {
+        uint32_t mask_byte = tb_utf16_to_byte_offset(hit_text, (uint32_t)u16_pos);
+        byte_pos = pb_mask_offset_to_original(tb->buffer, mask_byte);
+    } else {
+        byte_pos = tb_utf16_to_byte_offset(tb->buffer, (uint32_t)u16_pos);
+    }
 
     if (click_count >= 3) {
         /* Triple click: select all */
@@ -1544,12 +2030,156 @@ static void tb_on_context_menu(void *ctx, float x, float y) {
     }
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   NumberBox core logic (mirrors WinUI NumberBox.cpp)
+   ════════════════════════════════════════════════════════════════════ */
+
+static bool nb_is_number_box(FluxTextBoxInputData *tb) {
+    return xent_get_control_type(tb->ctx, tb->node) == XENT_CONTROL_NUMBER_BOX;
+}
+
+/* Format Value → text and update the buffer + TextBox display */
+static void nb_update_text_to_value(FluxTextBoxInputData *tb) {
+    double v = tb->nb_value;
+    char tmp[64];
+    int n;
+    if (v != v) { /* NaN */
+        tmp[0] = '\0';
+        n = 0;
+    } else if (v == (double)(long long)v && v >= -1e15 && v <= 1e15) {
+        n = snprintf(tmp, sizeof(tmp), "%lld", (long long)v);
+    } else {
+        n = snprintf(tmp, sizeof(tmp), "%.6g", v);
+    }
+    if (n < 0) n = 0;
+    if ((uint32_t)n >= tb->buf_cap) {
+        tb_ensure_cap(tb, (uint32_t)n + 1);
+    }
+    memcpy(tb->buffer, tmp, (size_t)n + 1);
+    tb->buf_len = (uint32_t)n;
+    tb->base.content = tb->buffer;
+
+    tb->nb_text_updating = true;
+    /* Move cursor to end */
+    tb->base.cursor_position = tb->buf_len;
+    tb->base.selection_start = tb->buf_len;
+    tb->base.selection_end   = tb->buf_len;
+    tb_update_scroll(tb);
+    tb->nb_text_updating = false;
+}
+
+/* Coerce Value to [min, max] if validation mode is Overwrite */
+static void nb_coerce_value(FluxTextBoxInputData *tb) {
+    double v = tb->nb_value;
+    if (v != v) return; /* NaN — leave as-is */
+    if (tb->nb_validation == 0) { /* Overwrite */
+        if (v > tb->nb_maximum) tb->nb_value = tb->nb_maximum;
+        else if (v < tb->nb_minimum) tb->nb_value = tb->nb_minimum;
+    }
+}
+
+/* Update semantic properties so snapshot/renderer can see current state */
+static void nb_sync_semantics(FluxTextBoxInputData *tb) {
+    xent_set_semantic_value(tb->ctx, tb->node,
+        (float)tb->nb_value, (float)tb->nb_minimum, (float)tb->nb_maximum);
+    xent_set_semantic_expanded(tb->ctx, tb->node,
+        tb->nb_spin_placement == 2); /* Inline */
+}
+
+/* Set Value with change detection, coercion, and event firing */
+static void nb_set_value(FluxTextBoxInputData *tb, double new_value) {
+    if (tb->nb_value_updating) return;
+    double old = tb->nb_value;
+    tb->nb_value_updating = true;
+
+    tb->nb_value = new_value;
+    nb_coerce_value(tb);
+    new_value = tb->nb_value;
+
+    bool changed = false;
+    if (new_value != old) {
+        if (!(new_value != new_value && old != old)) /* not both NaN */
+            changed = true;
+    }
+
+    if (changed && tb->nb_on_value_change)
+        tb->nb_on_value_change(tb->nb_on_value_change_ctx, new_value);
+
+    nb_update_text_to_value(tb);
+    nb_sync_semantics(tb);
+    tb->nb_value_updating = false;
+}
+
+/* Parse current text → update Value (called on blur / Enter) */
+static void nb_validate_input(FluxTextBoxInputData *tb) {
+    if (!tb->buffer || tb->buf_len == 0) {
+        /* Empty text → NaN */
+        nb_set_value(tb, 0.0 / 0.0); /* NaN */
+        return;
+    }
+    /* Trim whitespace */
+    char *start = tb->buffer;
+    while (*start == ' ' || *start == '\t') start++;
+    char *end_ptr = NULL;
+    double parsed = strtod(start, &end_ptr);
+    if (end_ptr == start || *end_ptr != '\0') {
+        /* Invalid input */
+        if (tb->nb_validation == 0) { /* Overwrite → revert to current Value */
+            nb_update_text_to_value(tb);
+        }
+        return;
+    }
+    if (parsed == tb->nb_value) {
+        /* Same value but user may have typed "1+0" or extra zeros — normalize display */
+        nb_update_text_to_value(tb);
+    } else {
+        nb_set_value(tb, parsed);
+    }
+}
+
+/* Step Value by `change`, with optional wrapping */
+static void nb_step_value(FluxTextBoxInputData *tb, double change) {
+    /* Validate current text first (WinUI behavior) */
+    nb_validate_input(tb);
+
+    double v = tb->nb_value;
+    if (v != v) return; /* NaN — can't step */
+
+    v += change;
+
+    if (tb->nb_is_wrap_enabled) {
+        if (v > tb->nb_maximum) v = tb->nb_minimum;
+        else if (v < tb->nb_minimum) v = tb->nb_maximum;
+    }
+
+    nb_set_value(tb, v);
+}
+
 /* ---- TextBox focus/blur ---- */
 static void tb_on_focus(void *ctx) {
     FluxTextBoxInputData *tb = (FluxTextBoxInputData *)ctx;
     FluxNodeData *nd = flux_node_store_get(tb->store, tb->node);
     if (nd) nd->state.focused = 1;
     tb_update_ime_position(tb);
+
+    /* NumberBox: if focus came from Tab (not a click), enter stepping mode —
+       no selection, no caret. Clicking enters edit mode directly. */
+    if (nb_is_number_box(tb)) {
+        if (tb->nb_focus_from_click) {
+            /* Focus triggered by click → stay in edit mode, select all (WinUI behavior) */
+            tb->nb_focus_from_click = false;
+            tb->base.selection_start = 0;
+            tb->base.selection_end   = tb->buf_len;
+            tb->base.cursor_position = tb->buf_len;
+        } else {
+            /* Focus triggered by Tab → stepping mode */
+            tb->nb_stepping = true;
+            tb->base.readonly = true;
+            tb->base.selection_start = 0;
+            tb->base.selection_end   = 0;
+            tb->base.cursor_position = 0;
+        }
+    }
 }
 
 static void tb_on_blur(void *ctx) {
@@ -1564,6 +2194,16 @@ static void tb_on_blur(void *ctx) {
     tb->base.composition_cursor = 0;
     /* Clear drag state */
     tb->dragging = false;
+
+    /* PasswordBox: clear reveal on blur (press-to-reveal ends when focus lost) */
+    if (xent_get_control_type(tb->ctx, tb->node) == XENT_CONTROL_PASSWORD_BOX) {
+        xent_set_semantic_checked(tb->ctx, tb->node, 0);
+    }
+
+    /* NumberBox: validate input on blur (WinUI OnNumberBoxLostFocus) */
+    if (nb_is_number_box(tb)) {
+        nb_validate_input(tb);
+    }
 }
 
 /* ---- Public factory ---- */
@@ -1572,6 +2212,7 @@ XentNodeId flux_create_textbox(XentContext *ctx, FluxNodeStore *store,
                                void (*on_change)(void *, const char *),
                                void *userdata) {
     if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_TEXT_INPUT, flux_draw_textbox, NULL);
 
     XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_TEXT_INPUT);
     if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -1636,6 +2277,415 @@ XentNodeId flux_app_create_textbox(FluxApp *app, XentNodeId parent,
     if (nd && nd->component_data) {
         FluxTextBoxInputData *tb = (FluxTextBoxInputData *)nd->component_data;
         tb->app = app;
+    }
+
+    return node;
+}
+
+XentNodeId flux_app_create_password_box(FluxApp *app, XentNodeId parent,
+                                        const char *placeholder,
+                                        void (*on_change)(void *, const char *),
+                                        void *userdata) {
+    if (!app || !app->ctx || !app->store) return XENT_NODE_INVALID;
+
+    XentNodeId node = flux_create_password_box(app->ctx, app->store, parent,
+                                               placeholder, on_change, userdata);
+    if (node == XENT_NODE_INVALID) return node;
+
+    /* Wire the app pointer so text renderer is accessible */
+    FluxNodeData *nd = flux_node_store_get(app->store, node);
+    if (nd && nd->component_data) {
+        FluxTextBoxInputData *tb = (FluxTextBoxInputData *)nd->component_data;
+        tb->app = app;
+    }
+
+    return node;
+}
+
+XentNodeId flux_app_create_number_box(FluxApp *app, XentNodeId parent,
+                                      double min_val, double max_val, double step,
+                                      void (*on_value_change)(void *, double),
+                                      void *userdata) {
+    if (!app || !app->ctx || !app->store) return XENT_NODE_INVALID;
+
+    XentNodeId node = flux_create_number_box(app->ctx, app->store, parent,
+                                              min_val, max_val, step,
+                                              on_value_change, userdata);
+    if (node == XENT_NODE_INVALID) return node;
+
+    /* Wire the app pointer so text renderer is accessible */
+    FluxNodeData *nd = flux_node_store_get(app->store, node);
+    if (nd && nd->component_data) {
+        FluxTextBoxInputData *tb = (FluxTextBoxInputData *)nd->component_data;
+        tb->app = app;
+    }
+
+    return node;
+}
+
+/* ---- Phase 1 convenience constructors ---- */
+
+XentNodeId flux_create_password_box(XentContext *ctx, FluxNodeStore *store,
+                                    XentNodeId parent, const char *placeholder,
+                                    void (*on_change)(void *, const char *),
+                                    void *userdata) {
+    if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_PASSWORD_BOX, flux_draw_password_box, NULL);
+
+    XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_PASSWORD_BOX);
+    if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+    FluxNodeData *nd = flux_node_store_get(store, node);
+    if (nd) {
+        FluxTextBoxInputData *tb = (FluxTextBoxInputData *)calloc(1, sizeof(FluxTextBoxInputData));
+        if (tb) {
+            tb->buf_cap = FLUX_TEXTBOX_INITIAL_CAP;
+            tb->buffer = (char *)calloc(1, tb->buf_cap);
+            tb->buf_len = 0;
+            tb->buffer[0] = '\0';
+            tb->base.content = tb->buffer;
+            tb->base.placeholder = placeholder;
+            tb->base.font_size = 14.0f;
+            tb->base.enabled = true;
+            tb->base.on_change = on_change;
+            tb->base.on_change_ctx = userdata;
+            tb->ctx = ctx;
+            tb->node = node;
+            tb->store = store;
+            tb->app = NULL;
+        }
+        /* For PasswordBox, we wrap the component_data in a FluxPasswordBoxData.
+           But since the renderer uses flux_draw_textbox and casts to FluxTextBoxData*,
+           we keep using FluxTextBoxInputData and just set the control type. The
+           mask rendering is handled specially in the renderer. */
+        nd->component_data = &tb->base;
+        nd->on_pointer_move = tb_on_pointer_move;
+        nd->on_pointer_move_ctx = tb;
+        nd->on_focus = tb_on_focus;
+        nd->on_focus_ctx = tb;
+        nd->on_blur = tb_on_blur;
+        nd->on_blur_ctx = tb;
+        nd->on_key = tb_on_key;
+        nd->on_key_ctx = tb;
+        nd->on_char = tb_on_char;
+        nd->on_char_ctx = tb;
+        nd->on_pointer_down = tb_on_pointer_down;
+        nd->on_pointer_down_ctx = tb;
+        nd->on_ime_composition = tb_on_ime_composition;
+        nd->on_ime_composition_ctx = tb;
+        nd->on_context_menu = tb_on_context_menu;
+        nd->on_context_menu_ctx = tb;
+    }
+
+    xent_set_semantic_role(ctx, node, XENT_SEMANTIC_CUSTOM);
+    if (placeholder)
+        xent_set_semantic_label(ctx, node, placeholder);
+    xent_set_focusable(ctx, node, true);
+
+    /* Grid layout: WinUI PasswordBox template
+       3 rows (Auto, *, Auto) simplified to 1 row Star (no Header/Description yet)
+       2 columns: *(text area), Auto(RevealButton Width=30) → Pixel(30) since no child nodes */
+    xent_set_protocol(ctx, node, XENT_PROTOCOL_GRID);
+    {
+        XentGridSizeMode row_modes[] = { XENT_GRID_STAR };
+        float            row_vals[]  = { 1.0f };
+        xent_set_grid_rows(ctx, node, row_modes, row_vals, 1);
+
+        XentGridSizeMode col_modes[] = { XENT_GRID_STAR, XENT_GRID_PIXEL };
+        float            col_vals[]  = { 1.0f, 30.0f };
+        xent_set_grid_columns(ctx, node, col_modes, col_vals, 2);
+    }
+
+    return node;
+}
+
+XentNodeId flux_create_number_box(XentContext *ctx, FluxNodeStore *store,
+                                  XentNodeId parent,
+                                  double min_val, double max_val, double step,
+                                  void (*on_value_change)(void *, double),
+                                  void *userdata) {
+    if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_NUMBER_BOX, flux_draw_number_box, NULL);
+
+    XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_NUMBER_BOX);
+    if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+    FluxNodeData *nd = flux_node_store_get(store, node);
+    if (nd) {
+        FluxTextBoxInputData *tb = (FluxTextBoxInputData *)calloc(1, sizeof(FluxTextBoxInputData));
+        if (tb) {
+            tb->buf_cap = FLUX_TEXTBOX_INITIAL_CAP;
+            tb->buffer = (char *)calloc(1, tb->buf_cap);
+            tb->buf_len = 0;
+            tb->base.font_size = 14.0f;
+            tb->base.enabled = true;
+            tb->ctx = ctx;
+            tb->node = node;
+            tb->store = store;
+            tb->app = NULL;
+
+            /* NumberBox-specific initialization (WinUI defaults) */
+            tb->nb_minimum = min_val;
+            tb->nb_maximum = max_val;
+            tb->nb_small_change = step;
+            tb->nb_large_change = step * 10.0;
+            tb->nb_value = min_val; /* start at minimum (not NaN) */
+            tb->nb_is_wrap_enabled = false;
+            tb->nb_spin_placement = 2; /* FLUX_NB_SPIN_INLINE — visible by default for our API */
+            tb->nb_validation = 0;     /* InvalidInputOverwritten */
+            tb->nb_on_value_change = on_value_change;
+            tb->nb_on_value_change_ctx = userdata;
+
+            /* Initialize text from value */
+            nb_update_text_to_value(tb);
+        }
+        nd->component_data = &tb->base;
+        nd->on_pointer_move = tb_on_pointer_move;
+        nd->on_pointer_move_ctx = tb;
+        nd->on_focus = tb_on_focus;
+        nd->on_focus_ctx = tb;
+        nd->on_blur = tb_on_blur;
+        nd->on_blur_ctx = tb;
+        nd->on_key = tb_on_key;
+        nd->on_key_ctx = tb;
+        nd->on_char = tb_on_char;
+        nd->on_char_ctx = tb;
+        nd->on_pointer_down = tb_on_pointer_down;
+        nd->on_pointer_down_ctx = tb;
+        nd->on_ime_composition = tb_on_ime_composition;
+        nd->on_ime_composition_ctx = tb;
+        nd->on_context_menu = tb_on_context_menu;
+        nd->on_context_menu_ctx = tb;
+    }
+
+    xent_set_semantic_role(ctx, node, XENT_SEMANTIC_CUSTOM);
+    xent_set_semantic_value(ctx, node, (float)min_val, (float)min_val, (float)max_val);
+    xent_set_semantic_expanded(ctx, node, true); /* Inline spin visible */
+    xent_set_focusable(ctx, node, true);
+
+    /* Grid layout */
+    xent_set_protocol(ctx, node, XENT_PROTOCOL_GRID);
+    {
+        XentGridSizeMode row_modes[] = { XENT_GRID_STAR };
+        float            row_vals[]  = { 1.0f };
+        xent_set_grid_rows(ctx, node, row_modes, row_vals, 1);
+
+        XentGridSizeMode col_modes[] = { XENT_GRID_STAR, XENT_GRID_PIXEL, XENT_GRID_PIXEL };
+        float            col_vals[]  = { 1.0f, 40.0f, 36.0f };
+        xent_set_grid_columns(ctx, node, col_modes, col_vals, 3);
+    }
+
+    return node;
+}
+
+static void hyperlink_on_click(void *ctx) {
+    FluxHyperlinkData *hd = (FluxHyperlinkData *)ctx;
+    if (hd && hd->url && hd->url[0]) {
+        /* Convert URL to wide string and open */
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, hd->url, -1, NULL, 0);
+        wchar_t *wurl = (wchar_t *)_alloca(wlen * sizeof(wchar_t));
+        MultiByteToWideChar(CP_UTF8, 0, hd->url, -1, wurl, wlen);
+        ShellExecuteW(NULL, L"open", wurl, NULL, NULL, SW_SHOWNORMAL);
+    }
+    /* Also fire user's on_click if provided */
+    if (hd && hd->on_click)
+        hd->on_click(hd->on_click_ctx);
+}
+
+XentNodeId flux_create_hyperlink(XentContext *ctx, FluxNodeStore *store,
+                                 XentNodeId parent, const char *label,
+                                 const char *url,
+                                 void (*on_click)(void *), void *userdata) {
+    if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_HYPERLINK, flux_draw_hyperlink, NULL);
+
+    XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_HYPERLINK);
+    if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+    FluxNodeData *nd = flux_node_store_get(store, node);
+    if (nd) {
+        FluxHyperlinkData *hd = (FluxHyperlinkData *)calloc(1, sizeof(FluxHyperlinkData));
+        if (hd) {
+            hd->label = label;
+            hd->url = url;
+            hd->font_size = 14.0f;
+            hd->enabled = true;
+            hd->on_click = on_click;
+            hd->on_click_ctx = userdata;
+        }
+        nd->component_data = hd;
+        nd->on_click = hyperlink_on_click;
+        nd->on_click_ctx = hd;
+    }
+
+    xent_set_semantic_role(ctx, node, XENT_SEMANTIC_BUTTON);
+    if (label)
+        xent_set_semantic_label(ctx, node, label);
+    xent_set_focusable(ctx, node, true);
+
+    /* Grid layout: WinUI NumberBox template
+       3 rows (Auto, *, Auto) simplified to 1 row Star
+       3 columns: *(InputBox), Auto(UpSpin), Auto(DownSpin)
+       InputBox has ColumnSpan=3 (full width), spin buttons overlay.
+       Auto cols: Up Margin="4" → 40px, Down Margin="0,4,4,4" → 36px */
+    xent_set_protocol(ctx, node, XENT_PROTOCOL_GRID);
+    {
+        XentGridSizeMode row_modes[] = { XENT_GRID_STAR };
+        float            row_vals[]  = { 1.0f };
+        xent_set_grid_rows(ctx, node, row_modes, row_vals, 1);
+
+        XentGridSizeMode col_modes[] = { XENT_GRID_STAR, XENT_GRID_PIXEL, XENT_GRID_PIXEL };
+        float            col_vals[]  = { 1.0f, 40.0f, 36.0f };
+        xent_set_grid_columns(ctx, node, col_modes, col_vals, 3);
+    }
+
+    return node;
+}
+
+typedef struct FluxRepeatButtonInputData {
+    FluxRepeatButtonData base;
+    XentNodeId           node;
+    UINT_PTR             timer_id;
+    FluxWindow          *window;    /* for requesting redraws */
+} FluxRepeatButtonInputData;
+
+static FluxRepeatButtonInputData *s_active_repeat = NULL;
+
+static void CALLBACK repeat_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD elapsed) {
+    (void)hwnd; (void)msg; (void)elapsed;
+    if (s_active_repeat && s_active_repeat->timer_id == id) {
+        /* Fire on_click */
+        if (s_active_repeat->base.on_click)
+            s_active_repeat->base.on_click(s_active_repeat->base.on_click_ctx);
+
+        /* After initial delay, switch to repeat interval */
+        uint32_t interval = s_active_repeat->base.repeat_interval_ms;
+        if (interval < 10) interval = 50;
+        KillTimer(NULL, id);
+        s_active_repeat->timer_id = SetTimer(NULL, 0, interval, repeat_timer_proc);
+    }
+}
+
+static void repeat_on_pointer_down(void *ctx, float x, float y, int click_count) {
+    (void)x; (void)y; (void)click_count;
+    FluxRepeatButtonInputData *rb = (FluxRepeatButtonInputData *)ctx;
+    if (!rb) return;
+
+    /* Fire initial click immediately */
+    if (rb->base.on_click)
+        rb->base.on_click(rb->base.on_click_ctx);
+
+    /* Start repeat timer with initial delay */
+    s_active_repeat = rb;
+    uint32_t delay = rb->base.repeat_delay_ms;
+    if (delay < 10) delay = 400;
+    rb->timer_id = SetTimer(NULL, 0, delay, repeat_timer_proc);
+}
+
+static void repeat_stop_timer(FluxRepeatButtonInputData *rb) {
+    if (!rb) return;
+    if (rb->timer_id) {
+        KillTimer(NULL, rb->timer_id);
+        rb->timer_id = 0;
+    }
+    if (s_active_repeat == rb) s_active_repeat = NULL;
+}
+
+static void repeat_on_blur(void *ctx) {
+    repeat_stop_timer((FluxRepeatButtonInputData *)ctx);
+}
+
+/* Called on pointer_up (via nd->on_click). Stops the repeat timer.
+   Does NOT fire the user callback — repeated clicks already happened
+   via the timer during pointer-down. */
+static void repeat_on_pointer_up(void *ctx) {
+    repeat_stop_timer((FluxRepeatButtonInputData *)ctx);
+}
+
+XentNodeId flux_create_repeat_button(XentContext *ctx, FluxNodeStore *store,
+                                     XentNodeId parent, const char *label,
+                                     void (*on_click)(void *), void *userdata) {
+    if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_REPEAT_BUTTON, flux_draw_button, NULL);
+
+    XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_REPEAT_BUTTON);
+    if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+    FluxNodeData *nd = flux_node_store_get(store, node);
+    if (nd) {
+        FluxRepeatButtonInputData *rb = (FluxRepeatButtonInputData *)calloc(1, sizeof(FluxRepeatButtonInputData));
+        if (rb) {
+            rb->base.label = label;
+            rb->base.font_size = 14.0f;
+            rb->base.style = FLUX_BUTTON_STANDARD;
+            rb->base.enabled = true;
+            rb->base.repeat_delay_ms = 400;
+            rb->base.repeat_interval_ms = 50;
+            rb->base.on_click = on_click;
+            rb->base.on_click_ctx = userdata;
+            rb->node = node;
+        }
+        nd->component_data = &rb->base;
+        /* on_click is fired by flux_input_pointer_up — use it to stop
+           the repeat timer rather than firing an extra click. */
+        nd->on_click = repeat_on_pointer_up;
+        nd->on_click_ctx = rb;
+        nd->on_pointer_down = repeat_on_pointer_down;
+        nd->on_pointer_down_ctx = rb;
+        nd->on_blur = repeat_on_blur;
+        nd->on_blur_ctx = rb;
+    }
+
+    xent_set_semantic_role(ctx, node, XENT_SEMANTIC_BUTTON);
+    if (label)
+        xent_set_semantic_label(ctx, node, label);
+    xent_set_focusable(ctx, node, true);
+
+    return node;
+}
+
+XentNodeId flux_create_progress_ring(XentContext *ctx, FluxNodeStore *store,
+                                     XentNodeId parent,
+                                     float value, float max_value) {
+    if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_PROGRESS_RING, flux_draw_progress_ring, NULL);
+
+    XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_PROGRESS_RING);
+    if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+    xent_set_semantic_value(ctx, node, value, 0.0f, max_value);
+
+    FluxNodeData *nd = flux_node_store_get(store, node);
+    if (nd) {
+        FluxProgressRingData *pd = (FluxProgressRingData *)calloc(1, sizeof(FluxProgressRingData));
+        if (pd) {
+            pd->value = value;
+            pd->max_value = max_value;
+            pd->indeterminate = (max_value <= 0.0f);
+        }
+        nd->component_data = pd;
+    }
+
+    return node;
+}
+
+XentNodeId flux_create_info_badge(XentContext *ctx, FluxNodeStore *store,
+                                  XentNodeId parent, FluxInfoBadgeMode mode,
+                                  int32_t value) {
+    if (!ctx || !store) return XENT_NODE_INVALID;
+    flux_register_renderer(XENT_CONTROL_INFO_BADGE, flux_draw_info_badge, NULL);
+
+    XentNodeId node = create_node_with_parent(ctx, store, parent, XENT_CONTROL_INFO_BADGE);
+    if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+    FluxNodeData *nd = flux_node_store_get(store, node);
+    if (nd) {
+        FluxInfoBadgeData *bd = (FluxInfoBadgeData *)calloc(1, sizeof(FluxInfoBadgeData));
+        if (bd) {
+            bd->mode = mode;
+            bd->value = value;
+        }
+        nd->component_data = bd;
     }
 
     return node;

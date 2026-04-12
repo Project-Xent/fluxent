@@ -83,6 +83,9 @@ static inline FluxColor ft_ctrl_alt_fill_tertiary(void)     { return flux_color_
 static inline FluxColor ft_ctrl_alt_fill_quarternary(void)  { return flux_color_rgba(0,0,0, 0x12); }
 static inline FluxColor ft_ctrl_alt_fill_disabled(void)     { return flux_color_rgba(0,0,0, 0x00); }
 
+static inline FluxColor ft_subtle_fill_secondary(void)     { return flux_color_rgba(0,0,0, 0x09); }
+static inline FluxColor ft_subtle_fill_tertiary(void)      { return flux_color_rgba(0,0,0, 0x06); }
+
 static inline FluxColor ft_ctrl_stroke_default(void)        { return flux_color_rgba(0,0,0, 0x0F); }
 static inline FluxColor ft_ctrl_stroke_secondary(void)      { return flux_color_rgba(0,0,0, 0x29); }
 static inline FluxColor ft_ctrl_stroke_on_accent_default(void) { return flux_color_rgba(0,0,0, 0x24); }

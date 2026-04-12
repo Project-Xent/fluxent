@@ -12,7 +12,7 @@ extern "C" {
 
 typedef enum FluxButtonStyle {
     FLUX_BUTTON_STANDARD,
-    FLUX_BUTTON_OUTLINE,
+    FLUX_BUTTON_SUBTLE,
     FLUX_BUTTON_TEXT,
     FLUX_BUTTON_ACCENT,
 } FluxButtonStyle;
@@ -154,6 +154,125 @@ typedef struct FluxImageData {
     float       natural_w;
     float       natural_h;
 } FluxImageData;
+
+typedef enum FluxInfoBadgeMode {
+    FLUX_BADGE_DOT,
+    FLUX_BADGE_NUMBER,
+    FLUX_BADGE_ICON,
+} FluxInfoBadgeMode;
+
+typedef enum FluxNBSpinPlacement {
+    FLUX_NB_SPIN_HIDDEN  = 0,
+    FLUX_NB_SPIN_COMPACT = 1,
+    FLUX_NB_SPIN_INLINE  = 2,
+} FluxNBSpinPlacement;
+
+typedef enum FluxNBValidation {
+    FLUX_NB_VALIDATE_OVERWRITE = 0,
+    FLUX_NB_VALIDATE_DISABLED  = 1,
+} FluxNBValidation;
+
+typedef struct FluxPasswordBoxData {
+    const char *content;
+    const char *placeholder;
+    const char *font_family;
+    float       font_size;
+    FluxColor   text_color;
+    FluxColor   placeholder_color;
+    FluxColor   selection_color;
+    uint32_t    cursor_position;
+    uint32_t    selection_start;
+    uint32_t    selection_end;
+    float       scroll_offset_x;
+    uint32_t    max_length;
+    bool        enabled;
+    bool        readonly;
+    wchar_t     mask_char;        /* default '●' (U+25CF) */
+    bool        show_plain;       /* true = reveal password */
+
+    /* IME composition state */
+    const wchar_t *composition_text;
+    uint32_t       composition_length;
+    uint32_t       composition_cursor;
+
+    void      (*on_change)(void *ctx, const char *text);
+    void       *on_change_ctx;
+    void      (*on_submit)(void *ctx);
+    void       *on_submit_ctx;
+} FluxPasswordBoxData;
+
+typedef struct FluxNumberBoxData {
+    const char *content;           /* text representation */
+    const char *placeholder;
+    const char *font_family;
+    float       font_size;
+    FluxColor   text_color;
+    FluxColor   placeholder_color;
+    FluxColor   selection_color;
+    uint32_t    cursor_position;
+    uint32_t    selection_start;
+    uint32_t    selection_end;
+    float       scroll_offset_x;
+    bool        enabled;
+    bool        readonly;
+    double      min_value;
+    double      max_value;
+    double      step;
+    double      current_value;
+    bool        spin_enabled;
+
+    /* IME composition state */
+    const wchar_t *composition_text;
+    uint32_t       composition_length;
+    uint32_t       composition_cursor;
+
+    void      (*on_change)(void *ctx, const char *text);
+    void       *on_change_ctx;
+    void      (*on_value_change)(void *ctx, double value);
+    void       *on_value_change_ctx;
+    void      (*on_submit)(void *ctx);
+    void       *on_submit_ctx;
+} FluxNumberBoxData;
+
+typedef struct FluxHyperlinkData {
+    const char      *label;
+    const char      *url;
+    const char      *icon_name;
+    FluxColor        label_color;
+    float            font_size;
+    bool             enabled;
+    bool             visited;
+    void           (*on_click)(void *ctx);
+    void            *on_click_ctx;
+} FluxHyperlinkData;
+
+typedef struct FluxRepeatButtonData {
+    const char      *label;
+    const char      *icon_name;
+    FluxColor        label_color;
+    float            font_size;
+    FluxButtonStyle  style;
+    bool             enabled;
+    uint32_t         repeat_delay_ms;     /* default 400 */
+    uint32_t         repeat_interval_ms;  /* default 50  */
+    void           (*on_click)(void *ctx);
+    void            *on_click_ctx;
+} FluxRepeatButtonData;
+
+typedef struct FluxProgressRingData {
+    float     value;
+    float     max_value;
+    FluxColor fill_color;
+    FluxColor track_color;
+    bool      indeterminate;
+} FluxProgressRingData;
+
+typedef struct FluxInfoBadgeData {
+    FluxInfoBadgeMode mode;
+    int32_t           value;       /* number to display in NUMBER mode */
+    const char       *icon_name;   /* icon for ICON mode */
+    FluxColor         background;
+} FluxInfoBadgeData;
 
 #ifdef __cplusplus
 }

@@ -23,6 +23,7 @@ typedef struct FluxNodeState {
     uint8_t pressed  : 1;
     uint8_t focused  : 1;
     uint8_t dirty    : 1;
+    uint8_t suppress_focus : 1;
 } FluxNodeState;
 
 typedef struct FluxNodeData {
@@ -30,6 +31,12 @@ typedef struct FluxNodeData {
     FluxNodeVisuals   visuals;
     FluxNodeState     state;
     void             *component_data;
+
+    /* Sub-element hover tracking (local coordinates within the node's bounds).
+       Updated by flux_input_pointer_move so renderers can determine which
+       internal zone the cursor is over (e.g. NumberBox spin buttons). */
+    float             hover_local_x;
+    float             hover_local_y;
 
     void            (*on_click)(void *ctx);
     void             *on_click_ctx;

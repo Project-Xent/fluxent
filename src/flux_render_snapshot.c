@@ -21,6 +21,9 @@ void flux_snapshot_build(FluxRenderSnapshot *snap,
     snap->border_width  = nd->visuals.border_width;
     snap->opacity       = nd->visuals.opacity;
 
+    /* Sub-element hover tracking */
+    snap->hover_local_x = nd->hover_local_x;
+
     if (!nd->component_data) {
         return;
     }
@@ -103,6 +106,95 @@ void flux_snapshot_build(FluxRenderSnapshot *snap,
         snap->current_value   = p->value;
         snap->max_value       = p->max_value;
         snap->indeterminate   = p->indeterminate;
+        break;
+    }
+    case XENT_CONTROL_PASSWORD_BOX: {
+        const FluxTextBoxData *tb = (const FluxTextBoxData *)nd->component_data;
+        snap->text_content    = tb->content;
+        snap->placeholder     = tb->placeholder;
+        snap->font_family     = tb->font_family;
+        snap->font_size       = tb->font_size;
+        snap->text_color      = tb->text_color;
+        snap->cursor_position = tb->cursor_position;
+        snap->selection_start = tb->selection_start;
+        snap->selection_end   = tb->selection_end;
+        snap->scroll_offset_x = tb->scroll_offset_x;
+        snap->enabled         = tb->enabled;
+        snap->composition_text   = tb->composition_text;
+        snap->composition_length = tb->composition_length;
+        snap->composition_cursor = tb->composition_cursor;
+        snap->selection_color    = tb->selection_color;
+        snap->readonly           = tb->readonly;
+        /* Reveal state: semantic_checked == 1 means show plain text */
+        snap->is_checked      = xent_get_semantic_checked(ctx, node) != 0;
+        break;
+    }
+    case XENT_CONTROL_NUMBER_BOX: {
+        const FluxTextBoxData *tb = (const FluxTextBoxData *)nd->component_data;
+        snap->text_content    = tb->content;
+        snap->placeholder     = tb->placeholder;
+        snap->font_family     = tb->font_family;
+        snap->font_size       = tb->font_size;
+        snap->text_color      = tb->text_color;
+        snap->cursor_position = tb->cursor_position;
+        snap->selection_start = tb->selection_start;
+        snap->selection_end   = tb->selection_end;
+        snap->scroll_offset_x = tb->scroll_offset_x;
+        snap->enabled         = tb->enabled;
+        snap->composition_text   = tb->composition_text;
+        snap->composition_length = tb->composition_length;
+        snap->composition_cursor = tb->composition_cursor;
+        snap->selection_color    = tb->selection_color;
+        snap->readonly           = tb->readonly;
+        /* NumberBox spin state from semantic properties */
+        snap->nb_spin_placement = (uint8_t)(xent_get_semantic_expanded(ctx, node) ? 2 : 0);
+        {
+            float sv = 0, smin = 0, smax = 0;
+            if (xent_get_semantic_value(ctx, node, &sv, &smin, &smax)) {
+                snap->nb_up_enabled = (sv < smax) || (smin == smax);
+                snap->nb_down_enabled = (sv > smin) || (smin == smax);
+            } else {
+                snap->nb_up_enabled = true;
+                snap->nb_down_enabled = true;
+            }
+        }
+        break;
+    }
+    case XENT_CONTROL_HYPERLINK: {
+        const FluxHyperlinkData *hl = (const FluxHyperlinkData *)nd->component_data;
+        snap->label        = hl->label;
+        snap->icon_name    = hl->icon_name;
+        snap->text_color   = hl->label_color;
+        snap->font_size    = hl->font_size;
+        snap->button_style = FLUX_BUTTON_TEXT;
+        snap->enabled      = hl->enabled;
+
+        break;
+    }
+    case XENT_CONTROL_REPEAT_BUTTON: {
+        const FluxRepeatButtonData *rb = (const FluxRepeatButtonData *)nd->component_data;
+        snap->label        = rb->label;
+        snap->icon_name    = rb->icon_name;
+        snap->text_color   = rb->label_color;
+        snap->font_size    = rb->font_size;
+        snap->button_style = rb->style;
+        snap->enabled      = rb->enabled;
+        break;
+    }
+    case XENT_CONTROL_PROGRESS_RING: {
+        const FluxProgressRingData *pr = (const FluxProgressRingData *)nd->component_data;
+        snap->current_value = pr->value;
+        snap->max_value     = pr->max_value;
+        snap->indeterminate = pr->indeterminate;
+        break;
+    }
+    case XENT_CONTROL_INFO_BADGE: {
+        const FluxInfoBadgeData *ib = (const FluxInfoBadgeData *)nd->component_data;
+        snap->current_value = (float)ib->value;
+        snap->icon_name     = ib->icon_name;
+        snap->background    = ib->background;
+        snap->is_checked    = (ib->mode == FLUX_BADGE_DOT);
+        snap->indeterminate = (ib->mode == FLUX_BADGE_ICON);
         break;
     }
     default:

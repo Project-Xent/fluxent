@@ -6,6 +6,7 @@
 #include "flux_theme.h"
 #include "flux_controls.h"
 #include "flux_plugin.h"
+#include "flux_popup.h"
 
 #ifndef COBJMACROS
 #define COBJMACROS
@@ -97,6 +98,46 @@ XentNodeId flux_app_create_textbox(FluxApp *app, XentNodeId parent,
                                    const char *placeholder,
                                    void (*on_change)(void *, const char *),
                                    void *userdata);
+
+XentNodeId flux_app_create_password_box(FluxApp *app, XentNodeId parent,
+                                        const char *placeholder,
+                                        void (*on_change)(void *, const char *),
+                                        void *userdata);
+
+XentNodeId flux_app_create_number_box(FluxApp *app, XentNodeId parent,
+                                      double min_val, double max_val, double step,
+                                      void (*on_value_change)(void *, double),
+                                      void *userdata);
+
+/* ---- Phase 1 convenience constructors ---- */
+
+XentNodeId flux_create_password_box(XentContext *ctx, FluxNodeStore *store,
+                                    XentNodeId parent, const char *placeholder,
+                                    void (*on_change)(void *, const char *),
+                                    void *userdata);
+
+XentNodeId flux_create_number_box(XentContext *ctx, FluxNodeStore *store,
+                                  XentNodeId parent,
+                                  double min_val, double max_val, double step,
+                                  void (*on_value_change)(void *, double),
+                                  void *userdata);
+
+XentNodeId flux_create_hyperlink(XentContext *ctx, FluxNodeStore *store,
+                                 XentNodeId parent, const char *label,
+                                 const char *url,
+                                 void (*on_click)(void *), void *userdata);
+
+XentNodeId flux_create_repeat_button(XentContext *ctx, FluxNodeStore *store,
+                                     XentNodeId parent, const char *label,
+                                     void (*on_click)(void *), void *userdata);
+
+XentNodeId flux_create_progress_ring(XentContext *ctx, FluxNodeStore *store,
+                                     XentNodeId parent,
+                                     float value, float max_value);
+
+XentNodeId flux_create_info_badge(XentContext *ctx, FluxNodeStore *store,
+                                  XentNodeId parent, FluxInfoBadgeMode mode,
+                                  int32_t value);
 
 #ifdef __cplusplus
 }

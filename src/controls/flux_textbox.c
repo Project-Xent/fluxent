@@ -24,9 +24,9 @@ static uint32_t utf8_bytes_to_utf16_count(const char *s, uint32_t byte_count) {
 }
 
 /* ---- TextBox-specific elevation border (gradient brush, bottom→top) ---- */
-static void textbox_draw_elevation_border(const FluxRenderContext *rc,
-                                          const FluxRect *bounds,
-                                          float radius, bool is_focused) {
+void textbox_draw_elevation_border(const FluxRenderContext *rc,
+                                   const FluxRect *bounds,
+                                   float radius, bool is_focused) {
     const FluxThemeColors *t = rc->theme;
 
     FluxColor bottom_color, top_color;
@@ -39,10 +39,21 @@ static void textbox_draw_elevation_border(const FluxRenderContext *rc,
     }
 
     D2D1_GRADIENT_STOP stops[2];
-    stops[0].position = 0.0f;
-    stops[0].color    = flux_d2d_color(bottom_color);
-    stops[1].position = 1.0f;
-    stops[1].color    = flux_d2d_color(top_color);
+    if (is_focused) {
+        /* Legacy: both stops at Offset=1.0 — entire border shows accent,
+           only the very top pixel row gets ControlStroke. */
+        stops[0].position = 1.0f;
+        stops[0].color    = flux_d2d_color(bottom_color);
+        stops[1].position = 1.0f;
+        stops[1].color    = flux_d2d_color(top_color);
+    } else {
+        /* Legacy: Offset=0.5 → ControlStrongStroke, Offset=1.0 → ControlStroke.
+           Bottom half of the 2px gradient is solid strong stroke. */
+        stops[0].position = 0.5f;
+        stops[0].color    = flux_d2d_color(bottom_color);
+        stops[1].position = 1.0f;
+        stops[1].color    = flux_d2d_color(top_color);
+    }
 
     ID2D1GradientStopCollection *collection = NULL;
     FLUX_RT(rc)->lpVtbl->CreateGradientStopCollection(
@@ -74,9 +85,9 @@ static void textbox_draw_elevation_border(const FluxRenderContext *rc,
 }
 
 /* ---- Focused accent line clipped to the rounded-rect border ---- */
-static void textbox_draw_focus_accent(const FluxRenderContext *rc,
-                                      const FluxRect *bounds,
-                                      float radius) {
+void textbox_draw_focus_accent(const FluxRenderContext *rc,
+                               const FluxRect *bounds,
+                               float radius) {
     const FluxThemeColors *t = rc->theme;
 
     /* Create rounded-rect geometry for clipping */
@@ -122,47 +133,15 @@ static void textbox_draw_focus_accent(const FluxRenderContext *rc,
     ID2D1RoundedRectangleGeometry_Release(clip_geom);
 }
 
-/* ---- Main render entry ---- */
-void flux_draw_textbox(const FluxRenderContext *rc,
-                       const FluxRenderSnapshot *snap,
-                       const FluxRect *bounds,
-                       const FluxControlState *state) {
+/* Shared text-content renderer — also used by PasswordBox */
+void flux_draw_textbox_content(const FluxRenderContext *rc,
+                               const FluxRenderSnapshot *snap,
+                               const FluxRect *text_area,
+                               const FluxControlState *state) {
     const FluxThemeColors *t = rc->theme;
-    float radius = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-
-    /* ---- 1. Chrome: fill ---- */
-    FluxColor fill;
-    if (!state->enabled) {
-        fill = t ? t->ctrl_fill_disabled : flux_color_rgba(249, 249, 249, 0x4D);
-    } else if (state->focused) {
-        fill = t ? t->ctrl_fill_input_active : flux_color_rgba(255, 255, 255, 0xFF);
-    } else if (state->hovered) {
-        fill = t ? t->ctrl_fill_secondary : flux_color_rgba(249, 249, 249, 0x80);
-    } else {
-        fill = t ? t->ctrl_fill_default : flux_color_rgba(255, 255, 255, 0xB3);
-    }
-    flux_fill_rounded_rect(rc, bounds, radius, fill);
-
-    /* ---- 2. Chrome: elevation border ---- */
-    if (!state->enabled) {
-        FluxColor dis_stroke = t ? t->ctrl_stroke_default : flux_color_rgba(0, 0, 0, 0x0F);
-        flux_draw_rounded_rect(rc, bounds, radius, dis_stroke, 1.0f);
-    } else {
-        textbox_draw_elevation_border(rc, bounds, radius, state->focused);
-        if (state->focused)
-            textbox_draw_focus_accent(rc, bounds, radius);
-    }
-
-    /* ---- 3. Text bounds (padded) ---- */
-    FluxRect tb = {
-        bounds->x + FLUX_TEXTBOX_PAD_L,
-        bounds->y + FLUX_TEXTBOX_PAD_T,
-        flux_maxf(0.0f, bounds->w - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R),
-        flux_maxf(0.0f, bounds->h - FLUX_TEXTBOX_PAD_T - FLUX_TEXTBOX_PAD_B)
-    };
 
     /* Push clip */
-    D2D1_RECT_F clip = flux_d2d_rect(&tb);
+    D2D1_RECT_F clip = flux_d2d_rect(text_area);
     ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(rc), &clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
     if (!rc->text) {
@@ -249,15 +228,20 @@ void flux_draw_textbox(const FluxRenderContext *rc,
 
     bool has_text = (content && content[0]);
 
-    /* ---- 4. Placeholder (always TextSecondary, matching legacy) ---- */
+    /* ---- Placeholder ---- */
     if (!has_text && snap->placeholder && snap->placeholder[0]) {
         FluxTextStyle ph = ts;
-        ph.color = t ? t->text_secondary : flux_color_rgba(0, 0, 0, 0x9E);
-        flux_text_draw(rc->text, FLUX_RT(rc), snap->placeholder, &tb, &ph);
+        /* Legacy: TextControlPlaceholderForegroundDisabled → TextFillColorDisabledBrush
+           when disabled; TextFillColorSecondaryBrush otherwise. */
+        if (!state->enabled)
+            ph.color = t ? t->text_disabled : flux_color_rgba(0, 0, 0, 0x5C);
+        else
+            ph.color = t ? t->text_secondary : flux_color_rgba(0, 0, 0, 0x9E);
+        flux_text_draw(rc->text, FLUX_RT(rc), snap->placeholder, text_area, &ph);
     }
 
-    /* ---- 5. Selection highlight ---- */
-    if (has_text && state->focused &&
+    /* ---- Selection highlight (suppressed when readonly, e.g. NumberBox stepping) ---- */
+    if (has_text && state->focused && !snap->readonly &&
         snap->selection_start != snap->selection_end) {
         /* Convert byte offsets → UTF-16 indices for DirectWrite */
         uint32_t sel_s_byte = snap->selection_start < snap->selection_end
@@ -269,7 +253,7 @@ void flux_draw_textbox(const FluxRenderContext *rc,
 
         FluxRect sel_rects[16];
         uint32_t n = flux_text_selection_rects(rc->text, content, &ts_hit,
-                                               tb.w, sel_s, sel_e,
+                                               text_area->w, sel_s, sel_e,
                                                sel_rects, 16);
 
         /* Selection brush: use custom selection_color if set, otherwise accent at 40% opacity */
@@ -288,8 +272,8 @@ void flux_draw_textbox(const FluxRenderContext *rc,
         if (sel_brush) {
             for (uint32_t i = 0; i < n; i++) {
                 FluxRect sr = {
-                    tb.x + sel_rects[i].x - snap->scroll_offset_x,
-                    tb.y + sel_rects[i].y,
+                    text_area->x + sel_rects[i].x - snap->scroll_offset_x,
+                    text_area->y + sel_rects[i].y,
                     sel_rects[i].w,
                     sel_rects[i].h
                 };
@@ -300,42 +284,43 @@ void flux_draw_textbox(const FluxRenderContext *rc,
         }
     }
 
-    /* ---- 5.5 IME composition underline ---- */
+    /* ---- IME composition underline ---- */
     if (has_composition && has_text) {
         int comp_end_u16 = composition_start_u16 + (int)snap->composition_length;
         FluxRect comp_rects[16];
         uint32_t cn = flux_text_selection_rects(rc->text, content, &ts_hit,
-                                                tb.w, composition_start_u16, comp_end_u16,
+                                                text_area->w, composition_start_u16, comp_end_u16,
                                                 comp_rects, 16);
         FluxColor ul_color = state->enabled
             ? (t ? t->text_primary : flux_color_rgba(0, 0, 0, 0xE4))
             : (t ? t->text_disabled : flux_color_rgba(0, 0, 0, 0x5C));
         for (uint32_t i = 0; i < cn; i++) {
-            float lx0 = tb.x + comp_rects[i].x - snap->scroll_offset_x;
-            float ly  = tb.y + comp_rects[i].y + comp_rects[i].h;
+            float lx0 = text_area->x + comp_rects[i].x - snap->scroll_offset_x;
+            float ly  = text_area->y + comp_rects[i].y + comp_rects[i].h;
             float lx1 = lx0 + comp_rects[i].w;
             flux_draw_line(rc, lx0, ly, lx1, ly, ul_color, 1.0f);
         }
     }
 
-    /* ---- 6. Text content ---- */
+    /* ---- Text content ---- */
     if (has_text) {
         FluxRect draw_bounds = {
-            tb.x - snap->scroll_offset_x,
-            tb.y,
-            tb.w + snap->scroll_offset_x, /* wider so clipped text is still laid out */
-            tb.h
+            text_area->x - snap->scroll_offset_x,
+            text_area->y,
+            text_area->w + snap->scroll_offset_x, /* wider so clipped text is still laid out */
+            text_area->h
         };
         flux_text_draw(rc->text, FLUX_RT(rc), content, &draw_bounds, &ts);
     }
 
-    /* ---- 7. Caret (with blinking, matching legacy 500ms toggle) ---- */
+    /* ---- Caret (with blinking, matching legacy 500ms toggle) ---- */
     /* Also drive animation when selection is active so re-render keeps happening */
     if (state->focused) {
         if (rc->animations_active)
             *rc->animations_active = true;
     }
-    if (state->focused && (has_composition ? true : (snap->selection_start == snap->selection_end))) {
+    if (state->focused && !snap->readonly &&
+        (has_composition ? true : (snap->selection_start == snap->selection_end))) {
         FluxCacheEntry *ce = rc->cache
             ? flux_render_cache_get_or_create(rc->cache, snap->id) : NULL;
 
@@ -366,7 +351,7 @@ void flux_draw_textbox(const FluxRenderContext *rc,
 
             if (has_text) {
                 caret = flux_text_caret_rect(rc->text, content, &ts_hit,
-                                             tb.w, caret_u16);
+                                             text_area->w, caret_u16);
                 caret_h = caret.h > 0.0f ? caret.h : font_size * 1.2f;
             } else {
                 caret.x = 0.0f;
@@ -375,8 +360,8 @@ void flux_draw_textbox(const FluxRenderContext *rc,
             }
 
             FluxRect caret_abs = {
-                tb.x + caret.x - snap->scroll_offset_x,
-                has_text ? (tb.y + caret.y) : (tb.y + (tb.h - caret_h) * 0.5f),
+                text_area->x + caret.x - snap->scroll_offset_x,
+                has_text ? (text_area->y + caret.y) : (text_area->y + (text_area->h - caret_h) * 0.5f),
                 1.0f,
                 caret_h
             };
@@ -395,4 +380,126 @@ void flux_draw_textbox(const FluxRenderContext *rc,
 
     /* Pop clip */
     ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
+}
+
+/* DeleteButton width (WinUI: Width="30") */
+#define TB_DELETE_BTN_W  30.0f
+
+/* ---- Main render entry ---- */
+void flux_draw_textbox(const FluxRenderContext *rc,
+                       const FluxRenderSnapshot *snap,
+                       const FluxRect *bounds,
+                       const FluxControlState *state) {
+    const FluxThemeColors *t = rc->theme;
+    float radius = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
+    bool has_text = snap->text_content && snap->text_content[0];
+
+    /* WinUI DeleteButton: visible when has_text && focused && !readonly.
+       - TEXT_INPUT: eligible (Width=30)
+       - NUMBER_BOX: handled by flux_draw_number_box (positioned left of spin buttons)
+       - PASSWORD_BOX: has RevealButton instead (handled in its own renderer) */
+    bool show_delete = false;
+    if (snap->type == XENT_CONTROL_TEXT_INPUT) {
+        show_delete = has_text && state->focused && !snap->readonly && state->enabled;
+    }
+
+    /* Column widths: Col 0 = text, Col 1 = delete button (30px when visible, 0 otherwise) */
+    float col1_w = show_delete ? TB_DELETE_BTN_W : 0.0f;
+    float col0_w = bounds->w - col1_w;
+    if (col0_w < 0.0f) col0_w = 0.0f;
+
+    /* ---- 1. Chrome: fill (full width, ColumnSpan=2) ---- */
+    FluxColor fill;
+    if (!state->enabled) {
+        fill = t ? t->ctrl_fill_disabled : flux_color_rgba(249, 249, 249, 0x4D);
+    } else if (state->focused) {
+        fill = t ? t->ctrl_fill_input_active : flux_color_rgba(255, 255, 255, 0xFF);
+    } else if (state->hovered) {
+        fill = t ? t->ctrl_fill_secondary : flux_color_rgba(249, 249, 249, 0x80);
+    } else {
+        fill = t ? t->ctrl_fill_default : flux_color_rgba(255, 255, 255, 0xB3);
+    }
+    flux_fill_rounded_rect(rc, bounds, radius, fill);
+
+    /* ---- 2. Chrome: elevation border (full width) ---- */
+    if (!state->enabled) {
+        FluxColor dis_stroke = t ? t->ctrl_stroke_default : flux_color_rgba(0, 0, 0, 0x0F);
+        flux_draw_rounded_rect(rc, bounds, radius, dis_stroke, 1.0f);
+    } else {
+        textbox_draw_elevation_border(rc, bounds, radius, state->focused);
+        if (state->focused)
+            textbox_draw_focus_accent(rc, bounds, radius);
+    }
+
+    /* ---- 3. Text bounds (padded, clipped to Column 0) ---- */
+    FluxRect tb = {
+        bounds->x + FLUX_TEXTBOX_PAD_L,
+        bounds->y + FLUX_TEXTBOX_PAD_T,
+        flux_maxf(0.0f, col0_w - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R),
+        flux_maxf(0.0f, bounds->h - FLUX_TEXTBOX_PAD_T - FLUX_TEXTBOX_PAD_B)
+    };
+
+    /* ---- 4. Text content (clipped) ---- */
+    flux_draw_textbox_content(rc, snap, &tb, state);
+
+    /* ---- 5. DeleteButton in Column 1 (X icon, clears text) ---- */
+    if (show_delete && rc->text) {
+        /* WinUI: ButtonLayoutGrid has Margin="{ThemeResource TextBoxInnerButtonMargin}"
+           which is 0,4,4,4 (left=0, top=4, right=4, bottom=4).
+           The DeleteButton itself is Width=30, VerticalAlignment=Stretch.
+           So the visible background area is inset by those margins. */
+        float btn_margin_l = 0.0f;
+        float btn_margin_t = 4.0f;
+        float btn_margin_r = 4.0f;
+        float btn_margin_b = 4.0f;
+
+        float btn_x = bounds->x + col0_w + btn_margin_l;
+        float btn_y = bounds->y + btn_margin_t;
+        float btn_w = col1_w - btn_margin_l - btn_margin_r;
+        float btn_h = bounds->h - btn_margin_t - btn_margin_b;
+        if (btn_w < 0.0f) btn_w = 0.0f;
+        if (btn_h < 0.0f) btn_h = 0.0f;
+        FluxRect btn_rect = { btn_x, btn_y, btn_w, btn_h };
+
+        /* WinUI three-state button:
+           Normal:      Transparent background
+           PointerOver: SubtleFillColorSecondary (ctrl_alt_fill_secondary)
+           Pressed:     SubtleFillColorTertiary (ctrl_alt_fill_tertiary) */
+        bool btn_hovered = (state->hovered && snap->hover_local_x >= col0_w);
+        bool btn_pressed = (btn_hovered && state->pressed);
+
+        if (btn_pressed) {
+            FluxColor pressed_fill = t ? t->ctrl_alt_fill_tertiary : flux_color_rgba(0, 0, 0, 0x0F);
+            flux_fill_rounded_rect(rc, &btn_rect, radius, pressed_fill);
+        } else if (btn_hovered) {
+            FluxColor hover_fill = t ? t->ctrl_alt_fill_secondary : flux_color_rgba(0, 0, 0, 0x06);
+            flux_fill_rounded_rect(rc, &btn_rect, radius, hover_fill);
+        }
+
+        /* Cancel icon: U+E894, FontSize=12 */
+        FluxColor icon_color;
+        if (btn_pressed) {
+            icon_color = t ? t->text_tertiary : flux_color_rgba(0, 0, 0, 0x72);
+        } else {
+            icon_color = t ? t->text_secondary : flux_color_rgba(0, 0, 0, 0x9E);
+        }
+
+        char x_utf8[4];
+        x_utf8[0] = (char)0xEE;
+        x_utf8[1] = (char)0xA2;
+        x_utf8[2] = (char)0x94;
+        x_utf8[3] = '\0';
+
+        FluxTextStyle xs;
+        memset(&xs, 0, sizeof(xs));
+        xs.font_family = "Segoe Fluent Icons";
+        xs.font_size = 12.0f;
+        xs.font_weight = FLUX_FONT_REGULAR;
+        xs.text_align = FLUX_TEXT_CENTER;
+        xs.vert_align = FLUX_TEXT_VCENTER;
+        xs.color = icon_color;
+        xs.word_wrap = false;
+
+        flux_text_draw(rc->text, FLUX_RT(rc), x_utf8, &btn_rect, &xs);
+    }
 }

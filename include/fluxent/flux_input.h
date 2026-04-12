@@ -55,6 +55,25 @@ XentNodeId    flux_input_get_pressed(const FluxInput *input);
 
 void          flux_input_scroll(FluxInput *input, XentNodeId root, float px, float py, float delta);
 
+/* ---- Focus Navigation (keyboard Tab/Arrow/Enter/Escape) ---- */
+
+/** Tab key: cycle focus among all visible focusable nodes by tab_index order.
+ *  shift=true → reverse direction (Shift+Tab). */
+void flux_input_tab(FluxInput *input, XentNodeId root, bool shift);
+
+/** Arrow key: move focus among siblings in the given direction.
+ *  direction: VK_LEFT=0x25, VK_UP=0x26, VK_RIGHT=0x27, VK_DOWN=0x28 */
+void flux_input_arrow(FluxInput *input, XentNodeId root, int direction);
+
+/** Enter/Space: trigger on_click of the currently focused node. */
+void flux_input_activate(FluxInput *input);
+
+/** Escape: blur the current focus (or dismiss context, handled by caller). */
+void flux_input_escape(FluxInput *input);
+
+/** Set focus to a specific node programmatically. */
+void flux_input_set_focus(FluxInput *input, XentNodeId node);
+
 #ifdef __cplusplus
 }
 #endif

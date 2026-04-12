@@ -15,22 +15,42 @@ static ButtonColors resolve_button_colors(const FluxRenderSnapshot *snap,
                                           const FluxThemeColors *t) {
     ButtonColors c;
     c.is_accent = force_accent || (snap->button_style == FLUX_BUTTON_ACCENT);
-    c.use_elevation = state->enabled && !state->pressed;
+
+    /* WinUI SubtleButtonStyle — used by SUBTLE and TEXT styles.
+       SubtleFillColor tokens are near-transparent; no elevation border. */
+    bool is_subtle = (snap->button_style == FLUX_BUTTON_SUBTLE ||
+                      snap->button_style == FLUX_BUTTON_TEXT);
 
     FluxColor transparent = flux_color_rgba(0, 0, 0, 0);
 
     if (!state->enabled) {
+        /* ── Disabled ── */
         if (c.is_accent) {
+            /* AccentButtonStyle Disabled */
             c.fill   = t ? t->accent_disabled          : ft_accent_disabled();
             c.stroke = transparent;
             c.text   = t ? t->text_on_accent_disabled   : ft_text_on_accent_disabled();
+        } else if (is_subtle) {
+            /* SubtleButtonStyle Disabled:
+               Background = SubtleFillColorTransparent
+               BorderBrush = SubtleFillColorTransparent
+               Foreground  = TextFillColorDisabled */
+            c.fill   = transparent;
+            c.stroke = transparent;
+            c.text   = t ? t->text_disabled             : ft_text_disabled();
         } else {
+            /* DefaultButtonStyle Disabled:
+               Background = ControlFillColorDisabled
+               BorderBrush = ControlStrokeColorDefault
+               Foreground  = TextFillColorDisabled */
             c.fill   = t ? t->ctrl_fill_disabled        : ft_ctrl_fill_disabled();
             c.stroke = t ? t->ctrl_stroke_default       : ft_ctrl_stroke_default();
             c.text   = t ? t->text_disabled             : ft_text_disabled();
         }
         c.use_elevation = false;
     } else if (c.is_accent) {
+        /* ── AccentButtonStyle (enabled) ── */
+        c.use_elevation = !state->pressed;
         if (state->pressed) {
             c.fill = t ? t->accent_tertiary             : ft_accent_tertiary();
             c.text = t ? t->text_on_accent_secondary    : ft_text_on_accent_secondary();
@@ -42,7 +62,30 @@ static ButtonColors resolve_button_colors(const FluxRenderSnapshot *snap,
             c.text = t ? t->text_on_accent_primary      : ft_text_on_accent_primary();
         }
         c.stroke = transparent;
+    } else if (is_subtle) {
+        /* ── SubtleButtonStyle (enabled) ──
+           Background:  Transparent / SubtleFillColorSecondary / SubtleFillColorTertiary
+           BorderBrush: all transparent (SubtleFillColor* but visually transparent)
+           Foreground:  TextPrimary / TextPrimary / TextSecondary
+           Never has elevation border. */
+        c.use_elevation = false;
+        c.stroke = transparent;
+        if (state->pressed) {
+            c.fill = t ? t->subtle_fill_tertiary        : ft_subtle_fill_tertiary();
+            c.text = t ? t->text_secondary              : ft_text_secondary();
+        } else if (state->hovered) {
+            c.fill = t ? t->subtle_fill_secondary       : ft_subtle_fill_secondary();
+            c.text = t ? t->text_primary                : ft_text_primary();
+        } else {
+            c.fill = transparent;
+            c.text = t ? t->text_primary                : ft_text_primary();
+        }
     } else {
+        /* ── DefaultButtonStyle (enabled) ──
+           Background:  ControlFillColorDefault / Secondary / Tertiary
+           BorderBrush: ControlElevationBorderBrush / Elevation / ControlStrokeColorDefault
+           Foreground:  TextPrimary / TextPrimary / TextSecondary */
+        c.use_elevation = !state->pressed;
         if (state->pressed) {
             c.fill   = t ? t->ctrl_fill_tertiary        : ft_ctrl_fill_tertiary();
             c.stroke = t ? t->ctrl_stroke_default       : ft_ctrl_stroke_default();

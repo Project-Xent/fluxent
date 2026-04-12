@@ -68,6 +68,15 @@ void flux_dispatch_render_overlay(const FluxRenderContext *rc,
                                   const FluxRenderSnapshot *snap,
                                   const FluxRect *bounds);
 
+void flux_register_renderer(XentControlType type,
+                            void (*draw)(const FluxRenderContext *,
+                                         const FluxRenderSnapshot *,
+                                         const FluxRect *,
+                                         const FluxControlState *),
+                            void (*draw_overlay)(const FluxRenderContext *,
+                                                 const FluxRenderSnapshot *,
+                                                 const FluxRect *));
+
 #ifdef __cplusplus
 }
 #endif

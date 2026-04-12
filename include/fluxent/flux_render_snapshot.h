@@ -60,6 +60,12 @@ typedef struct FluxRenderSnapshot {
     bool       indeterminate;
 
     bool enabled;
+
+    /* NumberBox spin button state */
+    uint8_t nb_spin_placement;   /* FluxNBSpinPlacement */
+    bool    nb_up_enabled;
+    bool    nb_down_enabled;
+    float   hover_local_x;       /* cursor X within bounds (-1 = not hovered) */
 } FluxRenderSnapshot;
 
 void flux_snapshot_build(FluxRenderSnapshot *snap,

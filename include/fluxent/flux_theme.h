@@ -29,6 +29,10 @@ typedef struct FluxThemeColors {
     FluxColor ctrl_alt_fill_quarternary;
     FluxColor ctrl_alt_fill_disabled;
 
+    /* Subtle fill */
+    FluxColor subtle_fill_secondary;
+    FluxColor subtle_fill_tertiary;
+
     /* Control stroke */
     FluxColor ctrl_stroke_default;
     FluxColor ctrl_stroke_secondary;
@@ -53,6 +57,7 @@ typedef struct FluxThemeColors {
     /* Text */
     FluxColor text_primary;
     FluxColor text_secondary;
+    FluxColor text_tertiary;
     FluxColor text_disabled;
     FluxColor text_on_accent_primary;
     FluxColor text_on_accent_secondary;

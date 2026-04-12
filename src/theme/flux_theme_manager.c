@@ -31,6 +31,10 @@ static void init_light_palette(FluxThemeColors *c) {
     c->ctrl_alt_fill_quarternary = flux_color_rgba(0, 0, 0, 0x12);
     c->ctrl_alt_fill_disabled    = flux_color_rgba(0, 0, 0, 0x00);
 
+    /* Subtle fill */
+    c->subtle_fill_secondary   = flux_color_rgba(0, 0, 0, 0x09);
+    c->subtle_fill_tertiary    = flux_color_rgba(0, 0, 0, 0x06);
+
     /* Control stroke */
     c->ctrl_stroke_default              = flux_color_rgba(0, 0, 0, 0x0F);
     c->ctrl_stroke_secondary            = flux_color_rgba(0, 0, 0, 0x29);
@@ -55,6 +59,7 @@ static void init_light_palette(FluxThemeColors *c) {
     /* Text */
     c->text_primary            = flux_color_rgba(0, 0, 0, 0xE4);
     c->text_secondary          = flux_color_rgba(0, 0, 0, 0x9E);
+    c->text_tertiary           = flux_color_rgba(0, 0, 0, 0x72);
     c->text_disabled           = flux_color_rgba(0, 0, 0, 0x5C);
     c->text_on_accent_primary  = flux_color_rgb(255, 255, 255);
     c->text_on_accent_secondary = flux_color_rgba(255, 255, 255, 0xB3);
@@ -89,6 +94,10 @@ static void init_dark_palette(FluxThemeColors *c) {
     c->ctrl_alt_fill_quarternary = flux_color_rgba(255, 255, 255, 0x12);
     c->ctrl_alt_fill_disabled    = flux_color_rgba(255, 255, 255, 0x00);
 
+    /* Subtle fill */
+    c->subtle_fill_secondary   = flux_color_rgba(255, 255, 255, 0x0F);
+    c->subtle_fill_tertiary    = flux_color_rgba(255, 255, 255, 0x0A);
+
     /* Control stroke */
     c->ctrl_stroke_default              = flux_color_rgba(255, 255, 255, 0x12);
     c->ctrl_stroke_secondary            = flux_color_rgba(255, 255, 255, 0x18);
@@ -113,6 +122,7 @@ static void init_dark_palette(FluxThemeColors *c) {
     /* Text */
     c->text_primary            = flux_color_rgb(255, 255, 255);
     c->text_secondary          = flux_color_rgba(255, 255, 255, 0xC5);
+    c->text_tertiary           = flux_color_rgba(255, 255, 255, 0x72);
     c->text_disabled           = flux_color_rgba(255, 255, 255, 0x5D);
     c->text_on_accent_primary  = flux_color_rgb(0, 0, 0);
     c->text_on_accent_secondary = flux_color_rgba(0, 0, 0, 0x80);

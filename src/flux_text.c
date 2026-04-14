@@ -7,8 +7,8 @@
 #define COBJMACROS
 #endif
 
-#include <d2d1.h>
-#include <dwrite.h>
+#include <cd2d.h>
+#include <cdwrite.h>
 
 /* ── Cache constants ─────────────────────────────────────────────── */
 
@@ -418,7 +418,7 @@ FluxTextRenderer *flux_text_renderer_create(void) {
     HRESULT hr = DWriteCreateFactory(
         DWRITE_FACTORY_TYPE_SHARED,
         &IID_IDWriteFactory,
-        (IUnknown **)&tr->factory);
+        (void **)&tr->factory);
 
     if (FAILED(hr)) {
         free(tr);

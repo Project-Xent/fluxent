@@ -35,7 +35,7 @@ static inline float flux_color_gf(FluxColor c) { return ((c.rgba >> 16) & 0xFF) 
 static inline float flux_color_bf(FluxColor c) { return ((c.rgba >> 8)  & 0xFF) / 255.0f; }
 static inline float flux_color_af(FluxColor c) { return  (c.rgba        & 0xFF) / 255.0f; }
 
-#if defined(_D2D1_H) || defined(__d2d1_h__)
+#if defined(_D2D1_H_) || defined(__d2d1_h__) || defined(D2D1_APPEND_ALIGNED_ELEMENT)
 static inline D2D1_COLOR_F flux_to_d2d_color(FluxColor c) {
     D2D1_COLOR_F d;
     d.r = flux_color_rf(c);
@@ -46,7 +46,11 @@ static inline D2D1_COLOR_F flux_to_d2d_color(FluxColor c) {
 }
 #endif
 
-#define FLUX_RELEASE(p) do { if (p) { (p)->lpVtbl->Release(p); (p) = NULL; } } while (0)
+#ifdef COBJMACROS
+#define FLUX_RELEASE(p) do { if (p) { IUnknown_Release((IUnknown *)(p)); (p) = NULL; } } while (0)
+#else
+#define FLUX_RELEASE(p) do { if (p) { ((IUnknown *)(p))->lpVtbl->Release((IUnknown *)(p)); (p) = NULL; } } while (0)
+#endif
 
 #define FLUX_CHECK(hr) do { HRESULT _hr = (hr); if (FAILED(_hr)) return _hr; } while (0)
 

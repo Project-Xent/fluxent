@@ -2,7 +2,7 @@
 #define COBJMACROS
 #endif
 
-#include <d2d1_1.h>
+#include <cd2d.h>
 #include "fluxent/flux_render_cache.h"
 
 #include <stdbool.h>

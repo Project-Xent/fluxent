@@ -12,12 +12,9 @@
 
 #include <d3d11.h>
 #include <dxgi1_3.h>
-#include <d2d1.h>
-#include <d2d1_1.h>
-#include <dwrite.h>
+#include <cd2d.h>
+#include <cdwrite.h>
 #include "flux_dcomp.h"
-
-typedef struct ID2D1Image ID2D1Image;
 
 #define MIN_SURFACE_SIZE 1
 
@@ -62,7 +59,7 @@ static HRESULT create_device_independent(FluxGraphics *gfx) {
 
     hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
                              &IID_IDWriteFactory,
-                             (IUnknown **)&gfx->dwrite_factory);
+                             (void **)&gfx->dwrite_factory);
     return hr;
 }
 
@@ -106,7 +103,7 @@ static HRESULT create_device_resources(FluxGraphics *gfx) {
 
 static void release_window_resources(FluxGraphics *gfx) {
     if (gfx->d2d_context)
-        gfx->d2d_context->lpVtbl->SetTarget(gfx->d2d_context, NULL);
+        ID2D1DeviceContext_SetTarget(gfx->d2d_context, NULL);
     SAFE_RELEASE(gfx->d2d_target);
     SAFE_RELEASE(gfx->dcomp_target);
     SAFE_RELEASE(gfx->root_visual);
@@ -157,7 +154,7 @@ static HRESULT create_window_resources(FluxGraphics *gfx) {
     SAFE_RELEASE(surface);
     if (FAILED(hr)) return hr;
 
-    gfx->d2d_context->lpVtbl->SetTarget(gfx->d2d_context, (ID2D1Image *)gfx->d2d_target);
+    ID2D1DeviceContext_SetTarget(gfx->d2d_context, (ID2D1Image *)gfx->d2d_target);
     ID2D1RenderTarget_SetDpi((ID2D1RenderTarget *)gfx->d2d_context, gfx->dpi.dpi_x, gfx->dpi.dpi_y);
 
     hr = IDCompositionDevice_CreateTargetForHwnd(gfx->dcomp_device, gfx->hwnd, TRUE,
@@ -225,7 +222,7 @@ HRESULT flux_graphics_resize(FluxGraphics *gfx, int width, int height) {
     if (width < MIN_SURFACE_SIZE) width = MIN_SURFACE_SIZE;
     if (height < MIN_SURFACE_SIZE) height = MIN_SURFACE_SIZE;
 
-    gfx->d2d_context->lpVtbl->SetTarget(gfx->d2d_context, NULL);
+    ID2D1DeviceContext_SetTarget(gfx->d2d_context, NULL);
     SAFE_RELEASE(gfx->d2d_target);
 
     HRESULT hr = IDXGISwapChain1_ResizeBuffers(gfx->swap_chain,
@@ -250,7 +247,7 @@ HRESULT flux_graphics_resize(FluxGraphics *gfx, int width, int height) {
     SAFE_RELEASE(surface);
     if (FAILED(hr)) return hr;
 
-    gfx->d2d_context->lpVtbl->SetTarget(gfx->d2d_context, (ID2D1Image *)gfx->d2d_target);
+    ID2D1DeviceContext_SetTarget(gfx->d2d_context, (ID2D1Image *)gfx->d2d_target);
     return S_OK;
 }
 

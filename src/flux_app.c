@@ -1151,7 +1151,11 @@ static void tb_redo(FluxTextBoxInputData *tb) {
     tb_notify_change(tb);
 }
 
+#if defined(__GNUC__) || defined(__clang__)
 static void __attribute__((unused)) tb_free_undo_redo(FluxTextBoxInputData *tb) {
+#else
+static void tb_free_undo_redo(FluxTextBoxInputData *tb) {
+#endif
     for (int i = 0; i < tb->undo_top; i++) free(tb->undo_stack[i].text);
     for (int i = 0; i < tb->redo_top; i++) free(tb->redo_stack[i].text);
     tb->undo_top = 0;

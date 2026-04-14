@@ -4,13 +4,19 @@
 
 
 /* ---- UTF-8 / UTF-16 conversion helpers for IME composition ---- */
-static int __attribute__((unused)) utf8_to_wide(const char *src, wchar_t *dst, int dst_cap) {
+#if defined(__GNUC__) || defined(__clang__)
+#define FLUX_MAYBE_UNUSED __attribute__((unused))
+#else
+#define FLUX_MAYBE_UNUSED
+#endif
+
+static int FLUX_MAYBE_UNUSED utf8_to_wide(const char *src, wchar_t *dst, int dst_cap) {
     if (!src) { if (dst && dst_cap > 0) dst[0] = 0; return 0; }
     int len = MultiByteToWideChar(CP_UTF8, 0, src, -1, dst, dst_cap);
     return len > 0 ? len - 1 : 0; /* return char count without null */
 }
 
-static int __attribute__((unused)) wide_to_utf8(const wchar_t *src, int src_len, char *dst, int dst_cap) {
+static int FLUX_MAYBE_UNUSED wide_to_utf8(const wchar_t *src, int src_len, char *dst, int dst_cap) {
     if (!src || src_len == 0) { if (dst && dst_cap > 0) dst[0] = 0; return 0; }
     int len = WideCharToMultiByte(CP_UTF8, 0, src, src_len, dst, dst_cap, NULL, NULL);
     if (dst && len < dst_cap) dst[len] = 0;
@@ -56,7 +62,7 @@ void textbox_draw_elevation_border(const FluxRenderContext *rc,
     }
 
     ID2D1GradientStopCollection *collection = NULL;
-    FLUX_RT(rc)->lpVtbl->CreateGradientStopCollection(
+    ID2D1RenderTarget_CreateGradientStopCollection(
         FLUX_RT(rc), stops, 2,
         D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &collection);
     if (!collection) return;
@@ -73,7 +79,7 @@ void textbox_draw_elevation_border(const FluxRenderContext *rc,
     bp.transform._31 = 0; bp.transform._32 = 0;
 
     ID2D1LinearGradientBrush *grad = NULL;
-    FLUX_RT(rc)->lpVtbl->CreateLinearGradientBrush(
+    ID2D1RenderTarget_CreateLinearGradientBrush(
         FLUX_RT(rc), &gp, &bp, collection, &grad);
     ID2D1GradientStopCollection_Release(collection);
     if (!grad) return;

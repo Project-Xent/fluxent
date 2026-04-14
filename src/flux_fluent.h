@@ -380,9 +380,7 @@ static inline void flux_draw_elevation_border(const FluxRenderContext *rc,
     stops[1].color    = flux_d2d_color(primary);
 
     ID2D1GradientStopCollection *collection = NULL;
-    /* Call vtable directly — MinGW COBJMACRO only exposes the 3-arg
-       convenience overload, but we need the full 5-arg variant. */
-    FLUX_RT(rc)->lpVtbl->CreateGradientStopCollection(
+    ID2D1RenderTarget_CreateGradientStopCollection(
         FLUX_RT(rc), stops, 2,
         D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &collection);
     if (!collection) return;
@@ -404,7 +402,7 @@ static inline void flux_draw_elevation_border(const FluxRenderContext *rc,
     bp.transform._31 = 0; bp.transform._32 = 0;
 
     ID2D1LinearGradientBrush *grad = NULL;
-    FLUX_RT(rc)->lpVtbl->CreateLinearGradientBrush(
+    ID2D1RenderTarget_CreateLinearGradientBrush(
         FLUX_RT(rc), &gp, &bp, collection, &grad);
     ID2D1GradientStopCollection_Release(collection);
     if (!grad) return;

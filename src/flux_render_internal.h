@@ -5,7 +5,7 @@
 #define COBJMACROS
 #endif
 
-#include <d2d1_1.h>
+#include <cd2d.h>
 #include <stdbool.h>
 
 #include "fluxent/flux_engine.h"
@@ -14,8 +14,6 @@
 #include "fluxent/flux_text.h"
 #include "fluxent/flux_theme.h"
 #include "flux_anim.h"
-
-typedef struct ID2D1Image ID2D1Image;
 
 struct FluxRenderContext {
     ID2D1DeviceContext   *d2d;

@@ -2,11 +2,12 @@ set_project("fluxent")
 set_version("0.1.0")
 set_languages("c17")
 add_rules("mode.debug", "mode.release")
-set_warnings("all", "error")
+set_warnings("all")
 set_runtimes("MT")
 
-if is_plat("mingw") then
-    set_toolchains("mingw", { mingw = "C:\\Users\\Wynn\\llvm-mingw-20260324-ucrt-x86_64" })
+
+if is_plat("windows") then
+    add_defines("_CRT_SECURE_NO_WARNINGS")
 end
 
 includes("../xent-core")
@@ -19,12 +20,34 @@ target("fluxent")
     set_kind("static")
     add_deps("xent_core")
     add_includedirs("include", { public = true })
+    add_includedirs("src", { private = true })
+    add_includedirs("thirdparty/c_d2d_dwrite", { public = true })
     add_headerfiles("include/fluxent/*.h")
-    add_files("src/*.c", "src/controls/*.c", "src/theme/*.c")
-    add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
+    add_files(
+        "src/*.c",
+        "src/app/*.c",
+        "src/controls/*.c",
+        "src/controls/textbox/*.c",
+        "src/engine/*.c",
+        "src/graphics/*.c",
+        "src/input/*.c",
+        "src/popup/*.c",
+        "src/store/*.c",
+        "src/text/*.c",
+        "src/theme/*.c",
+        "src/window/*.c"
+    )
+    if is_plat("mingw") then
+        add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
+    end
+    if is_plat("windows") then
+        add_cflags("/Gy", "/Gw", "/wd4201", { force = true })
+        add_ldflags("/OPT:REF", "/OPT:ICF", { force = true })
+    end
     if is_plat("windows", "mingw") then
         add_syslinks("user32", "gdi32", "dcomp", "d2d1", "d3d11",
-                     "dxgi", "dwrite", "dwmapi", "ole32", "uuid", "uxtheme", "imm32")
+                     "dxgi", "dwrite", "dwmapi", "ole32", "uuid", "uxtheme", "imm32",
+                     "advapi32", "shell32")
     end
 target_end()
 
@@ -33,8 +56,11 @@ target("hello_fluxent")
     add_deps("fluxent")
     add_files("examples/hello_fluxent.c")
     add_includedirs("include")
-    add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
-    if is_plat("windows", "mingw") then
+    if is_plat("mingw") then
+        add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
         add_ldflags("-Wl,--subsystem,windows", "-Wl,--gc-sections", { force = true })
+    end
+    if is_plat("windows") then
+        add_ldflags("/SUBSYSTEM:WINDOWS", "/OPT:REF", "/OPT:ICF", { force = true })
     end
 target_end()

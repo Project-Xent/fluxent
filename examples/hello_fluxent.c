@@ -170,7 +170,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
         FluxScrollData *sd = (FluxScrollData *)calloc(1, sizeof(FluxScrollData));
         if (sd) {
             sd->v_vis = FLUX_SCROLL_AUTO;
-            sd->h_vis = FLUX_SCROLL_NEVER;
+            sd->h_vis = FLUX_SCROLL_AUTO;
         }
         scroll_nd->component_data = sd;
     }
@@ -185,8 +185,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
     xent_set_gap(ctx, root, 14);
     /* Height must be explicit for scroll to work: flex treats NAN as
        "fill parent", which squishes everything into the viewport.
-       Calculated: children ~1098 + 45 gaps×14 + padding 64 ≈ 1792 */
-    xent_set_size(ctx, root, NAN, 1800);
+       Sections 1-11 ~1792 + text inputs ~138 + flyout section ~99 + margin ≈ 2200 */
+    xent_set_size(ctx, root, NAN, 2200);
     xent_append_child(ctx, scroll_root, root);
 
     /* ═════════════════════════════════════════════════════════════════════
@@ -220,14 +220,17 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 
         XentNodeId b1 = flux_create_button(ctx, store, row, "Standard", NULL, NULL);
         xent_set_size(ctx, b1, 110, 32);
+        flux_node_set_tooltip(store, b1, "This is a standard button");
 
         XentNodeId b2 = flux_create_button(ctx, store, row, "Accent", NULL, NULL);
         xent_set_size(ctx, b2, 110, 32);
         flux_button_set_style(store, b2, FLUX_BUTTON_ACCENT);
+        flux_node_set_tooltip(store, b2, "This is an accent-styled button for primary actions");
 
         XentNodeId b3 = flux_create_button(ctx, store, row, "Subtle", NULL, NULL);
         xent_set_size(ctx, b3, 110, 32);
         flux_button_set_style(store, b3, FLUX_BUTTON_SUBTLE);
+        flux_node_set_tooltip(store, b3, "Subtle buttons blend into the background");
     }
 
     {
@@ -271,6 +274,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
         xent_set_size(ctx, cbtn, 100, 32);
         flux_button_set_style(store, cbtn, FLUX_BUTTON_ACCENT);
         flux_button_set_icon(store, cbtn, "Add");
+        flux_node_set_tooltip(store, cbtn, "Click to increment the counter");
 
         XentNodeId clbl = flux_create_text(ctx, store, row, counter->buf, 14.0f);
         xent_set_size(ctx, clbl, 140, 32);
@@ -432,8 +436,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
             members[i].index = i;
             FluxNodeData *nd = flux_node_store_get(store, rg->nodes[i]);
             if (nd) {
-                nd->on_click     = radio_group_trampoline;
-                nd->on_click_ctx = &members[i];
+                nd->behavior.on_click     = radio_group_trampoline;
+                nd->behavior.on_click_ctx = &members[i];
             }
         }
     }
@@ -641,7 +645,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
     /* Set scroll content size (generous estimate) */
     if (scroll_nd && scroll_nd->component_data) {
         FluxScrollData *sd = (FluxScrollData *)scroll_nd->component_data;
-        sd->content_h = 1800.0f;
+        sd->content_h = 2200.0f;
         sd->content_w = 640.0f;
     }
 
@@ -670,6 +674,169 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
         -100.0, 100.0, 1.0, on_number_change, NULL);
     xent_set_size(ctx, numbox, 480, 32);
 
+    /* ═════════════════════════════════════════════════════════════════════
+       SECTION 12 — Flyout & MenuFlyout
+       ═════════════════════════════════════════════════════════════════════ */
+
+    {
+        XentNodeId d = flux_create_divider(ctx, store, root);
+        xent_set_size(ctx, d, 480, 1);
+    }
+
+    make_section(ctx, store, root, "Flyout & MenuFlyout");
+
+    /* --- Shared resources for flyout / menu --- */
+    FluxWindow       *win   = flux_app_get_window(app);
+    FluxThemeManager *tmgr  = flux_app_get_theme(app);
+    FluxTextRenderer *tr    = flux_app_get_text_renderer(app);
+    const FluxThemeColors *tc = tmgr ? flux_theme_colors(tmgr) : NULL;
+    bool dark = tmgr ? (flux_theme_get_mode(tmgr) == FLUX_THEME_DARK ||
+                        (flux_theme_get_mode(tmgr) == FLUX_THEME_SYSTEM &&
+                         flux_theme_system_is_dark())) : false;
+
+    /* --- Flyout demo: click a button to pop up a card --- */
+    FluxFlyout *demo_flyout = flux_flyout_create(win);
+    flux_flyout_set_theme(demo_flyout, tc, dark);
+    flux_flyout_set_text_renderer(demo_flyout, tr);
+    flux_flyout_set_content_size(demo_flyout, 200, 40);
+
+    /* --- MenuFlyout demo: right-click a button for context menu --- */
+    FluxMenuFlyout *demo_menu = flux_menu_flyout_create(win);
+    flux_menu_flyout_set_theme(demo_menu, tc, dark);
+    flux_menu_flyout_set_text_renderer(demo_menu, tr);
+
+    {
+        XentNodeId row = make_row(ctx, root, 12, 32);
+
+        XentNodeId btn_flyout = flux_create_button(ctx, store, row,
+            "Click me (Flyout)", NULL, NULL);
+        xent_set_size(ctx, btn_flyout, 200, 32);
+        flux_button_set_style(store, btn_flyout, FLUX_BUTTON_ACCENT);
+        flux_node_set_flyout_ex(store, btn_flyout, demo_flyout,
+                                FLUX_PLACEMENT_BOTTOM, ctx, win);
+        flux_node_set_tooltip(store, btn_flyout,
+            "Click to show a Flyout popup below this button");
+
+        {
+            FluxMenuFlyout *theme_submenu = flux_menu_flyout_create(win);
+            flux_menu_flyout_set_theme(theme_submenu, tc, dark);
+            flux_menu_flyout_set_text_renderer(theme_submenu, tr);
+
+            {
+                FluxMenuItemDef item = {0};
+                item.type        = FLUX_MENU_ITEM_RADIO;
+                item.label       = "System";
+                item.radio_group = "theme";
+                item.checked     = true;
+                item.enabled     = true;
+                flux_menu_flyout_add_item(theme_submenu, &item);
+            }
+            {
+                FluxMenuItemDef item = {0};
+                item.type        = FLUX_MENU_ITEM_RADIO;
+                item.label       = "Light";
+                item.radio_group = "theme";
+                item.enabled     = true;
+                flux_menu_flyout_add_item(theme_submenu, &item);
+            }
+            {
+                FluxMenuItemDef item = {0};
+                item.type        = FLUX_MENU_ITEM_RADIO;
+                item.label       = "Dark";
+                item.radio_group = "theme";
+                item.enabled     = true;
+                flux_menu_flyout_add_item(theme_submenu, &item);
+            }
+
+            FluxMenuFlyout *view_submenu = flux_menu_flyout_create(win);
+            flux_menu_flyout_set_theme(view_submenu, tc, dark);
+            flux_menu_flyout_set_text_renderer(view_submenu, tr);
+
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_TOGGLE;
+                item.label   = "Word Wrap";
+                item.checked = true;
+                item.enabled = true;
+                flux_menu_flyout_add_item(view_submenu, &item);
+            }
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_TOGGLE;
+                item.label   = "Line Numbers";
+                item.checked = false;
+                item.enabled = true;
+                flux_menu_flyout_add_item(view_submenu, &item);
+            }
+            flux_menu_flyout_add_separator(view_submenu);
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_SUBMENU;
+                item.label   = "Theme";
+                item.enabled = true;
+                item.submenu = theme_submenu;
+                flux_menu_flyout_add_item(view_submenu, &item);
+            }
+
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_NORMAL;
+                item.label   = "Cut";
+                item.accelerator_text = "Ctrl+X";
+                item.enabled = true;
+                flux_menu_flyout_add_item(demo_menu, &item);
+            }
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_NORMAL;
+                item.label   = "Copy";
+                item.accelerator_text = "Ctrl+C";
+                item.enabled = true;
+                flux_menu_flyout_add_item(demo_menu, &item);
+            }
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_NORMAL;
+                item.label   = "Paste";
+                item.accelerator_text = "Ctrl+V";
+                item.enabled = true;
+                flux_menu_flyout_add_item(demo_menu, &item);
+            }
+            flux_menu_flyout_add_separator(demo_menu);
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_SUBMENU;
+                item.label   = "View";
+                item.enabled = true;
+                item.submenu = view_submenu;
+                flux_menu_flyout_add_item(demo_menu, &item);
+            }
+            flux_menu_flyout_add_separator(demo_menu);
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_NORMAL;
+                item.label   = "Select All";
+                item.accelerator_text = "Ctrl+A";
+                item.enabled = true;
+                flux_menu_flyout_add_item(demo_menu, &item);
+            }
+            {
+                FluxMenuItemDef item = {0};
+                item.type    = FLUX_MENU_ITEM_NORMAL;
+                item.label   = "Delete";
+                item.enabled = false;  /* greyed out */
+                flux_menu_flyout_add_item(demo_menu, &item);
+            }
+        }
+
+        XentNodeId btn_ctx = flux_create_button(ctx, store, row,
+            "Right-click (Menu)", NULL, NULL);
+        xent_set_size(ctx, btn_ctx, 200, 32);
+        flux_node_set_context_flyout_ex(store, btn_ctx, demo_menu, ctx, win);
+        flux_node_set_tooltip(store, btn_ctx,
+            "Right-click to show a MenuFlyout context menu");
+    }
+
     /* Re-attach footer items after the text inputs */
     xent_append_child(ctx, root, footer_div);
     xent_append_child(ctx, root, footer);
@@ -681,6 +848,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 
     /* ── Cleanup ─────────────────────────────────────────────────────── */
 
+    flux_menu_flyout_destroy(demo_menu);
+    flux_flyout_destroy(demo_flyout);
     flux_app_destroy(app);
     flux_node_store_destroy(store);
     xent_destroy_context(ctx);

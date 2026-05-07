@@ -16,10 +16,6 @@ extern "C"
 {
 #endif
 
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxTextBoxData — Control-specific data for FluxTextBox
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Configuration for a text input box.
  *
@@ -27,37 +23,31 @@ extern "C"
  * composition, and callbacks for text changes and submission.
  */
 typedef struct FluxTextBoxData {
-	char const    *content;           /**< Current text content (UTF-8) */
-	char const    *placeholder;       /**< Placeholder text when empty */
-	char const    *font_family;       /**< Font family (NULL = default) */
-	float          font_size;         /**< Font size in DIPs */
-	FluxColor      text_color;        /**< Text foreground color */
-	FluxColor      placeholder_color; /**< Placeholder text color */
-	FluxColor      selection_color;   /**< Selection highlight color */
-	uint32_t       cursor_position;   /**< Caret position in characters */
-	uint32_t       selection_start;   /**< Selection anchor position */
-	uint32_t       selection_end;     /**< Selection active end */
-	float          scroll_offset_x;   /**< Horizontal scroll offset */
-	uint32_t       max_length;        /**< Max characters (0 = unlimited) */
-	bool           enabled;           /**< Is text box interactive? */
-	bool           readonly;          /**< Read-only mode (selectable but not editable) */
-	bool           multiline;         /**< Allow newlines */
+	char const    *content;                                   /**< Current text content (UTF-8) */
+	char const    *placeholder;                               /**< Placeholder text when empty */
+	char const    *font_family;                               /**< Font family (NULL = default) */
+	float          font_size;                                 /**< Font size in DIPs */
+	FluxColor      text_color;                                /**< Text foreground color */
+	FluxColor      placeholder_color;                         /**< Placeholder text color */
+	FluxColor      selection_color;                           /**< Selection highlight color */
+	uint32_t       cursor_position;                           /**< Caret position in characters */
+	uint32_t       selection_start;                           /**< Selection anchor position */
+	uint32_t       selection_end;                             /**< Selection active end */
+	float          scroll_offset_x;                           /**< Horizontal scroll offset */
+	uint32_t       max_length;                                /**< Max characters (0 = unlimited) */
+	bool           enabled;                                   /**< Is text box interactive? */
+	bool           readonly;                                  /**< Read-only mode (selectable but not editable) */
+	bool           multiline;                                 /**< Allow newlines */
 
-	/* -------- IME composition state -------- */
-	wchar_t const *composition_text;   /**< Active IME composition string */
-	uint32_t       composition_length; /**< Length of composition (chars) */
-	uint32_t       composition_cursor; /**< Cursor position in composition */
+	wchar_t const *composition_text;                          /**< Active IME composition string */
+	uint32_t       composition_length;                        /**< Length of composition (chars) */
+	uint32_t       composition_cursor;                        /**< Cursor position in composition */
 
-	/* -------- Callbacks -------- */
-	void           (*on_change)(void *ctx, char const *text);
+	void           (*on_change)(void *ctx, char const *text); /**< Called after committed text changes. */
 	void          *on_change_ctx;
-	void           (*on_submit)(void *ctx); /**< Called on Enter key */
+	void           (*on_submit)(void *ctx);                   /**< Called on Enter key */
 	void          *on_submit_ctx;
 } FluxTextBoxData;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxPasswordBoxData — Control-specific data for FluxPasswordBox
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Configuration for a password input box.
@@ -82,21 +72,15 @@ typedef struct FluxPasswordBoxData {
 	wchar_t        mask_char;  /**< Mask character (default '●' U+25CF) */
 	bool           show_plain; /**< true = reveal password text */
 
-	/* -------- IME composition state -------- */
 	wchar_t const *composition_text;
 	uint32_t       composition_length;
 	uint32_t       composition_cursor;
 
-	/* -------- Callbacks -------- */
-	void           (*on_change)(void *ctx, char const *text);
+	void           (*on_change)(void *ctx, char const *text); /**< Called after committed text changes. */
 	void          *on_change_ctx;
-	void           (*on_submit)(void *ctx);
+	void           (*on_submit)(void *ctx);                   /**< Called on Enter key. */
 	void          *on_submit_ctx;
 } FluxPasswordBoxData;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   NumberBox enums
-   ═══════════════════════════════════════════════════════════════════════ */
 
 typedef enum FluxNBSpinPlacement
 {
@@ -110,10 +94,6 @@ typedef enum FluxNBValidation
 	FLUX_NB_VALIDATE_OVERWRITE = 0, /**< Reset to last valid on blur */
 	FLUX_NB_VALIDATE_DISABLED  = 1, /**< Allow any text */
 } FluxNBValidation;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxNumberBoxData — Control-specific data for FluxNumberBox
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Configuration for a numeric input box with optional spin buttons.
@@ -136,24 +116,21 @@ typedef struct FluxNumberBoxData {
 	bool           enabled;
 	bool           readonly;
 
-	/* -------- Numeric constraints -------- */
 	double         min_value;     /**< Minimum allowed value */
 	double         max_value;     /**< Maximum allowed value */
 	double         step;          /**< Increment/decrement step */
 	double         current_value; /**< Parsed numeric value */
 	bool           spin_enabled;  /**< Show spin buttons */
 
-	/* -------- IME composition state -------- */
 	wchar_t const *composition_text;
 	uint32_t       composition_length;
 	uint32_t       composition_cursor;
 
-	/* -------- Callbacks -------- */
-	void           (*on_change)(void *ctx, char const *text);
+	void           (*on_change)(void *ctx, char const *text);   /**< Called after committed text changes. */
 	void          *on_change_ctx;
-	void           (*on_value_change)(void *ctx, double value);
+	void           (*on_value_change)(void *ctx, double value); /**< Called when the parsed value changes. */
 	void          *on_value_change_ctx;
-	void           (*on_submit)(void *ctx);
+	void           (*on_submit)(void *ctx);                     /**< Called on Enter key. */
 	void          *on_submit_ctx;
 } FluxNumberBoxData;
 
@@ -161,4 +138,4 @@ typedef struct FluxNumberBoxData {
 }
 #endif
 
-#endif /* FLUX_TEXTBOX_DATA_H */
+#endif

@@ -55,16 +55,11 @@ extern "C"
 
 typedef struct FluxGraphics        FluxGraphics;
 
-/* Forward declarations for DirectX types */
 typedef struct ID2D1DeviceContext  ID2D1DeviceContext;
 typedef struct ID2D1Factory3       ID2D1Factory3;
 typedef struct IDWriteFactory3     IDWriteFactory3;
 typedef struct IDCompositionDevice IDCompositionDevice;
 typedef struct IDCompositionVisual IDCompositionVisual;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Lifecycle
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Create a graphics context.
@@ -94,6 +89,20 @@ void                               flux_graphics_destroy(FluxGraphics *gfx);
 HRESULT                            flux_graphics_attach(FluxGraphics *gfx, HWND hwnd);
 
 /**
+ * @brief Attach graphics to a window for DWM system backdrop compositing.
+ *
+ * Creates a swap chain bound directly to the HWND (not DirectComposition).
+ * This mode is required for DWM system backdrop (acrylic/mica) to show
+ * through transparent areas in the D2D content. Use this for popup windows
+ * that enable DWMWA_SYSTEMBACKDROP_TYPE.
+ *
+ * @param gfx Graphics context.
+ * @param hwnd Window handle.
+ * @return S_OK on success, or HRESULT error code.
+ */
+HRESULT                            flux_graphics_attach_for_backdrop(FluxGraphics *gfx, HWND hwnd);
+
+/**
  * @brief Resize the swap chain to match window size.
  *
  * Call this in response to WM_SIZE.
@@ -104,10 +113,6 @@ HRESULT                            flux_graphics_attach(FluxGraphics *gfx, HWND 
  * @return S_OK on success, or HRESULT error code.
  */
 HRESULT                            flux_graphics_resize(FluxGraphics *gfx, int width, int height);
-
-/* ═══════════════════════════════════════════════════════════════════════
-   DPI Management
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Set the DPI for rendering.
@@ -126,10 +131,6 @@ void                               flux_graphics_set_dpi(FluxGraphics *gfx, Flux
  * @return Current DPI information.
  */
 FluxDpiInfo                        flux_graphics_get_dpi(FluxGraphics const *gfx);
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Frame Rendering
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Begin a render frame.
@@ -177,10 +178,6 @@ void                               flux_graphics_clear(FluxGraphics *gfx, FluxCo
  */
 void                               flux_graphics_commit(FluxGraphics *gfx);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Size Queries
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Get the render target size in DIPs.
  * @param gfx Graphics context.
@@ -194,10 +191,6 @@ FluxSize                           flux_graphics_get_target_size(FluxGraphics co
  * @return Client size in pixels.
  */
 FluxSize                           flux_graphics_get_client_pixel_size(FluxGraphics const *gfx);
-
-/* ═══════════════════════════════════════════════════════════════════════
-   DirectX Resource Access
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Get the D2D device context.
@@ -237,10 +230,6 @@ IDCompositionDevice               *flux_graphics_get_dcomp_device(FluxGraphics *
  */
 IDCompositionVisual               *flux_graphics_get_root_visual(FluxGraphics *gfx);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Visual Management
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Add an overlay visual to the composition tree.
  *
@@ -248,9 +237,16 @@ IDCompositionVisual               *flux_graphics_get_root_visual(FluxGraphics *g
  * Used for system compositor animations (e.g., Connected Animations).
  *
  * @param gfx Graphics context.
- * @param visual Visual to add (takes ownership; will be Released on remove).
+ * @param visual Visual to add.
  */
 void                               flux_graphics_add_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual);
+
+/**
+ * @brief Remove an overlay visual from the composition tree.
+ * @param gfx Graphics context.
+ * @param visual Visual previously added with flux_graphics_add_overlay_visual().
+ */
+void                               flux_graphics_remove_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual);
 
 /**
  * @brief Request a redraw on the next frame.
@@ -277,10 +273,6 @@ typedef void                       (*FluxRedrawCallback)(void *ctx);
  */
 void    flux_graphics_set_redraw_callback(FluxGraphics *gfx, FluxRedrawCallback cb, void *ctx);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Device Management
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Check if the D3D device is still valid.
  *
@@ -305,4 +297,4 @@ HRESULT flux_graphics_handle_device_change(FluxGraphics *gfx);
 }
 #endif
 
-#endif /* FLUX_GRAPHICS_H */
+#endif

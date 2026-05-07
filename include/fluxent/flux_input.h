@@ -20,10 +20,6 @@ extern "C"
 {
 #endif
 
-/* FluxPointerType / FluxPointerEvent / FluxPointerEventKind / FluxPointerButton
- * are declared in flux_types.h so flux_window.h and flux_input.h share them
- * without mutual inclusion. */
-
 /** @brief Result of a hit-test operation. */
 typedef struct FluxHitResult {
 	XentNodeId    node;   /**< The hit node ID. */
@@ -34,79 +30,65 @@ typedef struct FluxHitResult {
 
 typedef struct FluxInput FluxInput;
 
+/** @brief Create an input router for a layout context and node store. */
 FluxInput               *flux_input_create(XentContext *ctx, FluxNodeStore *store);
+/** @brief Destroy an input router. */
 void                     flux_input_destroy(FluxInput *input);
 
+/** @brief Hit-test a point in root-local DIPs. */
 FluxHitResult            flux_input_hit_test(FluxInput *input, XentNodeId root, float px, float py);
 
-/* Single entry for every pointer event.  The router decides:
- *  – which control (if any) captures the press,
- *  – whether a touch contact is escalated to scroll-pan,
- *  – whether right-click / long-press dispatches to on_context_menu,
- *  – how wheel deltas are routed to scroll containers,
- *  – and which node receives hover.
- * Controls never see this struct directly; they still receive their
- * typed callbacks (on_pointer_down/up/move/wheel/context_menu).          */
+/** @brief Dispatch one unified pointer event through hit-testing and capture logic. */
 void                     flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev);
 
+/** @brief Dispatch a key-down event to the focused node. */
 void                     flux_input_key_down(FluxInput *input, unsigned int vk);
+/** @brief Dispatch character input to the focused node. */
 void                     flux_input_char(FluxInput *input, wchar_t ch);
 
-/* IME composition text forwarding (called from WM_IME_COMPOSITION) */
+/** @brief Forward IME composition text to the focused node. */
 void            flux_input_ime_composition(FluxInput *input, wchar_t const *text, uint32_t length, uint32_t cursor);
+/** @brief End the current IME composition. */
 void            flux_input_ime_end(FluxInput *input);
 
-/* Returns the click count from the last pointer_down (1=single, 2=double, 3+=triple) */
+/** @brief Return the click count from the last pointer down. */
 int             flux_input_get_click_count(FluxInput const *input);
 
+/** @brief Return the currently focused node. */
 XentNodeId      flux_input_get_focused(FluxInput const *input);
+/** @brief Return the currently hovered node. */
 XentNodeId      flux_input_get_hovered(FluxInput const *input);
+/** @brief Return the currently pressed node. */
 XentNodeId      flux_input_get_pressed(FluxInput const *input);
 
-/* Nearest scrollable ancestor of the most recent touch press, or
- * XENT_NODE_INVALID if the last press wasn't touch / nothing scrollable
- * was under it.  Used by the DManip integration to hand off the pointer
- * contact to the right viewport. */
+/** @brief Return the scrollable ancestor selected for touch-pan promotion. */
 XentNodeId      flux_input_get_touch_pan_target(FluxInput const *input);
 
-/* Abandon the in-progress manual touch-pan.  Call this after successfully
- * handing the contact to DirectManipulation so subsequent MOVE events
- * don't also translate scroll_x/y by hand (DManip is now authoritative). */
+/** @brief Clear any in-progress touch-pan state. */
 void            flux_input_clear_touch_pan(FluxInput *input);
 
-/* Read-and-clear the "touch-pan just crossed the slop threshold" edge
- * flag.  app_pointer polls this after every MOVE dispatch — a true
- * return means "the inner control was just canceled and a pan started",
- * which is the right moment to hand the pointer contact off to
- * DirectManipulation. */
+/** @brief Read and clear the touch-pan promotion edge flag. */
 bool            flux_input_take_pan_promoted(FluxInput *input);
 
-/* Pointer device type of the most recent pointer event.
- * Controls / app code can branch on this to apply touch-specific behavior
- * (e.g. suppress tooltips, skip hover visuals, enlarge hit targets). */
+/** @brief Return the device type of the most recent pointer event. */
 FluxPointerType flux_input_get_pointer_type(FluxInput const *input);
 
-/* Pointer id of the most recent pointer event (0 if synthesized /
- * unknown).  DManip integration reads this to hand off the contact. */
+/** @brief Return the id of the most recent pointer event. */
 uint32_t        flux_input_get_pointer_id(FluxInput const *input);
 
-/* ---- Focus Navigation (keyboard Tab/Arrow/Enter/Escape) ---- */
-
-/** Tab key: cycle focus among all visible focusable nodes by tab_index order.
- *  shift=true → reverse direction (Shift+Tab). */
+/** @brief Cycle focus among all visible focusable nodes by tab order. */
 void            flux_input_tab(FluxInput *input, XentNodeId root, bool shift);
 
-/** Arrow key: move focus among siblings in the given direction.
- *  direction: VK_LEFT=0x25, VK_UP=0x26, VK_RIGHT=0x27, VK_DOWN=0x28 */
+/** @brief Move focus among siblings in the given arrow-key direction. */
 void            flux_input_arrow(FluxInput *input, XentNodeId root, int direction);
 
-/** Enter/Space: trigger on_click of the currently focused node. */
+/** @brief Trigger the focused node's activation behavior. */
 void            flux_input_activate(FluxInput *input);
 
-/** Escape: blur the current focus (or dismiss context, handled by caller). */
+/** @brief Blur the current focus. */
 void            flux_input_escape(FluxInput *input);
 
-/** Set focus to a specific node programmatically. */
+/** @brief Set focus to a specific node programmatically. */
 void            flux_input_set_focus(FluxInput *input, XentNodeId node);
 
 #ifdef __cplusplus

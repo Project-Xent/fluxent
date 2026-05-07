@@ -1,65 +1,40 @@
-/* ══════════════════════════════════════════════════════════════════════════
- *  flux_flyout.c — WinUI 3 FlyoutPresenter, 1:1 replica in C+D2D
- *  ------------------------------------------------------------------------
- *  Source of truth:
- *      fluxent-legacy/dev/CommonStyles/FlyoutPresenter_themeresources.xaml
- *
- *  <Style x:Key="DefaultFlyoutPresenterStyle" TargetType="FlyoutPresenter">
- *      Background      = AcrylicInAppFillColorDefaultBrush
- *      BorderBrush     = SurfaceStrokeColorFlyoutBrush
- *      BorderThickness = 1   (FlyoutBorderThemeThickness)
- *      Padding         = 16,15,16,17   (FlyoutContentPadding)
- *      MinWidth/Height = FlyoutThemeMinWidth / FlyoutThemeMinHeight
- *      CornerRadius    = OverlayCornerRadius  (8)
- *      Template:
- *          <Border ... BackgroundSizing="InnerBorderEdge">
- *              <ScrollViewer><ContentPresenter Margin="{Padding}"/></ScrollViewer>
- *          </Border>
- *
- *  Entrance transition is supplied by the FluxPopup layer (PopupTheme-
- *  Transition: 150 ms fade + 4 DIP Y-translate, ease-out cubic).
- * ══════════════════════════════════════════════════════════════════════════ */
-
 #ifndef COBJMACROS
   #define COBJMACROS
 #endif
 
 #include "fluxent/flux_flyout.h"
 #include "fluxent/flux_graphics.h"
-#include "flux_render_internal.h"
+#include "render/flux_render_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <windows.h>
 
-/* ── Private struct ──────────────────────────────────────────────── */
+typedef struct {
+	FluxThemeColors const *colors;  /* not owned — static fallback */
+	FluxThemeManager      *manager; /* not owned — preferred, auto-updates */
+	bool                   is_dark;
+} ThemeRef;
 
 struct FluxFlyout {
 	FluxPopup               *popup;
 	FluxWindow              *owner;
 
-	FluxTextRenderer        *text;  /* not owned */
-	FluxThemeColors const   *theme; /* not owned */
-	bool                     is_dark;
+	FluxTextRenderer        *text; /* not owned */
+	ThemeRef                 theme;
 
-	/* D2D brush created on the popup's device context (owned) */
-	ID2D1SolidColorBrush    *brush;
+	ID2D1SolidColorBrush    *brush; /* owned */
 
-	/* Desired content (interior) size — padding & border added on top */
 	float                    content_w;
 	float                    content_h;
 
-	/* Custom interior painter */
 	FluxFlyoutPaintCallback  paint_cb;
 	void                    *paint_ctx;
 
-	/* Dismiss handler mirrored from popup */
 	FluxPopupDismissCallback dismiss_cb;
 	void                    *dismiss_ctx;
 };
-
-/* ── Popup paint thunk ───────────────────────────────────────────── */
 
 static void ensure_brush(FluxFlyout *fly, ID2D1DeviceContext *d2d) {
 	if (fly->brush || !d2d) return;
@@ -75,26 +50,64 @@ static void ensure_brush(FluxFlyout *fly, ID2D1DeviceContext *d2d) {
 	ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &bp, &fly->brush);
 }
 
-/* Resolve FlyoutPresenter brushes exactly as per WinUI theme. */
-static void resolve_card_colors(FluxFlyout const *fly, FluxColor *out_bg, FluxColor *out_border) {
-	/* FlyoutPresenterBackground = AcrylicInAppFillColorDefaultBrush.
-	 * Its exact FallbackColor (Materials/Acrylic/AcrylicBrush_themeresources.xaml):
-	 *   Light : #F9F9F9    Dark : #2C2C2C   (both opaque).
-	 *
-	 * When the Win11 DWM transient-acrylic backdrop is active on the
-	 * popup HWND we emit a fully-transparent fill so the system material
-	 * shows through — matching the acrylic look in the WinUI Gallery.  */
+static void flyout_resolve_theme(FluxFlyout *fly, FluxThemeColors const **out_theme, bool *out_is_dark) {
+	if (fly->theme.manager) {
+		*out_theme      = flux_theme_colors(fly->theme.manager);
+		FluxThemeMode m = flux_theme_get_mode(fly->theme.manager);
+		*out_is_dark    = (m == FLUX_THEME_DARK) || (m == FLUX_THEME_SYSTEM && flux_theme_system_is_dark());
+	}
+	else {
+		*out_theme   = fly->theme.colors;
+		*out_is_dark = fly->theme.is_dark;
+	}
+}
+
+static void resolve_card_colors(FluxFlyout const *fly, bool is_dark, FluxColor *out_bg, FluxColor *out_border) {
+	/* AcrylicInAppFillColorDefaultBrush FallbackColor: #F9F9F9 light / #2C2C2C dark.
+	 * If DWM transient-acrylic is active, emit fully-transparent so the system material shows through. */
 	FluxColor bg;
 	if (flux_popup_has_system_backdrop(fly->popup)) bg = flux_color_rgba(0, 0, 0, 0);
-	else bg = fly->is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
+	else bg = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
 
-	/* SurfaceStrokeColorFlyoutBrush (exact WinUI fallback — this token
-	 * does NOT alias ControlStrokeColorDefault):
-	 *   Dark:  #33000000    Light: #0F000000                             */
-	FluxColor border = fly->is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
+	/* SurfaceStrokeColorFlyoutBrush (not ControlStrokeColorDefault): dark #33000000 / light #0F000000. */
+	FluxColor border = is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
 
 	*out_bg          = bg;
 	*out_border      = border;
+}
+
+static FluxRenderContext
+flyout_render_context(FluxFlyout *fly, ID2D1DeviceContext *d2d, FluxThemeColors const *theme, bool is_dark) {
+	FluxRenderContext rc;
+	memset(&rc, 0, sizeof(rc));
+	rc.d2d     = d2d;
+	rc.brush   = fly->brush;
+	rc.text    = fly->text;
+	rc.theme   = theme;
+	rc.dpi     = flux_window_dpi(fly->owner);
+	rc.is_dark = is_dark;
+	return rc;
+}
+
+static FluxRect flyout_bounds(FluxFlyout const *fly) {
+	float outer_w = fly->content_w + FLUX_FLYOUT_PAD_LEFT + FLUX_FLYOUT_PAD_RIGHT + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
+	float outer_h = fly->content_h + FLUX_FLYOUT_PAD_TOP + FLUX_FLYOUT_PAD_BOTTOM + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
+	return (FluxRect) {0.0f, 0.0f, outer_w, outer_h};
+}
+
+static void flyout_draw_border(FluxRenderContext const *rc, FluxRect const *bounds, FluxColor border) {
+	float    half  = FLUX_FLYOUT_BORDER_WIDTH * 0.5f;
+	FluxRect inset = {bounds->x + half, bounds->y + half, bounds->w - half * 2.0f, bounds->h - half * 2.0f};
+	flux_draw_rounded_rect(rc, &inset, FLUX_FLYOUT_CORNER_RADIUS, border, FLUX_FLYOUT_BORDER_WIDTH);
+}
+
+static void flyout_paint_content(FluxFlyout *fly) {
+	if (!fly->paint_cb) return;
+
+	FluxRect content_rect = {
+	  FLUX_FLYOUT_BORDER_WIDTH + FLUX_FLYOUT_PAD_LEFT, FLUX_FLYOUT_BORDER_WIDTH + FLUX_FLYOUT_PAD_TOP, fly->content_w,
+	  fly->content_h};
+	fly->paint_cb(fly->paint_ctx, fly, &content_rect);
 }
 
 static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
@@ -110,48 +123,19 @@ static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
 	ensure_brush(fly, d2d);
 	if (!fly->brush) return;
 
-	/* ---- Card geometry ---- */
-	float     outer_w = fly->content_w + FLUX_FLYOUT_PAD_LEFT + FLUX_FLYOUT_PAD_RIGHT + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
-	float     outer_h = fly->content_h + FLUX_FLYOUT_PAD_TOP + FLUX_FLYOUT_PAD_BOTTOM + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
+	FluxThemeColors const *theme   = NULL;
+	bool                   is_dark = false;
+	flyout_resolve_theme(fly, &theme, &is_dark);
 
-	FluxRect  bounds  = {0.0f, 0.0f, outer_w, outer_h};
-
+	FluxRect  bounds = flyout_bounds(fly);
 	FluxColor bg, border;
-	resolve_card_colors(fly, &bg, &border);
+	resolve_card_colors(fly, is_dark, &bg, &border);
+	FluxRenderContext rc = flyout_render_context(fly, d2d, theme, is_dark);
 
-	/* Build a render context so we can reuse the standard rounded-rect
-	 * helpers from flux_render_internal.h.                              */
-	FluxRenderContext rc;
-	memset(&rc, 0, sizeof(rc));
-	rc.d2d     = d2d;
-	rc.brush   = fly->brush;
-	rc.text    = fly->text;
-	rc.theme   = fly->theme;
-	rc.dpi     = flux_window_dpi(fly->owner);
-	rc.is_dark = fly->is_dark;
-
-	/* 1. Card background — fills the full rounded rect (BackgroundSizing=
-	 *    InnerBorderEdge means the bg still reaches the outer radius,
-	 *    while the border is drawn *inside* at half-width inset).       */
 	flux_fill_rounded_rect(&rc, &bounds, FLUX_FLYOUT_CORNER_RADIUS, bg);
-
-	/* 2. 1-px hairline border, inset by half the border width.          */
-	{
-		float    half  = FLUX_FLYOUT_BORDER_WIDTH * 0.5f;
-		FluxRect inset = {bounds.x + half, bounds.y + half, bounds.w - half * 2.0f, bounds.h - half * 2.0f};
-		flux_draw_rounded_rect(&rc, &inset, FLUX_FLYOUT_CORNER_RADIUS, border, FLUX_FLYOUT_BORDER_WIDTH);
-	}
-
-		/* 3. Interior (ContentPresenter with Margin = Padding).             */
-		if (fly->paint_cb) {
-			FluxRect content_rect = {
-			  FLUX_FLYOUT_BORDER_WIDTH + FLUX_FLYOUT_PAD_LEFT, FLUX_FLYOUT_BORDER_WIDTH + FLUX_FLYOUT_PAD_TOP,
-			  fly->content_w, fly->content_h};
-			fly->paint_cb(fly->paint_ctx, fly, &content_rect);
-		}
+	flyout_draw_border(&rc, &bounds, border);
+	flyout_paint_content(fly);
 }
-
-/* ── Lifecycle ───────────────────────────────────────────────────── */
 
 FluxFlyout *flux_flyout_create(FluxWindow *owner) {
 	if (!owner) return NULL;
@@ -164,10 +148,10 @@ FluxFlyout *flux_flyout_create(FluxWindow *owner) {
 	fly->content_h = 100.0f;
 
 	fly->popup     = flux_popup_create(owner);
-		if (!fly->popup) {
-			free(fly);
-			return NULL;
-		}
+	if (!fly->popup) {
+		free(fly);
+		return NULL;
+	}
 
 	flux_popup_set_dismiss_on_outside(fly->popup, true);
 	flux_popup_set_paint_callback(fly->popup, flyout_paint_thunk, fly);
@@ -180,16 +164,14 @@ FluxFlyout *flux_flyout_create(FluxWindow *owner) {
 void flux_flyout_destroy(FluxFlyout *fly) {
 	if (!fly) return;
 
-		if (fly->brush) {
-			ID2D1SolidColorBrush_Release(fly->brush);
-			fly->brush = NULL;
-		}
+	if (fly->brush) {
+		ID2D1SolidColorBrush_Release(fly->brush);
+		fly->brush = NULL;
+	}
 	if (fly->popup) flux_popup_destroy(fly->popup);
 
 	free(fly);
 }
-
-/* ── Configuration ───────────────────────────────────────────────── */
 
 void flux_flyout_set_text_renderer(FluxFlyout *fly, FluxTextRenderer *tr) {
 	if (fly) fly->text = tr;
@@ -197,8 +179,18 @@ void flux_flyout_set_text_renderer(FluxFlyout *fly, FluxTextRenderer *tr) {
 
 void flux_flyout_set_theme(FluxFlyout *fly, FluxThemeColors const *theme, bool is_dark) {
 	if (!fly) return;
-	fly->theme   = theme;
-	fly->is_dark = is_dark;
+	fly->theme.colors  = theme;
+	fly->theme.is_dark = is_dark;
+	fly->theme.manager = NULL;
+}
+
+void flux_flyout_set_theme_manager(FluxFlyout *fly, FluxThemeManager *tm) {
+	if (!fly) return;
+	fly->theme.manager = tm;
+	if (tm) {
+		fly->theme.colors  = NULL;
+		fly->theme.is_dark = false;
+	}
 }
 
 void flux_flyout_set_content_size(FluxFlyout *fly, float width, float height) {
@@ -206,7 +198,6 @@ void flux_flyout_set_content_size(FluxFlyout *fly, float width, float height) {
 	fly->content_w = (width > 1.0f) ? width : 1.0f;
 	fly->content_h = (height > 1.0f) ? height : 1.0f;
 
-	/* Propagate the *outer* size (incl. padding + border) to the popup.  */
 	float outer_w  = fly->content_w + FLUX_FLYOUT_PAD_LEFT + FLUX_FLYOUT_PAD_RIGHT + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
 	float outer_h  = fly->content_h + FLUX_FLYOUT_PAD_TOP + FLUX_FLYOUT_PAD_BOTTOM + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
 	flux_popup_set_size(fly->popup, outer_w, outer_h);
@@ -225,18 +216,17 @@ void flux_flyout_set_dismiss_callback(FluxFlyout *fly, FluxPopupDismissCallback 
 	flux_popup_set_dismiss_callback(fly->popup, cb, user_ctx);
 }
 
-/* ── Show / Dismiss ──────────────────────────────────────────────── */
-
 void flux_flyout_show(FluxFlyout *fly, FluxRect anchor, FluxPlacement placement) {
 	if (!fly) return;
 
-	/* Make sure the popup is sized to the current content+padding.       */
 	flux_flyout_set_content_size(fly, fly->content_w, fly->content_h);
 
-	/* Request the Win11 DWM transient-acrylic backdrop — silently a
-	 * no-op on older Windows, in which case we paint the opaque
-	 * AcrylicInAppFillColorDefault fallback color instead.              */
-	flux_popup_enable_system_backdrop(fly->popup, fly->is_dark);
+	FluxThemeColors const *theme   = NULL;
+	bool                   is_dark = false;
+	flyout_resolve_theme(fly, &theme, &is_dark);
+
+	/* Request Win11 DWM transient-acrylic; no-op on older Windows, falls back to opaque fill. */
+	flux_popup_enable_system_backdrop(fly->popup, is_dark);
 
 	flux_popup_show(fly->popup, anchor, placement);
 }
@@ -248,16 +238,14 @@ void flux_flyout_dismiss(FluxFlyout *fly) {
 
 bool          flux_flyout_is_visible(FluxFlyout const *fly) { return fly ? flux_popup_is_visible(fly->popup) : false; }
 
-/* ── Accessors ───────────────────────────────────────────────────── */
-
 FluxGraphics *flux_flyout_get_graphics(FluxFlyout *fly) { return fly ? flux_popup_get_graphics(fly->popup) : NULL; }
 
 FluxWindow   *flux_flyout_get_owner(FluxFlyout *fly) { return fly ? fly->owner : NULL; }
 
 FluxPopup    *flux_flyout_get_popup(FluxFlyout *fly) { return fly ? fly->popup : NULL; }
 
-FluxThemeColors const *flux_flyout_get_theme(FluxFlyout const *fly) { return fly ? fly->theme : NULL; }
+FluxThemeColors const *flux_flyout_get_theme(FluxFlyout const *fly) { return fly ? fly->theme.colors : NULL; }
 
-bool                   flux_flyout_is_dark(FluxFlyout const *fly) { return fly ? fly->is_dark : false; }
+bool                   flux_flyout_is_dark(FluxFlyout const *fly) { return fly ? fly->theme.is_dark : false; }
 
 FluxTextRenderer      *flux_flyout_get_text_renderer(FluxFlyout *fly) { return fly ? fly->text : NULL; }

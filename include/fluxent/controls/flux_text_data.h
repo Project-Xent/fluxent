@@ -15,10 +15,6 @@ extern "C"
 {
 #endif
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Text alignment / styling enums
-   ═══════════════════════════════════════════════════════════════════════ */
-
 typedef enum FluxTextAlign
 {
 	FLUX_TEXT_LEFT,
@@ -47,10 +43,6 @@ typedef enum FluxFontWeight
 	FLUX_FONT_BLACK       = 900,
 } FluxFontWeight;
 
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxTextData — Control-specific data for FluxText
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Configuration for a static text label.
  *
@@ -74,4 +66,4 @@ typedef struct FluxTextData {
 }
 #endif
 
-#endif /* FLUX_TEXT_DATA_H */
+#endif

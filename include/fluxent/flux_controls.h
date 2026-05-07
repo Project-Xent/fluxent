@@ -18,15 +18,31 @@
 
 typedef struct FluxFlyout     FluxFlyout;
 typedef struct FluxMenuFlyout FluxMenuFlyout;
+typedef struct FluxWindow     FluxWindow;
+
+/** @brief Full flyout binding parameters. */
+typedef struct FluxFlyoutBindingInfo {
+	FluxNodeStore *store;
+	XentNodeId     id;
+	FluxFlyout    *flyout;
+	FluxPlacement  placement;
+	XentContext   *xctx;
+	FluxWindow    *window;
+} FluxFlyoutBindingInfo;
+
+/** @brief Full context-menu flyout binding parameters. */
+typedef struct FluxContextFlyoutBindingInfo {
+	FluxNodeStore  *store;
+	XentNodeId      id;
+	FluxMenuFlyout *menu;
+	XentContext    *xctx;
+	FluxWindow     *window;
+} FluxContextFlyoutBindingInfo;
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Button
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Set the button's text label. */
 void flux_button_set_label(FluxNodeStore *store, XentNodeId id, char const *label);
@@ -40,10 +56,6 @@ void flux_button_set_style(FluxNodeStore *store, XentNodeId id, FluxButtonStyle 
 /** @brief Enable or disable the button. Disabled buttons ignore input. */
 void flux_button_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Checkbox
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Set the checkbox's text label. */
 void flux_checkbox_set_label(FluxNodeStore *store, XentNodeId id, char const *label);
 
@@ -53,10 +65,6 @@ void flux_checkbox_set_state(FluxNodeStore *store, XentNodeId id, FluxCheckState
 /** @brief Enable or disable the checkbox. */
 void flux_checkbox_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Slider
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Set the slider's current value. Clamped to [min, max]. */
 void flux_slider_set_value(FluxNodeStore *store, XentNodeId id, float value);
 
@@ -65,10 +73,6 @@ void flux_slider_set_range(FluxNodeStore *store, XentNodeId id, float min_val, f
 
 /** @brief Enable or disable the slider. */
 void flux_slider_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Text (TextBlock)
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Set the text content (UTF-8). */
 void flux_text_set_content(FluxNodeStore *store, XentNodeId id, char const *content);
@@ -85,10 +89,6 @@ void flux_text_set_alignment(FluxNodeStore *store, XentNodeId id, FluxTextAlign 
 /** @brief Set the font weight (regular, semi-bold, bold). */
 void flux_text_set_weight(FluxNodeStore *store, XentNodeId id, FluxFontWeight weight);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   TextBox
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Set the text content (UTF-8). Replaces existing text. */
 void flux_textbox_set_content(FluxNodeStore *store, XentNodeId id, char const *content);
 
@@ -97,10 +97,6 @@ void flux_textbox_set_placeholder(FluxNodeStore *store, XentNodeId id, char cons
 
 /** @brief Enable or disable the text box. */
 void flux_textbox_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   ProgressBar
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Set the current progress value. */
 void flux_progress_set_value(FluxNodeStore *store, XentNodeId id, float value);
@@ -111,16 +107,8 @@ void flux_progress_set_max(FluxNodeStore *store, XentNodeId id, float max_val);
 /** @brief Enable indeterminate mode (animated, no specific progress). */
 void flux_progress_set_indeterminate(FluxNodeStore *store, XentNodeId id, bool indeterminate);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   ScrollViewer
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Set the scroll offset (x, y) in DIPs. */
 void flux_scroll_set_offset(FluxNodeStore *store, XentNodeId id, float x, float y);
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Common Visual Properties (any node)
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Set the node's background fill color. */
 void flux_node_set_background(FluxNodeStore *store, XentNodeId id, FluxColor color);
@@ -134,10 +122,6 @@ void flux_node_set_corner_radius(FluxNodeStore *store, XentNodeId id, float radi
 /** @brief Set the overall opacity [0.0, 1.0]. */
 void flux_node_set_opacity(FluxNodeStore *store, XentNodeId id, float opacity);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   PasswordBox
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Set the password content (UTF-8). */
 void flux_password_set_content(FluxNodeStore *store, XentNodeId id, char const *content);
 
@@ -149,10 +133,6 @@ void flux_password_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled
 
 /** @brief Show or hide the password in plain text (reveal mode). */
 void flux_password_set_reveal(FluxNodeStore *store, XentNodeId id, bool show_plain);
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   NumberBox
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Set the numeric value. */
 void flux_numberbox_set_value(FluxNodeStore *store, XentNodeId id, double value);
@@ -169,10 +149,6 @@ void flux_numberbox_set_enabled(FluxNodeStore *store, XentNodeId id, bool enable
 /** @brief Show or hide the spin buttons (+/-). */
 void flux_numberbox_set_spin_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   HyperlinkButton
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Set the hyperlink's display text. */
 void flux_hyperlink_set_label(FluxNodeStore *store, XentNodeId id, char const *label);
 
@@ -181,10 +157,6 @@ void flux_hyperlink_set_url(FluxNodeStore *store, XentNodeId id, char const *url
 
 /** @brief Enable or disable the hyperlink. */
 void flux_hyperlink_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   RepeatButton
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Set the button's text label. */
 void flux_repeat_button_set_label(FluxNodeStore *store, XentNodeId id, char const *label);
@@ -205,10 +177,6 @@ void flux_repeat_button_set_enabled(FluxNodeStore *store, XentNodeId id, bool en
  */
 void flux_repeat_button_set_timing(FluxNodeStore *store, XentNodeId id, uint32_t delay_ms, uint32_t interval_ms);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   ProgressRing
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Set the current progress value. */
 void flux_progress_ring_set_value(FluxNodeStore *store, XentNodeId id, float value);
 
@@ -217,10 +185,6 @@ void flux_progress_ring_set_max(FluxNodeStore *store, XentNodeId id, float max_v
 
 /** @brief Enable indeterminate mode (spinning animation). */
 void flux_progress_ring_set_indeterminate(FluxNodeStore *store, XentNodeId id, bool indeterminate);
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   InfoBadge
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /** @brief Set the badge display mode (dot, icon, or value). */
 void flux_info_badge_set_mode(FluxNodeStore *store, XentNodeId id, FluxInfoBadgeMode mode);
@@ -231,16 +195,8 @@ void flux_info_badge_set_value(FluxNodeStore *store, XentNodeId id, int32_t valu
 /** @brief Set the icon name (for icon mode). */
 void flux_info_badge_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name);
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Tooltip
-   ═══════════════════════════════════════════════════════════════════════════ */
-
 /** @brief Attach a tooltip to any node. Shown on hover after a delay. */
 void flux_node_set_tooltip(FluxNodeStore *store, XentNodeId id, char const *text);
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Flyout / Context Menu
-   ═══════════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Attach a flyout to a node's click handler.
@@ -255,21 +211,16 @@ void flux_node_set_flyout(FluxNodeStore *store, XentNodeId id, FluxFlyout *flyou
  * @param xctx   Layout context for anchor position lookup.
  * @param window Window for screen coordinate conversion.
  */
-void flux_node_set_flyout_ex(
-  FluxNodeStore *store, XentNodeId id, FluxFlyout *flyout, FluxPlacement placement, XentContext *xctx,
-  FluxWindow *window
-);
+void flux_node_set_flyout_ex(FluxFlyoutBindingInfo const *info);
 
 /** @brief Attach a context menu shown on right-click / long-press. */
 void flux_node_set_context_flyout(FluxNodeStore *store, XentNodeId id, FluxMenuFlyout *menu);
 
 /** @brief Attach a context menu with explicit context references. */
-void flux_node_set_context_flyout_ex(
-  FluxNodeStore *store, XentNodeId id, FluxMenuFlyout *menu, XentContext *xctx, FluxWindow *window
-);
+void flux_node_set_context_flyout_ex(FluxContextFlyoutBindingInfo const *info);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FLUX_CONTROLS_H */
+#endif

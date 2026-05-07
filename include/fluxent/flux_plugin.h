@@ -23,44 +23,43 @@ typedef struct FluxControlState   FluxControlState;
 
 /** @brief Renderer plugin function table. */
 typedef struct FluxPlugin {
-	/* Called during the main render phase for the registered control type.
-	 * Return true if the plugin handled rendering (skip default renderer). */
+	/**
+	 * @brief Render callback for the registered control type.
+	 * @return true when the plugin handled rendering and the default renderer should be skipped.
+	 */
 	bool (*render)(
 	  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds,
 	  FluxControlState const *state, void *userdata
 	);
 
-	/* Called once per frame with delta time (optional, may be NULL). */
+	/** @brief Optional frame update callback. */
 	void  (*update)(float dt, void *userdata);
 
-	/* Cleanup when the plugin is unregistered or the registry is destroyed. */
+	/** @brief Optional cleanup callback. */
 	void  (*destroy)(void *userdata);
 
-	/* Opaque pointer passed to all callbacks. */
+	/** @brief Opaque pointer passed to all callbacks. */
 	void *userdata;
 } FluxPlugin;
 
-/*
- * Plugin registry — maps string type keys to FluxPlugin entries.
- * Typically one per application, owned by FluxApp or FluxEngine.
- */
+/** @brief Registry mapping string type keys to renderer plugins. */
 typedef struct FluxPluginRegistry FluxPluginRegistry;
 
+/** @brief Create a plugin registry. */
 FluxPluginRegistry               *flux_plugin_registry_create(void);
+/** @brief Destroy a plugin registry and its registered plugins. */
 void                              flux_plugin_registry_destroy(FluxPluginRegistry *reg);
 
-/* Register a plugin under a type key (e.g. "checkbox", "lottie").
- * Takes ownership — destroy callback will be called on removal/cleanup.
- * If a plugin with the same key exists, the old one is destroyed first. */
+/** @brief Register a plugin under a type key, replacing any existing plugin for that key. */
 void                              flux_plugin_register(FluxPluginRegistry *reg, char const *type, FluxPlugin plugin);
 
-/* Remove a plugin by key. Calls destroy if set. */
+/** @brief Remove a plugin by key. */
 void                              flux_plugin_unregister(FluxPluginRegistry *reg, char const *type);
 
-/* Look up a plugin by key. Returns NULL if not found. */
+/** @brief Look up a plugin by key. */
 FluxPlugin const                 *flux_plugin_get(FluxPluginRegistry const *reg, char const *type);
 
-/* Call update(dt) on all registered plugins that have an update callback. */
+/** @brief Call update callbacks on all registered plugins that define one. */
 void                              flux_plugin_update_all(FluxPluginRegistry *reg, float dt);
 
 #ifdef __cplusplus

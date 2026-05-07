@@ -14,10 +14,6 @@ extern "C"
 {
 #endif
 
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxProgressData — Control-specific data for FluxProgressBar
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Configuration for a linear progress bar.
  *
@@ -31,10 +27,6 @@ typedef struct FluxProgressData {
 	FluxColor track_color;   /**< Background track color */
 	bool      indeterminate; /**< Show indeterminate animation */
 } FluxProgressData;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxProgressRingData — Control-specific data for FluxProgressRing
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Configuration for a circular progress ring.
@@ -53,4 +45,4 @@ typedef struct FluxProgressRingData {
 }
 #endif
 
-#endif /* FLUX_PROGRESS_DATA_H */
+#endif

@@ -29,4 +29,4 @@
 #include "controls/flux_image_data.h"
 #include "controls/flux_info_badge_data.h"
 
-#endif /* FLUX_COMPONENT_DATA_H */
+#endif

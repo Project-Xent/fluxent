@@ -10,10 +10,6 @@ extern "C"
 {
 #endif
 
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxImageData — Control-specific data for FluxImage
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Configuration for an image display control.
  *
@@ -30,4 +26,4 @@ typedef struct FluxImageData {
 }
 #endif
 
-#endif /* FLUX_IMAGE_DATA_H */
+#endif

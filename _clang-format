@@ -83,7 +83,7 @@ BraceWrapping:
   BeforeCatch: true
   BeforeElse: true
   BeforeWhile: true
-  IndentBraces: true
+  IndentBraces: false
   SplitEmptyRecord: false
   SplitEmptyNamespace: false
 BracedInitializerIndentWidth: 2

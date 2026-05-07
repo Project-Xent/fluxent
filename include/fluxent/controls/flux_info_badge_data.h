@@ -14,20 +14,13 @@ extern "C"
 {
 #endif
 
-/* ═══════════════════════════════════════════════════════════════════════
-   InfoBadge mode enum
-   ═══════════════════════════════════════════════════════════════════════ */
-
+/** @brief Display modes for an info badge. */
 typedef enum FluxInfoBadgeMode
 {
 	FLUX_BADGE_DOT,    /**< Simple colored dot (no content) */
 	FLUX_BADGE_NUMBER, /**< Displays a numeric value */
 	FLUX_BADGE_ICON,   /**< Displays an icon */
 } FluxInfoBadgeMode;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxInfoBadgeData — Control-specific data for FluxInfoBadge
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Configuration for an info badge (notification indicator).
@@ -45,4 +38,4 @@ typedef struct FluxInfoBadgeData {
 }
 #endif
 
-#endif /* FLUX_INFO_BADGE_DATA_H */
+#endif

@@ -56,7 +56,6 @@ typedef struct FluxRenderSnapshot {
 	float            scroll_content_w, scroll_content_h;
 	FluxScrollBarVis scroll_h_vis;
 	FluxScrollBarVis scroll_v_vis;
-	/* ScrollBar interaction state (mirror of FluxScrollData runtime fields) */
 	uint8_t          scroll_mouse_over;
 	float            scroll_mouse_local_x;
 	float            scroll_mouse_local_y;
@@ -82,13 +81,13 @@ typedef struct FluxRenderSnapshot {
 
 	bool             enabled;
 
-	/* NumberBox spin button state */
-	uint8_t          nb_spin_placement; /* FluxNBSpinPlacement */
+	uint8_t          nb_spin_placement; /**< FluxNBSpinPlacement value. */
 	bool             nb_up_enabled;
 	bool             nb_down_enabled;
-	float            hover_local_x; /* cursor X within bounds (-1 = not hovered) */
+	float            hover_local_x; /**< Cursor X within bounds, or -1 when not hovered. */
 } FluxRenderSnapshot;
 
+/** @brief Build an immutable render snapshot for one node. */
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd);
 
 #ifdef __cplusplus

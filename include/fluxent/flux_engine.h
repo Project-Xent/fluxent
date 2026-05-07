@@ -22,7 +22,7 @@
  *
  * ## Custom Renderers
  *
- * Use `flux_register_renderer()` to register custom draw functions for
+ * Use `flux_node_store_register_renderer()` to register custom draw functions for
  * control types. The engine will dispatch to your renderer during execution.
  */
 #ifndef FLUX_ENGINE_H
@@ -92,35 +92,6 @@ typedef struct FluxRenderCommand {
 } FluxRenderCommand;
 
 /**
- * @brief Renderer callbacks for a control type.
- *
- * Register custom renderers with `flux_register_renderer()`.
- */
-typedef struct FluxControlRenderer {
-	/**
-	 * @brief Main draw callback.
-	 * @param rc Render context with D2D resources.
-	 * @param snap Control snapshot data.
-	 * @param bounds Layout-computed bounds.
-	 * @param state Interaction state for visual feedback.
-	 */
-	void (*draw)(
-	  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
-	);
-	/**
-	 * @brief Overlay draw callback (optional).
-	 * @param rc Render context with D2D resources.
-	 * @param snap Control snapshot data.
-	 * @param bounds Layout-computed bounds.
-	 */
-	void (*draw_overlay)(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
-} FluxControlRenderer;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxEngine API
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/**
  * @brief Create a render engine.
  * @param store Node store containing control metadata.
  * @return New engine instance, or NULL on failure.
@@ -171,10 +142,6 @@ FluxRenderCommand const *flux_engine_command_at(FluxEngine const *eng, uint32_t 
  */
 void                     flux_engine_execute(FluxEngine const *eng, FluxRenderContext const *rc);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Dispatch API — Low-level rendering
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Dispatch to the registered renderer for a control type.
  *
@@ -182,29 +149,19 @@ void                     flux_engine_execute(FluxEngine const *eng, FluxRenderCo
  * directly for custom rendering pipelines.
  */
 void                     flux_dispatch_render(
-  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+  FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds,
+  FluxControlState const *state
 );
 
 /**
  * @brief Dispatch overlay rendering for a control.
  */
-void flux_dispatch_render_overlay(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
-
-/**
- * @brief Register a custom renderer for a control type.
- *
- * @param type Control type (from XentControlType enum).
- * @param draw Main draw callback.
- * @param draw_overlay Overlay draw callback (can be NULL).
- */
-void flux_register_renderer(
-  XentControlType type,
-  void (*draw)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *, FluxControlState const *),
-  void (*draw_overlay)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *)
+void flux_dispatch_render_overlay(
+  FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds
 );
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FLUX_ENGINE_H */
+#endif

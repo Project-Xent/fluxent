@@ -14,20 +14,13 @@ extern "C"
 {
 #endif
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Scrollbar visibility enum
-   ═══════════════════════════════════════════════════════════════════════ */
-
+/** @brief Scrollbar visibility policy for each axis. */
 typedef enum FluxScrollBarVis
 {
 	FLUX_SCROLL_AUTO,   /**< Show scrollbar only when needed */
 	FLUX_SCROLL_ALWAYS, /**< Always show scrollbar */
 	FLUX_SCROLL_NEVER,  /**< Never show scrollbar (can still scroll) */
 } FluxScrollBarVis;
-
-/* ═══════════════════════════════════════════════════════════════════════
-   FluxScrollData — Control-specific data for FluxScrollView
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Configuration and runtime state for a scrollable container.
@@ -37,19 +30,13 @@ typedef enum FluxScrollBarVis
  * rendering scrollbar visuals that match WinUI's ScrollBar template.
  */
 typedef struct FluxScrollData {
-	/* -------- Configuration (set by user) -------- */
-	float            scroll_x;  /**< Current horizontal scroll offset */
-	float            scroll_y;  /**< Current vertical scroll offset */
-	float            content_w; /**< Total content width */
-	float            content_h; /**< Total content height */
-	FluxScrollBarVis h_vis;     /**< Horizontal scrollbar visibility */
-	FluxScrollBarVis v_vis;     /**< Vertical scrollbar visibility */
+	float            scroll_x;           /**< Current horizontal scroll offset */
+	float            scroll_y;           /**< Current vertical scroll offset */
+	float            content_w;          /**< Total content width */
+	float            content_h;          /**< Total content height */
+	FluxScrollBarVis h_vis;              /**< Horizontal scrollbar visibility */
+	FluxScrollBarVis v_vis;              /**< Vertical scrollbar visibility */
 
-	/* -------- Runtime interaction state --------
-	 * Updated by flux_input.c, read by flux_draw_scroll_overlay.
-	 * Do NOT use these fields to drive scroll offset; they exist purely so
-	 * the scrollbar renderer can show hover/press/drag visuals that match
-	 * WinUI's ScrollBar template (LineUp/LineDown RepeatButton + Thumb). */
 	uint8_t          mouse_over;         /**< 1 if cursor inside viewport */
 	float            mouse_local_x;      /**< Cursor X in viewport-local coords */
 	float            mouse_local_y;      /**< Cursor Y in viewport-local coords */
@@ -60,15 +47,11 @@ typedef struct FluxScrollData {
 	uint8_t          h_rg_pressed;       /**< Horizontal LineRight arrow held */
 	double           last_activity_time; /**< Monotonic seconds (0 = never) */
 
-	/* -------- DirectManipulation --------
-	 * Viewport for this ScrollView. Lazily created by FluxApp's render
-	 * walk the first time layout yields a non-empty rect.
-	 * Typed as void* to avoid pulling DManip headers here. */
-	void            *dmanip_viewport; /**< IDirectManipulationViewport (opaque) */
+	void            *dmanip_viewport;    /**< Opaque DirectManipulation viewport owned by the input boundary. */
 } FluxScrollData;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FLUX_SCROLL_DATA_H */
+#endif

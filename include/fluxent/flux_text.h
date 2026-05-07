@@ -61,9 +61,35 @@ typedef struct FluxTextStyle {
 	bool           word_wrap;   /**< Enable word wrapping */
 } FluxTextStyle;
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Lifecycle
-   ═══════════════════════════════════════════════════════════════════════ */
+/** @brief Text layout input shared by hit-testing and range queries. */
+typedef struct FluxTextLayoutQuery {
+	FluxTextRenderer    *renderer;
+	char const          *text;
+	FluxTextStyle const *style;
+	float                max_width;
+} FluxTextLayoutQuery;
+
+/** @brief Text-local hit-test input. */
+typedef struct FluxTextHitTestQuery {
+	FluxTextLayoutQuery layout;
+	float               x;
+	float               y;
+} FluxTextHitTestQuery;
+
+/** @brief Caret rectangle input. */
+typedef struct FluxTextCaretQuery {
+	FluxTextLayoutQuery layout;
+	int                 index;
+} FluxTextCaretQuery;
+
+/** @brief Selection rectangle input and output buffers. */
+typedef struct FluxTextSelectionQuery {
+	FluxTextLayoutQuery layout;
+	int                 start;
+	int                 end;
+	FluxRect           *out_rects;
+	uint32_t            max_rects;
+} FluxTextSelectionQuery;
 
 /**
  * @brief Create a text renderer.
@@ -92,10 +118,6 @@ void              flux_text_renderer_destroy(FluxTextRenderer *tr);
  */
 bool              flux_text_renderer_register(FluxTextRenderer *tr, XentContext *ctx);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Rendering
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Draw text to a D2D render target.
  *
@@ -108,10 +130,6 @@ bool              flux_text_renderer_register(FluxTextRenderer *tr, XentContext 
 void              flux_text_draw(
   FluxTextRenderer *tr, ID2D1RenderTarget *rt, char const *text, FluxRect const *bounds, FluxTextStyle const *style
 );
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Measurement
-   ═══════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief Measure text size.
@@ -127,10 +145,6 @@ void              flux_text_draw(
  */
 FluxSize flux_text_measure(FluxTextRenderer *tr, char const *text, FluxTextStyle const *style, float max_width);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   Hit Testing & Selection
-   ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * @brief Hit-test a point to find the character index.
  *
@@ -143,11 +157,9 @@ FluxSize flux_text_measure(FluxTextRenderer *tr, char const *text, FluxTextStyle
  * @param max_width Maximum width for layout.
  * @param x X coordinate (relative to text bounds origin).
  * @param y Y coordinate (relative to text bounds origin).
- * @return Character index at the point, or -1 on error.
+ * @return Character index at the point, or 0 when input is invalid.
  */
-int      flux_text_hit_test(
-  FluxTextRenderer *tr, char const *text, FluxTextStyle const *style, float max_width, float x, float y
-);
+int      flux_text_hit_test(FluxTextHitTestQuery const *query);
 
 /**
  * @brief Get the caret rectangle for a character index.
@@ -162,8 +174,7 @@ int      flux_text_hit_test(
  * @param index Character index.
  * @return Caret rectangle (relative to text bounds origin).
  */
-FluxRect
-flux_text_caret_rect(FluxTextRenderer *tr, char const *text, FluxTextStyle const *style, float max_width, int index);
+FluxRect flux_text_caret_rect(FluxTextCaretQuery const *query);
 
 /**
  * @brief Get rectangles covering a text selection.
@@ -181,13 +192,10 @@ flux_text_caret_rect(FluxTextRenderer *tr, char const *text, FluxTextStyle const
  * @param max_rects Maximum number of rectangles to output.
  * @return Number of rectangles written to out_rects.
  */
-uint32_t flux_text_selection_rects(
-  FluxTextRenderer *tr, char const *text, FluxTextStyle const *style, float max_width, int start, int end,
-  FluxRect *out_rects, uint32_t max_rects
-);
+uint32_t flux_text_selection_rects(FluxTextSelectionQuery const *query);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* FLUX_TEXT_H */
+#endif

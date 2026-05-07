@@ -42,14 +42,7 @@ typedef struct FluxDpiInfo {
 	float dpi_y;
 } FluxDpiInfo;
 
-/* ─────────────────────────────────────────────────────────────────
- *  Pointer input model (shared by flux_window + flux_input + app)
- *
- *  One unified event struct replaces the old (x,y,button,down,type)
- *  parameter soup and the separate scroll / context-menu callbacks.
- *  Every event kind carries identical coordinate + device + id
- *  fields so downstream consumers don't branch on callback identity.
- * ───────────────────────────────────────────────────────────────── */
+/** @brief Pointer device type for unified pointer events. */
 typedef enum FluxPointerType
 {
 	FLUX_POINTER_MOUSE = 0,
@@ -57,16 +50,18 @@ typedef enum FluxPointerType
 	FLUX_POINTER_PEN   = 2,
 } FluxPointerType;
 
+/** @brief Event kinds carried by FluxPointerEvent. */
 typedef enum FluxPointerEventKind
 {
-	FLUX_POINTER_DOWN,         /* button pressed / finger contact / pen contact        */
-	FLUX_POINTER_MOVE,         /* cursor or contact moved                               */
-	FLUX_POINTER_UP,           /* button released / finger lift / pen lift              */
-	FLUX_POINTER_CANCEL,       /* input stream aborted (capture lost, system gesture)   */
-	FLUX_POINTER_WHEEL,        /* wheel/touchpad scroll — wheel_dx/dy carry notches     */
-	FLUX_POINTER_CONTEXT_MENU, /* right-click release OR touch press-and-hold OR Menu key*/
+	FLUX_POINTER_DOWN,         /**< Button pressed, finger contact, or pen contact. */
+	FLUX_POINTER_MOVE,         /**< Cursor or contact moved. */
+	FLUX_POINTER_UP,           /**< Button released, finger lift, or pen lift. */
+	FLUX_POINTER_CANCEL,       /**< Input stream aborted. */
+	FLUX_POINTER_WHEEL,        /**< Wheel or touchpad scroll; wheel_dx/dy carry notches. */
+	FLUX_POINTER_CONTEXT_MENU, /**< Context menu requested. */
 } FluxPointerEventKind;
 
+/** @brief Pointer button bitmask values. */
 typedef enum FluxPointerButton
 {
 	FLUX_POINTER_BUTTON_NONE   = 0,
@@ -75,26 +70,19 @@ typedef enum FluxPointerButton
 	FLUX_POINTER_BUTTON_MIDDLE = 1u << 2,
 } FluxPointerButton;
 
+/** @brief Unified pointer event sent from the window layer to input consumers. */
 typedef struct FluxPointerEvent {
 	FluxPointerEventKind kind;
-	FluxPointerType      device;     /* MOUSE / TOUCH / PEN                          */
-	uint32_t             pointer_id; /* Win32 pointer id (0 = synthesized / unknown) */
+	FluxPointerType      device;         /**< Pointer device type. */
+	uint32_t             pointer_id;     /**< Platform pointer id, or 0 when synthesized. */
 
-	/* Position in window-client DIPs.  Valid for every kind.  For
-	 * CONTEXT_MENU from keyboard Menu key the window fills in the
-	 * caret/focus rect center. */
-	float                x, y;
+	float                x, y;           /**< Position in window-client DIPs. */
 
-	/* Bitmask of FluxPointerButton values held at the time of the
-	 * event.  For DOWN/UP the changed_button is the single bit that
-	 * just transitioned.  buttons already reflects the new state. */
-	uint32_t             buttons;
-	uint32_t             changed_button; /* single bit for DOWN/UP; 0 otherwise          */
+	uint32_t             buttons;        /**< Held FluxPointerButton bitmask after this event. */
+	uint32_t             changed_button; /**< Single transitioned button for DOWN/UP; 0 otherwise. */
 
-	/* Wheel deltas in notches (one physical click = ±1.0).  Only
-	 * populated for FLUX_POINTER_WHEEL. */
-	float                wheel_dx;
-	float                wheel_dy;
+	float                wheel_dx;       /**< Horizontal wheel delta in notches. */
+	float                wheel_dy;       /**< Vertical wheel delta in notches. */
 } FluxPointerEvent;
 
 static FluxColor inline flux_color_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
@@ -131,30 +119,30 @@ static inline D2D1_COLOR_F flux_to_d2d_color(FluxColor c) {
 #endif
 
 #ifdef COBJMACROS
-  #define FLUX_RELEASE(p)                                   \
-		  do {                                              \
-				  if (p) {                                  \
-					  IUnknown_Release(( IUnknown * ) (p)); \
-					  (p) = NULL;                           \
-				  }                                         \
-		  }                                                 \
+  #define FLUX_RELEASE(p)                           \
+	  do {                                          \
+		  if (p) {                                  \
+			  IUnknown_Release(( IUnknown * ) (p)); \
+			  (p) = NULL;                           \
+		  }                                         \
+	  }                                             \
 	  while (0)
 #else
-  #define FLUX_RELEASE(p)                                                        \
-		  do {                                                                   \
-				  if (p) {                                                       \
-					  (( IUnknown * ) (p))->lpVtbl->Release(( IUnknown * ) (p)); \
-					  (p) = NULL;                                                \
-				  }                                                              \
-		  }                                                                      \
+  #define FLUX_RELEASE(p)                                                \
+	  do {                                                               \
+		  if (p) {                                                       \
+			  (( IUnknown * ) (p))->lpVtbl->Release(( IUnknown * ) (p)); \
+			  (p) = NULL;                                                \
+		  }                                                              \
+	  }                                                                  \
 	  while (0)
 #endif
 
-#define FLUX_CHECK(hr)                   \
-		do {                             \
-			HRESULT _hr = (hr);          \
-			if (FAILED(_hr)) return _hr; \
-		}                                \
+#define FLUX_CHECK(hr)               \
+	do {                             \
+		HRESULT _hr = (hr);          \
+		if (FAILED(_hr)) return _hr; \
+	}                                \
 	while (0)
 
 #endif

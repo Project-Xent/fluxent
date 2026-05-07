@@ -1,47 +1,47 @@
-/**
- * @file pb_mask.c
- * @brief PasswordBox mask text generation and offset conversion.
- */
 #include "tb_internal.h"
 
-/* Build mask string: each codepoint → ● (U+25CF = 3 UTF-8 bytes: E2 97 8F) */
+static bool pb_write_bullet(char *dst, uint32_t dst_cap, uint32_t *out) {
+	if (*out + 3 >= dst_cap) return false;
+	dst [(*out)++] = ( char ) 0xe2;
+	dst [(*out)++] = ( char ) 0x97;
+	dst [(*out)++] = ( char ) 0x8f;
+	return true;
+}
+
 uint32_t pb_build_mask(char const *src, uint32_t src_len, char *dst, uint32_t dst_cap) {
-	uint32_t             out = 0;
-	unsigned char const *p   = ( unsigned char const * ) src;
-	unsigned char const *end = p + src_len;
-		while (p < end && *p) {
-			int skip;
-			if (*p < 0x80) skip = 1;
-			else if (*p < 0xe0) skip = 2;
-			else if (*p < 0xf0) skip = 3;
-			else skip = 4;
-				if (out + 3 < dst_cap) {
-					dst [out++] = ( char ) 0xe2;
-					dst [out++] = ( char ) 0x97;
-					dst [out++] = ( char ) 0x8f;
-				}
-			for (int i = 0; i < skip && p < end; i++) p++;
-		}
+	uint32_t out = 0;
+	uint32_t pos = 0;
+	while (pos < src_len && src [pos] && pb_write_bullet(dst, dst_cap, &out)) {
+		uint32_t next = tb_utf8_next(src, src_len, pos);
+		if (next <= pos || next > src_len) next = pos + 1;
+		pos = next;
+	}
 	if (out < dst_cap) dst [out] = '\0';
 	else if (dst_cap > 0) dst [dst_cap - 1] = '\0';
 	return out;
 }
 
-/* Convert a byte offset in mask text back to byte offset in original text.
-   Mask: each codepoint is 3 bytes. Original: variable-length. */
-uint32_t pb_mask_offset_to_original(char const *original, uint32_t mask_byte_offset) {
-	/* mask_byte_offset / 3 = codepoint index. Walk original to find that codepoint's byte offset. */
-	uint32_t             target_cp = mask_byte_offset / 3;
-	uint32_t             cp        = 0;
-	unsigned char const *p         = ( unsigned char const * ) original;
-		while (*p && cp < target_cp) {
-			int skip;
-			if (*p < 0x80) skip = 1;
-			else if (*p < 0xe0) skip = 2;
-			else if (*p < 0xf0) skip = 3;
-			else skip = 4;
-			for (int i = 0; i < skip && *p; i++) p++;
-			cp++;
-		}
-	return ( uint32_t ) (p - ( unsigned char const * ) original);
+uint32_t pb_mask_offset_to_original(char const *original, uint32_t original_len, uint32_t mask_byte_offset) {
+	uint32_t target_cp = mask_byte_offset / 3;
+	uint32_t cp        = 0;
+	uint32_t pos       = 0;
+	while (pos < original_len && original [pos] && cp++ < target_cp) {
+		uint32_t next = tb_utf8_next(original, original_len, pos);
+		if (next <= pos) next = pos + 1;
+		pos = next;
+	}
+	return pos;
+}
+
+uint32_t pb_original_offset_to_mask(char const *original, uint32_t original_len, uint32_t original_byte_offset) {
+	uint32_t cp  = 0;
+	uint32_t pos = 0;
+	uint32_t end = original_byte_offset < original_len ? original_byte_offset : original_len;
+	while (pos < end && original [pos]) {
+		uint32_t next = tb_utf8_next(original, original_len, pos);
+		if (next <= pos || next > original_byte_offset) next = pos + 1;
+		pos = next;
+		cp++;
+	}
+	return cp * 3;
 }

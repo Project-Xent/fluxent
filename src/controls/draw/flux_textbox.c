@@ -1,8 +1,10 @@
+#include "controls/textbox/tb_internal.h"
 #include "render/flux_fluent.h"
 #include <stdlib.h>
 #include <string.h>
 
-#define TB_DELETE_BTN_W 30.0f
+#define TEXTBOX_COMPOSED_STACK_CAP 512
+#define TEXTBOX_CARET_HEIGHT_MULT  1.2f
 
 typedef struct TextboxDrawStyles {
 	FluxTextStyle text;
@@ -12,7 +14,7 @@ typedef struct TextboxDrawStyles {
 
 typedef struct TextboxComposedContent {
 	char const *content;
-	char        stack [512];
+	char        stack [TEXTBOX_COMPOSED_STACK_CAP];
 	char       *heap;
 	int         composition_start_u16;
 	bool        has_composition;
@@ -361,7 +363,7 @@ static int textbox_caret_index(TextboxContentDrawContext const *dc) {
 }
 
 static FluxRect textbox_caret_local_rect(TextboxContentDrawContext const *dc, int caret_u16, float *caret_h) {
-	*caret_h = dc->styles->font_size * 1.2f;
+	*caret_h = dc->styles->font_size * TEXTBOX_CARET_HEIGHT_MULT;
 	if (!dc->content->has_text) return (FluxRect) {0};
 
 	FluxTextCaretQuery query = {

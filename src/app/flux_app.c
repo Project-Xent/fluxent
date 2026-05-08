@@ -18,6 +18,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define FLUX_APP_DISABLE_DMANIP_ENV_CAP 8
+#define FLUX_APP_DEFAULT_WIDTH          800
+#define FLUX_APP_DEFAULT_HEIGHT         600
+#define FLUX_APP_RENDER_CACHE_CAPACITY  512
+#define FLUX_APP_TOOLTIP_ANCHOR_H       20.0f
+
 struct FluxApp {
 	FluxWindow           *window;
 	FluxEngine           *engine;
@@ -60,8 +66,8 @@ static void app_try_dmanip_handoff(FluxApp *app, FluxPointerEvent const *ev) {
 }
 
 static void app_init_dmanip(FluxApp *app) {
-	char  val [8] = {0};
-	DWORD n       = GetEnvironmentVariableA("FLUXENT_DISABLE_DMANIP", val, sizeof(val));
+	char  val [FLUX_APP_DISABLE_DMANIP_ENV_CAP] = {0};
+	DWORD n                                     = GetEnvironmentVariableA("FLUXENT_DISABLE_DMANIP", val, sizeof(val));
 	if (n > 0 && val [0] == '1') return;
 	HWND hwnd = flux_window_hwnd(app->window);
 	if (hwnd) ( void ) flux_dmanip_create(hwnd, &app->dmanip);
@@ -75,6 +81,11 @@ static bool app_focused_accepts_command(FluxApp *app) {
 	return ct != XENT_CONTROL_TEXT_INPUT && ct != XENT_CONTROL_PASSWORD_BOX && ct != XENT_CONTROL_NUMBER_BOX;
 }
 
+static void app_request_render(void *ctx) {
+	FluxApp *app = ( FluxApp * ) ctx;
+	if (app) flux_window_request_render(app->window);
+}
+
 static void app_render(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app->ctx || app->root == XENT_NODE_INVALID) return;
@@ -82,14 +93,13 @@ static void app_render(void *ctx) {
 	FluxGraphics *gfx   = flux_window_get_graphics(app->window);
 	FluxSize      size  = flux_window_client_size(app->window);
 	FluxDpiInfo   dpi   = flux_window_dpi(app->window);
-	float         scale = dpi.dpi_x / 96.0f;
+	float         scale = dpi.dpi_x / FLUX_DPI_BASE;
 	float         w     = size.w / scale;
 	float         h     = size.h / scale;
 
 	if (app->dmanip) flux_dmanip_tick(app->dmanip);
 	xent_layout(app->ctx, app->root, w, h);
 	if (app->dmanip) flux_dmanip_sync_tree(app->dmanip, app->ctx, app->store, app->root, scale);
-	if (app->store) flux_node_store_attach_userdata(app->store, app->ctx);
 	if (app->cache) flux_render_cache_begin_frame(app->cache);
 
 	flux_engine_collect(app->engine, app->ctx, app->root);
@@ -147,12 +157,12 @@ static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool i
 	if (hovered != XENT_NODE_INVALID) {
 		HWND        hwnd   = flux_window_hwnd(app->window);
 		FluxDpiInfo tdpi   = flux_window_dpi(app->window);
-		float       tscale = tdpi.dpi_x / 96.0f;
+		float       tscale = tdpi.dpi_x / FLUX_DPI_BASE;
 		POINT       pt     = {( LONG ) (x * tscale), ( LONG ) (y * tscale)};
 		ClientToScreen(hwnd, &pt);
 		screen_bounds.x = ( float ) pt.x;
 		screen_bounds.y = ( float ) pt.y;
-		screen_bounds.h = 20.0f;
+		screen_bounds.h = FLUX_APP_TOOLTIP_ANCHOR_H;
 	}
 	flux_tooltip_on_hover(app->tooltip, hovered, hover_nd, &screen_bounds);
 }
@@ -305,8 +315,8 @@ HRESULT flux_app_create(FluxAppConfig const *cfg, FluxApp **out) {
 	FluxWindowConfig wcfg;
 	memset(&wcfg, 0, sizeof(wcfg));
 	wcfg.title     = cfg ? cfg->title : L"Fluxent";
-	wcfg.width     = cfg ? cfg->width : 800;
-	wcfg.height    = cfg ? cfg->height : 600;
+	wcfg.width     = cfg ? cfg->width : FLUX_APP_DEFAULT_WIDTH;
+	wcfg.height    = cfg ? cfg->height : FLUX_APP_DEFAULT_HEIGHT;
 	wcfg.dark_mode = cfg ? cfg->dark_mode : false;
 	wcfg.backdrop  = cfg ? ( int ) cfg->backdrop : 0;
 	wcfg.resizable = true;
@@ -324,7 +334,7 @@ HRESULT flux_app_create(FluxAppConfig const *cfg, FluxApp **out) {
 	flux_window_set_setting_changed_callback(app->window, app_setting_changed, app);
 	flux_window_set_ime_composition_callback(app->window, app_ime_composition, app);
 
-	app->cache = flux_render_cache_create(512);
+	app->cache = flux_render_cache_create(FLUX_APP_RENDER_CACHE_CAPACITY);
 	app->theme = flux_theme_create();
 	if (app->theme) flux_theme_set_mode(app->theme, FLUX_THEME_SYSTEM);
 
@@ -389,7 +399,8 @@ void flux_app_set_root(FluxApp *app, XentContext *ctx, XentNodeId root, FluxNode
 	app->text = flux_text_renderer_create();
 	if (app->text) flux_text_renderer_register(app->text, ctx);
 
-	if (store) flux_node_store_attach_userdata(store, ctx);
+	if (store) flux_node_store_bind_context(store, ctx);
+	if (store) flux_node_store_set_invalidate_callback(store, app_request_render, app);
 
 	if (app->tooltip && app->text) flux_tooltip_set_text_renderer(app->tooltip, app->text);
 

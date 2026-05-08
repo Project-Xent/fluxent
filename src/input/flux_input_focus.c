@@ -2,6 +2,9 @@
 
 #include <stdlib.h>
 
+#define FLUX_FOCUS_TRAVERSAL_MAX 512
+#define FLUX_FOCUS_SIBLING_MAX   128
+
 static bool input_node_is_visible_focusable(XentContext *ctx, XentNodeId node) {
 	if (!xent_get_focusable(ctx, node) || !xent_get_semantic_enabled(ctx, node)) return false;
 
@@ -98,13 +101,13 @@ static int input_arrow_delta(int direction) {
 void flux_input_tab(FluxInput *input, XentNodeId root, bool shift) {
 	if (!input || root == XENT_NODE_INVALID) return;
 
-	XentNodeId focusable [512];
+	XentNodeId focusable [FLUX_FOCUS_TRAVERSAL_MAX];
 	uint32_t   count = 0;
-	collect_focusable(input->ctx, root, focusable, &count, 512);
+	collect_focusable(input->ctx, root, focusable, &count, FLUX_FOCUS_TRAVERSAL_MAX);
 
 	if (count == 0) return;
 
-	XentNodeId tab_order [512];
+	XentNodeId tab_order [FLUX_FOCUS_TRAVERSAL_MAX];
 	uint32_t   tab_count = input_collect_tab_order(input->ctx, focusable, count, tab_order);
 	if (tab_count == 0) return;
 
@@ -125,8 +128,8 @@ void flux_input_arrow(FluxInput *input, XentNodeId root, int direction) {
 	XentNodeId parent = xent_get_parent(input->ctx, input->focused);
 	if (parent == XENT_NODE_INVALID) return;
 
-	XentNodeId siblings [128];
-	uint32_t   sib_count = input_collect_focusable_siblings(input->ctx, parent, siblings, 128);
+	XentNodeId siblings [FLUX_FOCUS_SIBLING_MAX];
+	uint32_t   sib_count = input_collect_focusable_siblings(input->ctx, parent, siblings, FLUX_FOCUS_SIBLING_MAX);
 	if (sib_count <= 1) return;
 
 	int cur = input_find_node_index(siblings, sib_count, input->focused);

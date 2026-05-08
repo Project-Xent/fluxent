@@ -20,6 +20,22 @@ extern "C"
 #define FLUX_TEXTBOX_INITIAL_CAP 128
 #define TB_UNDO_MAX              50
 #define TB_TYPING_MERGE_MS       1000
+#define TB_DELETE_BTN_W          30.0f
+#define PB_REVEAL_BTN_W          30.0f
+#define NB_SPIN_BTN_MIN_W        32.0f
+#define NB_UP_MARGIN             4.0f
+#define NB_DN_MARGIN_L           0.0f
+#define NB_DN_MARGIN_T           4.0f
+#define NB_DN_MARGIN_R           4.0f
+#define NB_DN_MARGIN_B           4.0f
+#define NB_COL_UP_W              (NB_SPIN_BTN_MIN_W + NB_UP_MARGIN + NB_UP_MARGIN)
+#define NB_COL_DN_W              (NB_SPIN_BTN_MIN_W + NB_DN_MARGIN_L + NB_DN_MARGIN_R)
+#define NB_SPIN_TOTAL            (NB_COL_UP_W + NB_COL_DN_W)
+#define NB_DEL_BTN_W             40.0f
+#define NB_INNER_MARGIN_L        0.0f
+#define NB_INNER_MARGIN_T        4.0f
+#define NB_INNER_MARGIN_R        4.0f
+#define NB_INNER_MARGIN_B        4.0f
 
 /** @brief Undo/redo history entry. */
 typedef struct TbEditHistory {
@@ -94,7 +110,8 @@ typedef struct FluxTextBoxInputData {
 
 	wchar_t         high_surrogate; /**< High-surrogate half awaiting a low surrogate for U+10000+ codepoints. */
 	bool            password_show_plain;
-	FluxNBExt      *nb;             /**< NumberBox extension; NULL for TextBox and PasswordBox. */
+	bool            password_reveal_pressed;
+	FluxNBExt      *nb; /**< NumberBox extension; NULL for TextBox and PasswordBox. */
 } FluxTextBoxInputData;
 
 /** @brief Grows @p tb->buffer to at least @p needed bytes. */
@@ -172,7 +189,7 @@ void          nb_step_value(FluxTextBoxInputData *tb, double change);
 void          nb_set_value(FluxTextBoxInputData *tb, double new_value);
 /** @brief Clamps nb_value to [nb_minimum, nb_maximum] when validation mode is Overwrite. */
 void          nb_coerce_value(FluxTextBoxInputData *tb);
-/** @brief Writes nb_value, nb_minimum, nb_maximum, and spin placement to the node's semantic properties. */
+/** @brief Writes NumberBox value range to the node's semantic properties. */
 void          nb_sync_semantics(FluxTextBoxInputData *tb);
 
 /** @brief Handles a keyboard key press or release event. */

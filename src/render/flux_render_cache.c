@@ -9,9 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FLUX_RC_EMPTY    0
-#define FLUX_RC_OCCUPIED 1
-#define FLUX_RC_DELETED  2
+#define FLUX_RC_EMPTY               0
+#define FLUX_RC_OCCUPIED            1
+#define FLUX_RC_DELETED             2
+#define FLUX_RC_MIN_CAPACITY        64
+#define FLUX_RC_DEFAULT_MAX_ENTRIES 256
 
 typedef struct FluxCacheSlot {
 	uint8_t        tag;
@@ -64,7 +66,7 @@ static void rc_insert_rehashed_slot(FluxCacheSlot *slots, uint32_t cap, FluxCach
 
 static bool rc_grow(FluxRenderCache *cache) {
 	uint32_t new_cap = cache->capacity * 2;
-	if (new_cap < 64) new_cap = 64;
+	if (new_cap < FLUX_RC_MIN_CAPACITY) new_cap = FLUX_RC_MIN_CAPACITY;
 
 	FluxCacheSlot *new_slots = ( FluxCacheSlot * ) calloc(new_cap, sizeof(FluxCacheSlot));
 	if (!new_slots) return false;
@@ -93,7 +95,7 @@ FluxRenderCache *flux_render_cache_create(uint32_t max_entries) {
 	FluxRenderCache *cache = ( FluxRenderCache * ) calloc(1, sizeof(*cache));
 	if (!cache) return NULL;
 
-	uint32_t cap = 64;
+	uint32_t cap = FLUX_RC_MIN_CAPACITY;
 	while (cap < max_entries * 2) cap *= 2;
 
 	cache->slots = ( FluxCacheSlot * ) calloc(cap, sizeof(FluxCacheSlot));
@@ -102,7 +104,7 @@ FluxRenderCache *flux_render_cache_create(uint32_t max_entries) {
 		return NULL;
 	}
 	cache->capacity    = cap;
-	cache->max_entries = max_entries > 0 ? max_entries : 256;
+	cache->max_entries = max_entries > 0 ? max_entries : FLUX_RC_DEFAULT_MAX_ENTRIES;
 	return cache;
 }
 

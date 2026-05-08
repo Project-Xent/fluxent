@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define TB_CLIPBOARD_WIDE_STACK_CAP 256
+#define TB_CLIPBOARD_UTF8_STACK_CAP 512
+
 typedef struct TbClipboardText {
 	HANDLE         handle;
 	wchar_t const *text;
@@ -52,13 +55,14 @@ void tb_perform_copy(FluxTextBoxInputData *tb) {
 }
 
 static wchar_t const *tb_filtered_clip_text(
-  FluxTextBoxInputData *tb, wchar_t const *wclip, int *wclip_len, wchar_t **heap, wchar_t stack [256]
+  FluxTextBoxInputData *tb, wchar_t const *wclip, int *wclip_len, wchar_t **heap,
+  wchar_t stack [TB_CLIPBOARD_WIDE_STACK_CAP]
 ) {
 	*heap      = NULL;
 	*wclip_len = ( int ) wcslen(wclip);
 	if (tb->base.multiline) return wclip;
 
-	if (*wclip_len + 1 > 256) {
+	if (*wclip_len + 1 > TB_CLIPBOARD_WIDE_STACK_CAP) {
 		*heap = ( wchar_t * ) malloc((( size_t ) *wclip_len + 1u) * sizeof(wchar_t));
 		if (!*heap) return L"";
 	}
@@ -85,8 +89,8 @@ static void tb_insert_clip_utf16(FluxTextBoxInputData *tb, wchar_t const *wclip,
 	u8len     = u8len > 0 ? tb_clipboard_u8_limit(tb, u8len) : 0;
 	if (u8len <= 0) return;
 
-	char  u8_stack [512];
-	char *u8buf = u8len + 1 > 512 ? ( char * ) malloc(( size_t ) u8len + 1u) : u8_stack;
+	char  u8_stack [TB_CLIPBOARD_UTF8_STACK_CAP];
+	char *u8buf = u8len + 1 > TB_CLIPBOARD_UTF8_STACK_CAP ? ( char * ) malloc(( size_t ) u8len + 1u) : u8_stack;
 	if (!u8buf) return;
 
 	WideCharToMultiByte(CP_UTF8, 0, wclip, wclip_len, u8buf, u8len, NULL, NULL);
@@ -99,7 +103,7 @@ static void tb_insert_clip_utf16(FluxTextBoxInputData *tb, wchar_t const *wclip,
 }
 
 static void tb_paste_locked_text(FluxTextBoxInputData *tb, wchar_t const *wclip) {
-	wchar_t  filtered_stack [256];
+	wchar_t  filtered_stack [TB_CLIPBOARD_WIDE_STACK_CAP];
 	wchar_t *filtered_heap = NULL;
 	int      wclip_len     = 0;
 	wclip                  = tb_filtered_clip_text(tb, wclip, &wclip_len, &filtered_heap, filtered_stack);

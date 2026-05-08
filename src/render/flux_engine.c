@@ -41,160 +41,97 @@ static FluxControlState flux_compute_control_state(FluxNodeData const *nd) {
 	return s;
 }
 
-typedef struct CollectFrame {
-	XentNodeId         node;
-	float              abs_x;
-	float              abs_y;
-	bool               main_emitted;
-	bool               is_scroll;
-	float              scroll_off_x;
-	float              scroll_off_y;
-	float              viewport_w;
-	float              viewport_h;
-	FluxRenderSnapshot snapshot;
-	FluxControlState   state;
-	XentNodeId         current_child;
-} CollectFrame;
+typedef struct CollectContext {
+	FluxEngine  *eng;
+	XentContext *ctx;
+} CollectContext;
 
-static CollectFrame collect_root_frame(XentNodeId root) {
-	CollectFrame frame;
-	memset(&frame, 0, sizeof(frame));
-	frame.node          = root;
-	frame.current_child = XENT_NODE_INVALID;
-	return frame;
-}
-
-static FluxRenderCommand
-collect_make_draw_command(CollectFrame const *frame, XentRect const *rect, FluxCommandPhase phase) {
+static FluxRenderCommand collect_make_draw_command(
+  FluxRenderSnapshot const *snapshot, FluxControlState state, XentRect const *rect, FluxCommandPhase phase
+) {
 	FluxRenderCommand cmd;
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.snapshot    = frame->snapshot;
-	cmd.bounds.x    = frame->abs_x;
-	cmd.bounds.y    = frame->abs_y;
+	cmd.snapshot    = *snapshot;
+	cmd.bounds.x    = rect->x;
+	cmd.bounds.y    = rect->y;
 	cmd.bounds.w    = rect->width;
 	cmd.bounds.h    = rect->height;
-	cmd.state       = frame->state;
+	cmd.state       = state;
 	cmd.phase       = phase;
 	cmd.clip_action = FLUX_CLIP_NONE;
 	return cmd;
 }
 
-static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentRect const *rect) {
+static void collect_emit_scroll_clip(FluxEngine *eng, FluxRenderSnapshot const *snapshot, XentRect const *rect) {
 	FluxRenderCommand cmd;
 	memset(&cmd, 0, sizeof(cmd));
-	cmd.bounds.x        = frame->abs_x;
-	cmd.bounds.y        = frame->abs_y;
-	cmd.bounds.w        = rect->width;
-	cmd.bounds.h        = rect->height;
-	cmd.phase           = FLUX_PHASE_MAIN;
-	cmd.clip_action     = FLUX_CLIP_PUSH;
-	cmd.scroll_x        = frame->snapshot.scroll_x;
-	cmd.scroll_y        = frame->snapshot.scroll_y;
-	frame->scroll_off_x = frame->snapshot.scroll_x;
-	frame->scroll_off_y = frame->snapshot.scroll_y;
-	frame->viewport_w   = rect->width;
-	frame->viewport_h   = rect->height;
+	cmd.bounds.x    = rect->x;
+	cmd.bounds.y    = rect->y;
+	cmd.bounds.w    = rect->width;
+	cmd.bounds.h    = rect->height;
+	cmd.phase       = FLUX_PHASE_MAIN;
+	cmd.clip_action = FLUX_CLIP_PUSH;
+	cmd.scroll_x    = snapshot->scroll_x;
+	cmd.scroll_y    = snapshot->scroll_y;
 	flux_command_buffer_push(&eng->commands, &cmd);
 }
 
-static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *frame) {
-	XentRect rect = {0};
-	xent_get_layout_rect(ctx, frame->node, &rect);
-
-	frame->abs_x     = rect.x;
-	frame->abs_y     = rect.y;
-
-	FluxNodeData *nd = ( FluxNodeData * ) xent_get_userdata(ctx, frame->node);
-	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
-	frame->state          = flux_compute_control_state(nd);
-	frame->is_scroll      = frame->snapshot.type == XENT_CONTROL_SCROLL;
-
-	FluxRenderCommand cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_MAIN);
-	flux_command_buffer_push(&eng->commands, &cmd);
-	if (frame->is_scroll) collect_emit_scroll_clip(eng, frame, &rect);
-
-	frame->current_child = xent_get_first_child(ctx, frame->node);
-	frame->main_emitted  = true;
-}
-
-static bool collect_child_visible(XentContext *ctx, CollectFrame const *frame, XentNodeId child) {
-	if (!frame->is_scroll) return true;
-
-	XentRect child_rect = {0};
-	xent_get_layout_rect(ctx, child, &child_rect);
-
-	float vis_left   = frame->abs_x + frame->scroll_off_x;
-	float vis_top    = frame->abs_y + frame->scroll_off_y;
-	float vis_right  = vis_left + frame->viewport_w;
-	float vis_bottom = vis_top + frame->viewport_h;
-
-	if (child_rect.x + child_rect.width < vis_left) return false;
-	if (child_rect.x > vis_right) return false;
-	if (child_rect.y + child_rect.height < vis_top) return false;
-	return child_rect.y <= vis_bottom;
-}
-
-static bool collect_grow_stack(CollectFrame **stack, uint32_t *stack_cap) {
-	uint32_t      new_cap   = *stack_cap * 2;
-	CollectFrame *new_stack = ( CollectFrame * ) realloc(*stack, sizeof(CollectFrame) * new_cap);
-	if (!new_stack) return false;
-	*stack     = new_stack;
-	*stack_cap = new_cap;
+static bool collect_effects(XentTraversalVisit const *visit, XentTraversalEffects *out_effects, void *userdata) {
+	FluxEngine   *eng = ( FluxEngine * ) userdata;
+	FluxNodeData *nd  = flux_node_store_get(eng->store, visit->node);
+	if (!nd || !nd->component_data) return true;
+	if (flux_node_store_control_type(eng->store, visit->node) != XENT_CONTROL_SCROLL) return true;
+	FluxScrollData *scroll      = ( FluxScrollData * ) nd->component_data;
+	out_effects->clips_children = true;
+	out_effects->child_scroll_x = scroll->scroll_x;
+	out_effects->child_scroll_y = scroll->scroll_y;
 	return true;
 }
 
-static bool collect_push_child(CollectFrame **stack, uint32_t *stack_top, uint32_t *stack_cap, XentNodeId child) {
-	if (*stack_top == *stack_cap && !collect_grow_stack(stack, stack_cap)) return false;
-	(*stack) [(*stack_top)++] = collect_root_frame(child);
-	return true;
+static XentTraversalAction collect_enter(XentTraversalVisit const *visit, void *userdata) {
+	CollectContext    *collect = ( CollectContext * ) userdata;
+	FluxNodeData      *nd      = flux_node_store_get(collect->eng->store, visit->node);
+	FluxRenderSnapshot snapshot;
+	FluxControlState   state = flux_compute_control_state(nd);
+	flux_snapshot_build(&snapshot, collect->ctx, visit->node, nd);
+
+	FluxRenderCommand cmd = collect_make_draw_command(&snapshot, state, &visit->layout_rect, FLUX_PHASE_MAIN);
+	flux_command_buffer_push(&collect->eng->commands, &cmd);
+	if (visit->effects.clips_children) collect_emit_scroll_clip(collect->eng, &snapshot, &visit->layout_rect);
+	return XENT_TRAVERSAL_CONTINUE;
 }
 
-static bool collect_visit_child(CollectFrame **stack, uint32_t *stack_top, uint32_t *stack_cap, XentContext *ctx) {
-	CollectFrame *frame = &(*stack) [*stack_top - 1];
-	if (frame->current_child == XENT_NODE_INVALID) return false;
-
-	XentNodeId child     = frame->current_child;
-	frame->current_child = xent_get_next_sibling(ctx, child);
-	if (!collect_child_visible(ctx, frame, child)) return true;
-
-	collect_push_child(stack, stack_top, stack_cap, child);
-	return true;
-}
-
-static void collect_emit_finish(FluxEngine *eng, XentContext *ctx, CollectFrame const *frame) {
-	if (frame->is_scroll) {
+static XentTraversalAction collect_leave(XentTraversalVisit const *visit, void *userdata) {
+	CollectContext *collect = ( CollectContext * ) userdata;
+	if (visit->effects.clips_children) {
 		FluxRenderCommand pop_cmd;
 		memset(&pop_cmd, 0, sizeof(pop_cmd));
 		pop_cmd.phase       = FLUX_PHASE_MAIN;
 		pop_cmd.clip_action = FLUX_CLIP_POP;
-		flux_command_buffer_push(&eng->commands, &pop_cmd);
+		flux_command_buffer_push(&collect->eng->commands, &pop_cmd);
 	}
 
-	XentRect rect = {0};
-	xent_get_layout_rect(ctx, frame->node, &rect);
-	FluxRenderCommand overlay_cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_OVERLAY);
-	flux_command_buffer_push(&eng->commands, &overlay_cmd);
+	FluxNodeData      *nd = flux_node_store_get(collect->eng->store, visit->node);
+	FluxRenderSnapshot snap;
+	FluxControlState   state = flux_compute_control_state(nd);
+	flux_snapshot_build(&snap, collect->ctx, visit->node, nd);
+	FluxRenderCommand overlay_cmd = collect_make_draw_command(&snap, state, &visit->layout_rect, FLUX_PHASE_OVERLAY);
+	flux_command_buffer_push(&collect->eng->commands, &overlay_cmd);
+	return XENT_TRAVERSAL_CONTINUE;
 }
 
 static void collect_commands(FluxEngine *eng, XentContext *ctx, XentNodeId root) {
-	uint32_t      stack_cap = 64;
-	uint32_t      stack_top = 0;
-	CollectFrame *stack     = ( CollectFrame * ) malloc(sizeof(CollectFrame) * stack_cap);
-	if (!stack) return;
-
-	stack [stack_top++] = collect_root_frame(root);
-	while (stack_top > 0) {
-		CollectFrame *frame = &stack [stack_top - 1];
-		if (!frame->main_emitted) {
-			collect_emit_main(eng, ctx, frame);
-			continue;
-		}
-		if (collect_visit_child(&stack, &stack_top, &stack_cap, ctx)) continue;
-		collect_emit_finish(eng, ctx, frame);
-		stack_top--;
-	}
-
-	free(stack);
+	CollectContext       collect = {eng, ctx};
+	XentTraversalOptions options = {
+	  .child_order      = XENT_CHILD_ORDER_FORWARD,
+	  .cull_to_clip     = true,
+	  .effects          = collect_effects,
+	  .effects_userdata = eng,
+	  .enter            = collect_enter,
+	  .leave            = collect_leave,
+	  .visit_userdata   = &collect,
+	};
+	xent_traverse_layout(ctx, root, &options);
 }
 
 FluxEngine *flux_engine_create(FluxNodeStore *store) {

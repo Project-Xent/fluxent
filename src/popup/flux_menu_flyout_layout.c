@@ -3,6 +3,14 @@
 #include <string.h>
 #include <windows.h>
 
+#define FLUX_MENU_FALLBACK_CHAR_W      7.0f
+#define FLUX_MENU_TEXT_HEIGHT_MULT     1.35f
+#define FLUX_MENU_BOTH_PLACEHOLDER_W   56.0f
+#define FLUX_MENU_SINGLE_PLACEHOLDER_W 28.0f
+#define FLUX_MENU_MIN_WIDTH            96.0f
+#define FLUX_MENU_MIN_WORK_HEIGHT      64.0f
+#define FLUX_MENU_WORK_AREA_MARGIN     16.0f
+
 static FluxSize measure_text(FluxMenuFlyout *m, char const *s, float font_size) {
 	FluxSize sz = {0.0f, 0.0f};
 	if (!s || !*s) return sz;
@@ -17,8 +25,8 @@ static FluxSize measure_text(FluxMenuFlyout *m, char const *s, float font_size) 
 		return flux_text_measure(m->text, s, &ts, 10000.0f);
 	}
 
-	sz.w = ( float ) strlen(s) * 7.0f;
-	sz.h = font_size * 1.35f;
+	sz.w = ( float ) strlen(s) * FLUX_MENU_FALLBACK_CHAR_W;
+	sz.h = font_size * FLUX_MENU_TEXT_HEIGHT_MULT;
 	return sz;
 }
 
@@ -52,8 +60,8 @@ static void menu_scan_item_kinds(FluxMenuFlyout *m) {
 }
 
 static float menu_placeholder_width(FluxMenuFlyout const *m) {
-	if (m->has_toggles && m->has_icons) return 56.0f;
-	if (m->has_toggles || m->has_icons) return 28.0f;
+	if (m->has_toggles && m->has_icons) return FLUX_MENU_BOTH_PLACEHOLDER_W;
+	if (m->has_toggles || m->has_icons) return FLUX_MENU_SINGLE_PLACEHOLDER_W;
 	return 0.0f;
 }
 
@@ -103,9 +111,9 @@ static float menu_owner_max_height(FluxMenuFlyout *m) {
 	if (!GetMonitorInfoW(mon, &mi)) return 0.0f;
 
 	FluxDpiInfo dpi   = flux_window_dpi(m->owner);
-	float       scale = dpi.dpi_x / 96.0f;
+	float       scale = dpi.dpi_x / FLUX_DPI_BASE;
 	if (scale < 0.1f) scale = 1.0f;
-	return ( float ) (mi.rcWork.bottom - mi.rcWork.top) / scale - 16.0f;
+	return ( float ) (mi.rcWork.bottom - mi.rcWork.top) / scale - FLUX_MENU_WORK_AREA_MARGIN;
 }
 
 static void menu_clamp_scroll(FluxMenuFlyout *m, float intrinsic_h, float total_h) {
@@ -122,7 +130,7 @@ void menu_measure(FluxMenuFlyout *m) {
 	float max_text_h   = 0.0f;
 	m->col_placeholder = menu_placeholder_width(m);
 	menu_measure_columns(m, &max_label, &max_accel, &max_text_h);
-	if (max_text_h <= 0.0f) max_text_h = FLUX_MENU_ITEM_FONT_SIZE * 1.35f;
+	if (max_text_h <= 0.0f) max_text_h = FLUX_MENU_ITEM_FONT_SIZE * FLUX_MENU_TEXT_HEIGHT_MULT;
 
 	m->col_label_w = max_label;
 	m->col_accel_w = max_accel;
@@ -143,7 +151,7 @@ void menu_measure(FluxMenuFlyout *m) {
 
 	float presenter_content_w = item_inner_w + 2.0f * FLUX_MENU_ITEM_MARGIN_H;
 	float total_w             = presenter_content_w + 2.0f * FLUX_MENU_PRESENTER_BORDER;
-	if (total_w < 96.0f) total_w = 96.0f;
+	if (total_w < FLUX_MENU_MIN_WIDTH) total_w = FLUX_MENU_MIN_WIDTH;
 
 	float item_slot_h  = menu_item_slot_height(m, max_text_h);
 	float cumulative_y = menu_assign_item_layouts(m, item_slot_h);
@@ -154,7 +162,7 @@ void menu_measure(FluxMenuFlyout *m) {
 
 	float total_h    = intrinsic_h;
 	float max_h_work = menu_owner_max_height(m);
-	if (max_h_work > 64.0f && total_h > max_h_work) total_h = max_h_work;
+	if (max_h_work > FLUX_MENU_MIN_WORK_HEIGHT && total_h > max_h_work) total_h = max_h_work;
 
 	menu_clamp_scroll(m, intrinsic_h, total_h);
 	m->total_w = total_w;

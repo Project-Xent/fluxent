@@ -38,7 +38,7 @@ static FluxRect anchor_for_binding(FluxWindow *window, XentContext *ctx, FluxNod
 
 	HWND     hwnd  = flux_window_hwnd(window);
 	UINT     dpi   = GetDpiForWindow(hwnd);
-	float    scale = dpi > 0 ? ( float ) dpi / 96.0f : 1.0f;
+	float    scale = dpi > 0 ? ( float ) dpi / FLUX_DPI_BASE : 1.0f;
 
 	XentRect lr    = {0};
 	xent_get_layout_rect(ctx, node, &lr);

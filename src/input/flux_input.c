@@ -1,15 +1,20 @@
 #include "flux_input_internal.h"
+#include "controls/textbox/tb_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <windows.h>
 
+#define FLUX_DBLCLICK_RADIUS_FRAC 0.5f
+#define FLUX_MAX_CLICK_COUNT      3
+
 typedef struct InputHitQuery {
-	XentContext *ctx;
-	XentNodeId   node;
-	FluxPoint    point;
-	FluxPoint    scroll;
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     node;
+	FluxPoint      point;
+	FluxPoint      scroll;
 } InputHitQuery;
 
 typedef struct InputScrollEvent {
@@ -18,12 +23,6 @@ typedef struct InputScrollEvent {
 	FluxPoint  point;
 	FluxPoint  wheel;
 } InputScrollEvent;
-
-typedef struct HitChildList {
-	XentNodeId *items;
-	uint32_t    count;
-	uint32_t    cap;
-} HitChildList;
 
 static FluxPoint hit_test_child_scroll_offset(InputHitQuery const *query, FluxNodeData *nd) {
 	FluxPoint scroll = query->scroll;
@@ -50,34 +49,18 @@ static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 		|| query->point.y >= ay + rect.height)
 		return (FluxHitResult) {0};
 
-	FluxNodeData *nd           = ( FluxNodeData * ) xent_get_userdata(query->ctx, query->node);
+	FluxNodeData *nd           = flux_node_store_payload(query->ctx, query->node);
 	FluxPoint     child_scroll = hit_test_child_scroll_offset(query, nd);
 
-	HitChildList  children     = {0};
-	XentNodeId    child        = xent_get_first_child(query->ctx, query->node);
+	XentNodeId    child        = xent_get_last_child(query->ctx, query->node);
 	while (child != XENT_NODE_INVALID) {
-		if (children.count == children.cap) {
-			uint32_t    cap   = children.cap ? children.cap * 2u : 16u;
-			XentNodeId *items = ( XentNodeId * ) realloc(children.items, sizeof(*items) * cap);
-			if (!items) break;
-			children.items = items;
-			children.cap   = cap;
-		}
-		children.items [children.count++] = child;
-		child                             = xent_get_next_sibling(query->ctx, child);
-	}
-
-	for (uint32_t i = children.count; i > 0; i--) {
 		InputHitQuery child_query = *query;
-		child_query.node          = children.items [i - 1u];
+		child_query.node          = child;
 		child_query.scroll        = child_scroll;
 		FluxHitResult r           = hit_test_recursive(&child_query);
-		if (r.node != XENT_NODE_INVALID) {
-			free(children.items);
-			return r;
-		}
+		if (r.node != XENT_NODE_INVALID) return r;
+		child = xent_get_prev_sibling(query->ctx, child);
 	}
-	free(children.items);
 
 	return (FluxHitResult) {
 	  .node   = query->node,
@@ -90,6 +73,7 @@ static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 static FluxHitResult input_hit_test_root(FluxInput *input, XentNodeId root, float px, float py) {
 	InputHitQuery query = {
 	  .ctx    = input->ctx,
+	  .store  = input->store,
 	  .node   = root,
 	  .point  = {px,   py  },
 	  .scroll = {0.0f, 0.0f},
@@ -133,25 +117,18 @@ static void input_set_hovered_node(FluxInput *input, XentNodeId node, FluxNodeDa
 	input->hovered = node;
 }
 
-static void input_update_hover_local(FluxInput *input, float px, float py) {
-	if (input->hovered == XENT_NODE_INVALID) return;
-
-	FluxNodeData *hnd = flux_node_store_get(input->store, input->hovered);
-	if (!hnd) return;
-
-	XentRect hrect = {0};
-	xent_get_layout_rect(input->ctx, input->hovered, &hrect);
-	hnd->hover_local_x      = px - hrect.x;
-	hnd->hover_local_y      = py - hrect.y;
-	hnd->state.pointer_type = ( uint8_t ) input->pointer_type;
-}
-
 static void input_update_hover_from_hit(FluxInput *input, FluxHitResult const *hit, float px, float py) {
+	( void ) px;
+	( void ) py;
 	XentNodeId hovered = hit->node;
 	if (input->pointer_type == FLUX_POINTER_TOUCH && input->pressed == XENT_NODE_INVALID) hovered = XENT_NODE_INVALID;
 
 	input_set_hovered_node(input, hovered, hit->data);
-	input_update_hover_local(input, px, py);
+	if (hovered != XENT_NODE_INVALID && hit->data) {
+		hit->data->hover_local_x      = hit->local.x;
+		hit->data->hover_local_y      = hit->local.y;
+		hit->data->state.pointer_type = ( uint8_t ) input->pointer_type;
+	}
 }
 
 static void input_forward_pressed_move(FluxInput *input, float px, float py) {
@@ -168,16 +145,17 @@ static void input_forward_pressed_move(FluxInput *input, float px, float py) {
 static bool input_press_number_box_spin(FluxInput *input, FluxHitResult const *hit) {
 	if (hit->node == XENT_NODE_INVALID || !hit->data) return false;
 	if (xent_get_control_type(input->ctx, hit->node) != XENT_CONTROL_NUMBER_BOX) return false;
-	if (!xent_get_semantic_expanded(input->ctx, hit->node)) return false;
+	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) hit->data->component_data;
+	if (!tb || !tb->nb || tb->nb->spin_placement != FLUX_NB_SPIN_INLINE) return false;
 
 	XentRect rect = {0};
 	xent_get_layout_rect(input->ctx, hit->node, &rect);
 
-	float spin_start = rect.width - 76.0f;
+	float spin_start = rect.width - NB_SPIN_TOTAL;
 	if (hit->local.x < spin_start) return false;
 
 	if (hit->data->behavior.on_key) {
-		bool up = hit->local.x < spin_start + 40.0f;
+		bool up = hit->local.x < spin_start + NB_COL_UP_W;
 		hit->data->behavior.on_key(hit->data->behavior.on_key_ctx, up ? VK_UP : VK_DOWN, true);
 	}
 	return true;
@@ -191,11 +169,11 @@ static void input_update_click_count(FluxInput *input, FluxHitResult const *hit,
 	float     dist2    = dx * dx + dy * dy;
 	float     dbl_cx   = ( float ) GetSystemMetrics(SM_CXDOUBLECLK);
 	float     dbl_cy   = ( float ) GetSystemMetrics(SM_CYDOUBLECLK);
-	float     max_dist = (dbl_cx * dbl_cx + dbl_cy * dbl_cy) * 0.25f;
+	float     max_dist = (dbl_cx * dbl_cx + dbl_cy * dbl_cy) * FLUX_DBLCLICK_RADIUS_FRAC * FLUX_DBLCLICK_RADIUS_FRAC;
 
 	if (hit->node == input->last_click_node && now_ms - input->last_click_time < dbl_time && dist2 <= max_dist) {
 		input->click_count++;
-		if (input->click_count > 3) input->click_count = 3;
+		if (input->click_count > FLUX_MAX_CLICK_COUNT) input->click_count = FLUX_MAX_CLICK_COUNT;
 	}
 	else { input->click_count = 1; }
 
@@ -282,11 +260,16 @@ static void input_release_pressed_node(FluxInput *input, FluxNodeData *nd, XentN
 	if (!nd) return;
 
 	nd->state.pressed = 0;
-	if (xent_get_control_type(input->ctx, input->pressed) == XENT_CONTROL_PASSWORD_BOX)
-		xent_set_semantic_checked(input->ctx, input->pressed, 0);
+	if (xent_get_control_type(input->ctx, input->pressed) == XENT_CONTROL_PASSWORD_BOX) {
+		FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) nd->component_data;
+		if (tb) tb->password_reveal_pressed = false;
+	}
 
 	FluxHitResult hit = input_hit_test_root(input, root, px, py);
-	if (hit.node == input->pressed && nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
+	if (hit.node == input->pressed) {
+		if (nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
+	}
+	else if (nd->behavior.on_cancel) { nd->behavior.on_cancel(nd->behavior.on_cancel_ctx); }
 }
 
 static void input_release_pressed(FluxInput *input, XentNodeId root, float px, float py) {
@@ -302,18 +285,33 @@ static void input_clear_touch_hover(FluxInput *input) {
 	input_clear_hovered(input);
 }
 
+static void input_apply_ancestor_scroll(FluxInput *input, XentNodeId node, float *x, float *y) {
+	XentNodeId parent = xent_get_parent(input->ctx, node);
+	while (parent != XENT_NODE_INVALID) {
+		FluxNodeData *nd = flux_node_store_payload(input->ctx, parent);
+		if (nd && xent_get_control_type(input->ctx, parent) == XENT_CONTROL_SCROLL) {
+			FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
+			if (sd) {
+				*x -= sd->scroll_x;
+				*y -= sd->scroll_y;
+			}
+		}
+		parent = xent_get_parent(input->ctx, parent);
+	}
+}
+
 static FluxPoint input_context_local_point(FluxInput *input, FluxHitResult const *hit, XentNodeId node) {
 	if (node == hit->node) return hit->local;
 
-	XentRect hit_layout  = {0};
-	XentRect node_layout = {0};
-	xent_get_layout_rect(input->ctx, hit->node, &hit_layout);
-	xent_get_layout_rect(input->ctx, node, &node_layout);
+	XentRect rect = {0};
+	xent_get_layout_rect(input->ctx, node, &rect);
+	float node_x = rect.x;
+	float node_y = rect.y;
+	input_apply_ancestor_scroll(input, node, &node_x, &node_y);
 
-	return (FluxPoint) {
-	  .x = hit->local.x + hit_layout.x - node_layout.x,
-	  .y = hit->local.y + hit_layout.y - node_layout.y,
-	};
+	float px = hit->bounds.x + hit->local.x;
+	float py = hit->bounds.y + hit->local.y;
+	return (FluxPoint) {.x = px - node_x, .y = py - node_y};
 }
 
 static bool input_dispatch_context_menu_node(FluxInput *input, FluxHitResult const *hit, XentNodeId node) {

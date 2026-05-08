@@ -2,6 +2,16 @@
 #include <math.h>
 #include <string.h>
 
+#define PROGRESS_RING_PI            3.14159265f
+#define PROGRESS_RING_TWO_PI        (2.0f * PROGRESS_RING_PI)
+#define PROGRESS_RING_DEG_TO_RAD    (PROGRESS_RING_PI / 180.0f)
+#define PROGRESS_RING_MIN_SWEEP_DEG 30.0f
+#define PROGRESS_RING_MAX_SWEEP_DEG 270.0f
+#define PROGRESS_RING_ROTATION_HZ   1.0
+#define PROGRESS_RING_OSC_HZ        2.5
+#define PROGRESS_RING_STROKE_W      4.0f
+#define PROGRESS_RING_MIN_RADIUS    2.0f
+
 typedef struct ProgressRingArc {
 	float cx;
 	float cy;
@@ -16,18 +26,18 @@ progress_ring_angles(FluxRenderContext const *rc, FluxRenderSnapshot const *snap
 		float pct = snap->current_value / snap->max_value;
 		if (pct < 0.0f) pct = 0.0f;
 		if (pct > 1.0f) pct = 1.0f;
-		if (pct < 0.001f) return false;
+		if (pct < FLUX_ANIM_VALUE_EPS) return false;
 
 		*start_rad = 0.0f;
-		*sweep_rad = pct * 2.0f * 3.14159265f;
+		*sweep_rad = pct * PROGRESS_RING_TWO_PI;
 		return true;
 	}
 
 	double now       = rc->now;
-	float  rotation  = ( float ) fmod(now * 2.0 * 3.14159265, 2.0 * 3.14159265);
-	float  t_osc     = ( float ) (sin(now * 2.5) * 0.5 + 0.5);
-	float  min_sweep = 30.0f * (3.14159265f / 180.0f);
-	float  max_sweep = 270.0f * (3.14159265f / 180.0f);
+	float  rotation  = ( float ) fmod(now * PROGRESS_RING_ROTATION_HZ * PROGRESS_RING_TWO_PI, PROGRESS_RING_TWO_PI);
+	float  t_osc     = ( float ) (sin(now * PROGRESS_RING_OSC_HZ) * 0.5 + 0.5);
+	float  min_sweep = PROGRESS_RING_MIN_SWEEP_DEG * PROGRESS_RING_DEG_TO_RAD;
+	float  max_sweep = PROGRESS_RING_MAX_SWEEP_DEG * PROGRESS_RING_DEG_TO_RAD;
 
 	*start_rad       = rotation;
 	*sweep_rad       = min_sweep + t_osc * (max_sweep - min_sweep);
@@ -57,7 +67,7 @@ static ID2D1PathGeometry *progress_ring_create_path(ID2D1Factory *factory, Progr
 	arc.size.height    = arc_spec->radius;
 	arc.rotationAngle  = 0.0f;
 	arc.sweepDirection = D2D1_SWEEP_DIRECTION_CLOCKWISE;
-	arc.arcSize        = arc_spec->sweep_rad > 3.14159265f ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL;
+	arc.arcSize        = arc_spec->sweep_rad > PROGRESS_RING_PI ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL;
 
 	ID2D1GeometrySink_BeginFigure(sink, flux_point(start_x, start_y), D2D1_FIGURE_BEGIN_HOLLOW);
 	ID2D1GeometrySink_AddArc(sink, &arc);
@@ -88,9 +98,9 @@ void flux_draw_progress_ring(
 	( void ) state;
 
 	float size     = bounds->w < bounds->h ? bounds->w : bounds->h;
-	float stroke_w = 4.0f;
+	float stroke_w = PROGRESS_RING_STROKE_W;
 	float radius   = (size - stroke_w) * 0.5f;
-	if (radius < 2.0f) return;
+	if (radius < PROGRESS_RING_MIN_RADIUS) return;
 
 	float                  cx           = bounds->x + bounds->w * 0.5f;
 	float                  cy           = bounds->y + bounds->h * 0.5f;
@@ -111,8 +121,7 @@ void flux_draw_progress_ring(
 		return;
 	}
 
-	float pi2 = 2.0f * 3.14159265f;
-	if (sweep_rad > pi2 - 0.001f) sweep_rad = pi2 - 0.001f;
+	if (sweep_rad > PROGRESS_RING_TWO_PI - FLUX_ANIM_VALUE_EPS) sweep_rad = PROGRESS_RING_TWO_PI - FLUX_ANIM_VALUE_EPS;
 
 	ProgressRingArc    arc  = {cx, cy, radius, start_rad, sweep_rad};
 	ID2D1PathGeometry *path = progress_ring_create_path(factory, &arc);

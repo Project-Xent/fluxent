@@ -129,7 +129,6 @@ typedef struct FluxNodeData {
 	FluxNodeVisuals  visuals;        /**< Appearance properties */
 	FluxNodeState    state;          /**< Interaction flags */
 	FluxNodeBehavior behavior;       /**< Event callbacks (embedded) */
-	XentControlType  component_type; /**< Control type expected for component_data casts. */
 	void            *component_data; /**< Control-specific data; borrowed unless destroy_component_data is set. */
 	void             (*destroy_component_data)(void *component_data); /**< Optional owned component data destructor. */
 
@@ -143,6 +142,7 @@ typedef struct FluxNodeStore      FluxNodeStore;
 typedef struct FluxRenderContext  FluxRenderContext;
 typedef struct FluxRenderSnapshot FluxRenderSnapshot;
 typedef struct FluxControlState   FluxControlState;
+typedef void                      (*FluxNodeStoreInvalidateFn)(void *ctx);
 
 /** @brief Renderer callbacks for a control type, scoped to a node store. */
 typedef struct FluxControlRenderer {
@@ -157,13 +157,13 @@ typedef struct FluxControlRenderer {
  * @param initial_capacity Initial hash table capacity (will grow as needed).
  * @return New store, or NULL on allocation failure.
  */
-FluxNodeStore *flux_node_store_create(uint32_t initial_capacity);
+FluxNodeStore  *flux_node_store_create(uint32_t initial_capacity);
 
 /**
  * @brief Destroy a node store and free all associated memory.
  * @param store Store to destroy (NULL is safe).
  */
-void           flux_node_store_destroy(FluxNodeStore *store);
+void            flux_node_store_destroy(FluxNodeStore *store);
 
 /**
  * @brief Look up node data by ID.
@@ -171,7 +171,7 @@ void           flux_node_store_destroy(FluxNodeStore *store);
  * @param id Node ID to find.
  * @return Pointer to FluxNodeData, or NULL if not found.
  */
-FluxNodeData  *flux_node_store_get(FluxNodeStore *store, XentNodeId id);
+FluxNodeData   *flux_node_store_get(FluxNodeStore *store, XentNodeId id);
 
 /**
  * @brief Get or create node data for the given ID.
@@ -179,37 +179,49 @@ FluxNodeData  *flux_node_store_get(FluxNodeStore *store, XentNodeId id);
  * @param id Node ID.
  * @return Pointer to existing or newly-created FluxNodeData.
  */
-FluxNodeData  *flux_node_store_get_or_create(FluxNodeStore *store, XentNodeId id);
+FluxNodeData   *flux_node_store_get_or_create(FluxNodeStore *store, XentNodeId id);
+
+bool            flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx);
+
+FluxNodeData   *flux_node_store_bind_node(FluxNodeStore *store, XentContext *ctx, XentNodeId id, XentControlType type);
+
+FluxNodeData   *flux_node_store_payload(XentContext const *ctx, XentNodeId id);
+
+XentControlType flux_node_store_control_type(FluxNodeStore const *store, XentNodeId id);
+
+void flux_node_store_set_invalidate_callback(FluxNodeStore *store, FluxNodeStoreInvalidateFn callback, void *userdata);
+
+void flux_node_store_request_invalidate(FluxNodeStore *store);
 
 /**
  * @brief Remove a node from the store.
  * @param store Store to modify.
  * @param id Node ID to remove.
  */
-void           flux_node_store_remove(FluxNodeStore *store, XentNodeId id);
+void flux_node_store_remove(FluxNodeStore *store, XentNodeId id);
 
 /**
  * @brief Get the number of nodes in the store.
  * @param store Store to query.
  * @return Number of stored nodes.
  */
-uint32_t       flux_node_store_count(FluxNodeStore const *store);
+uint32_t flux_node_store_count(FluxNodeStore const *store);
 
 /**
  * @brief Attach FluxNodeData pointers as userdata to all nodes in a context.
  *
- * After calling this, `xent_get_userdata(ctx, id)` returns the corresponding
- * FluxNodeData pointer for quick access during layout/render.
+ * Existing code may call this to bind all current nodes to xent-core payload
+ * slots. New code should prefer flux_node_store_bind_node at creation time.
  *
  * @param store Store containing the node data.
  * @param ctx XentContext to attach userdata to.
  */
-void           flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx);
+void     flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx);
 
 /**
  * @brief Register a renderer in this store's isolated renderer table.
  */
-void           flux_node_store_register_renderer(
+void     flux_node_store_register_renderer(
   FluxNodeStore *store, XentControlType type,
   void (*draw)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *, FluxControlState const *),
   void (*draw_overlay)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *)

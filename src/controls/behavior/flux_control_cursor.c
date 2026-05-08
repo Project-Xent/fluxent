@@ -1,5 +1,6 @@
 #include "flux_control_cursor.h"
 
+#include "controls/textbox/tb_internal.h"
 #include "fluxent/flux_component_data.h"
 #include "fluxent/flux_window.h"
 
@@ -13,7 +14,7 @@ static int text_input_cursor(XentContext *ctx, FluxNodeStore *store, XentNodeId 
 	FluxTextBoxData *td = ( FluxTextBoxData * ) nd->component_data;
 	if (!td || !td->content || !td->content [0] || td->readonly) return FLUX_CURSOR_IBEAM;
 
-	return nd->hover_local_x >= rect.width - 30.0f ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
+	return nd->hover_local_x >= rect.width - TB_DELETE_BTN_W ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
 }
 
 static int password_cursor(XentContext *ctx, FluxNodeStore *store, XentNodeId node) {
@@ -25,7 +26,7 @@ static int password_cursor(XentContext *ctx, FluxNodeStore *store, XentNodeId no
 
 	XentRect rect = {0};
 	xent_get_layout_rect(ctx, node, &rect);
-	return nd->hover_local_x >= rect.width - 30.0f ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
+	return nd->hover_local_x >= rect.width - PB_REVEAL_BTN_W ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
 }
 
 static int number_cursor(XentContext *ctx, FluxNodeStore *store, XentNodeId node) {
@@ -35,8 +36,9 @@ static int number_cursor(XentContext *ctx, FluxNodeStore *store, XentNodeId node
 	XentRect rect = {0};
 	xent_get_layout_rect(ctx, node, &rect);
 
-	bool  spin   = xent_get_semantic_expanded(ctx, node);
-	float spin_w = spin ? 76.0f : 0.0f;
+	FluxTextBoxInputData *tb     = ( FluxTextBoxInputData * ) nd->component_data;
+	bool                  spin   = tb && tb->nb && tb->nb->spin_placement == FLUX_NB_SPIN_INLINE;
+	float                 spin_w = spin ? NB_SPIN_TOTAL : 0.0f;
 	if (spin && nd->hover_local_x >= rect.width - spin_w) return FLUX_CURSOR_ARROW;
 
 	if (!nd->state.focused) return FLUX_CURSOR_IBEAM;
@@ -44,9 +46,9 @@ static int number_cursor(XentContext *ctx, FluxNodeStore *store, XentNodeId node
 	FluxTextBoxData *td = ( FluxTextBoxData * ) nd->component_data;
 	if (!td || !td->content || !td->content [0] || td->readonly) return FLUX_CURSOR_IBEAM;
 
-	float del_start = rect.width - 40.0f - spin_w;
-	return nd->hover_local_x >= del_start && nd->hover_local_x < del_start + 40.0f ? FLUX_CURSOR_ARROW
-	                                                                               : FLUX_CURSOR_IBEAM;
+	float del_start = rect.width - NB_DEL_BTN_W - spin_w;
+	return nd->hover_local_x >= del_start && nd->hover_local_x < del_start + NB_DEL_BTN_W ? FLUX_CURSOR_ARROW
+	                                                                                      : FLUX_CURSOR_IBEAM;
 }
 
 static int default_cursor_for_type(XentControlType type) {

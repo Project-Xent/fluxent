@@ -3,9 +3,13 @@
 #include "controls/draw/flux_control_draw.h"
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_engine.h"
+#include "render/flux_fluent.h"
 
 #include <stdlib.h>
 #include <string.h>
+
+#define FLUX_FACTORY_HYPERLINK_TRAILING_W 40.0f
+#define FLUX_FACTORY_HYPERLINK_GLYPH_W    36.0f
 
 static float inline fclampf(float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; }
 
@@ -13,13 +17,9 @@ XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, Xent
 	XentNodeId node = xent_create_node(ctx);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	xent_set_control_type(ctx, node, type);
-
 	if (parent != XENT_NODE_INVALID) xent_append_child(ctx, parent, node);
 
-	FluxNodeData *nd = flux_node_store_get_or_create(store, node);
-	if (nd) nd->component_type = type;
-	xent_set_userdata(ctx, node, nd);
+	flux_node_store_bind_node(store, ctx, node, type);
 
 	return node;
 }
@@ -39,7 +39,7 @@ XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
 		return node;
 	}
 	bd->label                  = info->label;
-	bd->font_size              = 14.0f;
+	bd->font_size              = FLUX_FONT_SIZE_DEFAULT;
 	bd->style                  = FLUX_BUTTON_STANDARD;
 	bd->enabled                = true;
 	bd->on_click               = info->on_click;
@@ -74,7 +74,7 @@ flux_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char
 		return node;
 	}
 	td->content                = content;
-	td->font_size              = font_size > 0.0f ? font_size : 14.0f;
+	td->font_size              = font_size > 0.0f ? font_size : FLUX_FONT_SIZE_DEFAULT;
 	td->font_weight            = FLUX_FONT_REGULAR;
 	td->alignment              = FLUX_TEXT_LEFT;
 	td->vertical_alignment     = FLUX_TEXT_TOP;
@@ -104,7 +104,7 @@ static void slider_move_trampoline(void *ctx, float local_x, float local_y) {
 	XentRect rect = {0};
 	if (!xent_get_layout_rect(sid->ctx, sid->node, &rect)) return;
 
-	float pad     = 10.0f;
+	float pad     = FLUX_SLIDER_THUMB_SIZE * 0.5f;
 	float track_w = rect.width - pad * 2.0f;
 	if (track_w <= 0.0f) return;
 
@@ -287,7 +287,7 @@ XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info) {
 	}
 	hd->label                  = info->label;
 	hd->url                    = info->url;
-	hd->font_size              = 14.0f;
+	hd->font_size              = FLUX_FONT_SIZE_DEFAULT;
 	hd->enabled                = true;
 	hd->on_click               = info->on_click;
 	hd->on_click_ctx           = info->userdata;
@@ -308,7 +308,7 @@ XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info) {
 		xent_set_grid_rows(info->ctx, node, row_modes, row_vals, 1);
 
 		XentGridSizeMode col_modes [] = {XENT_GRID_STAR, XENT_GRID_PIXEL, XENT_GRID_PIXEL};
-		float            col_vals []  = {1.0f, 40.0f, 36.0f};
+		float            col_vals []  = {1.0f, FLUX_FACTORY_HYPERLINK_TRAILING_W, FLUX_FACTORY_HYPERLINK_GLYPH_W};
 		xent_set_grid_columns(info->ctx, node, col_modes, col_vals, 3);
 	}
 

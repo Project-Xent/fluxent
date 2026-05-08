@@ -278,7 +278,7 @@ static float menu_draw_toggle_marker(
 	FluxMenuFlyout *m = dc->menu;
 	if (!m->has_toggles) return start_x;
 
-	FluxRect     check_box = {start_x, ir->y, 16.0f, ir->h};
+	FluxRect     check_box = {start_x, ir->y, FLUX_MENU_ITEM_ICON_SIZE, ir->h};
 	MenuTextDraw draw
 	  = {NULL, &check_box, FLUX_MENU_ITEM_CHECK_GLYPH_SIZE, color, FLUX_TEXT_CENTER, FLUX_TEXT_VCENTER, true};
 	if (it->checked && it->type == FLUX_MENU_ITEM_TOGGLE) {
@@ -289,7 +289,7 @@ static float menu_draw_toggle_marker(
 		draw.text = GLYPH_RADIO_DOT;
 		draw_glyph(dc, &draw);
 	}
-	return start_x + 28.0f;
+	return start_x + FLUX_MENU_ITEM_CHECK_WIDTH;
 }
 
 static float menu_draw_icon_glyph(

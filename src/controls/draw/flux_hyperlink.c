@@ -45,7 +45,7 @@ static FluxColor hyperlink_text_color(
 }
 
 static void hyperlink_draw_background(HyperlinkBackground const *bg) {
-	if (!bg->state->enabled || (bg->hover_t <= 0.001f && bg->press_t <= 0.001f)) return;
+	if (!bg->state->enabled || (bg->hover_t <= FLUX_ANIM_VALUE_EPS && bg->press_t <= FLUX_ANIM_VALUE_EPS)) return;
 
 	FluxThemeColors const *t              = bg->rc->theme;
 	FluxColor              bg_transparent = flux_color_rgba(0, 0, 0, 0);

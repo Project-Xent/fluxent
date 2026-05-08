@@ -2,6 +2,9 @@
 
 #include <windows.h>
 
+#define FLUX_DT_FALLBACK 0.016f
+#define FLUX_DT_MAX      0.1f
+
 int64_t flux_perf_freq(void) {
 	static int64_t freq = 0;
 	if (freq == 0) {
@@ -27,9 +30,9 @@ double flux_perf_seconds(int64_t ticks) {
 float flux_compute_dt(int64_t prev, int64_t now) {
 	if (prev == 0) return 0.0f;
 	int64_t freq = flux_perf_freq();
-	if (freq == 0) return 0.016f;
+	if (freq == 0) return FLUX_DT_FALLBACK;
 	float dt = ( float ) (now - prev) / ( float ) freq;
 	if (dt < 0.0f) dt = 0.0f;
-	if (dt > 0.1f) dt = 0.1f;
+	if (dt > FLUX_DT_MAX) dt = FLUX_DT_MAX;
 	return dt;
 }

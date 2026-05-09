@@ -18,12 +18,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+<<<<<<< HEAD
 #define FLUX_APP_DISABLE_DMANIP_ENV_CAP 8
 #define FLUX_APP_DEFAULT_WIDTH          800
 #define FLUX_APP_DEFAULT_HEIGHT         600
 #define FLUX_APP_RENDER_CACHE_CAPACITY  512
 #define FLUX_APP_TOOLTIP_ANCHOR_H       20.0f
 
+/** @brief Present the frame with vsync enabled (default FluxApp render path). */
+static bool const kFluxAppPresentUseVsync = true;
+
+=======
+>>>>>>> parent of 3b152a3 (refactor: restructure node‑store binding, rendering traversal, and replace magic numbers with named constants)
 struct FluxApp {
 	FluxWindow           *window;
 	FluxEngine           *engine;
@@ -66,8 +72,8 @@ static void app_try_dmanip_handoff(FluxApp *app, FluxPointerEvent const *ev) {
 }
 
 static void app_init_dmanip(FluxApp *app) {
-	char  val [FLUX_APP_DISABLE_DMANIP_ENV_CAP] = {0};
-	DWORD n                                     = GetEnvironmentVariableA("FLUXENT_DISABLE_DMANIP", val, sizeof(val));
+	char  val [8] = {0};
+	DWORD n       = GetEnvironmentVariableA("FLUXENT_DISABLE_DMANIP", val, sizeof(val));
 	if (n > 0 && val [0] == '1') return;
 	HWND hwnd = flux_window_hwnd(app->window);
 	if (hwnd) ( void ) flux_dmanip_create(hwnd, &app->dmanip);
@@ -81,25 +87,29 @@ static bool app_focused_accepts_command(FluxApp *app) {
 	return ct != XENT_CONTROL_TEXT_INPUT && ct != XENT_CONTROL_PASSWORD_BOX && ct != XENT_CONTROL_NUMBER_BOX;
 }
 
+<<<<<<< HEAD
 static void app_request_render(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
-	if (app) flux_window_request_render(app->window);
+	if (app) flux_app_request_render(app);
 }
 
+=======
+>>>>>>> parent of 3b152a3 (refactor: restructure node‑store binding, rendering traversal, and replace magic numbers with named constants)
 static void app_render(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app->ctx || app->root == XENT_NODE_INVALID) return;
 
-	FluxGraphics *gfx   = flux_window_get_graphics(app->window);
+	FluxGraphics *gfx   = flux_app_get_graphics(app);
 	FluxSize      size  = flux_window_client_size(app->window);
 	FluxDpiInfo   dpi   = flux_window_dpi(app->window);
-	float         scale = dpi.dpi_x / FLUX_DPI_BASE;
+	float         scale = dpi.dpi_x / 96.0f;
 	float         w     = size.w / scale;
 	float         h     = size.h / scale;
 
 	if (app->dmanip) flux_dmanip_tick(app->dmanip);
 	xent_layout(app->ctx, app->root, w, h);
 	if (app->dmanip) flux_dmanip_sync_tree(app->dmanip, app->ctx, app->store, app->root, scale);
+	if (app->store) flux_node_store_attach_userdata(app->store, app->ctx);
 	if (app->cache) flux_render_cache_begin_frame(app->cache);
 
 	flux_engine_collect(app->engine, app->ctx, app->root);
@@ -136,9 +146,9 @@ static void app_render(void *ctx) {
 	flux_graphics_clear(gfx, flux_color_rgba(0, 0, 0, 0));
 	flux_engine_execute(app->engine, &rc);
 	flux_graphics_end_draw(gfx);
-	flux_graphics_present(gfx, true);
+	flux_graphics_present(gfx, kFluxAppPresentUseVsync);
 
-	if (anims_active) flux_window_request_render(app->window);
+	if (anims_active) flux_app_request_render(app);
 }
 
 static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool is_touch) {
@@ -157,18 +167,18 @@ static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool i
 	if (hovered != XENT_NODE_INVALID) {
 		HWND        hwnd   = flux_window_hwnd(app->window);
 		FluxDpiInfo tdpi   = flux_window_dpi(app->window);
-		float       tscale = tdpi.dpi_x / FLUX_DPI_BASE;
+		float       tscale = tdpi.dpi_x / 96.0f;
 		POINT       pt     = {( LONG ) (x * tscale), ( LONG ) (y * tscale)};
 		ClientToScreen(hwnd, &pt);
 		screen_bounds.x = ( float ) pt.x;
 		screen_bounds.y = ( float ) pt.y;
-		screen_bounds.h = FLUX_APP_TOOLTIP_ANCHOR_H;
+		screen_bounds.h = 20.0f;
 	}
 	flux_tooltip_on_hover(app->tooltip, hovered, hover_nd, &screen_bounds);
 }
 
 static bool app_active_menu_visible(FluxApp *app, FluxMenuFlyout **out_menu) {
-	FluxMenuFlyout *menu = flux_menu_flyout_get_active(app->window);
+	FluxMenuFlyout *menu = flux_app_get_active_menu_flyout(app);
 	if (out_menu) *out_menu = menu;
 	return menu && flux_menu_flyout_is_visible(menu);
 }
@@ -195,7 +205,7 @@ static void app_pointer_wheel(FluxApp *app, FluxPointerEvent const *ev) {
 		return;
 	}
 
-	flux_popup_dismiss_all_for_owner(flux_window_hwnd(app->window));
+	flux_popup_dismiss_all_for_owner(flux_app_get_hwnd(app));
 	flux_input_dispatch(app->input, app->root, ev);
 }
 
@@ -220,7 +230,7 @@ static void app_pointer(void *ctx, FluxPointerEvent const *ev) {
 
 	bool const is_touch = (ev->device == FLUX_POINTER_TOUCH);
 	app_pointer_route(app, ev, is_touch);
-	flux_window_request_render(app->window);
+	flux_app_request_render(app);
 }
 
 static void app_setting_changed(void *ctx) {
@@ -230,11 +240,11 @@ static void app_setting_changed(void *ctx) {
 		flux_theme_set_mode(app->theme, FLUX_THEME_SYSTEM);
 		flux_window_set_dark_mode(app->window, flux_theme_system_is_dark());
 	}
-	flux_window_request_render(app->window);
+	flux_app_request_render(app);
 }
 
 static bool app_handle_active_menu_key(FluxApp *app, unsigned int vk) {
-	FluxMenuFlyout *active_menu = flux_menu_flyout_get_active(app->window);
+	FluxMenuFlyout *active_menu = flux_app_get_active_menu_flyout(app);
 	return active_menu && flux_menu_flyout_on_key(active_menu, vk);
 }
 
@@ -274,14 +284,14 @@ static void app_key(void *ctx, unsigned int vk, bool down) {
 
 	if (down && app->tooltip) flux_tooltip_dismiss(app->tooltip);
 	if (down && !app_handle_key_command(app, vk)) flux_input_key_down(app->input, vk);
-	flux_window_request_render(app->window);
+	flux_app_request_render(app);
 }
 
 static void app_char(void *ctx, wchar_t ch) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app->input) return;
 	flux_input_char(app->input, ch);
-	flux_window_request_render(app->window);
+	flux_app_request_render(app);
 }
 
 static void app_ime_composition(void *ctx, wchar_t const *text, int cursor_pos) {
@@ -289,7 +299,7 @@ static void app_ime_composition(void *ctx, wchar_t const *text, int cursor_pos) 
 	if (!app || !app->input) return;
 	if (text) flux_input_ime_composition(app->input, text, ( uint32_t ) wcslen(text), ( uint32_t ) cursor_pos);
 	else flux_input_ime_end(app->input);
-	flux_window_request_render(app->window);
+	flux_app_request_render(app);
 }
 
 static void app_register_core_renderers(FluxNodeStore *store) {
@@ -315,8 +325,8 @@ HRESULT flux_app_create(FluxAppConfig const *cfg, FluxApp **out) {
 	FluxWindowConfig wcfg;
 	memset(&wcfg, 0, sizeof(wcfg));
 	wcfg.title     = cfg ? cfg->title : L"Fluxent";
-	wcfg.width     = cfg ? cfg->width : FLUX_APP_DEFAULT_WIDTH;
-	wcfg.height    = cfg ? cfg->height : FLUX_APP_DEFAULT_HEIGHT;
+	wcfg.width     = cfg ? cfg->width : 800;
+	wcfg.height    = cfg ? cfg->height : 600;
 	wcfg.dark_mode = cfg ? cfg->dark_mode : false;
 	wcfg.backdrop  = cfg ? ( int ) cfg->backdrop : 0;
 	wcfg.resizable = true;
@@ -334,7 +344,7 @@ HRESULT flux_app_create(FluxAppConfig const *cfg, FluxApp **out) {
 	flux_window_set_setting_changed_callback(app->window, app_setting_changed, app);
 	flux_window_set_ime_composition_callback(app->window, app_ime_composition, app);
 
-	app->cache = flux_render_cache_create(FLUX_APP_RENDER_CACHE_CAPACITY);
+	app->cache = flux_render_cache_create(512);
 	app->theme = flux_theme_create();
 	if (app->theme) flux_theme_set_mode(app->theme, FLUX_THEME_SYSTEM);
 
@@ -399,12 +409,11 @@ void flux_app_set_root(FluxApp *app, XentContext *ctx, XentNodeId root, FluxNode
 	app->text = flux_text_renderer_create();
 	if (app->text) flux_text_renderer_register(app->text, ctx);
 
-	if (store) flux_node_store_bind_context(store, ctx);
-	if (store) flux_node_store_set_invalidate_callback(store, app_request_render, app);
+	if (store) flux_node_store_attach_userdata(store, ctx);
 
 	if (app->tooltip && app->text) flux_tooltip_set_text_renderer(app->tooltip, app->text);
 
-	flux_window_request_render(app->window);
+	flux_app_request_render(app);
 }
 
 int flux_app_run(FluxApp *app) {
@@ -427,3 +436,18 @@ FluxTextRenderer *flux_app_get_text_renderer(FluxApp *app) { return app ? app->t
 XentContext      *flux_app_get_context(FluxApp *app) { return app ? app->ctx : NULL; }
 
 FluxNodeStore    *flux_app_get_store(FluxApp *app) { return app ? app->store : NULL; }
+
+void              flux_app_request_render(FluxApp *app) {
+	if (!app || !app->window) return;
+	flux_window_request_render(app->window);
+}
+
+FluxGraphics *flux_app_get_graphics(FluxApp *app) {
+	return app && app->window ? flux_window_get_graphics(app->window) : NULL;
+}
+
+FluxMenuFlyout *flux_app_get_active_menu_flyout(FluxApp *app) {
+	return app && app->window ? flux_menu_flyout_get_active(app->window) : NULL;
+}
+
+HWND flux_app_get_hwnd(FluxApp *app) { return app && app->window ? flux_window_hwnd(app->window) : NULL; }

@@ -4,15 +4,10 @@
 #include <string.h>
 #include <math.h>
 
-#define NB_FORMAT_STACK_CAP 64
-#define NB_EXACT_INT_LIMIT  1e15
-#define NB_GENERAL_FORMAT   "%.6g"
-#define NB_INTEGER_FORMAT   "%lld"
-
 bool nb_is_number_box(FluxTextBoxInputData *tb) { return tb->nb != NULL; }
 
 typedef struct NbFormatResult {
-	char     stack [NB_FORMAT_STACK_CAP];
+	char     stack [64];
 	char    *text;
 	uint32_t len;
 } NbFormatResult;
@@ -39,7 +34,7 @@ static bool nb_format_stack(NbFormatResult *fmt, double v, char const *pattern) 
 }
 
 static bool nb_format_int(NbFormatResult *fmt, long long v) {
-	int n = snprintf(fmt->stack, sizeof(fmt->stack), NB_INTEGER_FORMAT, v);
+	int n = snprintf(fmt->stack, sizeof(fmt->stack), "%lld", v);
 	if (n < 0) return false;
 	if (( size_t ) n < sizeof(fmt->stack)) {
 		fmt->text = fmt->stack;
@@ -49,7 +44,7 @@ static bool nb_format_int(NbFormatResult *fmt, long long v) {
 
 	fmt->text = ( char * ) malloc(( size_t ) n + 1u);
 	if (!fmt->text) return false;
-	n = snprintf(fmt->text, ( size_t ) n + 1u, NB_INTEGER_FORMAT, v);
+	n = snprintf(fmt->text, ( size_t ) n + 1u, "%lld", v);
 	if (n < 0) {
 		free(fmt->text);
 		memset(fmt, 0, sizeof(*fmt));
@@ -66,9 +61,8 @@ static bool nb_format_value(NbFormatResult *fmt, double v) {
 		fmt->len  = 0;
 		return true;
 	}
-	if (v >= -NB_EXACT_INT_LIMIT && v <= NB_EXACT_INT_LIMIT && v == ( double ) ( long long ) v)
-		return nb_format_int(fmt, ( long long ) v);
-	return nb_format_stack(fmt, v, NB_GENERAL_FORMAT);
+	if (v >= -1e15 && v <= 1e15 && v == ( double ) ( long long ) v) return nb_format_int(fmt, ( long long ) v);
+	return nb_format_stack(fmt, v, "%.6g");
 }
 
 static void nb_format_free(NbFormatResult *fmt) {
@@ -78,7 +72,7 @@ static void nb_format_free(NbFormatResult *fmt) {
 void nb_coerce_value(FluxTextBoxInputData *tb) {
 	double v = tb->nb->value;
 	if (isnan(v)) return;
-	if (tb->nb->validation == FLUX_NB_VALIDATE_OVERWRITE) {
+	if (tb->nb->validation == 0) {
 		if (v > tb->nb->maximum) tb->nb->value = tb->nb->maximum;
 		else if (v < tb->nb->minimum) tb->nb->value = tb->nb->minimum;
 	}
@@ -88,25 +82,18 @@ void nb_sync_semantics(FluxTextBoxInputData *tb) {
 	xent_set_semantic_value(
 	  tb->ctx, tb->node, ( float ) tb->nb->value, ( float ) tb->nb->minimum, ( float ) tb->nb->maximum
 	);
+	xent_set_semantic_expanded(tb->ctx, tb->node, tb->nb->spin_placement == 2);
 }
 
 void nb_update_text_to_value(FluxTextBoxInputData *tb) {
 	NbFormatResult fmt;
 	if (!nb_format_value(&fmt, tb->nb->value)) return;
-	if (fmt.len >= tb->buf_cap && !tb_ensure_cap(tb, fmt.len + 1u)) {
-		nb_format_free(&fmt);
-		return;
-	}
-	memcpy(tb->buffer, fmt.text, ( size_t ) fmt.len);
-	tb->buffer [fmt.len] = '\0';
-	tb->buf_len          = fmt.len;
-	tb->base.content     = tb->buffer;
-	nb_format_free(&fmt);
 
-	tb->nb->text_updating    = true;
-	tb->base.cursor_position = tb->buf_len;
-	tb->base.selection_start = tb->buf_len;
-	tb->base.selection_end   = tb->buf_len;
+	bool ok = tb_replace_text(tb, fmt.text ? fmt.text : "");
+	nb_format_free(&fmt);
+	if (!ok) return;
+
+	tb->nb->text_updating = true;
 	tb_update_scroll(tb);
 	tb->nb->text_updating = false;
 }
@@ -133,6 +120,7 @@ void nb_validate_input(FluxTextBoxInputData *tb) {
 		nb_set_value(tb, NAN);
 		return;
 	}
+	tb_realize(tb);
 	char *start = tb->buffer;
 	while (*start == ' ' || *start == '\t') start++;
 	char  *end_ptr = NULL;

@@ -50,14 +50,15 @@ static uint32_t tb_common_suffix(char const *a, uint32_t alen, char const *b, ui
 	return suffix;
 }
 
-static bool tb_history_from_pending(TbEditHistory *out, FluxTextBoxInputData const *tb) {
+static bool tb_history_from_pending(TbEditHistory *out, FluxTextBoxInputData *tb) {
 	memset(out, 0, sizeof(*out));
-	TbPendingEdit const *p            = &tb->pending_edit;
+	TbPendingEdit const *p = &tb->pending_edit;
 
-	uint32_t             prefix       = tb_common_prefix(p->text, p->len, tb->buffer, tb->buf_len);
-	uint32_t             suffix       = tb_common_suffix(p->text, p->len, tb->buffer, tb->buf_len, prefix);
-	uint32_t             deleted_len  = p->len - prefix - suffix;
-	uint32_t             inserted_len = tb->buf_len - prefix - suffix;
+	tb_realize(tb);
+	uint32_t prefix       = tb_common_prefix(p->text, p->len, tb->buffer, tb->buf_len);
+	uint32_t suffix       = tb_common_suffix(p->text, p->len, tb->buffer, tb->buf_len, prefix);
+	uint32_t deleted_len  = p->len - prefix - suffix;
+	uint32_t inserted_len = tb->buf_len - prefix - suffix;
 	if (deleted_len == 0 && inserted_len == 0) return false;
 
 	out->pos              = prefix;
@@ -103,12 +104,8 @@ tb_replace_span(FluxTextBoxInputData *tb, uint32_t pos, uint32_t remove_len, cha
 	if (insert_len > UINT32_MAX - (tb->buf_len - remove_len) - 1u) return false;
 	if (!tb_ensure_cap(tb, tb->buf_len - remove_len + insert_len + 1u)) return false;
 
-	memmove(tb->buffer + pos + insert_len, tb->buffer + pos + remove_len, tb->buf_len - pos - remove_len);
-	if (insert_len > 0) memcpy(tb->buffer + pos, insert, insert_len);
-
-	tb->buf_len              = tb->buf_len - remove_len + insert_len;
-	tb->buffer [tb->buf_len] = '\0';
-	tb->base.content         = tb->buffer;
+	if (remove_len > 0) tb_delete_range(tb, pos, pos + remove_len);
+	if (insert_len > 0) tb_insert_utf8(tb, pos, insert, insert_len);
 	return true;
 }
 
@@ -141,6 +138,7 @@ void tb_push_undo(FluxTextBoxInputData *tb) {
 	tb_commit_pending_undo(tb);
 	tb_pending_free(&tb->pending_edit);
 
+	tb_realize(tb);
 	tb->pending_edit.text = ( char * ) malloc(( size_t ) tb->buf_len + 1u);
 	if (!tb->pending_edit.text) return;
 

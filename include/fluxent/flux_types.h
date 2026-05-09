@@ -16,8 +16,6 @@
   #define __attribute__(x)
 #endif
 
-#define FLUX_DPI_BASE 96.0f
-
 /** @brief RGBA color packed as uint32_t (0xRRGGBBAA). */
 typedef struct FluxColor {
 	uint32_t rgba;

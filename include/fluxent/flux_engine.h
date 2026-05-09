@@ -148,7 +148,7 @@ void                     flux_engine_execute(FluxEngine const *eng, FluxRenderCo
  * Called internally by flux_engine_execute(). Can also be called
  * directly for custom rendering pipelines.
  */
-void                     flux_dispatch_render(
+void                     flux_engine_dispatch_render(
   FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds,
   FluxControlState const *state
 );
@@ -156,7 +156,7 @@ void                     flux_dispatch_render(
 /**
  * @brief Dispatch overlay rendering for a control.
  */
-void flux_dispatch_render_overlay(
+void flux_engine_dispatch_render_overlay(
   FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds
 );
 

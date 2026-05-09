@@ -81,11 +81,7 @@ static FluxPopup **g_popup_registry       = NULL;
 static int         g_popup_registry_count = 0;
 static int         g_popup_registry_cap   = 0;
 
-#define POPUP_REGISTRY_INITIAL_CAP 64
-#define POPUP_MIN_WORK_HEIGHT_DIP  64.0f
-#define POPUP_TRANSFORM_EPS        0.1f
-
-static int popup_registry_find(FluxPopup *p) {
+static int         popup_registry_find(FluxPopup *p) {
 	for (int i = 0; i < g_popup_registry_count; i++)
 		if (g_popup_registry [i] == p) return i;
 	return -1;
@@ -95,7 +91,7 @@ static void popup_registry_add(FluxPopup *p) {
 	if (!p) return;
 	if (popup_registry_find(p) >= 0) return;
 	if (g_popup_registry_count >= g_popup_registry_cap) {
-		int         new_cap = g_popup_registry_cap ? g_popup_registry_cap * 2 : POPUP_REGISTRY_INITIAL_CAP;
+		int         new_cap = g_popup_registry_cap ? g_popup_registry_cap * 2 : 64;
 		FluxPopup **items   = ( FluxPopup ** ) realloc(g_popup_registry, ( size_t ) new_cap * sizeof(*items));
 		if (!items) return;
 		g_popup_registry     = items;
@@ -119,7 +115,6 @@ static void popup_registry_remove(FluxPopup *p) {
  * Source: microsoft-ui-xaml MenuPopupThemeTransition_Partial.h, closedRatio=0.5. */
 /* PopupThemeTransition (Flyout): translate 50 DIP + fade, 167 ms, ease-out. */
 #define POPUP_FLYOUT_OFFSET_DIP 50.0f
-#define POPUP_SCREEN_MARGIN_DIP 8.0f
 
 static LRESULT CALLBACK popup_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 static void             popup_position(FluxPopup *popup);
@@ -241,7 +236,7 @@ void flux_popup_set_anim_style(FluxPopup *popup, FluxPopupAnimStyle style) {
 
 static float popup_scale_for_owner(FluxPopup const *popup) {
 	UINT dpi = GetDpiForWindow(popup->owner_hwnd);
-	return dpi / FLUX_DPI_BASE;
+	return dpi / 96.0f;
 }
 
 static RECT popup_owner_work_rect(FluxPopup const *popup) {
@@ -252,10 +247,10 @@ static RECT popup_owner_work_rect(FluxPopup const *popup) {
 }
 
 static void popup_clamp_content_height(FluxPopup const *popup, RECT const *work, float scale, float *content_h) {
-	float const screen_margin = POPUP_SCREEN_MARGIN_DIP;
+	float const screen_margin = 8.0f;
 	float       work_h_dip    = (( float ) (work->bottom - work->top)) / scale - 2.0f * screen_margin;
 
-	if (work_h_dip < POPUP_MIN_WORK_HEIGHT_DIP) work_h_dip = POPUP_MIN_WORK_HEIGHT_DIP;
+	if (work_h_dip < 64.0f) work_h_dip = 64.0f;
 	if (popup->max_content_h > 0.0f && popup->max_content_h < work_h_dip) work_h_dip = popup->max_content_h;
 	if (*content_h > work_h_dip) *content_h = work_h_dip;
 }
@@ -424,7 +419,7 @@ static void popup_apply_flyout_frame(FluxPopup *popup, float t) {
 	if (!popup || !popup->popup_hwnd) return;
 
 	UINT  dpi       = GetDpiForWindow(popup->owner_hwnd);
-	float scale     = dpi > 0 ? dpi / FLUX_DPI_BASE : 1.0f;
+	float scale     = dpi > 0 ? dpi / 96.0f : 1.0f;
 	int   offset_px = ( int ) (POPUP_FLYOUT_OFFSET_DIP * scale + 0.5f);
 	int   from      = ( int ) ((1.0f - t) * ( float ) offset_px + 0.5f);
 	int   dx = 0, dy = 0;
@@ -555,7 +550,7 @@ void flux_popup_dismiss_all_for_owner(HWND owner_hwnd) {
 
 static float popup_window_scale(HWND hwnd) {
 	UINT dpi = GetDpiForWindow(hwnd);
-	return dpi > 0 ? ( float ) dpi / FLUX_DPI_BASE : 1.0f;
+	return dpi > 0 ? ( float ) dpi / 96.0f : 1.0f;
 }
 
 static PopupMouseCoord popup_mouse_point(HWND hwnd, LPARAM lp) {
@@ -622,14 +617,14 @@ static float popup_menu_top_translate_y(FluxPopup *popup, HWND hwnd) {
 }
 
 static void popup_set_rt_translate(ID2D1RenderTarget *rt, float translate_y) {
-	if (!rt || fabsf(translate_y) <= POPUP_TRANSFORM_EPS) return;
+	if (!rt || fabsf(translate_y) <= 0.1f) return;
 
 	D2D1_MATRIX_3X2_F xform = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, translate_y};
 	ID2D1RenderTarget_SetTransform(rt, &xform);
 }
 
 static void popup_reset_rt_transform(ID2D1RenderTarget *rt, float translate_y) {
-	if (!rt || fabsf(translate_y) <= POPUP_TRANSFORM_EPS) return;
+	if (!rt || fabsf(translate_y) <= 0.1f) return;
 
 	D2D1_MATRIX_3X2_F identity = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
 	ID2D1RenderTarget_SetTransform(rt, &identity);

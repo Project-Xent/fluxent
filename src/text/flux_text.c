@@ -11,15 +11,8 @@
 #include <cd2d.h>
 #include <cdwrite.h>
 
-#define FLUX_FORMAT_CACHE_SIZE          16
-#define FLUX_LAYOUT_CACHE_SIZE          64
-#define FLUX_TEXT_WIDE_STACK_CAP        256
-#define FLUX_TEXT_FONT_FAMILY_BUF_CAP   128
-#define FLUX_TEXT_DEFAULT_SIZE          14.0f
-#define FLUX_TEXT_DEFAULT_WEIGHT        400
-#define FLUX_TEXT_UNBOUNDED             100000.0f
-#define FLUX_TEXT_DEFAULT_FONT          L"Segoe UI"
-#define FLUX_TEXT_DEFAULT_VARIABLE_FONT L"Segoe UI Variable"
+#define FLUX_FORMAT_CACHE_SIZE 16
+#define FLUX_LAYOUT_CACHE_SIZE 64
 
 typedef struct FluxFormatCacheKey {
 	uint32_t family_hash;
@@ -53,7 +46,7 @@ typedef struct FluxLayoutCacheEntry {
 } FluxLayoutCacheEntry;
 
 typedef struct TextWideBuffer {
-	wchar_t  stack [FLUX_TEXT_WIDE_STACK_CAP];
+	wchar_t  stack [256];
 	wchar_t *text;
 	int      len;
 } TextWideBuffer;
@@ -161,7 +154,7 @@ static float constraint_for_mode(float width_constraint, XentMeasureMode mode) {
 	switch (mode) {
 	case XENT_MEASURE_AT_MOST :
 	case XENT_MEASURE_EXACTLY : return width_constraint;
-	default                   : return FLUX_TEXT_UNBOUNDED;
+	default                   : return 100000.0f;
 	}
 }
 
@@ -183,14 +176,14 @@ static DWRITE_PARAGRAPH_ALIGNMENT to_dw_para(FluxTextVAlign a) {
 }
 
 static IDWriteTextFormat *create_styled_format(FluxTextRenderer *tr, FluxTextStyle const *s) {
-	wchar_t const *family = FLUX_TEXT_DEFAULT_VARIABLE_FONT;
-	wchar_t        fam_buf [FLUX_TEXT_FONT_FAMILY_BUF_CAP];
+	wchar_t const *family = L"Segoe UI Variable";
+	wchar_t        fam_buf [128];
 	if (s->font_family && s->font_family [0]) {
-		int n = flux_utf8_to_wchar(s->font_family, fam_buf, FLUX_TEXT_FONT_FAMILY_BUF_CAP);
+		int n = flux_utf8_to_wchar(s->font_family, fam_buf, 128);
 		if (n > 0) family = fam_buf;
 	}
-	float              size   = s->font_size > 0.0f ? s->font_size : FLUX_TEXT_DEFAULT_SIZE;
-	DWRITE_FONT_WEIGHT weight = ( DWRITE_FONT_WEIGHT ) (s->font_weight > 0 ? s->font_weight : FLUX_TEXT_DEFAULT_WEIGHT);
+	float              size   = s->font_size > 0.0f ? s->font_size : 14.0f;
+	DWRITE_FONT_WEIGHT weight = ( DWRITE_FONT_WEIGHT ) (s->font_weight > 0 ? s->font_weight : 400);
 
 	IDWriteTextFormat *fmt    = NULL;
 	HRESULT            hr     = IDWriteFactory_CreateTextFormat(
@@ -208,8 +201,8 @@ static IDWriteTextFormat *create_styled_format(FluxTextRenderer *tr, FluxTextSty
 static FluxFormatCacheKey make_format_key(FluxTextStyle const *s) {
 	FluxFormatCacheKey k;
 	k.family_hash = fnv1a_str(s->font_family);
-	k.size_bits   = float_to_bits(s->font_size > 0.0f ? s->font_size : FLUX_TEXT_DEFAULT_SIZE);
-	k.font_weight = s->font_weight > 0 ? s->font_weight : FLUX_TEXT_DEFAULT_WEIGHT;
+	k.size_bits   = float_to_bits(s->font_size > 0.0f ? s->font_size : 14.0f);
+	k.font_weight = s->font_weight > 0 ? s->font_weight : 400;
 	k.text_align  = ( int ) s->text_align;
 	k.vert_align  = ( int ) s->vert_align;
 	k.word_wrap   = s->word_wrap ? 1 : 0;
@@ -297,20 +290,11 @@ static IDWriteTextLayout *get_or_create_layout(FluxTextRenderer *tr, TextLayoutC
 	return layout;
 }
 
-typedef struct DWriteMeasureRequest {
-	FluxTextRenderer   *renderer;
-	char const         *text;
-	float               font_size;
-	float               width_constraint;
-	XentLineBreakPolicy policy;
-	XentMeasureMode     mode;
-} DWriteMeasureRequest;
-
 static IDWriteTextFormat *
 dwrite_create_measure_format(FluxTextRenderer *tr, float font_size, XentLineBreakPolicy policy, XentMeasureMode mode) {
 	IDWriteTextFormat *fmt = NULL;
 	HRESULT            hr  = IDWriteFactory_CreateTextFormat(
-	  tr->factory, tr->default_font ? tr->default_font : FLUX_TEXT_DEFAULT_FONT, NULL, DWRITE_FONT_WEIGHT_REGULAR,
+	  tr->factory, tr->default_font ? tr->default_font : L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_REGULAR,
 	  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"", &fmt
 	);
 	if (FAILED(hr)) return NULL;
@@ -322,9 +306,8 @@ dwrite_create_measure_format(FluxTextRenderer *tr, float font_size, XentLineBrea
 static IDWriteTextLayout *
 dwrite_create_measure_layout(FluxTextRenderer *tr, IDWriteTextFormat *fmt, TextWideBuffer const *text, float width) {
 	IDWriteTextLayout *layout = NULL;
-	HRESULT            hr     = IDWriteFactory_CreateTextLayout(
-	  tr->factory, text->text, ( UINT32 ) text->len, fmt, width, FLUX_TEXT_UNBOUNDED, &layout
-	);
+	HRESULT            hr
+	  = IDWriteFactory_CreateTextLayout(tr->factory, text->text, ( UINT32 ) text->len, fmt, width, 100000.0f, &layout);
 	if (FAILED(hr)) return NULL;
 	return layout;
 }
@@ -342,69 +325,49 @@ dwrite_read_metrics(IDWriteTextLayout *layout, XentMeasureMode mode, float width
 	return true;
 }
 
-static bool dwrite_measure_request(DWriteMeasureRequest const *request, XentTextMetrics *out) {
-	if (!request->renderer || !out) return false;
+static bool dwrite_measure(
+  XentTextBackend const *backend, char const *text, float font_size, float width_constraint, XentLineBreakPolicy policy,
+  XentMeasureMode mode, XentTextMetrics *out
+) {
+	FluxTextRenderer *tr = ( FluxTextRenderer * ) backend->userdata;
+	if (!tr || !out) return false;
 
 	TextWideBuffer wide;
-	if (!text_wide_buffer_from_utf8(&wide, request->text)) return false;
+	if (!text_wide_buffer_from_utf8(&wide, text)) return false;
 
-	IDWriteTextFormat *fmt
-	  = dwrite_create_measure_format(request->renderer, request->font_size, request->policy, request->mode);
+	IDWriteTextFormat *fmt = dwrite_create_measure_format(tr, font_size, policy, mode);
 	if (!fmt) {
 		text_wide_buffer_free(&wide);
 		return false;
 	}
 
-	float              layout_width = constraint_for_mode(request->width_constraint, request->mode);
-	IDWriteTextLayout *layout       = dwrite_create_measure_layout(request->renderer, fmt, &wide, layout_width);
+	float              layout_width = constraint_for_mode(width_constraint, mode);
+	IDWriteTextLayout *layout       = dwrite_create_measure_layout(tr, fmt, &wide, layout_width);
 	text_wide_buffer_free(&wide);
 
-	bool ok = layout && dwrite_read_metrics(layout, request->mode, request->width_constraint, out);
+	bool ok = layout && dwrite_read_metrics(layout, mode, width_constraint, out);
 
 	if (layout) IDWriteTextLayout_Release(layout);
 	IDWriteTextFormat_Release(fmt);
 	return ok;
 }
 
-static DWriteMeasureRequest
-dwrite_measure_request_from_backend(XentTextBackend const *backend, XentTextMeasureRequest const *request) {
-	return (DWriteMeasureRequest) {
-	  ( FluxTextRenderer * ) backend->userdata,
-	  request->text,
-	  request->font_size,
-	  request->width_constraint,
-	  request->line_break_policy,
-	  request->width_mode,
-	};
-}
+static bool dwrite_shape(
+  XentTextBackend const *backend, char const *text, float font_size, float width_constraint, XentLineBreakPolicy policy,
+  XentMeasureMode mode, XentShapedGlyph *out_glyphs, uint32_t glyph_capacity, XentShapedRun *out_runs,
+  uint32_t run_capacity, XentShapedLine *out_lines, uint32_t line_capacity, XentShapingResult *out_result
+) {
+	if (!out_result) return false;
 
-static bool
-dwrite_measure(XentTextBackend const *backend, XentTextMeasureRequest const *request, XentTextMetrics *out) {
-	if (!backend || !request) return false;
-	DWriteMeasureRequest dwrite_request = dwrite_measure_request_from_backend(backend, request);
-	return dwrite_measure_request(&dwrite_request, out);
-}
+	XentTextMetrics m;
+	if (!dwrite_measure(backend, text, font_size, width_constraint, policy, mode, &m)) return false;
 
-static bool
-dwrite_shape(XentTextBackend const *backend, XentTextShapeRequest const *request, XentTextShapeOutput const *output) {
-	if (!backend || !request || !output || !output->result) return false;
-	XentTextMetrics      m;
-	DWriteMeasureRequest dwrite_request = {
-	  ( FluxTextRenderer * ) backend->userdata,
-	  request->text,
-	  request->font_size,
-	  request->width_constraint,
-	  request->line_break_policy,
-	  request->width_mode,
-	};
-	if (!dwrite_measure_request(&dwrite_request, &m)) return false;
-
-	memset(output->result, 0, sizeof(*output->result));
-	output->result->metrics     = m;
-	output->result->glyph_count = 0;
-	output->result->run_count   = 0;
-	output->result->line_count  = m.line_count;
-	output->result->truncated   = false;
+	memset(out_result, 0, sizeof(*out_result));
+	out_result->metrics     = m;
+	out_result->glyph_count = 0;
+	out_result->run_count   = 0;
+	out_result->line_count  = m.line_count;
+	out_result->truncated   = false;
 	return true;
 }
 
@@ -425,7 +388,7 @@ FluxTextRenderer *flux_text_renderer_create(void) {
 		return NULL;
 	}
 
-	tr->default_size = FLUX_TEXT_DEFAULT_SIZE;
+	tr->default_size = 14.0f;
 	return tr;
 }
 
@@ -455,6 +418,8 @@ bool flux_text_renderer_register(FluxTextRenderer *tr, XentContext *ctx) {
 
 	return xent_set_text_backend(ctx, &backend);
 }
+
+#define FLUX_TEXT_UNBOUNDED 100000.0f
 
 static IDWriteTextLayout *text_layout_from_utf8(TextLayoutRequest const *req, TextWideBuffer *wide) {
 	if (!text_wide_buffer_from_utf8(wide, req->text)) return NULL;

@@ -54,11 +54,9 @@ static float tb_reserved_trailing_w(FluxTextBoxInputData const *tb, XentControlT
 	bool show_reveal = tb_show_trailing_button(tb, nd, true);
 
 	switch (ct) {
-	case XENT_CONTROL_NUMBER_BOX :
-		return (tb->nb->spin_placement == FLUX_NB_SPIN_INLINE ? NB_SPIN_TOTAL : 0.0f)
-		     + (show_clear ? NB_DEL_BTN_W : 0.0f);
-	case XENT_CONTROL_TEXT_INPUT   : return show_clear ? TB_DELETE_BTN_W : 0.0f;
-	case XENT_CONTROL_PASSWORD_BOX : return show_reveal ? PB_REVEAL_BTN_W : 0.0f;
+	case XENT_CONTROL_NUMBER_BOX   : return (tb->nb->spin_placement == 2 ? 76.0f : 0.0f) + (show_clear ? 40.0f : 0.0f);
+	case XENT_CONTROL_TEXT_INPUT   : return show_clear ? 30.0f : 0.0f;
+	case XENT_CONTROL_PASSWORD_BOX : return show_reveal ? 30.0f : 0.0f;
 	default                        : return 0.0f;
 	}
 }
@@ -98,6 +96,7 @@ static void tb_leave_number_step(FluxTextBoxInputData *tb) {
 }
 
 static void tb_move_horizontal(FluxTextBoxInputData *tb, bool forward, bool ctrl, bool shift) {
+	tb_realize(tb);
 	uint32_t pos = tb->base.cursor_position;
 	if (forward)
 		pos = pos < tb->buf_len
@@ -121,6 +120,7 @@ static void tb_delete_selection_or_cursor(FluxTextBoxInputData *tb, bool backwar
 		tb_delete_selection(tb);
 		return;
 	}
+	tb_realize(tb);
 	if (backward && tb->base.cursor_position > 0) {
 		uint32_t prev = tb_utf8_prev(tb->buffer, tb->buf_len, tb->base.cursor_position);
 		tb_delete_range(tb, prev, tb->base.cursor_position);
@@ -197,10 +197,7 @@ static void tb_prepare_typing_undo(FluxTextBoxInputData *tb, wchar_t ch) {
 }
 
 static bool tb_use_password_mask(FluxTextBoxInputData *tb, XentControlType ct) {
-	return ct == XENT_CONTROL_PASSWORD_BOX
-	    && tb->buf_len > 0
-	    && !tb->password_show_plain
-	    && !tb->password_reveal_pressed;
+	return ct == XENT_CONTROL_PASSWORD_BOX && tb->buf_len > 0 && !xent_get_semantic_checked(tb->ctx, tb->node);
 }
 
 static char const *tb_password_mask_text(FluxTextBoxInputData *tb, char stack [TB_MASK_STACK_BYTES], char **heap) {
@@ -210,6 +207,7 @@ static char const *tb_password_mask_text(FluxTextBoxInputData *tb, char stack [T
 	char  *dst   = bytes <= TB_MASK_STACK_BYTES ? stack : ( char * ) malloc(bytes);
 	if (!dst) return "";
 
+	tb_realize(tb);
 	pb_build_mask(tb->buffer, tb->buf_len, dst, ( uint32_t ) bytes);
 	if (dst != stack) *heap = dst;
 	return dst;
@@ -217,6 +215,7 @@ static char const *tb_password_mask_text(FluxTextBoxInputData *tb, char stack [T
 
 static uint32_t
 tb_hit_test_byte_pos(FluxTextBoxInputData *tb, FluxTextRenderer *tr, XentControlType ct, float local_x) {
+	tb_realize(tb);
 	float         max_w    = tb_calc_text_max_w(tb, ct);
 	float         text_x   = local_x - 10.0f + tb->base.scroll_offset_x;
 	FluxTextStyle ts       = tb_make_style(tb);
@@ -254,13 +253,8 @@ static void tb_apply_pointer_position(FluxTextBoxInputData *tb, uint32_t byte_po
 static void tb_clear_text(FluxTextBoxInputData *tb) {
 	tb_leave_number_step(tb);
 	tb_push_undo(tb);
-	tb->last_op_was_typing   = false;
-	tb->buffer [0]           = '\0';
-	tb->buf_len              = 0;
-	tb->base.content         = tb->buffer;
-	tb->base.cursor_position = 0;
-	tb->base.selection_start = 0;
-	tb->base.selection_end   = 0;
+	tb->last_op_was_typing = false;
+	tb_replace_text(tb, "");
 	tb_update_scroll(tb);
 	tb_notify_change(tb);
 }
@@ -268,11 +262,10 @@ static void tb_clear_text(FluxTextBoxInputData *tb) {
 static bool tb_handle_delete_button(FluxTextBoxInputData *tb, XentControlType ct, float local_x) {
 	if (ct != XENT_CONTROL_TEXT_INPUT && ct != XENT_CONTROL_NUMBER_BOX) return false;
 
-	float del_w = (ct == XENT_CONTROL_NUMBER_BOX) ? NB_DEL_BTN_W : TB_DELETE_BTN_W;
-	float del_right_offset
-	  = (ct == XENT_CONTROL_NUMBER_BOX && tb->nb->spin_placement == FLUX_NB_SPIN_INLINE) ? NB_SPIN_TOTAL : 0.0f;
-	FluxNodeData *nd       = flux_node_store_get(tb->store, tb->node);
-	bool          show_del = tb->buffer && tb->buf_len > 0 && nd && nd->state.focused && !tb->base.readonly;
+	float         del_w            = (ct == XENT_CONTROL_NUMBER_BOX) ? 40.0f : 30.0f;
+	float         del_right_offset = (ct == XENT_CONTROL_NUMBER_BOX && tb->nb->spin_placement == 2) ? 76.0f : 0.0f;
+	FluxNodeData *nd               = flux_node_store_get(tb->store, tb->node);
+	bool          show_del         = tb->buffer && tb->buf_len > 0 && nd && nd->state.focused && !tb->base.readonly;
 	if (!show_del) return false;
 
 	XentRect rect = {0};
@@ -291,9 +284,9 @@ static bool tb_handle_password_reveal(FluxTextBoxInputData *tb, XentControlType 
 	xent_get_layout_rect(tb->ctx, tb->node, &rect);
 	FluxNodeData *nd       = flux_node_store_get(tb->store, tb->node);
 	bool          show_rev = tb->buffer && tb->buf_len > 0 && nd && nd->state.focused;
-	if (!show_rev || local_x < rect.width - PB_REVEAL_BTN_W) return false;
+	if (!show_rev || local_x < rect.width - 30.0f) return false;
 
-	tb->password_reveal_pressed = true;
+	xent_set_semantic_checked(tb->ctx, tb->node, 1);
 	return true;
 }
 
@@ -312,6 +305,7 @@ static void tb_apply_click_selection(FluxTextBoxInputData *tb, uint32_t byte_pos
 		return;
 	}
 	if (click_count == 2) {
+		tb_realize(tb);
 		uint32_t ws              = tb_word_start(tb->buffer, tb->buf_len, byte_pos);
 		uint32_t we              = tb_word_end(tb->buffer, tb->buf_len, byte_pos);
 		tb->base.selection_start = ws;
@@ -595,7 +589,8 @@ void tb_on_blur(void *ctx) {
 	tb->base.composition_cursor = 0;
 	tb->dragging                = false;
 
-	if (xent_get_control_type(tb->ctx, tb->node) == XENT_CONTROL_PASSWORD_BOX) tb->password_reveal_pressed = false;
+	if (xent_get_control_type(tb->ctx, tb->node) == XENT_CONTROL_PASSWORD_BOX)
+		xent_set_semantic_checked(tb->ctx, tb->node, 0);
 
 	if (nb_is_number_box(tb)) nb_validate_input(tb);
 }

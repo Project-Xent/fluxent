@@ -161,7 +161,7 @@ void demo_make_root(Demo *d) {
 	xent_set_flex_align_items(d->ctx, d->root, XENT_FLEX_ALIGN_CENTER);
 	xent_set_padding(d->ctx, d->root, (XentInsets) {32, 32, 32, 32});
 	xent_set_gap(d->ctx, d->root, 14);
-	xent_set_size(d->ctx, d->root, (XentSize) {NAN, 2200});
+	xent_set_size(d->ctx, d->root, (XentSize) {( float ) NAN, ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H});
 	xent_append_child(d->ctx, d->scroll_root, d->root);
 }
 

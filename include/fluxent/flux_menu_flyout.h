@@ -200,10 +200,7 @@ FluxMenuFlyout *flux_menu_flyout_get_parent(FluxMenuFlyout *menu);
  */
 int             flux_menu_flyout_get_parent_item_index(FluxMenuFlyout *menu);
 
-/**
- * @brief Returns the deepest visible FluxMenuFlyout for a window, or NULL.
- * The app's key handler should forward keys to this active leaf menu.
- */
+/** @brief Deepest visible FluxMenuFlyout for a window, or NULL (use flux_app_get_active_menu_flyout with FluxApp). */
 FluxMenuFlyout *flux_menu_flyout_get_active(FluxWindow *owner);
 
 #ifdef __cplusplus

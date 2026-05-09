@@ -128,7 +128,7 @@ static void menu_prepare_child_popup(FluxMenuFlyout *child) {
 
 static FluxRect menu_submenu_anchor(FluxMenuFlyout *m, StoredItem const *it) {
 	FluxDpiInfo dpi         = flux_window_dpi(m->owner);
-	float       scale       = dpi.dpi_x / FLUX_DPI_BASE;
+	float       scale       = dpi.dpi_x / 96.0f;
 	HWND        parent_hwnd = flux_popup_get_hwnd(m->popup);
 	RECT        wr          = {0};
 	GetWindowRect(parent_hwnd, &wr);

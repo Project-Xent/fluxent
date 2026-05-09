@@ -91,13 +91,11 @@ static FluxRect switch_thumb_rect(FluxRect const *track, FluxControlState const 
 	float thumb_x = flux_anim_mixf(off_x, on_x, anim.toggle);
 	if (state->enabled) thumb_x += (1.0f - 2.0f * anim.toggle) * FLUX_TOGGLE_TRAVEL_EXT * anim.press;
 
-	float knob_w = FLUX_TOGGLE_KNOB_NORMAL;
-	float knob_h = FLUX_TOGGLE_KNOB_NORMAL;
+	float knob_w = 12.0f;
+	float knob_h = 12.0f;
 	if (state->enabled) {
-		knob_w = FLUX_TOGGLE_KNOB_NORMAL
-		       + (FLUX_TOGGLE_KNOB_HOVER - FLUX_TOGGLE_KNOB_NORMAL) * anim.hover
-		       + (FLUX_TOGGLE_KNOB_PRESS_W - FLUX_TOGGLE_KNOB_HOVER) * anim.press;
-		knob_h = FLUX_TOGGLE_KNOB_NORMAL + (FLUX_TOGGLE_KNOB_HOVER - FLUX_TOGGLE_KNOB_NORMAL) * anim.hover;
+		knob_w = 12.0f + (14.0f - 12.0f) * anim.hover + (17.0f - 14.0f) * anim.press;
+		knob_h = 12.0f + (14.0f - 12.0f) * anim.hover;
 	}
 
 	return (FluxRect) {thumb_x - knob_w * 0.5f, cy - knob_h * 0.5f, knob_w, knob_h};
@@ -108,8 +106,8 @@ void flux_draw_switch(
 ) {
 	FluxThemeColors const *t          = rc->theme;
 
-	float                  track_w    = FLUX_TOGGLE_WIDTH;
-	float                  track_h    = FLUX_TOGGLE_HEIGHT;
+	float                  track_w    = 40.0f;
+	float                  track_h    = 20.0f;
 	float                  track_r    = track_h * 0.5f;
 
 	float                  cy         = bounds->y + bounds->h * 0.5f;

@@ -1,15 +1,33 @@
 #include "controls/draw/flux_control_draw.h"
-#include "controls/textbox/tb_internal.h"
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
 #include <string.h>
 
-#define ZONE_NONE     (-1)
-#define ZONE_TEXT     0
-#define ZONE_SPIN_UP  1
-#define ZONE_SPIN_DN  2
-#define ZONE_SPIN_GAP 3
-#define ZONE_DELETE   4
+#define NB_SPIN_BTN_MIN_W 32.0f
+
+#define NB_UP_MARGIN      4.0f
+#define NB_DN_MARGIN_L    0.0f
+#define NB_DN_MARGIN_T    4.0f
+#define NB_DN_MARGIN_R    4.0f
+#define NB_DN_MARGIN_B    4.0f
+
+#define NB_COL_UP_W       (NB_SPIN_BTN_MIN_W + NB_UP_MARGIN + NB_UP_MARGIN)
+#define NB_COL_DN_W       (NB_SPIN_BTN_MIN_W + NB_DN_MARGIN_L + NB_DN_MARGIN_R)
+#define NB_SPIN_TOTAL     (NB_COL_UP_W + NB_COL_DN_W)
+
+#define NB_DEL_BTN_W      40.0f
+
+#define NB_INNER_MARGIN_L 0.0f
+#define NB_INNER_MARGIN_T 4.0f
+#define NB_INNER_MARGIN_R 4.0f
+#define NB_INNER_MARGIN_B 4.0f
+
+#define ZONE_NONE         (-1)
+#define ZONE_TEXT         0
+#define ZONE_SPIN_UP      1
+#define ZONE_SPIN_DN      2
+#define ZONE_SPIN_GAP     3
+#define ZONE_DELETE       4
 
 typedef struct NbButtonMargins {
 	float l;
@@ -200,7 +218,7 @@ static void nb_draw_spin(NbDrawContext const *dc) {
 	nb_draw_inner_button(dc->rc, &up_button, t);
 	nb_draw_inner_button(dc->rc, &dn_button, t);
 
-	float      icon_fs     = dc->snap->font_size > 0.0f ? dc->snap->font_size : FLUX_FONT_SIZE_DEFAULT;
+	float      icon_fs     = dc->snap->font_size > 0.0f ? dc->snap->font_size : 14.0f;
 	char       up_utf8 [4] = {( char ) 0xee, ( char ) 0x9c, ( char ) 0x8e, '\0'};
 	char       dn_utf8 [4] = {( char ) 0xee, ( char ) 0x9c, ( char ) 0x8d, '\0'};
 
@@ -217,7 +235,7 @@ void flux_draw_number_box(
 ) {
 	float radius       = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
 	bool  has_text     = snap->text_content && snap->text_content [0];
-	bool  spin_visible = (snap->nb_spin_placement == FLUX_NB_SPIN_INLINE);
+	bool  spin_visible = (snap->nb_spin_placement == 2);
 
 	bool  show_delete  = has_text && state->focused && !snap->readonly && state->enabled;
 

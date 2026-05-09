@@ -1,10 +1,6 @@
 #include "render/flux_render_internal.h"
 #include <math.h>
 
-#define PROGRESS_INDETERMINATE_CYCLE_S  2.0
-#define PROGRESS_INDETERMINATE_BAR_FRAC 0.4f
-#define PROGRESS_TRACK_H                4.0f
-
 static FluxColor progress_accent(FluxThemeColors const *t) {
 	return t ? t->accent_default : flux_color_rgb(0, 120, 212);
 }
@@ -14,12 +10,12 @@ static void draw_progress_indeterminate(
   float radius
 ) {
 	( void ) snap;
-	double const cycle_duration = PROGRESS_INDETERMINATE_CYCLE_S;
+	double const cycle_duration = 2.0;
 	double       phase          = fmod(rc->now, cycle_duration);
 	float        linear_t       = ( float ) (phase / cycle_duration);
 	float        ping_pong      = linear_t < 0.5f ? linear_t * 2.0f : 2.0f - linear_t * 2.0f;
 	float        eased          = flux_ease_in_out_cubic(ping_pong);
-	float        bar_w          = bounds->w * PROGRESS_INDETERMINATE_BAR_FRAC;
+	float        bar_w          = bounds->w * 0.4f;
 	float        travel         = bounds->w - bar_w;
 	float        bar_x          = bounds->x + travel * eased;
 	FluxRect     fill           = {bar_x, cy - track_h * 0.5f, bar_w, track_h};
@@ -49,7 +45,7 @@ void flux_draw_progress(
 	( void ) state;
 	FluxThemeColors const *t           = rc->theme;
 
-	float                  track_h     = PROGRESS_TRACK_H;
+	float                  track_h     = 4.0f;
 	float                  radius      = track_h * 0.5f;
 	float                  cy          = bounds->y + bounds->h * 0.5f;
 

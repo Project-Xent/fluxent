@@ -184,10 +184,22 @@ XentContext      *flux_app_get_context(FluxApp *app);
 /** @brief Get the app node store. */
 FluxNodeStore    *flux_app_get_store(FluxApp *app);
 
+/** @brief Request rendering for the next compositor frame on the app window. */
+void              flux_app_request_render(FluxApp *app);
+
+/** @brief Get the Direct2D-backed graphics context owned by the app's window. */
+FluxGraphics     *flux_app_get_graphics(FluxApp *app);
+
+/** @brief Deepest visible MenuFlyout leaf for the app's window, if any. */
+FluxMenuFlyout   *flux_app_get_active_menu_flyout(FluxApp *app);
+
+/** @brief Native HWND for the application's primary window. */
+HWND              flux_app_get_hwnd(FluxApp *app);
+
 /** @brief Create a button node. */
 XentNodeId        flux_create_button(FluxButtonCreateInfo const *info);
 
-/** @brief Create a text node. */
+/** @brief Create a plain text leaf node with the requested font size. */
 XentNodeId
 flux_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *content, float font_size);
 

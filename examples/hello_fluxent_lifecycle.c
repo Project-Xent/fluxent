@@ -22,11 +22,11 @@ static bool demo_alloc_state(Demo *d) {
 
 bool demo_init(Demo *d) {
 	XentConfig xcfg       = {0};
-	xcfg.initial_capacity = 512;
+	xcfg.initial_capacity = HELLO_FLUXENT_DEMO_STORE_CAPACITY;
 	d->ctx                = xent_create_context(&xcfg);
 	if (!d->ctx) return false;
 
-	d->store = flux_node_store_create(512);
+	d->store = flux_node_store_create(HELLO_FLUXENT_DEMO_STORE_CAPACITY);
 	if (!d->store) return false;
 	return demo_alloc_state(d);
 }
@@ -34,8 +34,8 @@ bool demo_init(Demo *d) {
 bool demo_create_app(Demo *d) {
 	FluxAppConfig cfg = {0};
 	cfg.title         = L"Hello Fluxent - All Controls";
-	cfg.width         = 640;
-	cfg.height        = 760;
+	cfg.width         = HELLO_FLUXENT_DEMO_WINDOW_W;
+	cfg.height        = HELLO_FLUXENT_DEMO_WINDOW_H;
 	cfg.dark_mode     = flux_theme_system_is_dark();
 	cfg.backdrop      = FLUX_BACKDROP_MICA;
 
@@ -45,8 +45,8 @@ bool demo_create_app(Demo *d) {
 
 	if (!d->scroll_nd || !d->scroll_nd->component_data) return true;
 	FluxScrollData *sd = ( FluxScrollData * ) d->scroll_nd->component_data;
-	sd->content_h      = 2200.0f;
-	sd->content_w      = 640.0f;
+	sd->content_h      = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H;
+	sd->content_w      = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W;
 	return true;
 }
 

@@ -5,19 +5,6 @@
 #include <math.h>
 #include <string.h>
 
-#define SCROLL_ACTIVITY_HOLD_S       0.6
-#define SCROLL_ACTIVITY_FADE_S       0.4
-#define SCROLL_EDGE_HOVER_DIP        24.0f
-#define SCROLL_ARROW_FONT_SIZE       8.0f
-#define SCROLL_EXP_SMOOTHING         16.0f
-#define SCROLL_MINI_PAD              4.0f
-#define SCROLL_MINI_MIN_THUMB        4.0f
-#define SCROLL_FULL_VISUAL_THICKNESS 8.0f
-#define SCROLL_THUMB_ALPHA_MIN       0.45f
-#define SCROLL_THUMB_ALPHA_RANGE     0.55f
-#define SCROLL_TRACK_ALPHA           0.35f
-#define SCROLL_TRACK_VIS_THRESHOLD   0.05f
-
 void flux_draw_scroll(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
@@ -34,12 +21,12 @@ static bool scroll_is_active(FluxRenderSnapshot const *snap) {
 }
 
 static float scroll_activity_expansion(FluxRenderSnapshot const *snap, double now) {
+	double const HOLD = 0.6, FADE = 0.4;
 	if (snap->scroll_last_activity_time <= 0.0) return 0.0f;
 
 	double dt = now - snap->scroll_last_activity_time;
-	if (dt < SCROLL_ACTIVITY_HOLD_S) return 1.0f;
-	if (dt < SCROLL_ACTIVITY_HOLD_S + SCROLL_ACTIVITY_FADE_S)
-		return 1.0f - ( float ) ((dt - SCROLL_ACTIVITY_HOLD_S) / SCROLL_ACTIVITY_FADE_S);
+	if (dt < HOLD) return 1.0f;
+	if (dt < HOLD + FADE) return 1.0f - ( float ) ((dt - HOLD) / FADE);
 	return 0.0f;
 }
 
@@ -51,10 +38,11 @@ static float scroll_edge_hover(float distance, float edge) {
 static float scroll_hover_expansion(FluxRenderSnapshot const *snap, FluxRect const *bounds) {
 	if (!snap->scroll_mouse_over) return 0.0f;
 
-	float dx = bounds->w - snap->scroll_mouse_local_x;
-	float dy = bounds->h - snap->scroll_mouse_local_y;
-	float hx = scroll_edge_hover(dx, SCROLL_EDGE_HOVER_DIP);
-	float hy = scroll_edge_hover(dy, SCROLL_EDGE_HOVER_DIP);
+	float const EDGE = 24.0f;
+	float       dx   = bounds->w - snap->scroll_mouse_local_x;
+	float       dy   = bounds->h - snap->scroll_mouse_local_y;
+	float       hx   = scroll_edge_hover(dx, EDGE);
+	float       hy   = scroll_edge_hover(dy, EDGE);
 	return hx > hy ? hx : hy;
 }
 
@@ -79,7 +67,7 @@ static void draw_arrow_glyph(FluxRenderContext const *rc, FluxRect const *r, cha
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
 	ts.font_family = "Segoe Fluent Icons";
-	ts.font_size   = SCROLL_ARROW_FONT_SIZE;
+	ts.font_size   = 8.0f;
 	ts.font_weight = FLUX_FONT_REGULAR;
 	ts.text_align  = FLUX_TEXT_CENTER;
 	ts.vert_align  = FLUX_TEXT_VCENTER;
@@ -139,7 +127,7 @@ scroll_animated_expansion(FluxRenderContext const *rc, FluxRenderSnapshot const 
 		a->initialized = true;
 	}
 
-	float k = 1.0f - expf(-rc->dt * SCROLL_EXP_SMOOTHING);
+	float k = 1.0f - expf(-rc->dt * 16.0f);
 	if (k > 1.0f) k = 1.0f;
 	a->current += (target - a->current) * k;
 	expanded    = a->current;
@@ -183,17 +171,17 @@ static void scroll_apply_mini_padding(FluxRect *thumb, FluxRect const *base, boo
 	float mini_k = 1.0f - expanded;
 	if (mini_k <= 0.0f) return;
 
-	float pad = SCROLL_MINI_PAD * mini_k;
+	float pad = 4.0f * mini_k;
 	if (vertical) {
 		thumb->y = base->y + pad;
 		thumb->h = base->h - 2.0f * pad;
-		if (thumb->h < SCROLL_MINI_MIN_THUMB) thumb->h = SCROLL_MINI_MIN_THUMB;
+		if (thumb->h < 4.0f) thumb->h = 4.0f;
 		return;
 	}
 
 	thumb->x = base->x + pad;
 	thumb->w = base->w - 2.0f * pad;
-	if (thumb->w < SCROLL_MINI_MIN_THUMB) thumb->w = SCROLL_MINI_MIN_THUMB;
+	if (thumb->w < 4.0f) thumb->w = 4.0f;
 }
 
 static void draw_scroll_thumb(ScrollDrawContext const *dc, FluxRect const *bar, FluxRect const *base_thumb, int axis) {
@@ -203,7 +191,7 @@ static void draw_scroll_thumb(ScrollDrawContext const *dc, FluxRect const *bar, 
 	bool      drag     = dc->snap->scroll_drag_axis == axis;
 	FluxColor tc       = scroll_thumb_color(dc, base_thumb, axis);
 
-	float visual = FLUX_SCROLLBAR_MINI_SIZE + (SCROLL_FULL_VISUAL_THICKNESS - FLUX_SCROLLBAR_MINI_SIZE) * dc->expanded;
+	float     visual   = FLUX_SCROLLBAR_MINI_SIZE + (8.0f - FLUX_SCROLLBAR_MINI_SIZE) * dc->expanded;
 	if (vertical) {
 		float right_x  = bar->x + bar->w - visual - 1.0f;
 		float center_x = bar->x + (bar->w - visual) * 0.5f;
@@ -219,7 +207,7 @@ static void draw_scroll_thumb(ScrollDrawContext const *dc, FluxRect const *bar, 
 
 	scroll_apply_mini_padding(&thumb, base_thumb, vertical, dc->expanded);
 
-	float thumb_alpha = SCROLL_THUMB_ALPHA_MIN + SCROLL_THUMB_ALPHA_RANGE * dc->expanded;
+	float thumb_alpha = 0.45f + 0.55f * dc->expanded;
 	if (drag || hover) thumb_alpha = 1.0f;
 	flux_fill_rounded_rect(dc->rc, &thumb, (vertical ? thumb.w : thumb.h) * 0.5f, with_alpha_mul(tc, thumb_alpha));
 }
@@ -230,8 +218,8 @@ static ScrollButton scroll_button(FluxRect const *rect, char const *glyph, bool 
 
 static void draw_scroll_vertical(ScrollDrawContext const *dc) {
 	FluxScrollBarGeom const *g = dc->geom;
-	if (dc->expanded > SCROLL_TRACK_VIS_THRESHOLD)
-		flux_fill_rect(dc->rc, &g->v_bar, with_alpha_mul(dc->colors.track_bg, dc->expanded * SCROLL_TRACK_ALPHA));
+	if (dc->expanded > 0.05f)
+		flux_fill_rect(dc->rc, &g->v_bar, with_alpha_mul(dc->colors.track_bg, dc->expanded * 0.35f));
 
 	bool         up_hover = dc->mouse.valid && flux_rect_contains(&g->v_up_btn, dc->mouse.mx, dc->mouse.my);
 	bool         dn_hover = dc->mouse.valid && flux_rect_contains(&g->v_dn_btn, dc->mouse.mx, dc->mouse.my);
@@ -244,8 +232,8 @@ static void draw_scroll_vertical(ScrollDrawContext const *dc) {
 
 static void draw_scroll_horizontal(ScrollDrawContext const *dc) {
 	FluxScrollBarGeom const *g = dc->geom;
-	if (dc->expanded > SCROLL_TRACK_VIS_THRESHOLD)
-		flux_fill_rect(dc->rc, &g->h_bar, with_alpha_mul(dc->colors.track_bg, dc->expanded * SCROLL_TRACK_ALPHA));
+	if (dc->expanded > 0.05f)
+		flux_fill_rect(dc->rc, &g->h_bar, with_alpha_mul(dc->colors.track_bg, dc->expanded * 0.35f));
 
 	bool         lf_hover = dc->mouse.valid && flux_rect_contains(&g->h_lf_btn, dc->mouse.mx, dc->mouse.my);
 	bool         rg_hover = dc->mouse.valid && flux_rect_contains(&g->h_rg_btn, dc->mouse.mx, dc->mouse.my);

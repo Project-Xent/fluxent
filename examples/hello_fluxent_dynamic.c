@@ -1,6 +1,11 @@
 #include "hello_fluxent_demo.h"
 
-static void on_textbox_change(void *ctx, char const *t) {
+/** @brief Flyout content width for the dynamic flyout demo (DIPs). */
+static float const kHelloFluxentDemoFlyoutContentW = 200.0f;
+/** @brief Flyout content height for the dynamic flyout demo (DIPs). */
+static float const kHelloFluxentDemoFlyoutContentH = 40.0f;
+
+static void        on_textbox_change(void *ctx, char const *t) {
 	( void ) ctx;
 	( void ) t;
 }
@@ -117,7 +122,7 @@ static void demo_add_flyout_menu(Demo *d) {
 	d->flyout              = flux_flyout_create(win);
 	flux_flyout_set_theme_manager(d->flyout, tmgr);
 	flux_flyout_set_text_renderer(d->flyout, tr);
-	flux_flyout_set_content_size(d->flyout, 200, 40);
+	flux_flyout_set_content_size(d->flyout, kHelloFluxentDemoFlyoutContentW, kHelloFluxentDemoFlyoutContentH);
 
 	d->menu = flux_menu_flyout_create(win);
 	flux_menu_flyout_set_theme_manager(d->menu, tmgr);

@@ -3,12 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FLUX_NS_EMPTY             0
-#define FLUX_NS_OCCUPIED          1
-#define FLUX_NS_DELETED           2
-#define FLUX_NODE_PAYLOAD_TYPE    0x464e4f44u
-#define FLUX_NS_MIN_CAPACITY      64
-#define FLUX_NS_REHASH_TOMBSTONES 16
+#define FLUX_NS_EMPTY    0
+#define FLUX_NS_OCCUPIED 1
+#define FLUX_NS_DELETED  2
 
 typedef struct FluxNodeSlot {
 	uint8_t      tag;
@@ -17,17 +14,12 @@ typedef struct FluxNodeSlot {
 } FluxNodeSlot;
 
 struct FluxNodeStore {
-	FluxNodeSlot             *slots;
-	XentContext              *ctx;
-	uint32_t                  capacity;
-	uint32_t                  count;
-	uint32_t                  tombstones;
-	FluxNodeStoreInvalidateFn invalidate;
-	void                     *invalidate_userdata;
-	FluxControlRenderer       renderers [XENT_CONTROL_CUSTOM + 1];
+	FluxNodeSlot       *slots;
+	uint32_t            capacity;
+	uint32_t            count;
+	uint32_t            tombstones;
+	FluxControlRenderer renderers [XENT_CONTROL_CUSTOM + 1];
 };
-
-static void     flux_node_store_attach_payloads(FluxNodeStore *store, XentContext *ctx);
 
 static uint32_t flux_ns_hash(XentNodeId id, uint32_t cap) {
 	uint32_t h  = id;
@@ -42,7 +34,7 @@ static bool flux_ns_needs_grow(FluxNodeStore const *store) {
 }
 
 static bool flux_ns_needs_rehash(FluxNodeStore const *store) {
-	return store->tombstones > store->count && store->tombstones > FLUX_NS_REHASH_TOMBSTONES;
+	return store->tombstones > store->count && store->tombstones > 16;
 }
 
 static void flux_ns_probe_next(uint32_t *idx, uint32_t *step, uint32_t cap) {
@@ -61,7 +53,7 @@ static void flux_ns_insert_rehashed_slot(FluxNodeSlot *slots, uint32_t cap, Flux
 }
 
 static bool flux_ns_rehash(FluxNodeStore *store, uint32_t new_cap) {
-	if (new_cap < FLUX_NS_MIN_CAPACITY) new_cap = FLUX_NS_MIN_CAPACITY;
+	if (new_cap < 64) new_cap = 64;
 
 	FluxNodeSlot *new_slots = ( FluxNodeSlot * ) calloc(new_cap, sizeof(FluxNodeSlot));
 	if (!new_slots) return false;
@@ -74,7 +66,6 @@ static bool flux_ns_rehash(FluxNodeStore *store, uint32_t new_cap) {
 	store->slots      = new_slots;
 	store->capacity   = new_cap;
 	store->tombstones = 0;
-	if (store->ctx) flux_node_store_attach_payloads(store, store->ctx);
 	return true;
 }
 
@@ -93,6 +84,7 @@ static void flux_node_data_destroy_component(FluxNodeData *d) {
 
 	d->component_data         = NULL;
 	d->destroy_component_data = NULL;
+	d->component_type         = XENT_CONTROL_CONTAINER;
 }
 
 static FluxNodeSlot *flux_ns_find(FluxNodeStore *store, XentNodeId id) {
@@ -112,6 +104,7 @@ static void flux_node_data_init(FluxNodeData *d, XentNodeId id) {
 	d->visuals.opacity = 1.0f;
 	d->state.enabled   = 1;
 	d->state.visible   = 1;
+	d->component_type  = XENT_CONTROL_CONTAINER;
 }
 
 static FluxNodeSlot *flux_ns_find_insert_slot(FluxNodeStore *store, XentNodeId id, bool *was_tombstone) {
@@ -136,7 +129,6 @@ static FluxNodeData *flux_ns_occupy_slot(FluxNodeStore *store, FluxNodeSlot *slo
 	flux_node_data_init(&slot->data, id);
 	store->count++;
 	if (was_tombstone) store->tombstones--;
-	if (store->ctx) xent_set_node_payload(store->ctx, id, FLUX_NODE_PAYLOAD_TYPE, &slot->data, NULL, NULL);
 	return &slot->data;
 }
 
@@ -158,12 +150,8 @@ FluxNodeStore *flux_node_store_create(uint32_t initial_capacity) {
 
 void flux_node_store_destroy(FluxNodeStore *store) {
 	if (!store) return;
-	if (store->ctx) xent_set_node_lifecycle_callback(store->ctx, NULL, NULL);
-	for (uint32_t i = 0; i < store->capacity; i++) {
-		if (store->slots [i].tag != FLUX_NS_OCCUPIED) continue;
-		if (store->ctx) xent_clear_node_payload(store->ctx, store->slots [i].key);
-		flux_node_data_destroy_component(&store->slots [i].data);
-	}
+	for (uint32_t i = 0; i < store->capacity; i++)
+		if (store->slots [i].tag == FLUX_NS_OCCUPIED) flux_node_data_destroy_component(&store->slots [i].data);
 	free(store->slots);
 	free(store);
 }
@@ -186,69 +174,10 @@ FluxNodeData *flux_node_store_get_or_create(FluxNodeStore *store, XentNodeId id)
 	return flux_ns_occupy_slot(store, slot, id, was_tombstone);
 }
 
-static void flux_node_store_attach_payloads(FluxNodeStore *store, XentContext *ctx) {
-	for (uint32_t i = 0; i < store->capacity; i++) {
-		if (store->slots [i].tag != FLUX_NS_OCCUPIED) continue;
-		FluxNodeData *d = &store->slots [i].data;
-		xent_set_node_payload(ctx, d->node_id, FLUX_NODE_PAYLOAD_TYPE, d, NULL, NULL);
-	}
-}
-
-static void flux_node_store_lifecycle(
-  XentContext *ctx, XentNodeId node, XentNodeLifecycleEvent event, XentNodeId old_parent, XentNodeId new_parent,
-  void *userdata
-) {
-	( void ) ctx;
-	( void ) old_parent;
-	( void ) new_parent;
-	FluxNodeStore *store = ( FluxNodeStore * ) userdata;
-	if (event == XENT_NODE_EVENT_DESTROY) flux_node_store_remove(store, node);
-}
-
-bool flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx) {
-	if (!store || !ctx) return false;
-	if (store->ctx == ctx) return true;
-	store->ctx = ctx;
-	xent_set_node_lifecycle_callback(ctx, flux_node_store_lifecycle, store);
-	flux_node_store_attach_payloads(store, ctx);
-	return true;
-}
-
-FluxNodeData *flux_node_store_bind_node(FluxNodeStore *store, XentContext *ctx, XentNodeId id, XentControlType type) {
-	if (!store || !ctx || id == XENT_NODE_INVALID) return NULL;
-	flux_node_store_bind_context(store, ctx);
-	xent_set_control_type(ctx, id, type);
-	FluxNodeData *data = flux_node_store_get_or_create(store, id);
-	if (!data) return NULL;
-	xent_set_node_payload(ctx, id, FLUX_NODE_PAYLOAD_TYPE, data, NULL, NULL);
-	return data;
-}
-
-FluxNodeData *flux_node_store_payload(XentContext const *ctx, XentNodeId id) {
-	FluxNodeData *data = ( FluxNodeData * ) xent_get_node_payload(ctx, id, FLUX_NODE_PAYLOAD_TYPE);
-	return data ? data : ( FluxNodeData * ) xent_get_userdata(ctx, id);
-}
-
-XentControlType flux_node_store_control_type(FluxNodeStore const *store, XentNodeId id) {
-	if (!store || !store->ctx) return XENT_CONTROL_CONTAINER;
-	return xent_get_control_type(store->ctx, id);
-}
-
-void flux_node_store_set_invalidate_callback(FluxNodeStore *store, FluxNodeStoreInvalidateFn callback, void *userdata) {
-	if (!store) return;
-	store->invalidate          = callback;
-	store->invalidate_userdata = userdata;
-}
-
-void flux_node_store_request_invalidate(FluxNodeStore *store) {
-	if (store && store->invalidate) store->invalidate(store->invalidate_userdata);
-}
-
 void flux_node_store_remove(FluxNodeStore *store, XentNodeId id) {
 	if (!store || id == XENT_NODE_INVALID) return;
 	FluxNodeSlot *s = flux_ns_find(store, id);
 	if (!s) return;
-	if (store->ctx) xent_clear_node_payload(store->ctx, id);
 	flux_node_data_destroy_component(&s->data);
 	s->tag = FLUX_NS_DELETED;
 	store->count--;
@@ -259,8 +188,12 @@ uint32_t flux_node_store_count(FluxNodeStore const *store) { return store ? stor
 
 void     flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx) {
 	if (!store || !ctx) return;
-	flux_node_store_bind_context(store, ctx);
-	flux_node_store_attach_payloads(store, ctx);
+	for (uint32_t i = 0; i < store->capacity; i++) {
+		if (store->slots [i].tag != FLUX_NS_OCCUPIED) continue;
+		FluxNodeData *d = &store->slots [i].data;
+		if (d->component_data) d->component_type = xent_get_control_type(ctx, d->node_id);
+		xent_set_userdata(ctx, d->node_id, d);
+	}
 }
 
 void flux_node_store_register_renderer(

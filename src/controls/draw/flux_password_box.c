@@ -4,7 +4,7 @@
 #include "render/flux_icon.h"
 #include <string.h>
 
-#define PB_MASK_STACK_BYTES 2048
+#define PB_REVEAL_BTN_W 30.0f
 
 typedef struct PbDrawContext {
 	FluxRenderContext const  *rc;
@@ -143,7 +143,7 @@ void flux_draw_password_box(
 
 	pb_draw_chrome(rc, snap, bounds, state, radius);
 
-	char               mask_buf [PB_MASK_STACK_BYTES];
+	char               mask_buf [2048];
 	FluxRenderSnapshot masked_snap = pb_masked_snapshot(snap, has_text, revealed, mask_buf, sizeof(mask_buf));
 
 	FluxRect           text_area   = {

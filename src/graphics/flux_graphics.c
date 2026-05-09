@@ -16,7 +16,10 @@
 #include <cdwrite.h>
 #include "flux_dcomp.h"
 
-#define MIN_SURFACE_SIZE 1
+#define MIN_SURFACE_SIZE             1
+
+/** @brief Initial capacity for the dcomp overlay-visual tracking array. */
+#define FLUX_GFX_OVERLAY_INITIAL_CAP 8
 
 struct FluxGraphics {
 	HWND                  hwnd;
@@ -214,8 +217,8 @@ FluxGraphics *flux_graphics_create(void) {
 	FluxGraphics *gfx = ( FluxGraphics * ) calloc(1, sizeof(*gfx));
 	if (!gfx) return NULL;
 
-	gfx->dpi.dpi_x = FLUX_DPI_BASE;
-	gfx->dpi.dpi_y = FLUX_DPI_BASE;
+	gfx->dpi.dpi_x = 96.0f;
+	gfx->dpi.dpi_y = 96.0f;
 
 	HRESULT hr     = create_device_independent(gfx);
 	if (FAILED(hr)) {
@@ -310,7 +313,7 @@ void flux_graphics_set_dpi(FluxGraphics *gfx, FluxDpiInfo dpi) {
 }
 
 FluxDpiInfo flux_graphics_get_dpi(FluxGraphics const *gfx) {
-	if (!gfx) return (FluxDpiInfo) {FLUX_DPI_BASE, FLUX_DPI_BASE};
+	if (!gfx) return (FluxDpiInfo) {96.0f, 96.0f};
 	return gfx->dpi;
 }
 
@@ -377,7 +380,7 @@ IDCompositionVisual *flux_graphics_get_root_visual(FluxGraphics *gfx) { return g
 
 static bool          graphics_track_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual) {
 	if (gfx->overlay_count >= gfx->overlay_cap) {
-		uint32_t new_cap = gfx->overlay_cap ? gfx->overlay_cap * 2 : 8;
+		uint32_t new_cap = gfx->overlay_cap ? gfx->overlay_cap * 2 : FLUX_GFX_OVERLAY_INITIAL_CAP;
 		void    *items   = realloc(gfx->overlay_visuals, ( size_t ) new_cap * sizeof(*gfx->overlay_visuals));
 		if (!items) return false;
 		gfx->overlay_visuals = ( IDCompositionVisual ** ) items;

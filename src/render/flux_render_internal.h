@@ -24,6 +24,18 @@
 #include "fluxent/flux_theme.h"
 #include "flux_anim.h"
 
+/**
+ * @brief Maximum depth of the per-frame clip/transform stack.
+ *
+ * Pushes are clamped at FLUX_RENDER_MAX_TRANSFORM_DEPTH; nested clip/scroll
+ * frames beyond this depth are coalesced into the topmost frame and a counter
+ * on FluxEngine is bumped so overflow is observable rather than silent.
+ */
+#define FLUX_RENDER_MAX_TRANSFORM_DEPTH      32
+
+/** @brief Initial capacity (commands) for the engine's command buffer. */
+#define FLUX_RENDER_COMMAND_INITIAL_CAPACITY 256
+
 /** @brief Render context passed to all control render functions. */
 struct FluxRenderContext {
 	ID2D1DeviceContext    *d2d;

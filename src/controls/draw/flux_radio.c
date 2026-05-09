@@ -98,7 +98,7 @@ static void draw_radio_label(
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
+	ts.font_size   = 14.0f;
 	ts.font_weight = FLUX_FONT_REGULAR;
 	ts.text_align  = FLUX_TEXT_LEFT;
 	ts.vert_align  = FLUX_TEXT_VCENTER;
@@ -108,7 +108,7 @@ static void draw_radio_label(
 }
 
 static void draw_radio_glyph(RadioGlyphDraw const *draw) {
-	if (draw->anim.check > FLUX_VISIBILITY_THRESHOLD) {
+	if (draw->anim.check > 0.01f) {
 		float target_r = flux_anim_mixf(
 		  flux_anim_mixf(RADIO_GLYPH_NORMAL, RADIO_GLYPH_HOVER, draw->anim.hover), RADIO_GLYPH_PRESS, draw->anim.press
 		);
@@ -116,7 +116,7 @@ static void draw_radio_glyph(RadioGlyphDraw const *draw) {
 		flux_fill_ellipse(draw->rc, &(FluxEllipseSpec) {draw->cx, draw->cy, inner_r, inner_r}, draw->colors.glyph_fill);
 	}
 
-	if (draw->anim.press <= FLUX_VISIBILITY_THRESHOLD || draw->checked || !draw->state->enabled) return;
+	if (draw->anim.press <= 0.01f || draw->checked || !draw->state->enabled) return;
 
 	FluxColor pressed_glyph = draw->rc->theme ? draw->rc->theme->text_on_accent_primary : flux_color_rgb(255, 255, 255);
 	float     r             = RADIO_PRESS_GLYPH_R * draw->anim.press;

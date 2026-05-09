@@ -1,6 +1,5 @@
 #include "tb_internal.h"
 #include "fluxent/fluxent.h"
-#include "render/flux_fluent.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -115,7 +114,7 @@ FluxTextStyle tb_make_style(FluxTextBoxInputData const *tb) {
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
 	ts.font_family = tb->base.font_family;
-	ts.font_size   = tb->base.font_size > 0.0f ? tb->base.font_size : FLUX_FONT_SIZE_DEFAULT;
+	ts.font_size   = tb->base.font_size > 0.0f ? tb->base.font_size : 14.0f;
 	ts.font_weight = FLUX_FONT_REGULAR;
 	ts.text_align  = FLUX_TEXT_LEFT;
 	ts.vert_align  = FLUX_TEXT_VCENTER;
@@ -127,9 +126,10 @@ void tb_update_scroll(FluxTextBoxInputData *tb) {
 	FluxTextRenderer *tr = tb->app ? flux_app_get_text_renderer(tb->app) : NULL;
 	if (!tr) return;
 
+	tb_realize(tb);
 	XentRect rect = {0};
 	xent_get_layout_rect(tb->ctx, tb->node, &rect);
-	float visible_w = rect.width - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
+	float visible_w = rect.width - 10.0f - 6.0f;
 	if (visible_w <= 0.0f) return;
 
 	FluxTextStyle      ts         = tb_make_style(tb);
@@ -148,6 +148,7 @@ void tb_update_scroll(FluxTextBoxInputData *tb) {
 
 void tb_notify_change(FluxTextBoxInputData *tb) {
 	if (!tb->last_op_was_typing) tb_commit_pending_undo(tb);
+	tb_realize(tb);
 	if (tb->base.on_change) tb->base.on_change(tb->base.on_change_ctx, tb->buffer);
 }
 
@@ -156,12 +157,13 @@ void tb_update_ime_position(FluxTextBoxInputData *tb) {
 	FluxTextRenderer *tr     = tb->app ? flux_app_get_text_renderer(tb->app) : NULL;
 	if (!window || !tr) return;
 
+	tb_realize(tb);
 	XentRect rect = {0};
 	xent_get_layout_rect(tb->ctx, tb->node, &rect);
 
 	FluxTextStyle ts     = tb_make_style(tb);
 	ts.vert_align        = FLUX_TEXT_TOP;
-	float      visible_w = rect.width - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
+	float      visible_w = rect.width - 10.0f - 6.0f;
 
 	TbImeCaret measured  = {0.0f, 0.0f, 0.0f};
 	bool       composed  = tb->base.composition_text && tb->base.composition_length > 0 && tb->buffer [0];
@@ -178,11 +180,11 @@ void tb_update_ime_position(FluxTextBoxInputData *tb) {
 		measured.h     = caret.h;
 	}
 
-	float cx = rect.x + FLUX_TEXTBOX_PAD_L + measured.x - tb->base.scroll_offset_x;
-	float cy = rect.y + FLUX_TEXTBOX_PAD_T + measured.y;
-	float ch = measured.h > 0.0f ? measured.h : (ts.font_size > 0.0f ? ts.font_size : FLUX_FONT_SIZE_DEFAULT) * 1.2f;
+	float       cx    = rect.x + 10.0f + measured.x - tb->base.scroll_offset_x;
+	float       cy    = rect.y + 5.0f + measured.y;
+	float       ch    = measured.h > 0.0f ? measured.h : (ts.font_size > 0.0f ? ts.font_size : 14.0f) * 1.2f;
 	FluxDpiInfo dpi   = flux_window_dpi(window);
-	float       scale = dpi.dpi_x / FLUX_DPI_BASE;
+	float       scale = dpi.dpi_x / 96.0f;
 
 	flux_window_set_ime_position(window, ( int ) (cx * scale), ( int ) (cy * scale), ( int ) (ch * scale));
 }

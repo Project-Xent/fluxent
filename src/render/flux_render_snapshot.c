@@ -124,16 +124,19 @@ static void snapshot_progress(FluxRenderSnapshot *snap, FluxProgressData const *
 	snapshot_progress_fields(snap, p->value, p->max_value, p->indeterminate);
 }
 
-static void snapshot_number_box_spin(FluxRenderSnapshot *snap, FluxTextBoxInputData const *tb) {
-	FluxNBExt const *nb     = tb->nb;
-	snap->nb_spin_placement = nb ? nb->spin_placement : 0;
-	if (!nb) {
+static void snapshot_number_box_spin(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node) {
+	snap->nb_spin_placement = ( uint8_t ) (xent_get_semantic_expanded(ctx, node) ? 2 : 0);
+
+	float sv                = 0.0f;
+	float smin              = 0.0f;
+	float smax              = 0.0f;
+	if (!xent_get_semantic_value(ctx, node, &sv, &smin, &smax)) {
 		snap->nb_up_enabled   = true;
 		snap->nb_down_enabled = true;
 		return;
 	}
-	snap->nb_up_enabled   = (nb->value < nb->maximum) || (nb->minimum == nb->maximum);
-	snap->nb_down_enabled = (nb->value > nb->minimum) || (nb->minimum == nb->maximum);
+	snap->nb_up_enabled   = (sv < smax) || (smin == smax);
+	snap->nb_down_enabled = (sv > smin) || (smin == smax);
 }
 
 static void snapshot_hyperlink(FluxRenderSnapshot *snap, FluxHyperlinkData const *hl) {
@@ -192,13 +195,12 @@ static void snapshot_handle_progress(SnapshotContext const *ctx) {
 static void snapshot_handle_password_box(SnapshotContext const *ctx) {
 	FluxTextBoxInputData const *tb = ( FluxTextBoxInputData const * ) ctx->data;
 	snapshot_textbox(ctx->snap, ( FluxTextBoxData const * ) ctx->data);
-	ctx->snap->is_checked = tb->password_show_plain || tb->password_reveal_pressed;
+	ctx->snap->is_checked = tb->password_show_plain || xent_get_semantic_checked(ctx->ctx, ctx->node) != 0;
 }
 
 static void snapshot_handle_number_box(SnapshotContext const *ctx) {
-	FluxTextBoxInputData const *tb = ( FluxTextBoxInputData const * ) ctx->data;
 	snapshot_textbox(ctx->snap, ( FluxTextBoxData const * ) ctx->data);
-	snapshot_number_box_spin(ctx->snap, tb);
+	snapshot_number_box_spin(ctx->snap, ctx->ctx, ctx->node);
 }
 
 static void snapshot_handle_hyperlink(SnapshotContext const *ctx) {

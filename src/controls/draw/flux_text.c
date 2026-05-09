@@ -1,4 +1,4 @@
-#include "render/flux_fluent.h"
+#include "render/flux_render_internal.h"
 #include <string.h>
 
 void flux_draw_text(
@@ -22,7 +22,7 @@ void flux_draw_text(
 
 	if (!state->enabled) text_color = t ? t->text_disabled : flux_color_rgba(0, 0, 0, 0x5c);
 
-	float         font_size = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
+	float         font_size = snap->font_size > 0.0f ? snap->font_size : 14.0f;
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));

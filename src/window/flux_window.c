@@ -45,8 +45,6 @@
 #define DWMSBT_MAINWINDOW      2
 #define DWMSBT_TRANSIENTWINDOW 3
 #define DWMSBT_TABBEDWINDOW    4
-#define FLUX_WINDOW_DEFAULT_W  800
-#define FLUX_WINDOW_DEFAULT_H  600
 
 static wchar_t const    FLUX_WND_CLASS [] = L"FluxentWindowClass";
 static bool             class_registered  = false;
@@ -115,7 +113,7 @@ static void setup_dwm_backdrop(FluxWindow *win) {
 }
 
 static float window_dpi_scale(FluxWindow const *win) {
-	float scale = win->dpi.dpi_x / FLUX_DPI_BASE;
+	float scale = win->dpi.dpi_x / 96.0f;
 	return scale > 0.0f ? scale : 1.0f;
 }
 
@@ -125,9 +123,9 @@ static void window_emit_pointer(FluxWindow *win, FluxPointerEvent const *ev) {
 
 static HCURSOR window_cursor_handle(FluxWindow *win, int cursor_type) {
 	switch (cursor_type) {
-	case 1  : return win->cursor_ibeam;
-	case 2  : return win->cursor_hand;
-	default : return win->cursor_arrow;
+	case FLUX_CURSOR_IBEAM : return win->cursor_ibeam;
+	case FLUX_CURSOR_HAND  : return win->cursor_hand;
+	default                : return win->cursor_arrow;
 	}
 }
 
@@ -650,8 +648,8 @@ static LRESULT CALLBACK flux_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 static void window_apply_config(FluxWindow *win, FluxWindowConfig const *cfg) {
 	if (cfg) win->config = *cfg;
 	if (!win->config.title) win->config.title = L"Fluxent";
-	if (win->config.width <= 0) win->config.width = FLUX_WINDOW_DEFAULT_W;
-	if (win->config.height <= 0) win->config.height = FLUX_WINDOW_DEFAULT_H;
+	if (win->config.width <= 0) win->config.width = 800;
+	if (win->config.height <= 0) win->config.height = 600;
 }
 
 static HRESULT window_initialize_com(FluxWindow *win) {
@@ -669,7 +667,7 @@ static HRESULT window_create_hwnd(FluxWindow *win, HINSTANCE hinst) {
 	if (!win->config.resizable) style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
 
 	UINT  sys_dpi = GetDpiForSystem();
-	float scale   = ( float ) sys_dpi / FLUX_DPI_BASE;
+	float scale   = ( float ) sys_dpi / 96.0f;
 
 	int   cw      = ( int ) (win->config.width * scale + 0.5f);
 	int   ch      = ( int ) (win->config.height * scale + 0.5f);
@@ -765,7 +763,7 @@ FluxSize flux_window_client_size(FluxWindow const *win) {
 }
 
 FluxDpiInfo flux_window_dpi(FluxWindow const *win) {
-	if (!win) return (FluxDpiInfo) {FLUX_DPI_BASE, FLUX_DPI_BASE};
+	if (!win) return (FluxDpiInfo) {96.0f, 96.0f};
 	return win->dpi;
 }
 

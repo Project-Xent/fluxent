@@ -171,37 +171,6 @@ static float inline flux_maxf(float a, float b) { return a > b ? a : b; }
 
 static float inline flux_minf(float a, float b) { return a < b ? a : b; }
 
-static float inline flux_srgb_to_linear(float c) {
-	if (c <= 0.04045f) return c / 12.92f;
-	return powf((c + 0.055f) / 1.055f, 2.4f);
-}
-
-static float inline flux_linear_to_srgb(float c) {
-	if (c <= 0.0031308f) return 12.92f * c;
-	return 1.055f * powf(c, 1.0f / 2.4f) - 0.055f;
-}
-
-static FluxColor inline flux_lerp_color_srgb(FluxColor a, FluxColor b, float t) {
-	t        = flux_clamp01(t);
-	float ar = flux_color_rf(a), ag = flux_color_gf(a), ab = flux_color_bf(a), aa = flux_color_af(a);
-	float br = flux_color_rf(b), bg = flux_color_gf(b), bb = flux_color_bf(b), ba = flux_color_af(b);
-
-	float lr = flux_srgb_to_linear(ar) + (flux_srgb_to_linear(br) - flux_srgb_to_linear(ar)) * t;
-	float lg = flux_srgb_to_linear(ag) + (flux_srgb_to_linear(bg) - flux_srgb_to_linear(ag)) * t;
-	float lb = flux_srgb_to_linear(ab) + (flux_srgb_to_linear(bb) - flux_srgb_to_linear(ab)) * t;
-	float la = aa + (ba - aa) * t;
-
-	float sr = flux_clamp01(flux_linear_to_srgb(lr));
-	float sg = flux_clamp01(flux_linear_to_srgb(lg));
-	float sb = flux_clamp01(flux_linear_to_srgb(lb));
-	float sa = flux_clamp01(la);
-
-	return flux_color_rgba(
-	  ( uint8_t ) (sr * 255.0f + 0.5f), ( uint8_t ) (sg * 255.0f + 0.5f), ( uint8_t ) (sb * 255.0f + 0.5f),
-	  ( uint8_t ) (sa * 255.0f + 0.5f)
-	);
-}
-
 static FluxRect inline flux_snap_bounds(FluxRect const *bounds, float sx, float sy) {
 	float    x0 = floorf(bounds->x * sx + FLUX_PIXEL_SNAP) / sx;
 	float    y0 = floorf(bounds->y * sy + FLUX_PIXEL_SNAP) / sy;

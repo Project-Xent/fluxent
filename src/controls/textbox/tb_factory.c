@@ -2,7 +2,6 @@
 #include "controls/draw/flux_control_draw.h"
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_engine.h"
-#include "render/flux_fluent.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -54,9 +53,13 @@ tb_create_node_with_parent(XentContext *ctx, FluxNodeStore *store, XentNodeId pa
 	XentNodeId node = xent_create_node(ctx);
 	if (node == XENT_NODE_INVALID) return node;
 
+	xent_set_control_type(ctx, node, type);
+
 	if (parent != XENT_NODE_INVALID) xent_append_child(ctx, parent, node);
 
-	flux_node_store_bind_node(store, ctx, node, type);
+	FluxNodeData *nd = flux_node_store_get_or_create(store, node);
+	if (nd) nd->component_type = type;
+	xent_set_userdata(ctx, node, nd);
 	xent_set_focusable(ctx, node, true);
 	return node;
 }
@@ -108,10 +111,12 @@ static FluxTextBoxInputData *tb_alloc_base(TbBaseSpec const *spec) {
 		return NULL;
 	}
 	tb->buf_len            = 0;
+	tb->gap_start          = 0;
+	tb->gap_end            = tb->buf_cap;
 	tb->buffer [0]         = '\0';
 	tb->base.content       = tb->buffer;
 	tb->base.placeholder   = spec->placeholder;
-	tb->base.font_size     = FLUX_FONT_SIZE_DEFAULT;
+	tb->base.font_size     = 14.0f;
 	tb->base.enabled       = true;
 	tb->base.on_change     = spec->on_change;
 	tb->base.on_change_ctx = spec->userdata;
@@ -201,7 +206,7 @@ static FluxNBExt *tb_create_number_ext(TbNumberBoxSpec const *spec) {
 	nb->small_change        = spec->step;
 	nb->large_change        = spec->step * 10.0;
 	nb->value               = spec->minimum;
-	nb->spin_placement      = FLUX_NB_SPIN_INLINE;
+	nb->spin_placement      = 2;
 	nb->on_value_change     = spec->on_value_change;
 	nb->on_value_change_ctx = spec->userdata;
 	return nb;
@@ -217,12 +222,12 @@ static void tb_configure_text_grid(XentContext *ctx, XentNodeId node, float cons
 }
 
 static void tb_configure_password_grid(XentContext *ctx, XentNodeId node) {
-	float col_vals [] = {1.0f, PB_REVEAL_BTN_W};
+	float col_vals [] = {1.0f, 30.0f};
 	tb_configure_text_grid(ctx, node, col_vals, 2);
 }
 
 static void tb_configure_number_grid(XentContext *ctx, XentNodeId node) {
-	float col_vals [] = {1.0f, NB_DEL_BTN_W, NB_COL_DN_W};
+	float col_vals [] = {1.0f, 40.0f, 36.0f};
 	tb_configure_text_grid(ctx, node, col_vals, 3);
 }
 
@@ -252,6 +257,7 @@ XentNodeId flux_create_number_box(FluxNumberBoxCreateInfo const *info) {
 	xent_set_semantic_value(
 	  info->ctx, node, ( float ) info->min_value, ( float ) info->min_value, ( float ) info->max_value
 	);
+	xent_set_semantic_expanded(info->ctx, node, true);
 	xent_set_focusable(info->ctx, node, true);
 
 	tb_configure_number_grid(info->ctx, node);

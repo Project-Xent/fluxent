@@ -88,7 +88,7 @@ static void draw_checkbox_box(
 
 static void
 draw_checkbox_glyph(FluxRenderContext const *rc, FluxRect const *box, FluxColor glyph_color, float check_progress) {
-	if (check_progress <= FLUX_ANIM_VALUE_EPS || !rc->text) return;
+	if (check_progress <= 0.001f || !rc->text) return;
 
 	FluxTextStyle icon_style;
 	memset(&icon_style, 0, sizeof(icon_style));
@@ -118,7 +118,7 @@ static void draw_checkbox_label(
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
+	ts.font_size   = 14.0f;
 	ts.font_weight = FLUX_FONT_REGULAR;
 	ts.text_align  = FLUX_TEXT_LEFT;
 	ts.vert_align  = FLUX_TEXT_VCENTER;

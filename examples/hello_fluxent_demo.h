@@ -6,7 +6,18 @@
 #include <xent/xent.h>
 #include <stdbool.h>
 
-#define RADIO_GROUP_MAX 8
+/** @brief Default main window width for hello_fluxent showcase apps. */
+#define HELLO_FLUXENT_DEMO_WINDOW_W         640
+/** @brief Default main window height for hello_fluxent showcase apps. */
+#define HELLO_FLUXENT_DEMO_WINDOW_H         760
+/** @brief Node store / Xent arena initial capacity for hello_fluxent demos. */
+#define HELLO_FLUXENT_DEMO_STORE_CAPACITY   512
+/** @brief Scroll content height matching the static demo column layout extent. */
+#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H 2200
+/** @brief Scroll content width used to size the scroll viewport model. */
+#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W HELLO_FLUXENT_DEMO_WINDOW_W
+
+#define RADIO_GROUP_MAX                     8
 
 typedef struct RadioGroup {
 	FluxNodeStore *store;

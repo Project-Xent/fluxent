@@ -52,21 +52,27 @@ typedef struct ID2D1SolidColorBrush ID2D1SolidColorBrush;
  *
  * Interpolates a float value from start_val to target over duration.
  * Set target and duration, then read current each frame.
+ *
+ * If `easing` is non-NULL it is applied to the normalized progress before
+ * the interpolation; when NULL the tween defaults to ease-out-quad, which
+ * is the standard WinUI-style short transition curve.
  */
 typedef struct FluxTween {
-	float  current;     /**< Current interpolated value (read this) */
-	float  target;      /**< Target value to animate toward */
-	float  start_val;   /**< Value at animation start */
-	double start_time;  /**< Monotonic time when animation began */
-	double duration;    /**< Animation duration in seconds */
-	bool   active;      /**< Animation is in progress */
-	bool   initialized; /**< Tween has been set up at least once */
+	float  current;          /**< Current interpolated value (read this) */
+	float  target;           /**< Target value to animate toward */
+	float  start_val;        /**< Value at animation start */
+	double start_time;       /**< Monotonic time when animation began */
+	double duration;         /**< Animation duration in seconds */
+	bool   active;           /**< Animation is in progress */
+	bool   initialized;      /**< Tween has been set up at least once */
+	float  (*easing)(float); /**< Optional easing; NULL => ease-out-quad default */
 } FluxTween;
 
 /**
  * @brief Color animation tween (RGBA packed as uint32).
  *
- * Interpolates each channel independently. Uses premultiplied alpha.
+ * Interpolates each channel independently in linear-light space (gamma-correct
+ * sRGB). Easing follows the same NULL => ease-out-quad rule as FluxTween.
  */
 typedef struct FluxColorTween {
 	uint32_t current_rgba; /**< Current interpolated color */
@@ -76,6 +82,7 @@ typedef struct FluxColorTween {
 	double   duration;
 	bool     active;
 	bool     initialized;
+	float    (*easing)(float); /**< Optional easing; NULL => ease-out-quad default */
 } FluxColorTween;
 
 /**

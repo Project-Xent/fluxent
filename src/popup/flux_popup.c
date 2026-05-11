@@ -236,7 +236,7 @@ void flux_popup_set_anim_style(FluxPopup *popup, FluxPopupAnimStyle style) {
 
 static float popup_scale_for_owner(FluxPopup const *popup) {
 	UINT dpi = GetDpiForWindow(popup->owner_hwnd);
-	return dpi / 96.0f;
+	return dpi / FLUX_DPI_BASE;
 }
 
 static RECT popup_owner_work_rect(FluxPopup const *popup) {
@@ -419,7 +419,7 @@ static void popup_apply_flyout_frame(FluxPopup *popup, float t) {
 	if (!popup || !popup->popup_hwnd) return;
 
 	UINT  dpi       = GetDpiForWindow(popup->owner_hwnd);
-	float scale     = dpi > 0 ? dpi / 96.0f : 1.0f;
+	float scale     = dpi > 0 ? dpi / FLUX_DPI_BASE : 1.0f;
 	int   offset_px = ( int ) (POPUP_FLYOUT_OFFSET_DIP * scale + 0.5f);
 	int   from      = ( int ) ((1.0f - t) * ( float ) offset_px + 0.5f);
 	int   dx = 0, dy = 0;
@@ -550,7 +550,7 @@ void flux_popup_dismiss_all_for_owner(HWND owner_hwnd) {
 
 static float popup_window_scale(HWND hwnd) {
 	UINT dpi = GetDpiForWindow(hwnd);
-	return dpi > 0 ? ( float ) dpi / 96.0f : 1.0f;
+	return dpi > 0 ? ( float ) dpi / FLUX_DPI_BASE : 1.0f;
 }
 
 static PopupMouseCoord popup_mouse_point(HWND hwnd, LPARAM lp) {

@@ -87,9 +87,10 @@ static bool tb_in_range_table(TbCpRange const *table, size_t count, uint32_t cp)
 	size_t hi = count;
 	while (lo < hi) {
 		size_t mid = lo + (hi - lo) / 2;
-		if (cp < table [mid].lo) hi = mid;
-		else if (cp > table [mid].hi) lo = mid + 1;
-		else return true;
+		if (cp >= table [mid].lo && cp <= table [mid].hi) return true;
+		bool before = cp < table [mid].lo;
+		hi          = before ? mid : hi;
+		lo          = before ? lo : mid + 1;
 	}
 	return false;
 }
@@ -180,6 +181,44 @@ static TbWordClass tb_word_class(uint8_t c) {
 	return TB_WC_PUNCT;
 }
 
+static uint32_t tb_gap_size(FluxTextBoxInputData const *tb) {
+	return tb->gap_end > tb->gap_start ? tb->gap_end - tb->gap_start : 0;
+}
+
+static uint32_t tb_physical_pos(FluxTextBoxInputData const *tb, uint32_t pos) {
+	return pos < tb->gap_start ? pos : pos + tb_gap_size(tb);
+}
+
+static uint8_t tb_buffer_byte_at(FluxTextBoxInputData const *tb, uint32_t pos) {
+	return ( uint8_t ) tb->buffer [tb_physical_pos(tb, pos)];
+}
+
+static uint32_t tb_buffer_utf8_char_len_bounded(FluxTextBoxInputData const *tb, uint32_t pos, uint32_t *cp_out) {
+	if (!tb || !tb->buffer || pos >= tb->buf_len) return 0;
+
+	uint8_t    c0   = tb_buffer_byte_at(tb, pos);
+	TbUtf8Head head = tb_utf8_head(c0);
+	if (head.len == 1) return tb_utf8_accept(cp_out, head.cp, head.len);
+	if (pos + head.len > tb->buf_len) return tb_utf8_fallback(c0, cp_out);
+
+	for (uint32_t i = 1; i < head.len; i++) {
+		uint8_t cx = tb_buffer_byte_at(tb, pos + i);
+		if (!tb_utf8_is_cont(cx)) return tb_utf8_fallback(c0, cp_out);
+		head.cp = (head.cp << 6) | (cx & 0x3f);
+	}
+	if (!tb_utf8_scalar_valid(head)) return tb_utf8_fallback(c0, cp_out);
+	return tb_utf8_accept(cp_out, head.cp, head.len);
+}
+
+static uint32_t tb_buffer_utf8_scalar_prev(FluxTextBoxInputData const *tb, uint32_t pos) {
+	if (!tb || !tb->buffer || pos == 0) return 0;
+	if (pos > tb->buf_len) pos = tb->buf_len;
+
+	uint32_t p = pos - 1;
+	while (p > 0 && tb_utf8_is_cont(tb_buffer_byte_at(tb, p))) p--;
+	return p;
+}
+
 static void tb_move_gap_to(FluxTextBoxInputData *tb, uint32_t pos) {
 	if (pos == tb->gap_start) return;
 	if (pos < tb->gap_start) {
@@ -194,6 +233,11 @@ static void tb_move_gap_to(FluxTextBoxInputData *tb, uint32_t pos) {
 	memmove(tb->buffer + tb->gap_start, tb->buffer + tb->gap_end, move_len);
 	tb->gap_start += move_len;
 	tb->gap_end   += move_len;
+}
+
+static void tb_mark_content_dirty(FluxTextBoxInputData *tb) {
+	tb->flat_dirty   = true;
+	tb->base.content = tb->flat_buffer ? tb->flat_buffer : "";
 }
 
 bool tb_ensure_cap(FluxTextBoxInputData *tb, uint32_t needed) {
@@ -214,10 +258,9 @@ bool tb_ensure_cap(FluxTextBoxInputData *tb, uint32_t needed) {
 
 	uint32_t suffix = tb->buf_cap - tb->gap_end;
 	if (suffix > 0) memmove(nb + cap - suffix, nb + tb->gap_end, suffix);
-	tb->gap_end      = cap - suffix;
-	tb->buffer       = nb;
-	tb->buf_cap      = cap;
-	tb->base.content = tb->buffer;
+	tb->gap_end = cap - suffix;
+	tb->buffer  = nb;
+	tb->buf_cap = cap;
 	return true;
 }
 
@@ -233,6 +276,28 @@ void tb_realize(FluxTextBoxInputData *tb) {
 	tb->buf_len              = tb->gap_start;
 	tb->buffer [tb->buf_len] = '\0';
 	tb->base.content         = tb->buffer;
+	tb->flat_dirty           = true;
+}
+
+char const *tb_sync_content(FluxTextBoxInputData *tb) {
+	if (!tb) return "";
+	if (!tb->flat_dirty && tb->flat_buffer) return tb->flat_buffer;
+
+	uint32_t needed = tb->buf_len + 1;
+	if (needed > tb->flat_cap) {
+		char *next = ( char * ) realloc(tb->flat_buffer, needed);
+		if (!next) return tb->flat_buffer ? tb->flat_buffer : "";
+		tb->flat_buffer = next;
+		tb->flat_cap    = needed;
+	}
+
+	if (tb->gap_start > 0) memcpy(tb->flat_buffer, tb->buffer, tb->gap_start);
+	uint32_t suffix = tb->buf_cap - tb->gap_end;
+	if (suffix > 0) memcpy(tb->flat_buffer + tb->gap_start, tb->buffer + tb->gap_end, suffix);
+	tb->flat_buffer [tb->buf_len] = '\0';
+	tb->flat_dirty                = false;
+	tb->base.content              = tb->flat_buffer;
+	return tb->flat_buffer;
 }
 
 uint32_t tb_utf8_char_len(char const *s, uint32_t len, uint32_t pos) {
@@ -243,15 +308,21 @@ uint32_t tb_utf8_prev(char const *s, uint32_t len, uint32_t pos) {
 	if (!s || pos == 0) return 0;
 	if (pos > len) pos = len;
 
-	uint32_t prev = 0;
-	uint32_t cur  = 0;
-	while (cur < pos) {
-		uint32_t next = tb_utf8_next(s, len, cur);
-		if (next == 0 || next > pos || next <= cur) break;
-		prev = cur;
-		cur  = next;
+	uint32_t cur = pos - 1;
+	while (cur > 0 && tb_utf8_is_cont(( uint8_t ) s [cur])) cur--;
+
+	while (cur > 0) {
+		uint32_t prev = cur - 1;
+		while (prev > 0 && tb_utf8_is_cont(( uint8_t ) s [prev])) prev--;
+
+		uint32_t prev_cp = 0;
+		uint32_t cur_cp  = 0;
+		( void ) tb_utf8_char_len_bounded(s, len, prev, &prev_cp);
+		( void ) tb_utf8_char_len_bounded(s, len, cur, &cur_cp);
+		if (!tb_extends_cluster(prev_cp, cur_cp)) break;
+		cur = prev;
 	}
-	return prev;
+	return cur;
 }
 
 uint32_t tb_utf8_next(char const *s, uint32_t len, uint32_t pos) {
@@ -266,6 +337,43 @@ uint32_t tb_utf8_next(char const *s, uint32_t len, uint32_t pos) {
 	while (next < len) {
 		uint32_t ext_cp  = 0;
 		uint32_t ext_len = tb_utf8_char_len_bounded(s, len, next, &ext_cp);
+		if (ext_len == 0) break;
+		if (!tb_extends_cluster(previous, ext_cp)) break;
+		next     += ext_len;
+		previous  = ext_cp;
+	}
+	return next;
+}
+
+uint32_t tb_buffer_utf8_prev(FluxTextBoxInputData const *tb, uint32_t pos) {
+	uint32_t cur = tb_buffer_utf8_scalar_prev(tb, pos);
+	if (!tb || !tb->buffer || pos == 0) return 0;
+
+	while (cur > 0) {
+		uint32_t prev    = tb_buffer_utf8_scalar_prev(tb, cur);
+
+		uint32_t prev_cp = 0;
+		uint32_t cur_cp  = 0;
+		( void ) tb_buffer_utf8_char_len_bounded(tb, prev, &prev_cp);
+		( void ) tb_buffer_utf8_char_len_bounded(tb, cur, &cur_cp);
+		if (!tb_extends_cluster(prev_cp, cur_cp)) break;
+		cur = prev;
+	}
+	return cur;
+}
+
+uint32_t tb_buffer_utf8_next(FluxTextBoxInputData const *tb, uint32_t pos) {
+	if (!tb || !tb->buffer) return 0;
+	if (pos >= tb->buf_len) return tb->buf_len;
+
+	uint32_t cp       = 0;
+	uint32_t clen     = tb_buffer_utf8_char_len_bounded(tb, pos, &cp);
+	uint32_t next     = pos + (clen ? clen : 1);
+	uint32_t previous = cp;
+
+	while (next < tb->buf_len) {
+		uint32_t ext_cp  = 0;
+		uint32_t ext_len = tb_buffer_utf8_char_len_bounded(tb, next, &ext_cp);
 		if (ext_len == 0) break;
 		if (!tb_extends_cluster(previous, ext_cp)) break;
 		next     += ext_len;
@@ -303,6 +411,7 @@ void tb_delete_range(FluxTextBoxInputData *tb, uint32_t from, uint32_t to) {
 	tb_move_gap_to(tb, from);
 	tb->gap_end += (to - from);
 	tb->buf_len  = tb->gap_start + (tb->buf_cap - tb->gap_end);
+	tb_mark_content_dirty(tb);
 }
 
 void tb_insert_utf8(FluxTextBoxInputData *tb, uint32_t pos, char const *s, uint32_t slen) {
@@ -315,6 +424,7 @@ void tb_insert_utf8(FluxTextBoxInputData *tb, uint32_t pos, char const *s, uint3
 	memcpy(tb->buffer + tb->gap_start, s, slen);
 	tb->gap_start += slen;
 	tb->buf_len    = tb->gap_start + (tb->buf_cap - tb->gap_end);
+	tb_mark_content_dirty(tb);
 }
 
 bool tb_replace_text(FluxTextBoxInputData *tb, char const *text) {
@@ -329,10 +439,11 @@ bool tb_replace_text(FluxTextBoxInputData *tb, char const *text) {
 	tb->gap_end              = tb->buf_cap;
 	tb->buffer [len]         = '\0';
 	tb->buf_len              = len;
-	tb->base.content         = tb->buffer;
 	tb->base.cursor_position = len;
 	tb->base.selection_start = len;
 	tb->base.selection_end   = len;
+	tb_mark_content_dirty(tb);
+	( void ) tb_sync_content(tb);
 	return true;
 }
 
@@ -380,5 +491,38 @@ uint32_t tb_word_end(char const *s, uint32_t len, uint32_t pos) {
 	while (p < len && tb_word_class(( uint8_t ) s [p]) == target) p = tb_utf8_next(s, len, p);
 	if (target == TB_WC_SPACE) return p;
 	while (p < len && tb_word_class(( uint8_t ) s [p]) == TB_WC_SPACE) p = tb_utf8_next(s, len, p);
+	return p;
+}
+
+uint32_t tb_buffer_word_start(FluxTextBoxInputData const *tb, uint32_t pos) {
+	if (!tb || !tb->buffer || pos == 0) return 0;
+	if (pos > tb->buf_len) pos = tb->buf_len;
+
+	uint32_t p = pos;
+	while (p > 0) {
+		uint32_t pp = tb_buffer_utf8_prev(tb, p);
+		if (tb_word_class(tb_buffer_byte_at(tb, pp)) != TB_WC_SPACE) break;
+		p = pp;
+	}
+	if (p == 0) return 0;
+
+	uint32_t    pp_first = tb_buffer_utf8_prev(tb, p);
+	TbWordClass target   = tb_word_class(tb_buffer_byte_at(tb, pp_first));
+	while (p > 0) {
+		uint32_t pp = tb_buffer_utf8_prev(tb, p);
+		if (tb_word_class(tb_buffer_byte_at(tb, pp)) != target) break;
+		p = pp;
+	}
+	return p;
+}
+
+uint32_t tb_buffer_word_end(FluxTextBoxInputData const *tb, uint32_t pos) {
+	if (!tb || !tb->buffer || pos >= tb->buf_len) return tb ? tb->buf_len : 0;
+
+	TbWordClass target = tb_word_class(tb_buffer_byte_at(tb, pos));
+	uint32_t    p      = pos;
+	while (p < tb->buf_len && tb_word_class(tb_buffer_byte_at(tb, p)) == target) p = tb_buffer_utf8_next(tb, p);
+	if (target == TB_WC_SPACE) return p;
+	while (p < tb->buf_len && tb_word_class(tb_buffer_byte_at(tb, p)) == TB_WC_SPACE) p = tb_buffer_utf8_next(tb, p);
 	return p;
 }

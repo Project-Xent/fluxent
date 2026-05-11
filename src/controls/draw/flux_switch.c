@@ -28,21 +28,26 @@ static SwitchAnim switch_update_anim(
 	return (SwitchAnim) {ce->check_anim.current, ce->hover_anim.current, ce->press_anim.current};
 }
 
-static SwitchTrackColors switch_track_colors(FluxControlState const *state, FluxThemeColors const *t) {
+static SwitchTrackColors switch_track_colors_disabled(FluxThemeColors const *t) {
 	SwitchTrackColors c = {0};
-	if (!state->enabled) {
-		c.off_normal = c.off_hover = c.off_press = t ? t->ctrl_alt_fill_disabled : flux_color_rgba(0, 0, 0, 0);
-		c.on_normal = c.on_hover = c.on_press = t ? t->accent_disabled : flux_color_rgba(0, 0, 0, 0x37);
-		return c;
-	}
-
-	c.off_normal = t ? t->ctrl_alt_fill_secondary : flux_color_rgba(0, 0, 0, 0x06);
-	c.off_hover  = t ? t->ctrl_alt_fill_tertiary : flux_color_rgba(0, 0, 0, 0x0f);
-	c.off_press  = t ? t->ctrl_alt_fill_quarternary : flux_color_rgba(0, 0, 0, 0x12);
-	c.on_normal  = t ? t->accent_default : flux_color_rgb(0, 120, 212);
-	c.on_hover   = t ? t->accent_secondary : flux_color_rgba(0, 120, 212, 0xe6);
-	c.on_press   = t ? t->accent_tertiary : flux_color_rgba(0, 120, 212, 0xcc);
+	c.off_normal = c.off_hover = c.off_press = t ? t->ctrl_alt_fill_disabled : flux_color_rgba(0, 0, 0, 0);
+	c.on_normal = c.on_hover = c.on_press = t ? t->accent_disabled : flux_color_rgba(0, 0, 0, 0x37);
 	return c;
+}
+
+static SwitchTrackColors switch_track_colors_enabled(FluxThemeColors const *t) {
+	SwitchTrackColors c = {0};
+	c.off_normal        = t ? t->ctrl_alt_fill_secondary : flux_color_rgba(0, 0, 0, 0x06);
+	c.off_hover         = t ? t->ctrl_alt_fill_tertiary : flux_color_rgba(0, 0, 0, 0x0f);
+	c.off_press         = t ? t->ctrl_alt_fill_quarternary : flux_color_rgba(0, 0, 0, 0x12);
+	c.on_normal         = t ? t->accent_default : flux_color_rgb(0, 120, 212);
+	c.on_hover          = t ? t->accent_secondary : flux_color_rgba(0, 120, 212, 0xe6);
+	c.on_press          = t ? t->accent_tertiary : flux_color_rgba(0, 120, 212, 0xcc);
+	return c;
+}
+
+static SwitchTrackColors switch_track_colors(FluxControlState const *state, FluxThemeColors const *t) {
+	return state->enabled ? switch_track_colors_enabled(t) : switch_track_colors_disabled(t);
 }
 
 static FluxColor switch_track_fill(SwitchTrackColors colors, SwitchAnim anim) {

@@ -37,48 +37,63 @@ static FluxPoint hit_test_child_scroll_offset(InputHitQuery const *query, FluxNo
 	return scroll;
 }
 
+static bool hit_rect_contains(XentRect const *rect, FluxPoint point, FluxPoint scroll) {
+	float ax = rect->x - scroll.x;
+	float ay = rect->y - scroll.y;
+	return point.x >= ax && point.x < ax + rect->width && point.y >= ay && point.y < ay + rect->height;
+}
+
+static bool hit_child_list_append(HitChildList *children, XentNodeId child) {
+	if (children->count == children->cap) {
+		uint32_t    cap   = children->cap ? children->cap * 2u : 16u;
+		XentNodeId *items = ( XentNodeId * ) realloc(children->items, sizeof(*items) * cap);
+		if (!items) return false;
+		children->items = items;
+		children->cap   = cap;
+	}
+
+	children->items [children->count++] = child;
+	return true;
+}
+
+static HitChildList hit_collect_children(XentContext *ctx, XentNodeId node) {
+	HitChildList children = {0};
+	XentNodeId   child    = xent_get_first_child(ctx, node);
+	while (child != XENT_NODE_INVALID) {
+		if (!hit_child_list_append(&children, child)) break;
+		child = xent_get_next_sibling(ctx, child);
+	}
+	return children;
+}
+
+static FluxHitResult hit_test_recursive(InputHitQuery const *query);
+
+static FluxHitResult
+hit_test_children(InputHitQuery const *query, HitChildList const *children, FluxPoint child_scroll) {
+	for (uint32_t i = children->count; i > 0; i--) {
+		InputHitQuery child_query = *query;
+		child_query.node          = children->items [i - 1u];
+		child_query.scroll        = child_scroll;
+		FluxHitResult r           = hit_test_recursive(&child_query);
+		if (r.node != XENT_NODE_INVALID) return r;
+	}
+	return (FluxHitResult) {0};
+}
+
 static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 	XentRect rect = {0};
 	xent_get_layout_rect(query->ctx, query->node, &rect);
-
-	float ax = rect.x - query->scroll.x;
-	float ay = rect.y - query->scroll.y;
-
-	if (query->point.x < ax
-		|| query->point.x >= ax + rect.width
-		|| query->point.y < ay
-		|| query->point.y >= ay + rect.height)
-		return (FluxHitResult) {0};
+	if (!hit_rect_contains(&rect, query->point, query->scroll)) return (FluxHitResult) {0};
 
 	FluxNodeData *nd           = ( FluxNodeData * ) xent_get_userdata(query->ctx, query->node);
 	FluxPoint     child_scroll = hit_test_child_scroll_offset(query, nd);
-
-	HitChildList  children     = {0};
-	XentNodeId    child        = xent_get_first_child(query->ctx, query->node);
-	while (child != XENT_NODE_INVALID) {
-		if (children.count == children.cap) {
-			uint32_t    cap   = children.cap ? children.cap * 2u : 16u;
-			XentNodeId *items = ( XentNodeId * ) realloc(children.items, sizeof(*items) * cap);
-			if (!items) break;
-			children.items = items;
-			children.cap   = cap;
-		}
-		children.items [children.count++] = child;
-		child                             = xent_get_next_sibling(query->ctx, child);
-	}
-
-	for (uint32_t i = children.count; i > 0; i--) {
-		InputHitQuery child_query = *query;
-		child_query.node          = children.items [i - 1u];
-		child_query.scroll        = child_scroll;
-		FluxHitResult r           = hit_test_recursive(&child_query);
-		if (r.node != XENT_NODE_INVALID) {
-			free(children.items);
-			return r;
-		}
-	}
+	HitChildList  children     = hit_collect_children(query->ctx, query->node);
+	FluxHitResult child_hit    = hit_test_children(query, &children, child_scroll);
 	free(children.items);
+	if (child_hit.node != XENT_NODE_INVALID) return child_hit;
 
+	float ax = rect.x - query->scroll.x;
+	float ay = rect.y - query->scroll.y;
 	return (FluxHitResult) {
 	  .node   = query->node,
 	  .data   = nd,

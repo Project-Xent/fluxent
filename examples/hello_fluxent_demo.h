@@ -81,6 +81,10 @@ XentNodeId demo_slider(
 XentNodeId demo_progress(Demo *d, XentNodeId parent, float value, float max_value);
 XentNodeId demo_progress_ring(Demo *d, XentNodeId parent, float value, float max_value);
 XentNodeId demo_badge(Demo *d, XentNodeId parent, FluxInfoBadgeMode mode, int32_t value);
+XentNodeId
+demo_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *content, float font_size);
+XentNodeId demo_create_card(XentContext *ctx, FluxNodeStore *store, XentNodeId parent);
+XentNodeId demo_create_divider(XentContext *ctx, FluxNodeStore *store, XentNodeId parent);
 void       demo_make_scroll_root(Demo *d);
 void       demo_make_root(Demo *d);
 void       demo_add_title(Demo *d);

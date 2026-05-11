@@ -1,5 +1,6 @@
 #include "tb_internal.h"
 #include "fluxent/fluxent.h"
+#include "render/flux_fluent.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -41,7 +42,7 @@ static bool tb_ime_prepare_wide(TbImeComposeBuffers *buf, FluxTextBoxInputData *
 	  ( size_t ) total * sizeof(wchar_t), buf->wtmp_stack, sizeof(buf->wtmp_stack), &buf->wtmp_heap
 	);
 	if (!buf->wtmp) return false;
-	MultiByteToWideChar(CP_UTF8, 0, tb->buffer, -1, buf->wtmp, orig_wlen + 1);
+	MultiByteToWideChar(CP_UTF8, 0, tb_sync_content(tb), -1, buf->wtmp, orig_wlen + 1);
 	return true;
 }
 
@@ -78,15 +79,16 @@ static bool tb_ime_compose_utf8(TbImeComposeBuffers *buf, int composed_wlen) {
 static bool tb_measure_composed_ime_caret(
   FluxTextBoxInputData *tb, FluxTextRenderer *tr, FluxTextStyle const *ts, float width, TbImeCaret *out
 ) {
-	int orig_wlen = MultiByteToWideChar(CP_UTF8, 0, tb->buffer, -1, NULL, 0) - 1;
-	int comp_len  = ( int ) tb->base.composition_length;
-	int total     = orig_wlen + comp_len + 1;
+	char const *content   = tb_sync_content(tb);
+	int         orig_wlen = MultiByteToWideChar(CP_UTF8, 0, content, -1, NULL, 0) - 1;
+	int         comp_len  = ( int ) tb->base.composition_length;
+	int         total     = orig_wlen + comp_len + 1;
 	if (orig_wlen < 0 || comp_len <= 0 || total <= 0) return false;
 
 	TbImeComposeBuffers buffers = {0};
 	if (!tb_ime_prepare_wide(&buffers, tb, orig_wlen, total)) return false;
 
-	int ins = ( int ) MultiByteToWideChar(CP_UTF8, 0, tb->buffer, ( int ) tb->base.cursor_position, NULL, 0);
+	int ins = ( int ) MultiByteToWideChar(CP_UTF8, 0, content, ( int ) tb->base.cursor_position, NULL, 0);
 	if (ins > orig_wlen) ins = orig_wlen;
 
 	bool ok = tb_ime_compose_wide(&buffers, tb, orig_wlen, comp_len, ins)
@@ -126,16 +128,16 @@ void tb_update_scroll(FluxTextBoxInputData *tb) {
 	FluxTextRenderer *tr = tb->app ? flux_app_get_text_renderer(tb->app) : NULL;
 	if (!tr) return;
 
-	tb_realize(tb);
 	XentRect rect = {0};
 	xent_get_layout_rect(tb->ctx, tb->node, &rect);
-	float visible_w = rect.width - 10.0f - 6.0f;
+	float visible_w = rect.width - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
 	if (visible_w <= 0.0f) return;
 
 	FluxTextStyle      ts         = tb_make_style(tb);
-	uint32_t           u16_cursor = tb_byte_to_utf16_offset(tb->buffer, tb->buf_len, tb->base.cursor_position);
+	char const        *content    = tb_sync_content(tb);
+	uint32_t           u16_cursor = tb_byte_to_utf16_offset(content, tb->buf_len, tb->base.cursor_position);
 	FluxTextCaretQuery query      = {
-	  {tr, tb->buffer, &ts, visible_w + tb->base.scroll_offset_x},
+	  {tr, content, &ts, visible_w + tb->base.scroll_offset_x},
       ( int ) u16_cursor
     };
 	FluxRect caret = flux_text_caret_rect(&query);
@@ -148,8 +150,8 @@ void tb_update_scroll(FluxTextBoxInputData *tb) {
 
 void tb_notify_change(FluxTextBoxInputData *tb) {
 	if (!tb->last_op_was_typing) tb_commit_pending_undo(tb);
-	tb_realize(tb);
-	if (tb->base.on_change) tb->base.on_change(tb->base.on_change_ctx, tb->buffer);
+	char const *content = tb_sync_content(tb);
+	if (tb->base.on_change) tb->base.on_change(tb->base.on_change_ctx, content);
 }
 
 void tb_update_ime_position(FluxTextBoxInputData *tb) {
@@ -157,21 +159,21 @@ void tb_update_ime_position(FluxTextBoxInputData *tb) {
 	FluxTextRenderer *tr     = tb->app ? flux_app_get_text_renderer(tb->app) : NULL;
 	if (!window || !tr) return;
 
-	tb_realize(tb);
 	XentRect rect = {0};
 	xent_get_layout_rect(tb->ctx, tb->node, &rect);
 
-	FluxTextStyle ts     = tb_make_style(tb);
-	ts.vert_align        = FLUX_TEXT_TOP;
-	float      visible_w = rect.width - 10.0f - 6.0f;
+	FluxTextStyle ts      = tb_make_style(tb);
+	ts.vert_align         = FLUX_TEXT_TOP;
+	float       visible_w = rect.width - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
+	char const *content   = tb_sync_content(tb);
 
-	TbImeCaret measured  = {0.0f, 0.0f, 0.0f};
-	bool       composed  = tb->base.composition_text && tb->base.composition_length > 0 && tb->buffer [0];
+	TbImeCaret  measured  = {0.0f, 0.0f, 0.0f};
+	bool        composed  = tb->base.composition_text && tb->base.composition_length > 0 && content [0];
 	bool ok = composed && tb_measure_composed_ime_caret(tb, tr, &ts, visible_w + tb->base.scroll_offset_x, &measured);
 	if (!ok) {
-		uint32_t           u16_cursor = tb_byte_to_utf16_offset(tb->buffer, tb->buf_len, tb->base.cursor_position);
+		uint32_t           u16_cursor = tb_byte_to_utf16_offset(content, tb->buf_len, tb->base.cursor_position);
 		FluxTextCaretQuery query      = {
-		  {tr, tb->buffer, &ts, visible_w + tb->base.scroll_offset_x},
+		  {tr, content, &ts, visible_w + tb->base.scroll_offset_x},
           ( int ) u16_cursor
         };
 		FluxRect caret = flux_text_caret_rect(&query);
@@ -180,11 +182,11 @@ void tb_update_ime_position(FluxTextBoxInputData *tb) {
 		measured.h     = caret.h;
 	}
 
-	float       cx    = rect.x + 10.0f + measured.x - tb->base.scroll_offset_x;
+	float       cx    = rect.x + FLUX_TEXTBOX_PAD_L + measured.x - tb->base.scroll_offset_x;
 	float       cy    = rect.y + 5.0f + measured.y;
 	float       ch    = measured.h > 0.0f ? measured.h : (ts.font_size > 0.0f ? ts.font_size : 14.0f) * 1.2f;
 	FluxDpiInfo dpi   = flux_window_dpi(window);
-	float       scale = dpi.dpi_x / 96.0f;
+	float       scale = dpi.dpi_x / FLUX_DPI_BASE;
 
 	flux_window_set_ime_position(window, ( int ) (cx * scale), ( int ) (cy * scale), ( int ) (ch * scale));
 }

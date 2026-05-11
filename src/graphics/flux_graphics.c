@@ -217,8 +217,8 @@ FluxGraphics *flux_graphics_create(void) {
 	FluxGraphics *gfx = ( FluxGraphics * ) calloc(1, sizeof(*gfx));
 	if (!gfx) return NULL;
 
-	gfx->dpi.dpi_x = 96.0f;
-	gfx->dpi.dpi_y = 96.0f;
+	gfx->dpi.dpi_x = FLUX_DPI_BASE;
+	gfx->dpi.dpi_y = FLUX_DPI_BASE;
 
 	HRESULT hr     = create_device_independent(gfx);
 	if (FAILED(hr)) {
@@ -313,7 +313,7 @@ void flux_graphics_set_dpi(FluxGraphics *gfx, FluxDpiInfo dpi) {
 }
 
 FluxDpiInfo flux_graphics_get_dpi(FluxGraphics const *gfx) {
-	if (!gfx) return (FluxDpiInfo) {96.0f, 96.0f};
+	if (!gfx) return (FluxDpiInfo) {FLUX_DPI_BASE, FLUX_DPI_BASE};
 	return gfx->dpi;
 }
 

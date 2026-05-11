@@ -76,6 +76,30 @@ void flux_tooltip_set_theme(FluxTooltip *tt, FluxThemeColors const *theme, bool 
 	tt->is_dark = is_dark;
 }
 
+static void tooltip_clear_hover(FluxTooltip *tt) {
+	tooltip_kill_timer(tt);
+	if (tt->is_visible) tooltip_hide(tt);
+	tt->hovered_node = XENT_NODE_INVALID;
+	tt->tooltip_text = NULL;
+}
+
+static bool tooltip_should_reshow(FluxTooltip const *tt, ULONGLONG now_ms) {
+	return tt->is_visible
+	    || (tt->last_dismiss_tick != 0 && (now_ms - tt->last_dismiss_tick) < TOOLTIP_RESHOW_WINDOW_MS);
+}
+
+static void tooltip_schedule_show(FluxTooltip *tt, bool quick) {
+	if (tt->is_visible) {
+		tooltip_hide(tt);
+		tooltip_show(tt);
+		return;
+	}
+
+	tooltip_kill_timer(tt);
+	if (quick) tooltip_show(tt);
+	else tooltip_start_timer(tt, FLUX_TOOLTIP_DELAY_MS);
+}
+
 void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const *nd, FluxRect const *screen_bounds) {
 	if (!tt) return;
 
@@ -87,10 +111,7 @@ void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData con
 	}
 
 	if (hovered == XENT_NODE_INVALID || !new_text) {
-		tooltip_kill_timer(tt);
-		if (tt->is_visible) tooltip_hide(tt);
-		tt->hovered_node = XENT_NODE_INVALID;
-		tt->tooltip_text = NULL;
+		tooltip_clear_hover(tt);
 		return;
 	}
 
@@ -99,21 +120,7 @@ void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData con
 	if (screen_bounds) tt->anchor_screen = *screen_bounds;
 
 	ULONGLONG now_ms = GetTickCount64();
-	bool      quick
-	  = tt->is_visible || (tt->last_dismiss_tick != 0 && (now_ms - tt->last_dismiss_tick) < TOOLTIP_RESHOW_WINDOW_MS);
-
-	if (tt->is_visible) {
-		tooltip_hide(tt);
-		tooltip_show(tt);
-	}
-	else if (quick) {
-		tooltip_kill_timer(tt);
-		tooltip_show(tt);
-	}
-	else {
-		tooltip_kill_timer(tt);
-		tooltip_start_timer(tt, FLUX_TOOLTIP_DELAY_MS);
-	}
+	tooltip_schedule_show(tt, tooltip_should_reshow(tt, now_ms));
 }
 
 void flux_tooltip_dismiss(FluxTooltip *tt) {

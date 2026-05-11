@@ -325,49 +325,52 @@ dwrite_read_metrics(IDWriteTextLayout *layout, XentMeasureMode mode, float width
 	return true;
 }
 
-static bool dwrite_measure(
-  XentTextBackend const *backend, char const *text, float font_size, float width_constraint, XentLineBreakPolicy policy,
-  XentMeasureMode mode, XentTextMetrics *out
-) {
+static bool
+dwrite_measure(XentTextBackend const *backend, XentTextMeasureRequest const *request, XentTextMetrics *out) {
 	FluxTextRenderer *tr = ( FluxTextRenderer * ) backend->userdata;
-	if (!tr || !out) return false;
+	if (!tr || !request || !out) return false;
 
 	TextWideBuffer wide;
-	if (!text_wide_buffer_from_utf8(&wide, text)) return false;
+	if (!text_wide_buffer_from_utf8(&wide, request->text)) return false;
 
-	IDWriteTextFormat *fmt = dwrite_create_measure_format(tr, font_size, policy, mode);
+	IDWriteTextFormat *fmt
+	  = dwrite_create_measure_format(tr, request->font_size, request->line_break_policy, request->width_mode);
 	if (!fmt) {
 		text_wide_buffer_free(&wide);
 		return false;
 	}
 
-	float              layout_width = constraint_for_mode(width_constraint, mode);
+	float              layout_width = constraint_for_mode(request->width_constraint, request->width_mode);
 	IDWriteTextLayout *layout       = dwrite_create_measure_layout(tr, fmt, &wide, layout_width);
 	text_wide_buffer_free(&wide);
 
-	bool ok = layout && dwrite_read_metrics(layout, mode, width_constraint, out);
+	bool ok = layout && dwrite_read_metrics(layout, request->width_mode, request->width_constraint, out);
 
 	if (layout) IDWriteTextLayout_Release(layout);
 	IDWriteTextFormat_Release(fmt);
 	return ok;
 }
 
-static bool dwrite_shape(
-  XentTextBackend const *backend, char const *text, float font_size, float width_constraint, XentLineBreakPolicy policy,
-  XentMeasureMode mode, XentShapedGlyph *out_glyphs, uint32_t glyph_capacity, XentShapedRun *out_runs,
-  uint32_t run_capacity, XentShapedLine *out_lines, uint32_t line_capacity, XentShapingResult *out_result
-) {
-	if (!out_result) return false;
+static bool
+dwrite_shape(XentTextBackend const *backend, XentTextShapeRequest const *request, XentTextShapeOutput const *output) {
+	if (!request || !output || !output->result) return false;
 
-	XentTextMetrics m;
-	if (!dwrite_measure(backend, text, font_size, width_constraint, policy, mode, &m)) return false;
+	XentTextMetrics        m;
+	XentTextMeasureRequest measure_request = {
+	  .text              = request->text,
+	  .font_size         = request->font_size,
+	  .width_constraint  = request->width_constraint,
+	  .line_break_policy = request->line_break_policy,
+	  .width_mode        = request->width_mode,
+	};
+	if (!dwrite_measure(backend, &measure_request, &m)) return false;
 
-	memset(out_result, 0, sizeof(*out_result));
-	out_result->metrics     = m;
-	out_result->glyph_count = 0;
-	out_result->run_count   = 0;
-	out_result->line_count  = m.line_count;
-	out_result->truncated   = false;
+	memset(output->result, 0, sizeof(*output->result));
+	output->result->metrics     = m;
+	output->result->glyph_count = 0;
+	output->result->run_count   = 0;
+	output->result->line_count  = m.line_count;
+	output->result->truncated   = false;
 	return true;
 }
 

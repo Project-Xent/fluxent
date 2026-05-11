@@ -21,14 +21,8 @@ static bool demo_alloc_state(Demo *d) {
 }
 
 bool demo_init(Demo *d) {
-	XentConfig xcfg       = {0};
-	xcfg.initial_capacity = HELLO_FLUXENT_DEMO_STORE_CAPACITY;
-	d->ctx                = xent_create_context(&xcfg);
-	if (!d->ctx) return false;
-
-	d->store = flux_node_store_create(HELLO_FLUXENT_DEMO_STORE_CAPACITY);
-	if (!d->store) return false;
-	return demo_alloc_state(d);
+	( void ) d;
+	return true;
 }
 
 bool demo_create_app(Demo *d) {
@@ -39,23 +33,20 @@ bool demo_create_app(Demo *d) {
 	cfg.dark_mode     = flux_theme_system_is_dark();
 	cfg.backdrop      = FLUX_BACKDROP_MICA;
 
-	HRESULT hr        = flux_app_create(&cfg, &d->app);
-	if (FAILED(hr)) return false;
-	flux_app_set_root(d->app, d->ctx, d->scroll_root, d->store);
+	d->app            = flux_app_create(&cfg);
+	if (!d->app) return false;
 
-	if (!d->scroll_nd || !d->scroll_nd->component_data) return true;
-	FluxScrollData *sd = ( FluxScrollData * ) d->scroll_nd->component_data;
-	sd->content_h      = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H;
-	sd->content_w      = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W;
-	return true;
+	d->ctx         = flux_app_get_context(d->app);
+	d->store       = flux_app_get_store(d->app);
+	d->scroll_root = flux_app_get_root(d->app);
+	if (!d->ctx || !d->store || d->scroll_root == XENT_NODE_INVALID) return false;
+	return demo_alloc_state(d);
 }
 
 void demo_destroy(Demo *d) {
 	if (d->menu) flux_menu_flyout_destroy(d->menu);
 	if (d->flyout) flux_flyout_destroy(d->flyout);
 	if (d->app) flux_app_destroy(d->app);
-	if (d->store) flux_node_store_destroy(d->store);
-	if (d->ctx) xent_destroy_context(d->ctx);
 	free(d->counter);
 	free(d->repeat);
 	free(d->toggle);

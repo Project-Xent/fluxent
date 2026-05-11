@@ -66,12 +66,15 @@ struct FluxApp;
 
 /** @brief Extended runtime data for TextBox/PasswordBox/NumberBox. */
 typedef struct FluxTextBoxInputData {
-	FluxTextBoxData base;      /* must be first — renderer casts to FluxTextBoxData* */
-	char           *buffer;    /**< Gap-buffer storage of size buf_cap. */
-	uint32_t        buf_cap;   /**< Total storage capacity in bytes (text + gap). */
-	uint32_t        buf_len;   /**< Logical text length in bytes; equals gap_start + (buf_cap - gap_end). */
-	uint32_t        gap_start; /**< Byte offset where the gap begins in @ref buffer. */
+	FluxTextBoxData base;        /* must be first — renderer casts to FluxTextBoxData* */
+	char           *buffer;      /**< Gap-buffer storage of size buf_cap. */
+	char           *flat_buffer; /**< Contiguous text snapshot used by rendering and callbacks. */
+	uint32_t        buf_cap;     /**< Total storage capacity in bytes (text + gap). */
+	uint32_t        flat_cap;    /**< Total storage capacity for @ref flat_buffer. */
+	uint32_t        buf_len;     /**< Logical text length in bytes; equals gap_start + (buf_cap - gap_end). */
+	uint32_t        gap_start;   /**< Byte offset where the gap begins in @ref buffer. */
 	uint32_t        gap_end; /**< Byte offset just past the gap; storage at [gap_end, buf_cap) is the post-gap text. */
+	bool            flat_dirty; /**< True when @ref flat_buffer no longer mirrors the gap buffer. */
 	XentContext    *ctx;
 	XentNodeId      node;
 	FluxNodeStore  *store;
@@ -104,12 +107,18 @@ typedef struct FluxTextBoxInputData {
 bool          tb_ensure_cap(FluxTextBoxInputData *tb, uint32_t needed);
 /** @brief Closes the gap so @p tb->buffer is contiguous and null-terminated; cost is O(distance from gap to end). */
 void          tb_realize(FluxTextBoxInputData *tb);
+/** @brief Updates the contiguous flat view without moving the gap. */
+char const   *tb_sync_content(FluxTextBoxInputData *tb);
 /** @brief Returns the byte length of the UTF-8 code unit starting at @p pos. */
 uint32_t      tb_utf8_char_len(char const *s, uint32_t len, uint32_t pos);
 /** @brief Returns the byte offset of the previous UTF-8 codepoint before @p pos. */
 uint32_t      tb_utf8_prev(char const *s, uint32_t len, uint32_t pos);
 /** @brief Returns the byte offset of the next UTF-8 codepoint after @p pos. */
 uint32_t      tb_utf8_next(char const *s, uint32_t len, uint32_t pos);
+/** @brief Gap-aware variant of @ref tb_utf8_prev for textbox buffers. */
+uint32_t      tb_buffer_utf8_prev(FluxTextBoxInputData const *tb, uint32_t pos);
+/** @brief Gap-aware variant of @ref tb_utf8_next for textbox buffers. */
+uint32_t      tb_buffer_utf8_next(FluxTextBoxInputData const *tb, uint32_t pos);
 /** @brief Converts a UTF-16 unit index to a UTF-8 byte offset in @p s. */
 uint32_t      tb_utf16_to_byte_offset(char const *s, uint32_t len, uint32_t utf16_pos);
 /** @brief Converts a UTF-8 byte offset to a UTF-16 unit index in @p s. */
@@ -128,6 +137,10 @@ bool          tb_has_selection(FluxTextBoxInputData const *tb);
 uint32_t      tb_word_start(char const *s, uint32_t len, uint32_t pos);
 /** @brief Returns the byte offset of the end of the word containing @p pos. */
 uint32_t      tb_word_end(char const *s, uint32_t len, uint32_t pos);
+/** @brief Gap-aware variant of @ref tb_word_start for textbox buffers. */
+uint32_t      tb_buffer_word_start(FluxTextBoxInputData const *tb, uint32_t pos);
+/** @brief Gap-aware variant of @ref tb_word_end for textbox buffers. */
+uint32_t      tb_buffer_word_end(FluxTextBoxInputData const *tb, uint32_t pos);
 
 /** @brief Pushes the current buffer and selection onto the undo stack. */
 void          tb_push_undo(FluxTextBoxInputData *tb);

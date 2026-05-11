@@ -1,21 +1,8 @@
 #include "controls/draw/flux_control_draw.h"
+#include "controls/textbox/tb_metrics.h"
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
 #include <string.h>
-
-#define NB_SPIN_BTN_MIN_W 32.0f
-
-#define NB_UP_MARGIN      4.0f
-#define NB_DN_MARGIN_L    0.0f
-#define NB_DN_MARGIN_T    4.0f
-#define NB_DN_MARGIN_R    4.0f
-#define NB_DN_MARGIN_B    4.0f
-
-#define NB_COL_UP_W       (NB_SPIN_BTN_MIN_W + NB_UP_MARGIN + NB_UP_MARGIN)
-#define NB_COL_DN_W       (NB_SPIN_BTN_MIN_W + NB_DN_MARGIN_L + NB_DN_MARGIN_R)
-#define NB_SPIN_TOTAL     (NB_COL_UP_W + NB_COL_DN_W)
-
-#define NB_DEL_BTN_W      40.0f
 
 #define NB_INNER_MARGIN_L 0.0f
 #define NB_INNER_MARGIN_T 4.0f
@@ -62,45 +49,39 @@ typedef struct NbDrawContext {
 	int                       zone;
 } NbDrawContext;
 
-static NbButtonMargins const NB_UP_MARGINS = {NB_UP_MARGIN, NB_UP_MARGIN, NB_UP_MARGIN, NB_UP_MARGIN};
-static NbButtonMargins const NB_DN_MARGINS = {NB_DN_MARGIN_L, NB_DN_MARGIN_T, NB_DN_MARGIN_R, NB_DN_MARGIN_B};
+static NbButtonMargins const NB_UP_MARGINS
+  = {FLUX_NUMBER_BOX_UP_MARGIN, FLUX_NUMBER_BOX_UP_MARGIN, FLUX_NUMBER_BOX_UP_MARGIN, FLUX_NUMBER_BOX_UP_MARGIN};
+static NbButtonMargins const NB_DN_MARGINS = {
+  FLUX_NUMBER_BOX_DN_MARGIN_L, FLUX_NUMBER_BOX_DN_MARGIN_T, FLUX_NUMBER_BOX_DN_MARGIN_R, FLUX_NUMBER_BOX_DN_MARGIN_B};
 static NbButtonMargins const NB_INNER_MARGINS
   = {NB_INNER_MARGIN_L, NB_INNER_MARGIN_T, NB_INNER_MARGIN_R, NB_INNER_MARGIN_B};
+
+static int nb_delete_hover_zone(float lx, float del_start, float spin_start) {
+	( void ) lx;
+	( void ) del_start;
+	( void ) spin_start;
+	return ZONE_DELETE;
+}
+
+static int nb_spin_hover_zone(float lx, float spin_start) {
+	float up_x0 = spin_start + FLUX_NUMBER_BOX_UP_MARGIN;
+	float up_x1 = up_x0 + FLUX_NUMBER_BOX_SPIN_BTN_W;
+	if (lx >= up_x0 && lx < up_x1) return ZONE_SPIN_UP;
+
+	float dn_x0 = spin_start + FLUX_NUMBER_BOX_COL_UP_W + FLUX_NUMBER_BOX_DN_MARGIN_L;
+	float dn_x1 = dn_x0 + FLUX_NUMBER_BOX_SPIN_BTN_W;
+	if (lx >= dn_x0 && lx < dn_x1) return ZONE_SPIN_DN;
+	return ZONE_SPIN_GAP;
+}
 
 static int nb_hover_zone(float lx, float bounds_w, bool show_delete, bool spin_visible) {
 	if (lx < 0.0f) return ZONE_NONE;
 
-	float right_edge = bounds_w;
-
-	float spin_start = right_edge;
-	if (spin_visible) spin_start = right_edge - NB_SPIN_TOTAL;
-
-	float del_start = spin_start;
-	if (show_delete) del_start = spin_start - NB_DEL_BTN_W;
-
+	float spin_start = spin_visible ? bounds_w - FLUX_NUMBER_BOX_SPIN_W : bounds_w;
+	float del_start  = show_delete ? spin_start - FLUX_NUMBER_BOX_DELETE_BTN_W : spin_start;
 	if (lx < del_start) return ZONE_TEXT;
-
-	if (show_delete && lx < spin_start) {
-		float inner_x0 = del_start + NB_INNER_MARGIN_L;
-		float inner_x1 = spin_start - NB_INNER_MARGIN_R;
-		if (lx >= inner_x0 && lx < inner_x1) return ZONE_DELETE;
-		return ZONE_DELETE;
-	}
-
-	if (spin_visible && lx >= spin_start) {
-		float col_up_start = spin_start;
-		float up_x0        = col_up_start + NB_UP_MARGIN;
-		float up_x1        = up_x0 + NB_SPIN_BTN_MIN_W;
-
-		float col_dn_start = spin_start + NB_COL_UP_W;
-		float dn_x0        = col_dn_start + NB_DN_MARGIN_L;
-		float dn_x1        = dn_x0 + NB_SPIN_BTN_MIN_W;
-
-		if (lx >= up_x0 && lx < up_x1) return ZONE_SPIN_UP;
-		if (lx >= dn_x0 && lx < dn_x1) return ZONE_SPIN_DN;
-		return ZONE_SPIN_GAP;
-	}
-
+	if (show_delete && lx < spin_start) return nb_delete_hover_zone(lx, del_start, spin_start);
+	if (spin_visible && lx >= spin_start) return nb_spin_hover_zone(lx, spin_start);
 	return ZONE_TEXT;
 }
 
@@ -190,7 +171,7 @@ static FluxColor nb_action_icon_color(bool enabled, bool pressed, FluxThemeColor
 static void nb_draw_delete(NbDrawContext const *dc) {
 	FluxThemeColors const *t           = dc->rc->theme;
 	float                  del_x       = dc->bounds->x + dc->text_col_w;
-	FluxRect               del_outer   = {del_x, dc->bounds->y, NB_DEL_BTN_W, dc->bounds->h};
+	FluxRect               del_outer   = {del_x, dc->bounds->y, FLUX_NUMBER_BOX_DELETE_BTN_W, dc->bounds->h};
 	bool                   del_hovered = (dc->zone == ZONE_DELETE);
 	bool                   del_pressed = (del_hovered && dc->state->pressed);
 
@@ -204,17 +185,18 @@ static void nb_draw_delete(NbDrawContext const *dc) {
 
 static void nb_draw_spin(NbDrawContext const *dc) {
 	FluxThemeColors const *t           = dc->rc->theme;
-	float                  spin_base_x = dc->bounds->x + dc->bounds->w - NB_SPIN_TOTAL;
-	FluxRect               up_outer    = {spin_base_x, dc->bounds->y, NB_COL_UP_W, dc->bounds->h};
-	FluxRect               dn_outer    = {spin_base_x + NB_COL_UP_W, dc->bounds->y, NB_COL_DN_W, dc->bounds->h};
+	float                  spin_base_x = dc->bounds->x + dc->bounds->w - FLUX_NUMBER_BOX_SPIN_W;
+	FluxRect               up_outer    = {spin_base_x, dc->bounds->y, FLUX_NUMBER_BOX_COL_UP_W, dc->bounds->h};
+	FluxRect               dn_outer
+	  = {spin_base_x + FLUX_NUMBER_BOX_COL_UP_W, dc->bounds->y, FLUX_NUMBER_BOX_COL_DN_W, dc->bounds->h};
 
-	bool                   up_hovered  = (dc->zone == ZONE_SPIN_UP && dc->snap->nb_up_enabled);
-	bool                   dn_hovered  = (dc->zone == ZONE_SPIN_DN && dc->snap->nb_down_enabled);
-	bool                   up_pressed  = (up_hovered && dc->state->pressed);
-	bool                   dn_pressed  = (dn_hovered && dc->state->pressed);
+	bool         up_hovered = (dc->zone == ZONE_SPIN_UP && dc->snap->nb_up_enabled);
+	bool         dn_hovered = (dc->zone == ZONE_SPIN_DN && dc->snap->nb_down_enabled);
+	bool         up_pressed = (up_hovered && dc->state->pressed);
+	bool         dn_pressed = (dn_hovered && dc->state->pressed);
 
-	NbButtonSpec           up_button   = {&up_outer, NB_UP_MARGINS, dc->radius, up_hovered, up_pressed};
-	NbButtonSpec           dn_button   = {&dn_outer, NB_DN_MARGINS, dc->radius, dn_hovered, dn_pressed};
+	NbButtonSpec up_button  = {&up_outer, NB_UP_MARGINS, dc->radius, up_hovered, up_pressed};
+	NbButtonSpec dn_button  = {&dn_outer, NB_DN_MARGINS, dc->radius, dn_hovered, dn_pressed};
 	nb_draw_inner_button(dc->rc, &up_button, t);
 	nb_draw_inner_button(dc->rc, &dn_button, t);
 
@@ -239,8 +221,8 @@ void flux_draw_number_box(
 
 	bool  show_delete  = has_text && state->focused && !snap->readonly && state->enabled;
 
-	float spin_w       = spin_visible ? NB_SPIN_TOTAL : 0.0f;
-	float delete_w     = show_delete ? NB_DEL_BTN_W : 0.0f;
+	float spin_w       = spin_visible ? FLUX_NUMBER_BOX_SPIN_W : 0.0f;
+	float delete_w     = show_delete ? FLUX_NUMBER_BOX_DELETE_BTN_W : 0.0f;
 	float reserved     = delete_w + spin_w;
 	float text_col_w   = bounds->w - reserved;
 	if (text_col_w < 0.0f) text_col_w = 0.0f;

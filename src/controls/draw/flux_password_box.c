@@ -1,10 +1,9 @@
 #include "controls/draw/flux_control_draw.h"
 #include "controls/textbox/tb_internal.h"
+#include "controls/textbox/tb_metrics.h"
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
 #include <string.h>
-
-#define PB_REVEAL_BTN_W 30.0f
 
 typedef struct PbDrawContext {
 	FluxRenderContext const  *rc;
@@ -75,7 +74,7 @@ static FluxRect pb_reveal_rect(FluxRect const *bounds, float col0_w) {
 	float btn_margin_b = 4.0f;
 	float btn_x        = bounds->x + col0_w + btn_margin_l;
 	float btn_y        = bounds->y + btn_margin_t;
-	float btn_w        = PB_REVEAL_BTN_W - btn_margin_l - btn_margin_r;
+	float btn_w        = FLUX_PASSWORD_REVEAL_BTN_W - btn_margin_l - btn_margin_r;
 	float btn_h        = bounds->h - btn_margin_t - btn_margin_b;
 	if (btn_w < 0.0f) btn_w = 0.0f;
 	if (btn_h < 0.0f) btn_h = 0.0f;
@@ -137,7 +136,7 @@ void flux_draw_password_box(
 	bool  show_reveal = state->enabled && has_text && state->focused;
 	bool  revealed    = snap->is_checked;
 
-	float col1_w      = show_reveal ? PB_REVEAL_BTN_W : 0.0f;
+	float col1_w      = show_reveal ? FLUX_PASSWORD_REVEAL_BTN_W : 0.0f;
 	float col0_w      = bounds->w - col1_w;
 	if (col0_w < 0.0f) col0_w = 0.0f;
 

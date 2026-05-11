@@ -6,7 +6,6 @@
 
 #include <directmanipulation.h>
 #include <objbase.h>
-#include <assert.h>
 #include <stdlib.h>
 
 typedef struct FluxDManipHandler {
@@ -118,7 +117,6 @@ static HRESULT STDMETHODCALLTYPE handler_OnContentUpdated(
 	( void ) viewport;
 	FluxDManipHandler *self = ( FluxDManipHandler * ) This;
 	if (!self->owner || !content) return S_OK;
-	assert(dmanip_is_ui_thread(self->owner));
 	if (!dmanip_is_ui_thread(self->owner)) return S_OK;
 
 	DIRECTMANIPULATION_STATUS st = self->owner->status;

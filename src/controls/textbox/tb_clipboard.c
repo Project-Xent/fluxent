@@ -49,8 +49,8 @@ void tb_perform_copy(FluxTextBoxInputData *tb) {
 	uint32_t start = 0;
 	uint32_t len   = 0;
 	if (!tb_copy_selection_range(tb, &start, &len)) return;
-	tb_realize(tb);
-	tb_set_clipboard_utf16(tb->buffer + start, len);
+	char const *content = tb_sync_content(tb);
+	tb_set_clipboard_utf16(content + start, len);
 }
 
 static wchar_t const *tb_filtered_clip_text(

@@ -56,25 +56,24 @@ XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
 	return node;
 }
 
-XentNodeId
-flux_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *content, float font_size) {
-	if (!ctx || !store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(store, XENT_CONTROL_TEXT, flux_draw_text, NULL);
+XentNodeId flux_create_text(FluxTextCreateInfo const *info) {
+	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
+	flux_node_store_register_renderer(info->store, XENT_CONTROL_TEXT, flux_draw_text, NULL);
 
-	XentNodeId node = flux_factory_create_node(ctx, store, parent, XENT_CONTROL_TEXT);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_TEXT);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	xent_set_text(ctx, node, content ? content : "");
-	if (font_size > 0.0f) xent_set_font_size(ctx, node, font_size);
+	xent_set_text(info->ctx, node, info->content ? info->content : "");
+	if (info->font_size > 0.0f) xent_set_font_size(info->ctx, node, info->font_size);
 
-	FluxNodeData *nd = flux_node_store_get(store, node);
+	FluxNodeData *nd = flux_node_store_get(info->store, node);
 	FluxTextData *td = nd ? ( FluxTextData * ) calloc(1, sizeof(FluxTextData)) : NULL;
 	if (!nd || !td) {
 		free(td);
 		return node;
 	}
-	td->content                = content;
-	td->font_size              = font_size > 0.0f ? font_size : 14.0f;
+	td->content                = info->content;
+	td->font_size              = info->font_size > 0.0f ? info->font_size : 14.0f;
 	td->font_weight            = FLUX_FONT_REGULAR;
 	td->alignment              = FLUX_TEXT_LEFT;
 	td->vertical_alignment     = FLUX_TEXT_TOP;
@@ -83,8 +82,8 @@ flux_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char
 	nd->component_data         = td;
 	nd->destroy_component_data = free;
 
-	xent_set_semantic_role(ctx, node, XENT_SEMANTIC_TEXT);
-	if (content) xent_set_semantic_label(ctx, node, content);
+	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_TEXT);
+	if (info->content) xent_set_semantic_label(info->ctx, node, info->content);
 
 	return node;
 }
@@ -254,16 +253,16 @@ XentNodeId flux_create_progress_ring(FluxProgressCreateInfo const *info) {
 	return node;
 }
 
-XentNodeId flux_create_card(XentContext *ctx, FluxNodeStore *store, XentNodeId parent) {
-	if (!ctx || !store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(store, XENT_CONTROL_CARD, flux_draw_card, NULL);
-	return flux_factory_create_node(ctx, store, parent, XENT_CONTROL_CARD);
+XentNodeId flux_create_card(FluxContainerCreateInfo const *info) {
+	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
+	flux_node_store_register_renderer(info->store, XENT_CONTROL_CARD, flux_draw_card, NULL);
+	return flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_CARD);
 }
 
-XentNodeId flux_create_divider(XentContext *ctx, FluxNodeStore *store, XentNodeId parent) {
-	if (!ctx || !store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(store, XENT_CONTROL_DIVIDER, flux_draw_divider, NULL);
-	return flux_factory_create_node(ctx, store, parent, XENT_CONTROL_DIVIDER);
+XentNodeId flux_create_divider(FluxContainerCreateInfo const *info) {
+	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
+	flux_node_store_register_renderer(info->store, XENT_CONTROL_DIVIDER, flux_draw_divider, NULL);
+	return flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_DIVIDER);
 }
 
 static void hyperlink_on_click(void *ctx) {

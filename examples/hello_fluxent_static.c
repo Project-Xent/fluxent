@@ -1,6 +1,7 @@
 #include "hello_fluxent_demo.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static void radio_group_apply(RadioGroupMember const *m, int index) {
 	RadioGroup   *g  = m->group;
@@ -116,6 +117,22 @@ XentNodeId demo_badge(Demo *d, XentNodeId parent, FluxInfoBadgeMode mode, int32_
 	return flux_create_info_badge(&info);
 }
 
+XentNodeId
+demo_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *content, float font_size) {
+	FluxTextCreateInfo info = {ctx, store, parent, content, font_size};
+	return flux_create_text(&info);
+}
+
+XentNodeId demo_create_card(XentContext *ctx, FluxNodeStore *store, XentNodeId parent) {
+	FluxContainerCreateInfo info = {ctx, store, parent};
+	return flux_create_card(&info);
+}
+
+XentNodeId demo_create_divider(XentContext *ctx, FluxNodeStore *store, XentNodeId parent) {
+	FluxContainerCreateInfo info = {ctx, store, parent};
+	return flux_create_divider(&info);
+}
+
 XentNodeId make_row(XentContext *ctx, XentNodeId parent, float gap, float h) {
 	XentNodeId row = xent_create_node(ctx);
 	xent_set_protocol(ctx, row, XENT_PROTOCOL_FLEX);
@@ -128,29 +145,33 @@ XentNodeId make_row(XentContext *ctx, XentNodeId parent, float gap, float h) {
 }
 
 XentNodeId make_section(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *text) {
-	XentNodeId t = flux_create_text(ctx, store, parent, text, 16.0f);
+	XentNodeId t = demo_create_text(ctx, store, parent, text, 16.0f);
 	xent_set_size(ctx, t, (XentSize) {480, 24});
 	flux_text_set_weight(store, t, FLUX_FONT_SEMI_BOLD);
 	return t;
 }
 
 void add_divider(Demo *d) {
-	XentNodeId div = flux_create_divider(d->ctx, d->store, d->root);
+	XentNodeId div = demo_create_divider(d->ctx, d->store, d->root);
 	xent_set_size(d->ctx, div, (XentSize) {480, 1});
 }
 
 void demo_make_scroll_root(Demo *d) {
-	d->scroll_root = xent_create_node(d->ctx);
+	xent_set_control_type(d->ctx, d->scroll_root, XENT_CONTROL_SCROLL);
 	xent_set_protocol(d->ctx, d->scroll_root, XENT_PROTOCOL_FLEX);
 	xent_set_flex_direction(d->ctx, d->scroll_root, XENT_FLEX_COLUMN);
 
-	d->scroll_nd = flux_node_store_bind_node(d->store, d->ctx, d->scroll_root, XENT_CONTROL_SCROLL);
+	d->scroll_nd = flux_node_store_get_or_create(d->store, d->scroll_root);
+	xent_set_userdata(d->ctx, d->scroll_root, d->scroll_nd);
 	if (!d->scroll_nd) return;
+	d->scroll_nd->component_type = XENT_CONTROL_SCROLL;
 
-	FluxScrollData *sd = ( FluxScrollData * ) calloc(1, sizeof(*sd));
+	FluxScrollData *sd           = ( FluxScrollData * ) calloc(1, sizeof(*sd));
 	if (!sd) return;
 	sd->v_vis                    = FLUX_SCROLL_AUTO;
 	sd->h_vis                    = FLUX_SCROLL_AUTO;
+	sd->content_h                = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H;
+	sd->content_w                = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W;
 	d->scroll_nd->component_data = sd;
 }
 
@@ -166,13 +187,13 @@ void demo_make_root(Demo *d) {
 }
 
 void demo_add_title(Demo *d) {
-	XentNodeId title = flux_create_text(d->ctx, d->store, d->root, "Hello, Fluxent!", 28.0f);
+	XentNodeId title = demo_create_text(d->ctx, d->store, d->root, "Hello, Fluxent!", 28.0f);
 	xent_set_size(d->ctx, title, (XentSize) {480, 40});
 	flux_text_set_weight(d->store, title, FLUX_FONT_BOLD);
 	flux_text_set_alignment(d->store, title, FLUX_TEXT_CENTER);
 
 	XentNodeId subtitle
-	  = flux_create_text(d->ctx, d->store, d->root, "A pure-C Fluent Design UI - All Controls Showcase", 13.0f);
+	  = demo_create_text(d->ctx, d->store, d->root, "A pure-C Fluent Design UI - All Controls Showcase", 13.0f);
 	xent_set_size(d->ctx, subtitle, (XentSize) {480, 20});
 	flux_text_set_alignment(d->store, subtitle, FLUX_TEXT_CENTER);
 	add_divider(d);
@@ -226,7 +247,7 @@ static void demo_add_counter_button(Demo *d) {
 	flux_button_set_icon(d->store, cbtn, "Add");
 	flux_node_set_tooltip(d->store, cbtn, "Click to increment the counter");
 
-	XentNodeId clbl = flux_create_text(d->ctx, d->store, row, d->counter->buf, 14.0f);
+	XentNodeId clbl = demo_create_text(d->ctx, d->store, row, d->counter->buf, 14.0f);
 	xent_set_size(d->ctx, clbl, (XentSize) {140, 32});
 	d->counter->label_node = clbl;
 }
@@ -262,7 +283,7 @@ void demo_add_repeat(Demo *d) {
 	XentNodeId rb  = demo_repeat_button(d, row, "Hold Me", on_repeat_click, d->repeat);
 	xent_set_size(d->ctx, rb, (XentSize) {120, 32});
 
-	XentNodeId rlbl = flux_create_text(d->ctx, d->store, row, d->repeat->buf, 14.0f);
+	XentNodeId rlbl = demo_create_text(d->ctx, d->store, row, d->repeat->buf, 14.0f);
 	xent_set_size(d->ctx, rlbl, (XentSize) {160, 32});
 	d->repeat->label_node = rlbl;
 	add_divider(d);

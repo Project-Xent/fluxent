@@ -82,6 +82,32 @@ static ID2D1StrokeStyle *progress_ring_create_stroke_style(ID2D1Factory *factory
 	return stroke_style;
 }
 
+static bool progress_ring_clamp_angles(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, float *start_rad, float *sweep_rad
+) {
+	if (!progress_ring_angles(rc, snap, start_rad, sweep_rad)) return false;
+
+	float pi2 = 2.0f * 3.14159265f;
+	if (*sweep_rad > pi2 - 0.001f) *sweep_rad = pi2 - 0.001f;
+	return true;
+}
+
+static void progress_ring_draw_accent(
+  FluxRenderContext const *rc, ID2D1Factory *factory, ProgressRingArc const *arc, FluxColor accent_color, float stroke_w
+) {
+	ID2D1PathGeometry *path = progress_ring_create_path(factory, arc);
+	if (!path) return;
+
+	ID2D1StrokeStyle *stroke_style = progress_ring_create_stroke_style(factory);
+	flux_set_brush(rc, accent_color);
+	ID2D1RenderTarget_DrawGeometry(
+	  FLUX_RT(rc), ( ID2D1Geometry * ) path, ( ID2D1Brush * ) rc->brush, stroke_w, stroke_style
+	);
+
+	if (stroke_style) ID2D1StrokeStyle_Release(stroke_style);
+	ID2D1PathGeometry_Release(path);
+}
+
 void flux_draw_progress_ring(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
@@ -106,28 +132,12 @@ void flux_draw_progress_ring(
 
 	float start_rad = 0.0f;
 	float sweep_rad = 0.0f;
-	if (!progress_ring_angles(rc, snap, &start_rad, &sweep_rad)) {
+	if (!progress_ring_clamp_angles(rc, snap, &start_rad, &sweep_rad)) {
 		ID2D1Factory_Release(factory);
 		return;
 	}
 
-	float pi2 = 2.0f * 3.14159265f;
-	if (sweep_rad > pi2 - 0.001f) sweep_rad = pi2 - 0.001f;
-
-	ProgressRingArc    arc  = {cx, cy, radius, start_rad, sweep_rad};
-	ID2D1PathGeometry *path = progress_ring_create_path(factory, &arc);
-	if (!path) {
-		ID2D1Factory_Release(factory);
-		return;
-	}
-
-	ID2D1StrokeStyle *stroke_style = progress_ring_create_stroke_style(factory);
-	flux_set_brush(rc, accent_color);
-	ID2D1RenderTarget_DrawGeometry(
-	  FLUX_RT(rc), ( ID2D1Geometry * ) path, ( ID2D1Brush * ) rc->brush, stroke_w, stroke_style
-	);
-
-	if (stroke_style) ID2D1StrokeStyle_Release(stroke_style);
-	ID2D1PathGeometry_Release(path);
+	ProgressRingArc arc = {cx, cy, radius, start_rad, sweep_rad};
+	progress_ring_draw_accent(rc, factory, &arc, accent_color, stroke_w);
 	ID2D1Factory_Release(factory);
 }

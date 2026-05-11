@@ -120,8 +120,8 @@ void nb_validate_input(FluxTextBoxInputData *tb) {
 		nb_set_value(tb, NAN);
 		return;
 	}
-	tb_realize(tb);
-	char *start = tb->buffer;
+	char const *content = tb_sync_content(tb);
+	char       *start   = ( char * ) content;
 	while (*start == ' ' || *start == '\t') start++;
 	char  *end_ptr = NULL;
 	double parsed  = strtod(start, &end_ptr);

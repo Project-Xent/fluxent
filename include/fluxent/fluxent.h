@@ -103,6 +103,20 @@ typedef struct FluxTextBoxCreateInfo {
 	void          *userdata;
 } FluxTextBoxCreateInfo;
 
+typedef struct FluxTextCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	char const    *content;
+	float          font_size;
+} FluxTextCreateInfo;
+
+typedef struct FluxContainerCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+} FluxContainerCreateInfo;
+
 typedef struct FluxAppTextBoxCreateInfo {
 	FluxApp    *app;
 	XentNodeId  parent;
@@ -158,8 +172,8 @@ typedef struct FluxInfoBadgeCreateInfo {
 	int32_t           value;
 } FluxInfoBadgeCreateInfo;
 
-/** @brief Create a Fluxent application. */
-HRESULT           flux_app_create(FluxAppConfig const *cfg, FluxApp **out);
+/** @brief Create a Fluxent application, or NULL on failure. */
+FluxApp          *flux_app_create(FluxAppConfig const *cfg);
 /** @brief Destroy a Fluxent application. */
 void              flux_app_destroy(FluxApp *app);
 /** @brief Set the layout root and node store rendered by the app. */
@@ -183,6 +197,8 @@ FluxTextRenderer *flux_app_get_text_renderer(FluxApp *app);
 XentContext      *flux_app_get_context(FluxApp *app);
 /** @brief Get the app node store. */
 FluxNodeStore    *flux_app_get_store(FluxApp *app);
+/** @brief Get the app root node. */
+XentNodeId        flux_app_get_root(FluxApp *app);
 
 /** @brief Request rendering for the next compositor frame on the app window. */
 void              flux_app_request_render(FluxApp *app);
@@ -200,59 +216,58 @@ HWND              flux_app_get_hwnd(FluxApp *app);
 XentNodeId        flux_create_button(FluxButtonCreateInfo const *info);
 
 /** @brief Create a plain text leaf node with the requested font size. */
-XentNodeId
-flux_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *content, float font_size);
+XentNodeId        flux_create_text(FluxTextCreateInfo const *info);
 
 /** @brief Create a slider node. */
-XentNodeId flux_create_slider(FluxSliderCreateInfo const *info);
+XentNodeId        flux_create_slider(FluxSliderCreateInfo const *info);
 
 /** @brief Create a checkbox node. */
-XentNodeId flux_create_checkbox(FluxToggleCreateInfo const *info);
+XentNodeId        flux_create_checkbox(FluxToggleCreateInfo const *info);
 
 /** @brief Create a radio button node. */
-XentNodeId flux_create_radio(FluxToggleCreateInfo const *info);
+XentNodeId        flux_create_radio(FluxToggleCreateInfo const *info);
 
 /** @brief Create a switch node. */
-XentNodeId flux_create_switch(FluxToggleCreateInfo const *info);
+XentNodeId        flux_create_switch(FluxToggleCreateInfo const *info);
 
 /** @brief Create a progress bar node. */
-XentNodeId flux_create_progress(FluxProgressCreateInfo const *info);
+XentNodeId        flux_create_progress(FluxProgressCreateInfo const *info);
 
 /** @brief Create a card node. */
-XentNodeId flux_create_card(XentContext *ctx, FluxNodeStore *store, XentNodeId parent);
+XentNodeId        flux_create_card(FluxContainerCreateInfo const *info);
 
 /** @brief Create a divider node. */
-XentNodeId flux_create_divider(XentContext *ctx, FluxNodeStore *store, XentNodeId parent);
+XentNodeId        flux_create_divider(FluxContainerCreateInfo const *info);
 
 /** @brief Create a text box node. */
-XentNodeId flux_create_textbox(FluxTextBoxCreateInfo const *info);
+XentNodeId        flux_create_textbox(FluxTextBoxCreateInfo const *info);
 
 /** @brief Create a text box node using the app-owned context and store. */
-XentNodeId flux_app_create_textbox(FluxAppTextBoxCreateInfo const *info);
+XentNodeId        flux_app_create_textbox(FluxAppTextBoxCreateInfo const *info);
 
 /** @brief Create a password box node using the app-owned context and store. */
-XentNodeId flux_app_create_password_box(FluxAppTextBoxCreateInfo const *info);
+XentNodeId        flux_app_create_password_box(FluxAppTextBoxCreateInfo const *info);
 
 /** @brief Create a number box node using the app-owned context and store. */
-XentNodeId flux_app_create_number_box(FluxAppNumberBoxCreateInfo const *info);
+XentNodeId        flux_app_create_number_box(FluxAppNumberBoxCreateInfo const *info);
 
 /** @brief Create a password box node. */
-XentNodeId flux_create_password_box(FluxTextBoxCreateInfo const *info);
+XentNodeId        flux_create_password_box(FluxTextBoxCreateInfo const *info);
 
 /** @brief Create a number box node. */
-XentNodeId flux_create_number_box(FluxNumberBoxCreateInfo const *info);
+XentNodeId        flux_create_number_box(FluxNumberBoxCreateInfo const *info);
 
 /** @brief Create a hyperlink button node. */
-XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info);
+XentNodeId        flux_create_hyperlink(FluxHyperlinkCreateInfo const *info);
 
 /** @brief Create a repeat button node. */
-XentNodeId flux_create_repeat_button(FluxButtonCreateInfo const *info);
+XentNodeId        flux_create_repeat_button(FluxButtonCreateInfo const *info);
 
 /** @brief Create a progress ring node. */
-XentNodeId flux_create_progress_ring(FluxProgressCreateInfo const *info);
+XentNodeId        flux_create_progress_ring(FluxProgressCreateInfo const *info);
 
 /** @brief Create an info badge node. */
-XentNodeId flux_create_info_badge(FluxInfoBadgeCreateInfo const *info);
+XentNodeId        flux_create_info_badge(FluxInfoBadgeCreateInfo const *info);
 
 #ifdef __cplusplus
 }

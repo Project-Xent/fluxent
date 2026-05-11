@@ -99,25 +99,19 @@ static ButtonColors button_colors_subtle(FluxControlState const *state, FluxThem
 }
 
 static ButtonColors button_colors_default(FluxControlState const *state, FluxThemeColors const *t) {
-	ButtonColors c  = {0};
-	c.use_elevation = !state->pressed;
+	ButtonColors c        = {0};
+	c.use_elevation       = !state->pressed;
 
+	FluxColor transparent = flux_color_rgba(0, 0, 0, 0);
+	c.stroke              = transparent;
+	c.text                = t ? t->text_primary : ft_text_primary();
+	c.fill                = t ? t->ctrl_fill_default : ft_ctrl_fill_default();
+	if (state->hovered) c.fill = t ? t->ctrl_fill_secondary : ft_ctrl_fill_secondary();
 	if (state->pressed) {
 		c.fill   = t ? t->ctrl_fill_tertiary : ft_ctrl_fill_tertiary();
 		c.stroke = t ? t->ctrl_stroke_default : ft_ctrl_stroke_default();
 		c.text   = t ? t->text_secondary : ft_text_secondary();
-		return c;
 	}
-	if (state->hovered) {
-		c.fill   = t ? t->ctrl_fill_secondary : ft_ctrl_fill_secondary();
-		c.stroke = flux_color_rgba(0, 0, 0, 0);
-		c.text   = t ? t->text_primary : ft_text_primary();
-		return c;
-	}
-
-	c.fill   = t ? t->ctrl_fill_default : ft_ctrl_fill_default();
-	c.stroke = flux_color_rgba(0, 0, 0, 0);
-	c.text   = t ? t->text_primary : ft_text_primary();
 	return c;
 }
 

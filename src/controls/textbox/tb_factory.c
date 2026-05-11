@@ -1,4 +1,5 @@
 #include "tb_internal.h"
+#include "tb_metrics.h"
 #include "controls/draw/flux_control_draw.h"
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_engine.h"
@@ -96,6 +97,7 @@ void tb_destroy(void *component_data) {
 
 	tb_free_undo_redo(tb);
 	free(tb->buffer);
+	free(tb->flat_buffer);
 	free(tb->ime_buf);
 	free(tb->nb);
 	free(tb);
@@ -110,11 +112,19 @@ static FluxTextBoxInputData *tb_alloc_base(TbBaseSpec const *spec) {
 		free(tb);
 		return NULL;
 	}
+	tb->flat_cap    = FLUX_TEXTBOX_INITIAL_CAP;
+	tb->flat_buffer = ( char * ) calloc(1, tb->flat_cap);
+	if (!tb->flat_buffer) {
+		free(tb->buffer);
+		free(tb);
+		return NULL;
+	}
 	tb->buf_len            = 0;
 	tb->gap_start          = 0;
 	tb->gap_end            = tb->buf_cap;
 	tb->buffer [0]         = '\0';
-	tb->base.content       = tb->buffer;
+	tb->flat_buffer [0]    = '\0';
+	tb->base.content       = tb->flat_buffer;
 	tb->base.placeholder   = spec->placeholder;
 	tb->base.font_size     = 14.0f;
 	tb->base.enabled       = true;
@@ -222,12 +232,12 @@ static void tb_configure_text_grid(XentContext *ctx, XentNodeId node, float cons
 }
 
 static void tb_configure_password_grid(XentContext *ctx, XentNodeId node) {
-	float col_vals [] = {1.0f, 30.0f};
+	float col_vals [] = {1.0f, FLUX_PASSWORD_REVEAL_BTN_W};
 	tb_configure_text_grid(ctx, node, col_vals, 2);
 }
 
 static void tb_configure_number_grid(XentContext *ctx, XentNodeId node) {
-	float col_vals [] = {1.0f, 40.0f, 36.0f};
+	float col_vals [] = {1.0f, FLUX_NUMBER_BOX_DELETE_BTN_W, FLUX_NUMBER_BOX_SPIN_W};
 	tb_configure_text_grid(ctx, node, col_vals, 3);
 }
 

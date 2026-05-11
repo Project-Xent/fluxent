@@ -57,7 +57,13 @@ target_end()
 target("hello_fluxent")
     set_kind("binary")
     add_deps("fluxent")
-    add_files("examples/hello_fluxent.c")
+    add_files(
+        "examples/hello_fluxent.c",
+        "examples/hello_fluxent_dynamic.c",
+        "examples/hello_fluxent_lifecycle.c",
+        "examples/hello_fluxent_showcase.c",
+        "examples/hello_fluxent_static.c"
+    )
     add_includedirs("include")
     if is_plat("mingw") then
         add_cflags("-ffunction-sections", "-fdata-sections", { force = true })

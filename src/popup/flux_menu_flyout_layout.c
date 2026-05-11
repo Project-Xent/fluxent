@@ -103,7 +103,7 @@ static float menu_owner_max_height(FluxMenuFlyout *m) {
 	if (!GetMonitorInfoW(mon, &mi)) return 0.0f;
 
 	FluxDpiInfo dpi   = flux_window_dpi(m->owner);
-	float       scale = dpi.dpi_x / 96.0f;
+	float       scale = dpi.dpi_x / FLUX_DPI_BASE;
 	if (scale < 0.1f) scale = 1.0f;
 	return ( float ) (mi.rcWork.bottom - mi.rcWork.top) / scale - 16.0f;
 }

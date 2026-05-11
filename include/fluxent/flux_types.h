@@ -42,6 +42,8 @@ typedef struct FluxDpiInfo {
 	float dpi_y;
 } FluxDpiInfo;
 
+#define FLUX_DPI_BASE 96.0f
+
 /** @brief Pointer device type for unified pointer events. */
 typedef enum FluxPointerType
 {

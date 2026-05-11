@@ -181,6 +181,7 @@ static void snapshot_handle_slider(SnapshotContext const *ctx) {
 }
 
 static void snapshot_handle_textbox(SnapshotContext const *ctx) {
+	tb_sync_content(( FluxTextBoxInputData * ) ctx->data);
 	snapshot_textbox(ctx->snap, ( FluxTextBoxData const * ) ctx->data);
 }
 
@@ -193,12 +194,14 @@ static void snapshot_handle_progress(SnapshotContext const *ctx) {
 }
 
 static void snapshot_handle_password_box(SnapshotContext const *ctx) {
-	FluxTextBoxInputData const *tb = ( FluxTextBoxInputData const * ) ctx->data;
+	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx->data;
+	tb_sync_content(tb);
 	snapshot_textbox(ctx->snap, ( FluxTextBoxData const * ) ctx->data);
 	ctx->snap->is_checked = tb->password_show_plain || xent_get_semantic_checked(ctx->ctx, ctx->node) != 0;
 }
 
 static void snapshot_handle_number_box(SnapshotContext const *ctx) {
+	tb_sync_content(( FluxTextBoxInputData * ) ctx->data);
 	snapshot_textbox(ctx->snap, ( FluxTextBoxData const * ) ctx->data);
 	snapshot_number_box_spin(ctx->snap, ctx->ctx, ctx->node);
 }

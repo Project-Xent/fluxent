@@ -52,13 +52,13 @@ static uint32_t tb_common_suffix(char const *a, uint32_t alen, char const *b, ui
 
 static bool tb_history_from_pending(TbEditHistory *out, FluxTextBoxInputData *tb) {
 	memset(out, 0, sizeof(*out));
-	TbPendingEdit const *p = &tb->pending_edit;
+	TbPendingEdit const *p            = &tb->pending_edit;
 
-	tb_realize(tb);
-	uint32_t prefix       = tb_common_prefix(p->text, p->len, tb->buffer, tb->buf_len);
-	uint32_t suffix       = tb_common_suffix(p->text, p->len, tb->buffer, tb->buf_len, prefix);
-	uint32_t deleted_len  = p->len - prefix - suffix;
-	uint32_t inserted_len = tb->buf_len - prefix - suffix;
+	char const          *content      = tb_sync_content(tb);
+	uint32_t             prefix       = tb_common_prefix(p->text, p->len, content, tb->buf_len);
+	uint32_t             suffix       = tb_common_suffix(p->text, p->len, content, tb->buf_len, prefix);
+	uint32_t             deleted_len  = p->len - prefix - suffix;
+	uint32_t             inserted_len = tb->buf_len - prefix - suffix;
 	if (deleted_len == 0 && inserted_len == 0) return false;
 
 	out->pos              = prefix;
@@ -70,7 +70,7 @@ static bool tb_history_from_pending(TbEditHistory *out, FluxTextBoxInputData *tb
 	out->after_sel_end    = tb->base.selection_end;
 
 	if (!tb_copy_span(&out->deleted, p->text + prefix, deleted_len)) return false;
-	if (!tb_copy_span(&out->inserted, tb->buffer + prefix, inserted_len)) {
+	if (!tb_copy_span(&out->inserted, content + prefix, inserted_len)) {
 		tb_history_free(out);
 		return false;
 	}
@@ -138,11 +138,11 @@ void tb_push_undo(FluxTextBoxInputData *tb) {
 	tb_commit_pending_undo(tb);
 	tb_pending_free(&tb->pending_edit);
 
-	tb_realize(tb);
+	char const *content   = tb_sync_content(tb);
 	tb->pending_edit.text = ( char * ) malloc(( size_t ) tb->buf_len + 1u);
 	if (!tb->pending_edit.text) return;
 
-	memcpy(tb->pending_edit.text, tb->buffer, ( size_t ) tb->buf_len + 1u);
+	memcpy(tb->pending_edit.text, content, ( size_t ) tb->buf_len + 1u);
 	tb->pending_edit.len       = tb->buf_len;
 	tb->pending_edit.sel_start = tb->base.selection_start;
 	tb->pending_edit.sel_end   = tb->base.selection_end;

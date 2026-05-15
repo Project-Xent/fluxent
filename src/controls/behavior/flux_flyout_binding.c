@@ -11,7 +11,7 @@ static void compute_scroll_offset(XentContext *ctx, FluxNodeStore *store, XentNo
 	*out_y       = 0.0f;
 	XentNodeId p = xent_get_parent(ctx, node);
 	while (p != XENT_NODE_INVALID) {
-		if (xent_get_control_type(ctx, p) != XENT_CONTROL_SCROLL) {
+		if (flux_get_control_type(ctx, p) != FLUX_CONTROL_SCROLL) {
 			p = xent_get_parent(ctx, p);
 			continue;
 		}
@@ -52,8 +52,8 @@ static FluxRect anchor_for_binding(FluxWindow *window, XentContext *ctx, FluxNod
 
 	anchor.x = ( float ) pt.x;
 	anchor.y = ( float ) pt.y;
-	anchor.w = lr.width * scale;
-	anchor.h = lr.height * scale;
+	anchor.w = lr.w * scale;
+	anchor.h = lr.h * scale;
 	return anchor;
 }
 

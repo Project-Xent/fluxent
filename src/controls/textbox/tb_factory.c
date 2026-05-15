@@ -16,7 +16,7 @@ typedef struct TbTextControlSpec {
 	XentContext    *ctx;
 	FluxNodeStore  *store;
 	XentNodeId      parent;
-	XentControlType type;
+	FluxControlType type;
 	TbDrawFn        draw;
 	char const     *placeholder;
 	TbChangeFn      on_change;
@@ -50,11 +50,11 @@ typedef struct TbBaseSpec {
 } TbBaseSpec;
 
 static XentNodeId
-tb_create_node_with_parent(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, XentControlType type) {
+tb_create_node_with_parent(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, FluxControlType type) {
 	XentNodeId node = xent_create_node(ctx);
 	if (node == XENT_NODE_INVALID) return node;
 
-	xent_set_control_type(ctx, node, type);
+	flux_set_control_type(ctx, node, type);
 
 	if (parent != XENT_NODE_INVALID) xent_append_child(ctx, parent, node);
 
@@ -158,7 +158,7 @@ static XentNodeId tb_create_text_control(TbTextControlSpec const *spec) {
 XentNodeId flux_create_textbox(FluxTextBoxCreateInfo const *info) {
 	if (!info) return XENT_NODE_INVALID;
 	TbTextControlSpec spec = {
-	  info->ctx, info->store, info->parent, XENT_CONTROL_TEXT_INPUT, flux_draw_textbox, info->placeholder,
+	  info->ctx, info->store, info->parent, FLUX_CONTROL_TEXT_INPUT, flux_draw_textbox, info->placeholder,
 	  info->on_change, info->userdata};
 	return tb_create_text_control(&spec);
 }
@@ -191,7 +191,7 @@ static void tb_configure_password_grid(XentContext *ctx, XentNodeId node);
 XentNodeId  flux_create_password_box(FluxTextBoxCreateInfo const *info) {
 	if (!info) return XENT_NODE_INVALID;
 	TbTextControlSpec spec = {
-	  info->ctx, info->store, info->parent, XENT_CONTROL_PASSWORD_BOX, flux_draw_password_box, info->placeholder,
+	  info->ctx, info->store, info->parent, FLUX_CONTROL_PASSWORD_BOX, flux_draw_password_box, info->placeholder,
 	  info->on_change, info->userdata};
 	XentNodeId node = tb_create_text_control(&spec);
 	if (node == XENT_NODE_INVALID) return node;
@@ -243,9 +243,9 @@ static void tb_configure_number_grid(XentContext *ctx, XentNodeId node) {
 
 XentNodeId flux_create_number_box(FluxNumberBoxCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_NUMBER_BOX, flux_draw_number_box, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_NUMBER_BOX, flux_draw_number_box, NULL);
 
-	XentNodeId node = tb_create_node_with_parent(info->ctx, info->store, info->parent, XENT_CONTROL_NUMBER_BOX);
+	XentNodeId node = tb_create_node_with_parent(info->ctx, info->store, info->parent, FLUX_CONTROL_NUMBER_BOX);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	FluxNodeData         *nd        = flux_node_store_get(info->store, node);

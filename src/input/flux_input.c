@@ -27,7 +27,7 @@ typedef struct HitChildList {
 
 static FluxPoint hit_test_child_scroll_offset(InputHitQuery const *query, FluxNodeData *nd) {
 	FluxPoint scroll = query->scroll;
-	if (!nd || xent_get_control_type(query->ctx, query->node) != XENT_CONTROL_SCROLL) return scroll;
+	if (!nd || flux_get_control_type(query->ctx, query->node) != FLUX_CONTROL_SCROLL) return scroll;
 
 	FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
 	if (!sd) return scroll;
@@ -40,7 +40,7 @@ static FluxPoint hit_test_child_scroll_offset(InputHitQuery const *query, FluxNo
 static bool hit_rect_contains(XentRect const *rect, FluxPoint point, FluxPoint scroll) {
 	float ax = rect->x - scroll.x;
 	float ay = rect->y - scroll.y;
-	return point.x >= ax && point.x < ax + rect->width && point.y >= ay && point.y < ay + rect->height;
+	return point.x >= ax && point.x < ax + rect->w && point.y >= ay && point.y < ay + rect->h;
 }
 
 static bool hit_child_list_append(HitChildList *children, XentNodeId child) {
@@ -97,7 +97,7 @@ static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 	return (FluxHitResult) {
 	  .node   = query->node,
 	  .data   = nd,
-	  .bounds = {ax, ay, rect.width, rect.height},
+	  .bounds = {ax, ay, rect.w, rect.h},
 	  .local  = {query->point.x - ax, query->point.y - ay},
 	};
 }
@@ -182,13 +182,13 @@ static void input_forward_pressed_move(FluxInput *input, float px, float py) {
 
 static bool input_press_number_box_spin(FluxInput *input, FluxHitResult const *hit) {
 	if (hit->node == XENT_NODE_INVALID || !hit->data) return false;
-	if (xent_get_control_type(input->ctx, hit->node) != XENT_CONTROL_NUMBER_BOX) return false;
+	if (flux_get_control_type(input->ctx, hit->node) != FLUX_CONTROL_NUMBER_BOX) return false;
 	if (!xent_get_semantic_expanded(input->ctx, hit->node)) return false;
 
 	XentRect rect = {0};
 	xent_get_layout_rect(input->ctx, hit->node, &rect);
 
-	float spin_start = rect.width - 76.0f;
+	float spin_start = rect.w - 76.0f;
 	if (hit->local.x < spin_start) return false;
 
 	if (hit->data->behavior.on_key) {
@@ -261,8 +261,8 @@ void input_blur_focused(FluxInput *input) {
 static void input_focus_hit(FluxInput *input, FluxHitResult const *hit) {
 	if (hit->node == XENT_NODE_INVALID || !hit->data) return;
 
-	XentControlType ct = xent_get_control_type(input->ctx, hit->node);
-	if (ct == XENT_CONTROL_TEXT_INPUT) hit->data->state.focused = 1;
+	FluxControlType ct = flux_get_control_type(input->ctx, hit->node);
+	if (ct == FLUX_CONTROL_TEXT_INPUT) hit->data->state.focused = 1;
 	if (hit->data->behavior.on_focus) hit->data->behavior.on_focus(hit->data->behavior.on_focus_ctx);
 }
 
@@ -297,7 +297,7 @@ static void input_release_pressed_node(FluxInput *input, FluxNodeData *nd, XentN
 	if (!nd) return;
 
 	nd->state.pressed = 0;
-	if (xent_get_control_type(input->ctx, input->pressed) == XENT_CONTROL_PASSWORD_BOX)
+	if (flux_get_control_type(input->ctx, input->pressed) == FLUX_CONTROL_PASSWORD_BOX)
 		xent_set_semantic_checked(input->ctx, input->pressed, 0);
 
 	FluxHitResult hit = input_hit_test_root(input, root, px, py);

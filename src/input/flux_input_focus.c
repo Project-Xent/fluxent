@@ -7,7 +7,7 @@ static bool input_node_is_visible_focusable(XentContext *ctx, XentNodeId node) {
 
 	XentRect rect = {0};
 	xent_get_layout_rect(ctx, node, &rect);
-	return rect.width > 0.0f && rect.height > 0.0f;
+	return rect.w > 0.0f && rect.h > 0.0f;
 }
 
 static void collect_focusable(XentContext *ctx, XentNodeId node, XentNodeId *out, uint32_t *count, uint32_t max_count) {

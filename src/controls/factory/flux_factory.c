@@ -9,11 +9,11 @@
 
 static float inline fclampf(float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; }
 
-XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, XentControlType type) {
+XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, FluxControlType type) {
 	XentNodeId node = xent_create_node(ctx);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	xent_set_control_type(ctx, node, type);
+	flux_set_control_type(ctx, node, type);
 
 	if (parent != XENT_NODE_INVALID) xent_append_child(ctx, parent, node);
 
@@ -26,10 +26,10 @@ XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, Xent
 
 XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_BUTTON, flux_draw_button, NULL);
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_TOGGLE_BUTTON, flux_draw_toggle, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_BUTTON, flux_draw_button, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_TOGGLE_BUTTON, flux_draw_toggle, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_BUTTON);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_BUTTON);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	FluxNodeData   *nd = flux_node_store_get(info->store, node);
@@ -58,9 +58,9 @@ XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
 
 XentNodeId flux_create_text(FluxTextCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_TEXT, flux_draw_text, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_TEXT, flux_draw_text, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_TEXT);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_TEXT);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	xent_set_text(info->ctx, node, info->content ? info->content : "");
@@ -104,7 +104,7 @@ static void slider_move_trampoline(void *ctx, float local_x, float local_y) {
 	if (!xent_get_layout_rect(sid->ctx, sid->node, &rect)) return;
 
 	float pad     = 10.0f;
-	float track_w = rect.width - pad * 2.0f;
+	float track_w = rect.w - pad * 2.0f;
 	if (track_w <= 0.0f) return;
 
 	float pct   = fclampf((local_x - pad) / track_w, 0.0f, 1.0f);
@@ -121,9 +121,9 @@ static void slider_move_trampoline(void *ctx, float local_x, float local_y) {
 
 XentNodeId flux_create_slider(FluxSliderCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_SLIDER, flux_draw_slider, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_SLIDER, flux_draw_slider, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_SLIDER);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_SLIDER);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	xent_set_semantic_value(info->ctx, node, info->value, info->min, info->max);
@@ -159,7 +159,7 @@ static void checkbox_click_trampoline(void *ctx) {
 	if (cd->on_change) cd->on_change(cd->on_change_ctx, cd->state);
 }
 
-static XentNodeId create_toggle_node(FluxToggleCreateInfo const *info, XentControlType type) {
+static XentNodeId create_toggle_node(FluxToggleCreateInfo const *info, FluxControlType type) {
 	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, type);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
@@ -189,27 +189,27 @@ static XentNodeId create_toggle_node(FluxToggleCreateInfo const *info, XentContr
 
 XentNodeId flux_create_checkbox(FluxToggleCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_CHECKBOX, flux_draw_checkbox, NULL);
-	return create_toggle_node(info, XENT_CONTROL_CHECKBOX);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_CHECKBOX, flux_draw_checkbox, NULL);
+	return create_toggle_node(info, FLUX_CONTROL_CHECKBOX);
 }
 
 XentNodeId flux_create_radio(FluxToggleCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_RADIO, flux_draw_radio, NULL);
-	return create_toggle_node(info, XENT_CONTROL_RADIO);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_RADIO, flux_draw_radio, NULL);
+	return create_toggle_node(info, FLUX_CONTROL_RADIO);
 }
 
 XentNodeId flux_create_switch(FluxToggleCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_SWITCH, flux_draw_switch, NULL);
-	return create_toggle_node(info, XENT_CONTROL_SWITCH);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_SWITCH, flux_draw_switch, NULL);
+	return create_toggle_node(info, FLUX_CONTROL_SWITCH);
 }
 
 XentNodeId flux_create_progress(FluxProgressCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_PROGRESS, flux_draw_progress, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_PROGRESS, flux_draw_progress, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_PROGRESS);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_PROGRESS);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	xent_set_semantic_value(info->ctx, node, info->value, 0.0f, info->max_value);
@@ -231,9 +231,9 @@ XentNodeId flux_create_progress(FluxProgressCreateInfo const *info) {
 
 XentNodeId flux_create_progress_ring(FluxProgressCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_PROGRESS_RING, flux_draw_progress_ring, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_PROGRESS_RING, flux_draw_progress_ring, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_PROGRESS_RING);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_PROGRESS_RING);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	xent_set_semantic_value(info->ctx, node, info->value, 0.0f, info->max_value);
@@ -255,14 +255,14 @@ XentNodeId flux_create_progress_ring(FluxProgressCreateInfo const *info) {
 
 XentNodeId flux_create_card(FluxContainerCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_CARD, flux_draw_card, NULL);
-	return flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_CARD);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_CARD, flux_draw_card, NULL);
+	return flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_CARD);
 }
 
 XentNodeId flux_create_divider(FluxContainerCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_DIVIDER, flux_draw_divider, NULL);
-	return flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_DIVIDER);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_DIVIDER, flux_draw_divider, NULL);
+	return flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_DIVIDER);
 }
 
 static void hyperlink_on_click(void *ctx) {
@@ -273,9 +273,9 @@ static void hyperlink_on_click(void *ctx) {
 
 XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_HYPERLINK, flux_draw_hyperlink, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_HYPERLINK, flux_draw_hyperlink, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_HYPERLINK);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_HYPERLINK);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	FluxNodeData      *nd = flux_node_store_get(info->store, node);
@@ -316,9 +316,9 @@ XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info) {
 
 XentNodeId flux_create_info_badge(FluxInfoBadgeCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_INFO_BADGE, flux_draw_info_badge, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_INFO_BADGE, flux_draw_info_badge, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_INFO_BADGE);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_INFO_BADGE);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	FluxNodeData      *nd = flux_node_store_get(info->store, node);

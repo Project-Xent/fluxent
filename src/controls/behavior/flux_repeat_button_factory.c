@@ -101,7 +101,7 @@ static void repeat_on_pointer_move(void *ctx, float local_x, float local_y) {
 
 	XentRect rect = {0};
 	xent_get_layout_rect(rb->ctx, rb->node, &rect);
-	bool inside = local_x >= 0.0f && local_x < rect.width && local_y >= 0.0f && local_y < rect.height;
+	bool inside = local_x >= 0.0f && local_x < rect.w && local_y >= 0.0f && local_y < rect.h;
 	if (!inside) {
 		if (rb->pointer_inside) repeat_pause_timer(rb);
 		rb->pointer_inside = false;
@@ -129,9 +129,9 @@ static void repeat_destroy(void *component_data) {
 
 XentNodeId flux_create_repeat_button(FluxButtonCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, XENT_CONTROL_REPEAT_BUTTON, flux_draw_button, NULL);
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_REPEAT_BUTTON, flux_draw_button, NULL);
 
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, XENT_CONTROL_REPEAT_BUTTON);
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_REPEAT_BUTTON);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	FluxNodeData              *nd = flux_node_store_get(info->store, node);

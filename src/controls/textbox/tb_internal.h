@@ -44,7 +44,7 @@ typedef struct TbPendingEdit {
 	bool     active;
 } TbPendingEdit;
 
-/** @brief NumberBox-specific runtime state. Allocated only for XENT_CONTROL_NUMBER_BOX nodes. */
+/** @brief NumberBox-specific runtime state. Allocated only for FLUX_CONTROL_NUMBER_BOX nodes. */
 typedef struct FluxNBExt {
 	double  value;
 	double  minimum;
@@ -178,7 +178,7 @@ uint32_t      pb_mask_offset_to_original(char const *original, uint32_t original
 /** @brief Converts an original text byte offset to the corresponding byte offset in the masked string. */
 uint32_t      pb_original_offset_to_mask(char const *original, uint32_t original_len, uint32_t original_byte_offset);
 
-/** @brief Returns true if @p tb has NumberBox extension data attached (i.e. is an XENT_CONTROL_NUMBER_BOX node). */
+/** @brief Returns true if @p tb has NumberBox extension data attached (i.e. is an FLUX_CONTROL_NUMBER_BOX node). */
 bool          nb_is_number_box(FluxTextBoxInputData *tb);
 /** @brief Formats nb_value to text and refreshes the buffer and display. */
 void          nb_update_text_to_value(FluxTextBoxInputData *tb);

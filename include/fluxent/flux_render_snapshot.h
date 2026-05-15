@@ -21,7 +21,7 @@ extern "C"
 /** @brief Immutable snapshot of a control's visual state. */
 typedef struct FluxRenderSnapshot {
 	uint64_t         id;            /**< Node ID. */
-	XentControlType  type;          /**< Control type. */
+	FluxControlType  type;          /**< Control type. */
 
 	FluxColor        background;    /**< Fill color. */
 	FluxColor        border_color;  /**< Border stroke color. */

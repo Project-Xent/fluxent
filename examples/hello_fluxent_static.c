@@ -86,12 +86,12 @@ static XentNodeId demo_hyperlink(
 }
 
 static XentNodeId demo_toggle(
-  Demo *d, XentNodeId parent, XentControlType type, char const *label, bool checked,
+  Demo *d, XentNodeId parent, FluxControlType type, char const *label, bool checked,
   void (*on_change)(void *, FluxCheckState), void *userdata
 ) {
 	FluxToggleCreateInfo info = {d->ctx, d->store, parent, label, checked, on_change, userdata};
-	if (type == XENT_CONTROL_RADIO) return flux_create_radio(&info);
-	if (type == XENT_CONTROL_SWITCH) return flux_create_switch(&info);
+	if (type == FLUX_CONTROL_RADIO) return flux_create_radio(&info);
+	if (type == FLUX_CONTROL_SWITCH) return flux_create_switch(&info);
 	return flux_create_checkbox(&info);
 }
 
@@ -157,14 +157,14 @@ void add_divider(Demo *d) {
 }
 
 void demo_make_scroll_root(Demo *d) {
-	xent_set_control_type(d->ctx, d->scroll_root, XENT_CONTROL_SCROLL);
+	flux_set_control_type(d->ctx, d->scroll_root, FLUX_CONTROL_SCROLL);
 	xent_set_protocol(d->ctx, d->scroll_root, XENT_PROTOCOL_FLEX);
 	xent_set_flex_direction(d->ctx, d->scroll_root, XENT_FLEX_COLUMN);
 
 	d->scroll_nd = flux_node_store_get_or_create(d->store, d->scroll_root);
 	xent_set_userdata(d->ctx, d->scroll_root, d->scroll_nd);
 	if (!d->scroll_nd) return;
-	d->scroll_nd->component_type = XENT_CONTROL_SCROLL;
+	d->scroll_nd->component_type = FLUX_CONTROL_SCROLL;
 
 	FluxScrollData *sd           = ( FluxScrollData * ) calloc(1, sizeof(*sd));
 	if (!sd) return;
@@ -266,12 +266,12 @@ void demo_add_toggle(Demo *d) {
 	XentNodeId row = make_row(d->ctx, d->root, 12, 32);
 	XentNodeId tb1 = demo_button(d, row, "Toggle Me", on_toggle_click, d->toggle);
 	xent_set_size(d->ctx, tb1, (XentSize) {130, 32});
-	xent_set_control_type(d->ctx, tb1, XENT_CONTROL_TOGGLE_BUTTON);
+	flux_set_control_type(d->ctx, tb1, FLUX_CONTROL_TOGGLE_BUTTON);
 	d->toggle->node = tb1;
 
 	XentNodeId tb2  = demo_button(d, row, "Toggled On", NULL, NULL);
 	xent_set_size(d->ctx, tb2, (XentSize) {130, 32});
-	xent_set_control_type(d->ctx, tb2, XENT_CONTROL_TOGGLE_BUTTON);
+	flux_set_control_type(d->ctx, tb2, FLUX_CONTROL_TOGGLE_BUTTON);
 	FluxNodeData *nd = flux_node_store_get(d->store, tb2);
 	if (nd && nd->component_data) (( FluxButtonData * ) nd->component_data)->is_checked = true;
 	add_divider(d);
@@ -305,18 +305,18 @@ void demo_add_hyperlinks(Demo *d) {
 void demo_add_check_switch(Demo *d) {
 	make_section(d->ctx, d->store, d->root, "Checkbox & Switch");
 	XentNodeId row  = make_row(d->ctx, d->root, 20, 32);
-	XentNodeId chk1 = demo_toggle(d, row, XENT_CONTROL_CHECKBOX, "Enable feature", false, on_check_change, NULL);
+	XentNodeId chk1 = demo_toggle(d, row, FLUX_CONTROL_CHECKBOX, "Enable feature", false, on_check_change, NULL);
 	xent_set_size(d->ctx, chk1, (XentSize) {160, 32});
-	XentNodeId chk2 = demo_toggle(d, row, XENT_CONTROL_CHECKBOX, "Checked", true, on_check_change, NULL);
+	XentNodeId chk2 = demo_toggle(d, row, FLUX_CONTROL_CHECKBOX, "Checked", true, on_check_change, NULL);
 	xent_set_size(d->ctx, chk2, (XentSize) {110, 32});
-	XentNodeId sw1 = demo_toggle(d, row, XENT_CONTROL_SWITCH, "Wi-Fi", true, on_switch_change, NULL);
+	XentNodeId sw1 = demo_toggle(d, row, FLUX_CONTROL_SWITCH, "Wi-Fi", true, on_switch_change, NULL);
 	xent_set_size(d->ctx, sw1, (XentSize) {110, 32});
 
 	row              = make_row(d->ctx, d->root, 20, 32);
-	XentNodeId chk_d = demo_toggle(d, row, XENT_CONTROL_CHECKBOX, "Disabled", false, on_check_change, NULL);
+	XentNodeId chk_d = demo_toggle(d, row, FLUX_CONTROL_CHECKBOX, "Disabled", false, on_check_change, NULL);
 	xent_set_size(d->ctx, chk_d, (XentSize) {120, 32});
 	flux_checkbox_set_enabled(d->store, chk_d, false);
-	XentNodeId sw_d = demo_toggle(d, row, XENT_CONTROL_SWITCH, "Disabled", false, on_switch_change, NULL);
+	XentNodeId sw_d = demo_toggle(d, row, FLUX_CONTROL_SWITCH, "Disabled", false, on_switch_change, NULL);
 	xent_set_size(d->ctx, sw_d, (XentSize) {120, 32});
 	xent_set_semantic_enabled(d->ctx, sw_d, false);
 	add_divider(d);
@@ -336,9 +336,9 @@ static void demo_wire_radio_group(Demo *d) {
 void demo_add_radio(Demo *d) {
 	make_section(d->ctx, d->store, d->root, "RadioButton (mutually exclusive)");
 	XentNodeId row      = make_row(d->ctx, d->root, 16, 32);
-	d->radio->nodes [0] = demo_toggle(d, row, XENT_CONTROL_RADIO, "Option A", true, on_radio_change, NULL);
-	d->radio->nodes [1] = demo_toggle(d, row, XENT_CONTROL_RADIO, "Option B", false, on_radio_change, NULL);
-	d->radio->nodes [2] = demo_toggle(d, row, XENT_CONTROL_RADIO, "Option C", false, on_radio_change, NULL);
+	d->radio->nodes [0] = demo_toggle(d, row, FLUX_CONTROL_RADIO, "Option A", true, on_radio_change, NULL);
+	d->radio->nodes [1] = demo_toggle(d, row, FLUX_CONTROL_RADIO, "Option B", false, on_radio_change, NULL);
+	d->radio->nodes [2] = demo_toggle(d, row, FLUX_CONTROL_RADIO, "Option C", false, on_radio_change, NULL);
 	d->radio->count     = 3;
 	for (int i = 0; i < d->radio->count; i++) xent_set_size(d->ctx, d->radio->nodes [i], (XentSize) {110, 32});
 	demo_wire_radio_group(d);

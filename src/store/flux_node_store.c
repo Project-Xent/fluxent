@@ -18,7 +18,7 @@ struct FluxNodeStore {
 	uint32_t            capacity;
 	uint32_t            count;
 	uint32_t            tombstones;
-	FluxControlRenderer renderers [XENT_CONTROL_CUSTOM + 1];
+	FluxControlRenderer renderers [FLUX_CONTROL_CUSTOM + 1];
 };
 
 static uint32_t flux_ns_hash(XentNodeId id, uint32_t cap) {
@@ -84,7 +84,7 @@ static void flux_node_data_destroy_component(FluxNodeData *d) {
 
 	d->component_data         = NULL;
 	d->destroy_component_data = NULL;
-	d->component_type         = XENT_CONTROL_CONTAINER;
+	d->component_type         = FLUX_CONTROL_CONTAINER;
 }
 
 static FluxNodeSlot *flux_ns_find(FluxNodeStore *store, XentNodeId id) {
@@ -104,7 +104,7 @@ static void flux_node_data_init(FluxNodeData *d, XentNodeId id) {
 	d->visuals.opacity = 1.0f;
 	d->state.enabled   = 1;
 	d->state.visible   = 1;
-	d->component_type  = XENT_CONTROL_CONTAINER;
+	d->component_type  = FLUX_CONTROL_CONTAINER;
 }
 
 static FluxNodeSlot *flux_ns_find_insert_slot(FluxNodeStore *store, XentNodeId id, bool *was_tombstone) {
@@ -191,22 +191,21 @@ void     flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx)
 	for (uint32_t i = 0; i < store->capacity; i++) {
 		if (store->slots [i].tag != FLUX_NS_OCCUPIED) continue;
 		FluxNodeData *d = &store->slots [i].data;
-		if (d->component_data) d->component_type = xent_get_control_type(ctx, d->node_id);
 		xent_set_userdata(ctx, d->node_id, d);
 	}
 }
 
 void flux_node_store_register_renderer(
-  FluxNodeStore *store, XentControlType type,
+  FluxNodeStore *store, FluxControlType type,
   void (*draw)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *, FluxControlState const *),
   void (*draw_overlay)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *)
 ) {
-	if (!store || ( uint32_t ) type > XENT_CONTROL_CUSTOM) return;
+	if (!store || ( uint32_t ) type > FLUX_CONTROL_CUSTOM) return;
 	store->renderers [type].draw         = draw;
 	store->renderers [type].draw_overlay = draw_overlay;
 }
 
-FluxControlRenderer const *flux_node_store_get_renderer(FluxNodeStore const *store, XentControlType type) {
-	if (!store || ( uint32_t ) type > XENT_CONTROL_CUSTOM) return NULL;
+FluxControlRenderer const *flux_node_store_get_renderer(FluxNodeStore const *store, FluxControlType type) {
+	if (!store || ( uint32_t ) type > FLUX_CONTROL_CUSTOM) return NULL;
 	return &store->renderers [type];
 }

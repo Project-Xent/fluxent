@@ -54,7 +54,7 @@ static FluxScrollData *input_scroll_data(FluxInput *input, XentNodeId node) {
 }
 
 static void input_apply_parent_scroll_offset(FluxInput *input, XentNodeId parent, float *ox, float *oy) {
-	if (xent_get_control_type(input->ctx, parent) != XENT_CONTROL_SCROLL) return;
+	if (flux_get_control_type(input->ctx, parent) != FLUX_CONTROL_SCROLL) return;
 
 	FluxScrollData *sd = input_scroll_data(input, parent);
 	if (!sd) return;
@@ -76,8 +76,8 @@ static void flux_node_abs_rect(FluxInput *input, XentNodeId node, FluxRect *out)
 
 	out->x = ox;
 	out->y = oy;
-	out->w = lr.width;
-	out->h = lr.height;
+	out->w = lr.w;
+	out->h = lr.h;
 }
 
 static void flux_scroll_clamp(FluxScrollData *sd, FluxRect const *b) {
@@ -92,7 +92,7 @@ static void flux_scroll_clamp(FluxScrollData *sd, FluxRect const *b) {
 }
 
 static bool input_scroll_overlay_hit(FluxInput *input, XentNodeId node, float px, float py, InputScrollHit *out) {
-	if (xent_get_control_type(input->ctx, node) != XENT_CONTROL_SCROLL) return false;
+	if (flux_get_control_type(input->ctx, node) != FLUX_CONTROL_SCROLL) return false;
 
 	FluxScrollData *sd = input_scroll_data(input, node);
 	if (!sd) return false;
@@ -193,9 +193,9 @@ bool input_drive_touch_pan(FluxInput *input, float px, float py) {
 	XentRect srect = {0};
 	xent_get_layout_rect(input->ctx, input->touch_pan_target, &srect);
 
-	float max_x = sd->content_w - srect.width;
+	float max_x = sd->content_w - srect.w;
 	if (max_x < 0.0f) max_x = 0.0f;
-	float max_y = sd->content_h - srect.height;
+	float max_y = sd->content_h - srect.h;
 	if (max_y < 0.0f) max_y = 0.0f;
 
 	float new_sx           = input->touch_pan_origin_sx - (px - input->touch_start_x);
@@ -296,12 +296,12 @@ bool input_press_scroll_overlay(FluxInput *input, FluxHitResult const *hit, floa
 	return input_press_scrollbar_axis(input, &scroll_hit, px, py, 2);
 }
 
-static bool input_touch_pan_blocked_by_control(XentControlType ct) {
-	return ct == XENT_CONTROL_SLIDER
-	    || ct == XENT_CONTROL_SWITCH
-	    || ct == XENT_CONTROL_TEXT_INPUT
-	    || ct == XENT_CONTROL_PASSWORD_BOX
-	    || ct == XENT_CONTROL_NUMBER_BOX;
+static bool input_touch_pan_blocked_by_control(FluxControlType ct) {
+	return ct == FLUX_CONTROL_SLIDER
+	    || ct == FLUX_CONTROL_SWITCH
+	    || ct == FLUX_CONTROL_TEXT_INPUT
+	    || ct == FLUX_CONTROL_PASSWORD_BOX
+	    || ct == FLUX_CONTROL_NUMBER_BOX;
 }
 
 static bool input_assign_touch_pan_target(FluxInput *input, XentNodeId node) {
@@ -324,9 +324,9 @@ bool input_setup_touch_pan(FluxInput *input, FluxHitResult const *hit, float px,
 
 	XentNodeId node = hit->node;
 	while (node != XENT_NODE_INVALID) {
-		XentControlType ct = xent_get_control_type(input->ctx, node);
+		FluxControlType ct = flux_get_control_type(input->ctx, node);
 		if (input_touch_pan_blocked_by_control(ct)) return false;
-		if (ct == XENT_CONTROL_SCROLL) return input_assign_touch_pan_target(input, node);
+		if (ct == FLUX_CONTROL_SCROLL) return input_assign_touch_pan_target(input, node);
 		node = xent_get_parent(input->ctx, node);
 	}
 	return false;
@@ -377,7 +377,7 @@ static void input_dispatch_number_box_wheel(FluxNodeData *nd, float delta_y) {
 }
 
 bool input_handle_number_box_wheel(FluxInput *input, XentNodeId node, float delta_y) {
-	if (xent_get_control_type(input->ctx, node) != XENT_CONTROL_NUMBER_BOX) return false;
+	if (flux_get_control_type(input->ctx, node) != FLUX_CONTROL_NUMBER_BOX) return false;
 
 	FluxNodeData *nd = flux_node_store_get(input->store, node);
 	input_dispatch_number_box_wheel(nd, delta_y);
@@ -400,7 +400,7 @@ static bool input_consume_scroll_axis(float *scroll, float *remaining, float max
 }
 
 bool input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining_x, float *remaining_y) {
-	if (xent_get_control_type(input->ctx, node) != XENT_CONTROL_SCROLL) return false;
+	if (flux_get_control_type(input->ctx, node) != FLUX_CONTROL_SCROLL) return false;
 
 	FluxScrollData *sd = input_scroll_data(input, node);
 	if (!sd) return false;
@@ -408,8 +408,8 @@ bool input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining
 	XentRect rect = {0};
 	xent_get_layout_rect(input->ctx, node, &rect);
 
-	float max_x = input_scroll_axis_max(sd->content_w, rect.width);
-	float max_y = input_scroll_axis_max(sd->content_h, rect.height);
+	float max_x = input_scroll_axis_max(sd->content_w, rect.w);
+	float max_y = input_scroll_axis_max(sd->content_h, rect.h);
 	bool  moved = input_consume_scroll_axis(&sd->scroll_x, remaining_x, max_x);
 	moved       = input_consume_scroll_axis(&sd->scroll_y, remaining_y, max_y) || moved;
 
@@ -419,7 +419,7 @@ bool input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining
 
 static XentNodeId input_nearest_scroll_node(FluxInput *input, XentNodeId node) {
 	while (node != XENT_NODE_INVALID) {
-		if (xent_get_control_type(input->ctx, node) == XENT_CONTROL_SCROLL) return node;
+		if (flux_get_control_type(input->ctx, node) == FLUX_CONTROL_SCROLL) return node;
 		node = xent_get_parent(input->ctx, node);
 	}
 	return XENT_NODE_INVALID;

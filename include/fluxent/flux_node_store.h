@@ -22,6 +22,7 @@
 
 #include "flux_types.h"
 #include <xent/xent.h>
+#include "flux_control_type.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -129,7 +130,7 @@ typedef struct FluxNodeData {
 	FluxNodeVisuals  visuals;        /**< Appearance properties */
 	FluxNodeState    state;          /**< Interaction flags */
 	FluxNodeBehavior behavior;       /**< Event callbacks (embedded) */
-	XentControlType  component_type; /**< Control type expected for component_data casts. */
+	FluxControlType  component_type; /**< Control type expected for component_data casts. */
 	void            *component_data; /**< Control-specific data; borrowed unless destroy_component_data is set. */
 	void             (*destroy_component_data)(void *component_data); /**< Optional owned component data destructor. */
 
@@ -210,7 +211,7 @@ void           flux_node_store_attach_userdata(FluxNodeStore *store, XentContext
  * @brief Register a renderer in this store's isolated renderer table.
  */
 void           flux_node_store_register_renderer(
-  FluxNodeStore *store, XentControlType type,
+  FluxNodeStore *store, FluxControlType type,
   void (*draw)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *, FluxControlState const *),
   void (*draw_overlay)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *)
 );
@@ -218,7 +219,7 @@ void           flux_node_store_register_renderer(
 /**
  * @brief Look up a renderer from this store's isolated renderer table.
  */
-FluxControlRenderer const *flux_node_store_get_renderer(FluxNodeStore const *store, XentControlType type);
+FluxControlRenderer const *flux_node_store_get_renderer(FluxNodeStore const *store, FluxControlType type);
 
 #ifdef __cplusplus
 }

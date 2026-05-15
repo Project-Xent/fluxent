@@ -85,8 +85,8 @@ static bool app_focused_accepts_command(FluxApp *app) {
 	XentNodeId focused = flux_input_get_focused(app->input);
 	if (focused == XENT_NODE_INVALID || !app_ctx(app)) return false;
 
-	XentControlType ct = xent_get_control_type(app_ctx(app), focused);
-	return ct != XENT_CONTROL_TEXT_INPUT && ct != XENT_CONTROL_PASSWORD_BOX && ct != XENT_CONTROL_NUMBER_BOX;
+	FluxControlType ct = flux_get_control_type(app_ctx(app), focused);
+	return ct != FLUX_CONTROL_TEXT_INPUT && ct != FLUX_CONTROL_PASSWORD_BOX && ct != FLUX_CONTROL_NUMBER_BOX;
 }
 
 static void app_request_render(void *ctx) {
@@ -326,13 +326,13 @@ static void app_ime_composition(void *ctx, wchar_t const *text, int cursor_pos) 
 
 static void app_register_core_renderers(FluxNodeStore *store) {
 	if (!store) return;
-	flux_node_store_register_renderer(store, XENT_CONTROL_CONTAINER, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, XENT_CONTROL_SCROLL, flux_draw_scroll, flux_draw_scroll_overlay);
-	flux_node_store_register_renderer(store, XENT_CONTROL_IMAGE, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, XENT_CONTROL_LIST, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, XENT_CONTROL_TAB, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, XENT_CONTROL_CANVAS, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, XENT_CONTROL_CUSTOM, flux_draw_container, NULL);
+	flux_node_store_register_renderer(store, FLUX_CONTROL_CONTAINER, flux_draw_container, NULL);
+	flux_node_store_register_renderer(store, FLUX_CONTROL_SCROLL, flux_draw_scroll, flux_draw_scroll_overlay);
+	flux_node_store_register_renderer(store, FLUX_CONTROL_IMAGE, flux_draw_container, NULL);
+	flux_node_store_register_renderer(store, FLUX_CONTROL_LIST, flux_draw_container, NULL);
+	flux_node_store_register_renderer(store, FLUX_CONTROL_TAB, flux_draw_container, NULL);
+	flux_node_store_register_renderer(store, FLUX_CONTROL_CANVAS, flux_draw_container, NULL);
+	flux_node_store_register_renderer(store, FLUX_CONTROL_CUSTOM, flux_draw_container, NULL);
 }
 
 static void app_cleanup_dmanip_tree(FluxApp *app) {

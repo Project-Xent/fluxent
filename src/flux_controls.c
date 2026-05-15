@@ -4,9 +4,9 @@
 
 #define FLUX_EXPECT_TYPE(nd, type) ((nd)->component_type == (type))
 #define FLUX_EXPECT_TOGGLE(nd)                        \
-	((nd)->component_type == XENT_CONTROL_CHECKBOX    \
-	  || (nd)->component_type == XENT_CONTROL_RADIO   \
-	  || (nd)->component_type == XENT_CONTROL_SWITCH)
+	((nd)->component_type == FLUX_CONTROL_CHECKBOX    \
+	  || (nd)->component_type == FLUX_CONTROL_RADIO   \
+	  || (nd)->component_type == FLUX_CONTROL_SWITCH)
 
 static FluxNodeData *flux_component_node(FluxNodeStore *store, XentNodeId id) {
 	if (!store) return NULL;
@@ -41,10 +41,10 @@ static FluxNodeData *flux_component_node(FluxNodeStore *store, XentNodeId id) {
 		d->f2       = v2;                                                         \
 	}
 
-FLUX_SETTER(flux_button, FluxButtonData, label, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_BUTTON))
-FLUX_SETTER(flux_button, FluxButtonData, icon_name, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_BUTTON))
-FLUX_SETTER(flux_button, FluxButtonData, style, FluxButtonStyle, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_BUTTON))
-FLUX_SETTER_ENABLED(flux_button, FluxButtonData, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_BUTTON))
+FLUX_SETTER(flux_button, FluxButtonData, label, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
+FLUX_SETTER(flux_button, FluxButtonData, icon_name, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
+FLUX_SETTER(flux_button, FluxButtonData, style, FluxButtonStyle, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
+FLUX_SETTER_ENABLED(flux_button, FluxButtonData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
 
 void flux_button_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name) {
 	flux_button_set_icon_name(store, id, icon_name);
@@ -54,21 +54,21 @@ FLUX_SETTER(flux_checkbox, FluxCheckboxData, label, char const *, FLUX_EXPECT_TO
 FLUX_SETTER(flux_checkbox, FluxCheckboxData, state, FluxCheckState, FLUX_EXPECT_TOGGLE(nd))
 FLUX_SETTER_ENABLED(flux_checkbox, FluxCheckboxData, FLUX_EXPECT_TOGGLE(nd))
 
-FLUX_SETTER(flux_slider, FluxSliderData, current_value, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_SLIDER))
+FLUX_SETTER(flux_slider, FluxSliderData, current_value, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER))
 FLUX_SETTER_2(
-  flux_slider, FluxSliderData, range, min_value, max_value, float, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_SLIDER)
+  flux_slider, FluxSliderData, range, min_value, max_value, float, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER)
 )
-FLUX_SETTER_ENABLED(flux_slider, FluxSliderData, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_SLIDER))
+FLUX_SETTER_ENABLED(flux_slider, FluxSliderData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER))
 
 void flux_slider_set_value(FluxNodeStore *store, XentNodeId id, float value) {
 	flux_slider_set_current_value(store, id, value);
 }
 
-FLUX_SETTER(flux_text, FluxTextData, content, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_TEXT))
-FLUX_SETTER(flux_text, FluxTextData, font_size, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_TEXT))
-FLUX_SETTER(flux_text, FluxTextData, text_color, FluxColor, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_TEXT))
-FLUX_SETTER(flux_text, FluxTextData, alignment, FluxTextAlign, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_TEXT))
-FLUX_SETTER(flux_text, FluxTextData, font_weight, FluxFontWeight, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_TEXT))
+FLUX_SETTER(flux_text, FluxTextData, content, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT))
+FLUX_SETTER(flux_text, FluxTextData, font_size, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT))
+FLUX_SETTER(flux_text, FluxTextData, text_color, FluxColor, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT))
+FLUX_SETTER(flux_text, FluxTextData, alignment, FluxTextAlign, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT))
+FLUX_SETTER(flux_text, FluxTextData, font_weight, FluxFontWeight, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT))
 
 void flux_text_set_color(FluxNodeStore *store, XentNodeId id, FluxColor color) {
 	flux_text_set_text_color(store, id, color);
@@ -78,13 +78,13 @@ void flux_text_set_weight(FluxNodeStore *store, XentNodeId id, FluxFontWeight we
 	flux_text_set_font_weight(store, id, weight);
 }
 
-static FluxTextBoxInputData *flux_text_input_data(FluxNodeStore *store, XentNodeId id, XentControlType type) {
+static FluxTextBoxInputData *flux_text_input_data(FluxNodeStore *store, XentNodeId id, FluxControlType type) {
 	FluxNodeData *nd = flux_component_node(store, id);
 	if (!nd || nd->component_type != type) return NULL;
 	return ( FluxTextBoxInputData * ) nd->component_data;
 }
 
-static void flux_text_input_set_enabled(FluxNodeStore *store, XentNodeId id, XentControlType type, bool enabled) {
+static void flux_text_input_set_enabled(FluxNodeStore *store, XentNodeId id, FluxControlType type, bool enabled) {
 	FluxNodeData *nd = flux_component_node(store, id);
 	if (!nd || nd->component_type != type) return;
 	FluxTextBoxData *tb = ( FluxTextBoxData * ) nd->component_data;
@@ -93,29 +93,29 @@ static void flux_text_input_set_enabled(FluxNodeStore *store, XentNodeId id, Xen
 }
 
 void flux_textbox_set_content(FluxNodeStore *store, XentNodeId id, char const *content) {
-	FluxTextBoxInputData *tb = flux_text_input_data(store, id, XENT_CONTROL_TEXT_INPUT);
+	FluxTextBoxInputData *tb = flux_text_input_data(store, id, FLUX_CONTROL_TEXT_INPUT);
 	if (tb) tb_replace_text(tb, content);
 }
 
 void flux_textbox_set_placeholder(FluxNodeStore *store, XentNodeId id, char const *placeholder) {
-	FluxTextBoxInputData *tb = flux_text_input_data(store, id, XENT_CONTROL_TEXT_INPUT);
+	FluxTextBoxInputData *tb = flux_text_input_data(store, id, FLUX_CONTROL_TEXT_INPUT);
 	if (tb) tb->base.placeholder = placeholder;
 }
 
 void flux_textbox_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled) {
-	flux_text_input_set_enabled(store, id, XENT_CONTROL_TEXT_INPUT, enabled);
+	flux_text_input_set_enabled(store, id, FLUX_CONTROL_TEXT_INPUT, enabled);
 }
 
-FLUX_SETTER(flux_progress, FluxProgressData, value, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_PROGRESS))
-FLUX_SETTER(flux_progress, FluxProgressData, max_value, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_PROGRESS))
-FLUX_SETTER(flux_progress, FluxProgressData, indeterminate, bool, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_PROGRESS))
+FLUX_SETTER(flux_progress, FluxProgressData, value, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS))
+FLUX_SETTER(flux_progress, FluxProgressData, max_value, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS))
+FLUX_SETTER(flux_progress, FluxProgressData, indeterminate, bool, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS))
 
 void flux_progress_set_max(FluxNodeStore *store, XentNodeId id, float max_val) {
 	flux_progress_set_max_value(store, id, max_val);
 }
 
 FLUX_SETTER_2(
-  flux_scroll, FluxScrollData, offset, scroll_x, scroll_y, float, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_SCROLL)
+  flux_scroll, FluxScrollData, offset, scroll_x, scroll_y, float, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SCROLL)
 )
 
 static FluxNodeData *flux_node_for_visual_setter(FluxNodeStore *store, XentNodeId id) {
@@ -156,22 +156,22 @@ void flux_node_set_tooltip(FluxNodeStore *store, XentNodeId id, char const *text
 }
 
 void flux_password_set_content(FluxNodeStore *store, XentNodeId id, char const *content) {
-	FluxTextBoxInputData *tb = flux_text_input_data(store, id, XENT_CONTROL_PASSWORD_BOX);
+	FluxTextBoxInputData *tb = flux_text_input_data(store, id, FLUX_CONTROL_PASSWORD_BOX);
 	if (tb) tb_replace_text(tb, content);
 }
 
 void flux_password_set_placeholder(FluxNodeStore *store, XentNodeId id, char const *placeholder) {
-	FluxTextBoxInputData *tb = flux_text_input_data(store, id, XENT_CONTROL_PASSWORD_BOX);
+	FluxTextBoxInputData *tb = flux_text_input_data(store, id, FLUX_CONTROL_PASSWORD_BOX);
 	if (tb) tb->base.placeholder = placeholder;
 }
 
 void flux_password_set_show_plain(FluxNodeStore *store, XentNodeId id, bool show_plain) {
-	FluxTextBoxInputData *tb = flux_text_input_data(store, id, XENT_CONTROL_PASSWORD_BOX);
+	FluxTextBoxInputData *tb = flux_text_input_data(store, id, FLUX_CONTROL_PASSWORD_BOX);
 	if (tb) tb->password_show_plain = show_plain;
 }
 
 void flux_password_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled) {
-	flux_text_input_set_enabled(store, id, XENT_CONTROL_PASSWORD_BOX, enabled);
+	flux_text_input_set_enabled(store, id, FLUX_CONTROL_PASSWORD_BOX, enabled);
 }
 
 void flux_password_set_reveal(FluxNodeStore *store, XentNodeId id, bool show_plain) {
@@ -179,7 +179,7 @@ void flux_password_set_reveal(FluxNodeStore *store, XentNodeId id, bool show_pla
 }
 
 static FluxTextBoxInputData *flux_numberbox_data(FluxNodeStore *store, XentNodeId id) {
-	FluxTextBoxInputData *tb = flux_text_input_data(store, id, XENT_CONTROL_NUMBER_BOX);
+	FluxTextBoxInputData *tb = flux_text_input_data(store, id, FLUX_CONTROL_NUMBER_BOX);
 	if (!tb || !tb->nb) return NULL;
 	return tb;
 }
@@ -214,51 +214,51 @@ void flux_numberbox_set_spin_enabled(FluxNodeStore *store, XentNodeId id, bool e
 }
 
 void flux_numberbox_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled) {
-	flux_text_input_set_enabled(store, id, XENT_CONTROL_NUMBER_BOX, enabled);
+	flux_text_input_set_enabled(store, id, FLUX_CONTROL_NUMBER_BOX, enabled);
 }
 
 void flux_numberbox_set_value(FluxNodeStore *store, XentNodeId id, double value) {
 	flux_numberbox_set_current_value(store, id, value);
 }
 
-FLUX_SETTER(flux_hyperlink, FluxHyperlinkData, label, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_HYPERLINK))
-FLUX_SETTER(flux_hyperlink, FluxHyperlinkData, url, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_HYPERLINK))
-FLUX_SETTER_ENABLED(flux_hyperlink, FluxHyperlinkData, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_HYPERLINK))
+FLUX_SETTER(flux_hyperlink, FluxHyperlinkData, label, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_HYPERLINK))
+FLUX_SETTER(flux_hyperlink, FluxHyperlinkData, url, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_HYPERLINK))
+FLUX_SETTER_ENABLED(flux_hyperlink, FluxHyperlinkData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_HYPERLINK))
 
 FLUX_SETTER(
-  flux_repeat_button, FluxRepeatButtonData, label, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_REPEAT_BUTTON)
+  flux_repeat_button, FluxRepeatButtonData, label, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON)
 )
 FLUX_SETTER(
-  flux_repeat_button, FluxRepeatButtonData, icon_name, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_REPEAT_BUTTON)
+  flux_repeat_button, FluxRepeatButtonData, icon_name, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON)
 )
 FLUX_SETTER(
-  flux_repeat_button, FluxRepeatButtonData, style, FluxButtonStyle, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_REPEAT_BUTTON)
+  flux_repeat_button, FluxRepeatButtonData, style, FluxButtonStyle, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON)
 )
 FLUX_SETTER_2(
   flux_repeat_button, FluxRepeatButtonData, timing, repeat_delay_ms, repeat_interval_ms, uint32_t, uint32_t,
-  FLUX_EXPECT_TYPE(nd, XENT_CONTROL_REPEAT_BUTTON)
+  FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON)
 )
-FLUX_SETTER_ENABLED(flux_repeat_button, FluxRepeatButtonData, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_REPEAT_BUTTON))
+FLUX_SETTER_ENABLED(flux_repeat_button, FluxRepeatButtonData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON))
 
 void flux_repeat_button_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name) {
 	flux_repeat_button_set_icon_name(store, id, icon_name);
 }
 
-FLUX_SETTER(flux_progress_ring, FluxProgressRingData, value, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_PROGRESS_RING))
+FLUX_SETTER(flux_progress_ring, FluxProgressRingData, value, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS_RING))
 FLUX_SETTER(
-  flux_progress_ring, FluxProgressRingData, max_value, float, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_PROGRESS_RING)
+  flux_progress_ring, FluxProgressRingData, max_value, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS_RING)
 )
 FLUX_SETTER(
-  flux_progress_ring, FluxProgressRingData, indeterminate, bool, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_PROGRESS_RING)
+  flux_progress_ring, FluxProgressRingData, indeterminate, bool, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS_RING)
 )
 
 void flux_progress_ring_set_max(FluxNodeStore *store, XentNodeId id, float max_val) {
 	flux_progress_ring_set_max_value(store, id, max_val);
 }
 
-FLUX_SETTER(flux_info_badge, FluxInfoBadgeData, mode, FluxInfoBadgeMode, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_INFO_BADGE))
-FLUX_SETTER(flux_info_badge, FluxInfoBadgeData, value, int32_t, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_INFO_BADGE))
-FLUX_SETTER(flux_info_badge, FluxInfoBadgeData, icon_name, char const *, FLUX_EXPECT_TYPE(nd, XENT_CONTROL_INFO_BADGE))
+FLUX_SETTER(flux_info_badge, FluxInfoBadgeData, mode, FluxInfoBadgeMode, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_INFO_BADGE))
+FLUX_SETTER(flux_info_badge, FluxInfoBadgeData, value, int32_t, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_INFO_BADGE))
+FLUX_SETTER(flux_info_badge, FluxInfoBadgeData, icon_name, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_INFO_BADGE))
 
 void flux_info_badge_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name) {
 	flux_info_badge_set_icon_name(store, id, icon_name);

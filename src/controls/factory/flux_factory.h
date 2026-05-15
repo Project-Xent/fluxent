@@ -29,7 +29,7 @@ typedef struct FluxFlyout FluxFlyout;
  * Sets control type, creates FluxNodeData, and attaches userdata.
  * Used internally by all flux_create_* functions.
  */
-XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, XentControlType type);
+XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, FluxControlType type);
 
 /**
  * @brief Bind a flyout to a node's pointer-down event.

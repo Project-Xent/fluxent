@@ -538,7 +538,7 @@ void flux_draw_textbox(
 	float radius   = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
 	bool  has_text = snap->text_content && snap->text_content [0];
 	bool  show_delete
-	  = snap->type == XENT_CONTROL_TEXT_INPUT && has_text && state->focused && !snap->readonly && state->enabled;
+	  = snap->type == FLUX_CONTROL_TEXT_INPUT && has_text && state->focused && !snap->readonly && state->enabled;
 	float col1_w = show_delete ? TB_DELETE_BTN_W : 0.0f;
 	float col0_w = flux_maxf(0.0f, bounds->w - col1_w);
 

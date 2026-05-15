@@ -24,6 +24,7 @@
 #define FLUXENT_H
 
 #include "flux_engine.h"
+#include "flux_control_type.h"
 #include "flux_component_data.h"
 #include "flux_theme.h"
 #include "flux_controls.h"

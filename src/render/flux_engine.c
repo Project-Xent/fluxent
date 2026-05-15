@@ -75,8 +75,8 @@ collect_make_draw_command(CollectFrame const *frame, XentRect const *rect, FluxC
 	cmd.snapshot    = frame->snapshot;
 	cmd.bounds.x    = frame->abs_x;
 	cmd.bounds.y    = frame->abs_y;
-	cmd.bounds.w    = rect->width;
-	cmd.bounds.h    = rect->height;
+	cmd.bounds.w    = rect->w;
+	cmd.bounds.h    = rect->h;
 	cmd.state       = frame->state;
 	cmd.phase       = phase;
 	cmd.clip_action = FLUX_CLIP_NONE;
@@ -88,16 +88,16 @@ static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentR
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.bounds.x        = frame->abs_x;
 	cmd.bounds.y        = frame->abs_y;
-	cmd.bounds.w        = rect->width;
-	cmd.bounds.h        = rect->height;
+	cmd.bounds.w        = rect->w;
+	cmd.bounds.h        = rect->h;
 	cmd.phase           = FLUX_PHASE_MAIN;
 	cmd.clip_action     = FLUX_CLIP_PUSH;
 	cmd.scroll_x        = frame->snapshot.scroll_x;
 	cmd.scroll_y        = frame->snapshot.scroll_y;
 	frame->scroll_off_x = frame->snapshot.scroll_x;
 	frame->scroll_off_y = frame->snapshot.scroll_y;
-	frame->viewport_w   = rect->width;
-	frame->viewport_h   = rect->height;
+	frame->viewport_w   = rect->w;
+	frame->viewport_h   = rect->h;
 	flux_command_buffer_push(&eng->commands, &cmd);
 }
 
@@ -111,7 +111,7 @@ static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *f
 	FluxNodeData *nd = ( FluxNodeData * ) xent_get_userdata(ctx, frame->node);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
 	frame->state          = flux_compute_control_state(nd);
-	frame->is_scroll      = frame->snapshot.type == XENT_CONTROL_SCROLL;
+	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;
 
 	FluxRenderCommand cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_MAIN);
 	flux_command_buffer_push(&eng->commands, &cmd);
@@ -132,9 +132,9 @@ static bool collect_child_visible(XentContext *ctx, CollectFrame const *frame, X
 	float vis_right  = vis_left + frame->viewport_w;
 	float vis_bottom = vis_top + frame->viewport_h;
 
-	if (child_rect.x + child_rect.width < vis_left) return false;
+	if (child_rect.x + child_rect.w < vis_left) return false;
 	if (child_rect.x > vis_right) return false;
-	if (child_rect.y + child_rect.height < vis_top) return false;
+	if (child_rect.y + child_rect.h < vis_top) return false;
 	return child_rect.y <= vis_bottom;
 }
 

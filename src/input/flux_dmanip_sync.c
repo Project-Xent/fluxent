@@ -58,7 +58,7 @@ static void sync_scroll_viewport(DManipSyncContext const *sync, FluxScrollData *
 }
 
 static void sync_scroll_node(DManipSyncContext const *sync, DManipNodeState *state) {
-	if (xent_get_control_type(sync->ctx, state->node) != XENT_CONTROL_SCROLL) return;
+	if (flux_get_control_type(sync->ctx, state->node) != FLUX_CONTROL_SCROLL) return;
 
 	FluxNodeData   *nd = flux_node_store_get(sync->store, state->node);
 	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
@@ -76,7 +76,7 @@ static void sync_node(DManipSyncContext const *sync, XentNodeId node, float ax_d
 	xent_get_layout_rect(sync->ctx, node, &lr);
 	DManipNodeState state = {
 	  .node     = node,
-	  .viewport = {ax_dip + lr.x, ay_dip + lr.y, lr.width, lr.height},
+	  .viewport = {ax_dip + lr.x, ay_dip + lr.y, lr.w, lr.h},
 	  .child_ax = ax_dip + lr.x,
 	  .child_ay = ay_dip + lr.y,
 	};
@@ -123,7 +123,7 @@ bool flux_dmanip_handoff_touch_pan(FluxDManip *dmanip, FluxInput *input, FluxNod
 }
 
 static void cleanup_scroll_node(XentContext *ctx, FluxNodeStore *store, XentNodeId node) {
-	if (xent_get_control_type(ctx, node) != XENT_CONTROL_SCROLL) return;
+	if (flux_get_control_type(ctx, node) != FLUX_CONTROL_SCROLL) return;
 
 	FluxNodeData   *nd = flux_node_store_get(store, node);
 	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;

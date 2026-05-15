@@ -130,7 +130,7 @@ void tb_update_scroll(FluxTextBoxInputData *tb) {
 
 	XentRect rect = {0};
 	xent_get_layout_rect(tb->ctx, tb->node, &rect);
-	float visible_w = rect.width - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
+	float visible_w = rect.w - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
 	if (visible_w <= 0.0f) return;
 
 	FluxTextStyle      ts         = tb_make_style(tb);
@@ -164,7 +164,7 @@ void tb_update_ime_position(FluxTextBoxInputData *tb) {
 
 	FluxTextStyle ts      = tb_make_style(tb);
 	ts.vert_align         = FLUX_TEXT_TOP;
-	float       visible_w = rect.width - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
+	float       visible_w = rect.w - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R;
 	char const *content   = tb_sync_content(tb);
 
 	TbImeCaret  measured  = {0.0f, 0.0f, 0.0f};

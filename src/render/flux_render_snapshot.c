@@ -24,7 +24,7 @@ typedef struct SnapshotButtonFields {
 static void snapshot_base(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {
 	memset(snap, 0, sizeof(*snap));
 	snap->id      = ( uint64_t ) node;
-	snap->type    = xent_get_control_type(ctx, node);
+	snap->type    = flux_get_control_type(ctx, node);
 	snap->enabled = xent_get_semantic_enabled(ctx, node);
 	if (!nd) return;
 
@@ -222,30 +222,30 @@ static void snapshot_handle_info_badge(SnapshotContext const *ctx) {
 	snapshot_info_badge(ctx->snap, ( FluxInfoBadgeData const * ) ctx->data);
 }
 
-static SnapshotHandler const SNAPSHOT_HANDLERS [XENT_CONTROL_CUSTOM + 1] = {
-  [XENT_CONTROL_TEXT]          = snapshot_handle_text,
-  [XENT_CONTROL_BUTTON]        = snapshot_handle_button,
-  [XENT_CONTROL_TOGGLE_BUTTON] = snapshot_handle_button,
-  [XENT_CONTROL_CHECKBOX]      = snapshot_handle_checkbox_like,
-  [XENT_CONTROL_RADIO]         = snapshot_handle_checkbox_like,
-  [XENT_CONTROL_SWITCH]        = snapshot_handle_checkbox_like,
-  [XENT_CONTROL_SLIDER]        = snapshot_handle_slider,
-  [XENT_CONTROL_TEXT_INPUT]    = snapshot_handle_textbox,
-  [XENT_CONTROL_SCROLL]        = snapshot_handle_scroll,
-  [XENT_CONTROL_PROGRESS]      = snapshot_handle_progress,
-  [XENT_CONTROL_PASSWORD_BOX]  = snapshot_handle_password_box,
-  [XENT_CONTROL_NUMBER_BOX]    = snapshot_handle_number_box,
-  [XENT_CONTROL_HYPERLINK]     = snapshot_handle_hyperlink,
-  [XENT_CONTROL_REPEAT_BUTTON] = snapshot_handle_repeat_button,
-  [XENT_CONTROL_PROGRESS_RING] = snapshot_handle_progress_ring,
-  [XENT_CONTROL_INFO_BADGE]    = snapshot_handle_info_badge,
+static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
+  [FLUX_CONTROL_TEXT]          = snapshot_handle_text,
+  [FLUX_CONTROL_BUTTON]        = snapshot_handle_button,
+  [FLUX_CONTROL_TOGGLE_BUTTON] = snapshot_handle_button,
+  [FLUX_CONTROL_CHECKBOX]      = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_RADIO]         = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_SWITCH]        = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_SLIDER]        = snapshot_handle_slider,
+  [FLUX_CONTROL_TEXT_INPUT]    = snapshot_handle_textbox,
+  [FLUX_CONTROL_SCROLL]        = snapshot_handle_scroll,
+  [FLUX_CONTROL_PROGRESS]      = snapshot_handle_progress,
+  [FLUX_CONTROL_PASSWORD_BOX]  = snapshot_handle_password_box,
+  [FLUX_CONTROL_NUMBER_BOX]    = snapshot_handle_number_box,
+  [FLUX_CONTROL_HYPERLINK]     = snapshot_handle_hyperlink,
+  [FLUX_CONTROL_REPEAT_BUTTON] = snapshot_handle_repeat_button,
+  [FLUX_CONTROL_PROGRESS_RING] = snapshot_handle_progress_ring,
+  [FLUX_CONTROL_INFO_BADGE]    = snapshot_handle_info_badge,
 };
 
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {
 	snapshot_base(snap, ctx, node, nd);
 	if (!nd || !nd->component_data) return;
 
-	SnapshotHandler handler = snap->type <= XENT_CONTROL_CUSTOM ? SNAPSHOT_HANDLERS [snap->type] : NULL;
+	SnapshotHandler handler = snap->type <= FLUX_CONTROL_CUSTOM ? SNAPSHOT_HANDLERS [snap->type] : NULL;
 	if (!handler) return;
 
 	SnapshotContext build = {snap, ctx, node, nd->component_data};

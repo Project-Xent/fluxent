@@ -1,4 +1,4 @@
-#include "fluxent/flux_window.h"
+#include "flux_window_internal.h"
 #include "fluxent/flux_graphics.h"
 #include "fluxent/flux_popup.h"
 
@@ -52,40 +52,6 @@ static wchar_t const    FLUX_WND_CLASS [] = L"FluxentWindowClass";
 static bool             class_registered  = false;
 
 static LRESULT CALLBACK flux_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
-
-struct FluxWindow {
-	HWND                       hwnd;
-	FluxDpiInfo                dpi;
-	FluxWindowConfig           config;
-	FluxGraphics              *gfx;
-	bool                       render_requested;
-	bool                       com_initialized;
-	int                        cursor_type;
-	HCURSOR                    cursor_arrow;
-	HCURSOR                    cursor_ibeam;
-	HCURSOR                    cursor_hand;
-	FluxMenuFlyout            *active_menu;
-
-	uint32_t                   primary_touch_pid;
-	uint32_t                   mouse_buttons;
-
-	FluxRenderCallback         on_render;
-	void                      *render_ctx;
-	FluxResizeCallback         on_resize;
-	void                      *resize_ctx;
-	FluxDpiChangedCallback     on_dpi_changed;
-	void                      *dpi_changed_ctx;
-	FluxPointerCallback        on_pointer;
-	void                      *pointer_ctx;
-	FluxKeyCallback            on_key;
-	void                      *key_ctx;
-	FluxCharCallback           on_char;
-	void                      *char_ctx;
-	FluxImeCompositionCallback on_ime_composition;
-	void                      *ime_composition_ctx;
-	FluxSettingChangedCallback on_setting_changed;
-	void                      *setting_changed_ctx;
-};
 
 typedef struct WindowMessage {
 	FluxWindow *win;
@@ -383,23 +349,122 @@ static LRESULT window_on_context_menu(FluxWindow *win, HWND hwnd, LPARAM lp) {
 	return 0;
 }
 
-static void window_on_ime_composition(FluxWindow *win, HWND hwnd, LPARAM lp) {
-	if (!win->on_ime_composition || !(lp & GCS_COMPSTR)) return;
+static wchar_t *window_ime_read_string(HIMC hImc, DWORD kind, LONG *out_len) {
+	*out_len   = 0;
+	LONG bytes = ImmGetCompositionStringW(hImc, kind, NULL, 0);
+	if (bytes <= 0) return NULL;
+
+	wchar_t *buffer = ( wchar_t * ) malloc(( size_t ) bytes + sizeof(wchar_t));
+	if (!buffer) return NULL;
+	if (ImmGetCompositionStringW(hImc, kind, buffer, ( DWORD ) bytes) < 0) {
+		free(buffer);
+		return NULL;
+	}
+	*out_len          = bytes / ( LONG ) sizeof(wchar_t);
+	buffer [*out_len] = 0;
+	return buffer;
+}
+
+static void window_emit_ime_result(FluxWindow *win, wchar_t const *text, LONG len) {
+	if (!win->on_char || !text || len <= 0) return;
+	for (LONG i = 0; i < len; i++) win->on_char(win->char_ctx, text [i]);
+}
+
+static void window_apply_ime_position(FluxWindow *win, HIMC hImc) {
+	if (!win || !win->hwnd || !hImc || !win->ime_position_valid) return;
+	if (win->ime_applying_position) return;
+	win->ime_applying_position = true;
+
+	COMPOSITIONFORM cf;
+	memset(&cf, 0, sizeof(cf));
+	cf.dwStyle        = CFS_POINT;
+	cf.ptCurrentPos.x = win->ime_x;
+	cf.ptCurrentPos.y = win->ime_y;
+	ImmSetCompositionWindow(hImc, &cf);
+
+	CANDIDATEFORM cand;
+	memset(&cand, 0, sizeof(cand));
+	cand.dwIndex        = 0;
+	cand.dwStyle        = CFS_EXCLUDE;
+	cand.ptCurrentPos.x = win->ime_x;
+	cand.ptCurrentPos.y = win->ime_y;
+	cand.rcArea.left    = win->ime_x;
+	cand.rcArea.top     = win->ime_y;
+	cand.rcArea.right   = win->ime_x + 1;
+	cand.rcArea.bottom  = win->ime_y + win->ime_h;
+	ImmSetCandidateWindow(hImc, &cand);
+
+	win->ime_applying_position = false;
+}
+
+static void window_update_system_caret(FluxWindow *win) {
+	if (!win || !win->hwnd || !win->ime_position_valid) return;
+	CreateCaret(win->hwnd, NULL, 1, win->ime_h > 0 ? win->ime_h : 1);
+	SetCaretPos(win->ime_x, win->ime_y);
+	HideCaret(win->hwnd);
+}
+
+static bool window_on_ime_request(FluxWindow *win, WPARAM wp, LPARAM lp, LRESULT *result) {
+	if (wp != IMR_QUERYCHARPOSITION || !lp || !win || !win->ime_position_valid) return false;
+
+	IMECHARPOSITION *pos = ( IMECHARPOSITION * ) lp;
+	memset(pos, 0, sizeof(*pos));
+	pos->dwSize      = sizeof(*pos);
+	pos->dwCharPos   = 0;
+	pos->pt.x        = win->ime_x;
+	pos->pt.y        = win->ime_y;
+	pos->cLineHeight = ( UINT ) (win->ime_h > 0 ? win->ime_h : 1);
+	ClientToScreen(win->hwnd, &pos->pt);
+	GetClientRect(win->hwnd, &pos->rcDocument);
+	MapWindowPoints(win->hwnd, NULL, ( POINT * ) &pos->rcDocument, 2);
+	*result = 1;
+	return true;
+}
+
+static bool window_on_ime_notify(FluxWindow *win, WPARAM wp) {
+	if (!win || !win->ime_position_valid) return false;
+	if (wp != IMN_OPENCANDIDATE && wp != IMN_CHANGECANDIDATE) return false;
+
+	HIMC hImc = ImmGetContext(win->hwnd);
+	if (!hImc) return false;
+	window_apply_ime_position(win, hImc);
+	ImmReleaseContext(win->hwnd, hImc);
+	return true;
+}
+
+static bool window_on_ime_composition(FluxWindow *win, HWND hwnd, LPARAM lp) {
+	if (!win->on_ime_composition && !win->on_char) return false;
 
 	HIMC hImc = ImmGetContext(hwnd);
-	if (!hImc) return;
+	if (!hImc) return false;
+	window_apply_ime_position(win, hImc);
 
-	LONG comp_len = ImmGetCompositionStringW(hImc, GCS_COMPSTR, NULL, 0);
-	if (comp_len > 0) {
-		wchar_t *comp_buf = ( wchar_t * ) _alloca(comp_len + sizeof(wchar_t));
-		ImmGetCompositionStringW(hImc, GCS_COMPSTR, comp_buf, comp_len);
-		comp_buf [comp_len / sizeof(wchar_t)] = 0;
-		int cursor_pos                        = ( int ) ImmGetCompositionStringW(hImc, GCS_CURSORPOS, NULL, 0);
-		win->on_ime_composition(win->ime_composition_ctx, comp_buf, cursor_pos);
+	bool handled = false;
+	if (lp & GCS_RESULTSTR) {
+		LONG     result_len = 0;
+		wchar_t *result     = window_ime_read_string(hImc, GCS_RESULTSTR, &result_len);
+		if (win->on_ime_composition) win->on_ime_composition(win->ime_composition_ctx, NULL, 0);
+		window_emit_ime_result(win, result, result_len);
+		free(result);
+		handled = true;
 	}
-	else { win->on_ime_composition(win->ime_composition_ctx, NULL, 0); }
+
+	if (win->on_ime_composition && (lp & (GCS_COMPSTR | GCS_CURSORPOS))) {
+		LONG     comp_len = 0;
+		wchar_t *comp     = window_ime_read_string(hImc, GCS_COMPSTR, &comp_len);
+		int      cursor   = ( int ) ImmGetCompositionStringW(hImc, GCS_CURSORPOS, NULL, 0);
+		if (comp && comp_len > 0) win->on_ime_composition(win->ime_composition_ctx, comp, cursor);
+		else win->on_ime_composition(win->ime_composition_ctx, NULL, 0);
+		free(comp);
+		handled = true;
+	}
+	else if (!handled && win->on_ime_composition) {
+		win->on_ime_composition(win->ime_composition_ctx, NULL, 0);
+		handled = true;
+	}
 
 	ImmReleaseContext(hwnd, hImc);
+	return handled;
 }
 
 static LRESULT window_on_mouse_wheel(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -590,12 +655,17 @@ static bool window_is_key_up(UINT msg) { return msg == WM_KEYUP || msg == WM_SYS
 
 static bool window_handle_ime_input(WindowMessage const *m, LRESULT *result) {
 	if (m->msg == WM_IME_STARTCOMPOSITION) {
+		HIMC hImc = ImmGetContext(m->hwnd);
+		if (hImc) {
+			window_apply_ime_position(m->win, hImc);
+			ImmReleaseContext(m->hwnd, hImc);
+		}
 		*result = 0;
 		return true;
 	}
 	if (m->msg == WM_IME_COMPOSITION) {
-		window_on_ime_composition(m->win, m->hwnd, m->lp);
-		return false;
+		*result = 0;
+		return window_on_ime_composition(m->win, m->hwnd, m->lp);
 	}
 	if (m->msg != WM_IME_ENDCOMPOSITION) return false;
 
@@ -621,6 +691,9 @@ static bool window_handle_text_input(WindowMessage const *m, LRESULT *result) {
 }
 
 static bool window_handle_system(WindowMessage const *m, LRESULT *result) {
+	if (m->msg == WM_IME_REQUEST) return window_on_ime_request(m->win, m->wp, m->lp, result);
+	if (m->msg == WM_IME_NOTIFY) return window_on_ime_notify(m->win, m->wp) ? (*result = 0, true) : false;
+
 	switch (m->msg) {
 	case WM_SETTINGCHANGE :
 	case WM_THEMECHANGED  : *result = window_on_setting_message(m->win); return true;
@@ -747,76 +820,6 @@ HRESULT flux_window_create(FluxWindowConfig const *cfg, FluxWindow **out) {
 	return S_OK;
 }
 
-void flux_window_destroy(FluxWindow *win) {
-	if (!win) return;
-	if (win->gfx) flux_graphics_destroy(win->gfx);
-	if (win->hwnd) DestroyWindow(win->hwnd);
-	if (win->com_initialized) CoUninitialize();
-	free(win);
-}
-
-HWND     flux_window_hwnd(FluxWindow const *win) { return win ? win->hwnd : NULL; }
-
-FluxSize flux_window_client_size(FluxWindow const *win) {
-	if (!win || !win->hwnd) return (FluxSize) {0, 0};
-	RECT rc;
-	GetClientRect(win->hwnd, &rc);
-	return (FluxSize) {( float ) (rc.right - rc.left), ( float ) (rc.bottom - rc.top)};
-}
-
-FluxDpiInfo flux_window_dpi(FluxWindow const *win) {
-	if (!win) return (FluxDpiInfo) {FLUX_DPI_BASE, FLUX_DPI_BASE};
-	return win->dpi;
-}
-
-void flux_window_set_render_callback(FluxWindow *win, FluxRenderCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_render  = cb;
-	win->render_ctx = ctx;
-}
-
-void flux_window_set_resize_callback(FluxWindow *win, FluxResizeCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_resize  = cb;
-	win->resize_ctx = ctx;
-}
-
-void flux_window_set_dpi_changed_callback(FluxWindow *win, FluxDpiChangedCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_dpi_changed  = cb;
-	win->dpi_changed_ctx = ctx;
-}
-
-void flux_window_set_pointer_callback(FluxWindow *win, FluxPointerCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_pointer  = cb;
-	win->pointer_ctx = ctx;
-}
-
-void flux_window_set_key_callback(FluxWindow *win, FluxKeyCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_key  = cb;
-	win->key_ctx = ctx;
-}
-
-void flux_window_set_char_callback(FluxWindow *win, FluxCharCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_char  = cb;
-	win->char_ctx = ctx;
-}
-
-void flux_window_set_setting_changed_callback(FluxWindow *win, FluxSettingChangedCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_setting_changed  = cb;
-	win->setting_changed_ctx = ctx;
-}
-
-void flux_window_set_ime_composition_callback(FluxWindow *win, FluxImeCompositionCallback cb, void *ctx) {
-	if (!win) return;
-	win->on_ime_composition  = cb;
-	win->ime_composition_ctx = ctx;
-}
-
 void flux_window_set_backdrop(FluxWindow *win, int backdrop_type) {
 	if (!win || !win->hwnd) return;
 	DWORD bd = DWMSBT_NONE;
@@ -830,36 +833,18 @@ void flux_window_set_backdrop(FluxWindow *win, int backdrop_type) {
 	win->config.backdrop = backdrop_type;
 }
 
-void flux_window_set_dark_mode(FluxWindow *win, bool enabled) {
-	if (!win || !win->hwnd) return;
-	BOOL dark = enabled ? TRUE : FALSE;
-	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
-	win->config.dark_mode = enabled;
-}
-
-void flux_window_set_title(FluxWindow *win, wchar_t const *title) {
-	if (!win || !win->hwnd || !title) return;
-	SetWindowTextW(win->hwnd, title);
-}
-
 void flux_window_set_ime_position(FluxWindow *win, int x, int y, int height) {
 	if (!win || !win->hwnd) return;
+
+	win->ime_x              = x;
+	win->ime_y              = y;
+	win->ime_h              = height > 0 ? height : 1;
+	win->ime_position_valid = true;
+	window_update_system_caret(win);
+
 	HIMC hImc = ImmGetContext(win->hwnd);
 	if (!hImc) return;
-
-	COMPOSITIONFORM cf;
-	cf.dwStyle        = CFS_POINT;
-	cf.ptCurrentPos.x = x;
-	cf.ptCurrentPos.y = y;
-	ImmSetCompositionWindow(hImc, &cf);
-
-	CANDIDATEFORM cand;
-	cand.dwIndex        = 0;
-	cand.dwStyle        = CFS_CANDIDATEPOS;
-	cand.ptCurrentPos.x = x;
-	cand.ptCurrentPos.y = y + height;
-	ImmSetCandidateWindow(hImc, &cand);
-
+	window_apply_ime_position(win, hImc);
 	ImmReleaseContext(win->hwnd, hImc);
 }
 
@@ -870,23 +855,7 @@ void flux_window_set_cursor(FluxWindow *win, int cursor_type) {
 	if (win->hwnd) SetCursor(window_cursor_handle(win, cursor_type));
 }
 
-void flux_window_request_render(FluxWindow *win) {
-	if (win) win->render_requested = true;
-}
-
-void flux_window_abandon_pointer(FluxWindow *win, uint32_t pointer_id) {
-	if (!win) return;
-	if (win->primary_touch_pid == pointer_id) win->primary_touch_pid = 0;
-	if (win->hwnd && GetCapture() == win->hwnd) ReleaseCapture();
-}
-
-void flux_window_set_active_menu(FluxWindow *win, FluxMenuFlyout *menu) {
-	if (win) win->active_menu = menu;
-}
-
-FluxMenuFlyout *flux_window_get_active_menu(FluxWindow *win) { return win ? win->active_menu : NULL; }
-
-int             flux_window_run(FluxWindow *win) {
+int flux_window_run(FluxWindow *win) {
 	if (!win) return -1;
 
 	int exit_code = -1;
@@ -894,8 +863,6 @@ int             flux_window_run(FluxWindow *win) {
 	return exit_code;
 }
 
-FluxGraphics *flux_window_get_graphics(FluxWindow *win) { return win ? win->gfx : NULL; }
-
-void          flux_window_close(FluxWindow *win) {
+void flux_window_close(FluxWindow *win) {
 	if (win && win->hwnd) PostMessageW(win->hwnd, WM_CLOSE, 0, 0);
 }

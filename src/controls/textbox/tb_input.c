@@ -252,7 +252,7 @@ static void tb_clear_text(FluxTextBoxInputData *tb) {
 	tb_push_undo(tb);
 	tb->last_op_was_typing = false;
 	tb_replace_text(tb, "");
-	tb_update_scroll(tb);
+	tb_clamp_scroll(tb);
 	tb_notify_change(tb);
 }
 
@@ -285,6 +285,8 @@ static bool tb_handle_password_reveal(FluxTextBoxInputData *tb, FluxControlType 
 	if (!show_rev || local_x < rect.w - FLUX_PASSWORD_REVEAL_BTN_W) return false;
 
 	xent_set_semantic_checked(tb->ctx, tb->node, 1);
+	tb_update_scroll(tb);
+	tb_update_ime_position(tb);
 	return true;
 }
 
@@ -434,9 +436,14 @@ void tb_on_pointer_move(void *ctx, float local_x, float local_y) {
 	if (!tb->base.enabled || !tr) return;
 	( void ) local_y;
 
-	FluxControlType ct       = flux_get_control_type(tb->ctx, tb->node);
-	uint32_t        byte_pos = tb_hit_test_byte_pos(tb, tr, ct, local_x);
+	uint32_t        old_cursor = tb->base.cursor_position;
+	FluxControlType ct         = flux_get_control_type(tb->ctx, tb->node);
+	uint32_t        byte_pos   = tb_hit_test_byte_pos(tb, tr, ct, local_x);
 	tb_apply_pointer_position(tb, byte_pos);
+	if (tb->dragging && tb->base.cursor_position != old_cursor) {
+		tb_update_scroll(tb);
+		tb_update_ime_position(tb);
+	}
 }
 
 void tb_on_pointer_down(void *ctx, float local_x, float local_y, int click_count) {
@@ -459,11 +466,20 @@ void tb_on_pointer_down(void *ctx, float local_x, float local_y, int click_count
 	if (tb->base.cursor_position != old_cursor) tb_update_ime_position(tb);
 }
 
+void tb_on_pointer_finish(void *ctx) {
+	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
+	if (!tb) return;
+	tb->dragging = false;
+	if (flux_get_control_type(tb->ctx, tb->node) == FLUX_CONTROL_PASSWORD_BOX) {
+		tb_clamp_scroll(tb);
+		tb_update_ime_position(tb);
+	}
+}
+
 void tb_on_ime_composition(void *ctx, wchar_t const *text, uint32_t len, uint32_t cursor) {
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
 
 	if (!text || len == 0) {
-		tb_update_ime_position(tb);
 		tb->base.composition_text   = NULL;
 		tb->base.composition_length = 0;
 		tb->base.composition_cursor = 0;
@@ -472,8 +488,12 @@ void tb_on_ime_composition(void *ctx, wchar_t const *text, uint32_t len, uint32_
 			tb->ime_buf = NULL;
 		}
 		tb->ime_buf_cap = 0;
+		tb_update_scroll(tb);
+		tb_update_ime_position(tb);
 		return;
 	}
+
+	if (cursor > len) cursor = len;
 
 	if (tb->base.composition_text == NULL && tb_has_selection(tb)) {
 		tb_push_undo(tb);
@@ -496,6 +516,7 @@ void tb_on_ime_composition(void *ctx, wchar_t const *text, uint32_t len, uint32_
 	tb->base.composition_length = len;
 	tb->base.composition_cursor = cursor;
 
+	tb_update_scroll(tb);
 	tb_update_ime_position(tb);
 }
 

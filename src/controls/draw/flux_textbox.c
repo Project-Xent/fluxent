@@ -373,6 +373,15 @@ static FluxRect textbox_caret_local_rect(TextboxContentDrawContext const *dc, in
 	return caret;
 }
 
+static float textbox_clamp_caret_x(FluxRect const *text_area, float x) {
+	float min_x = text_area->x;
+	float max_x = text_area->x + text_area->w - 1.0f;
+	if (max_x < min_x) max_x = min_x;
+	if (x < min_x) return min_x;
+	if (x > max_x) return max_x;
+	return x;
+}
+
 static void textbox_draw_caret(TextboxContentDrawContext const *dc) {
 	if (!textbox_should_draw_caret(dc)) return;
 
@@ -383,9 +392,10 @@ static void textbox_draw_caret(TextboxContentDrawContext const *dc) {
 	FluxRect caret = textbox_caret_local_rect(dc, caret_u16, &caret_h);
 	float    caret_y
 	  = dc->content->has_text ? dc->text_area->y + caret.y : dc->text_area->y + (dc->text_area->h - caret_h) * 0.5f;
-	FluxRect               caret_abs = {dc->text_area->x + caret.x - dc->snap->scroll_offset_x, caret_y, 1.0f, caret_h};
+	float    caret_x   = textbox_clamp_caret_x(dc->text_area, dc->text_area->x + caret.x - dc->snap->scroll_offset_x);
+	FluxRect caret_abs = {caret_x, caret_y, 1.0f, caret_h};
 
-	FluxThemeColors const *t         = dc->rc->theme;
+	FluxThemeColors const *t           = dc->rc->theme;
 	FluxColor              caret_color = t ? t->text_primary : flux_color_rgba(0, 0, 0, 0xe4);
 	flux_fill_rect(dc->rc, &caret_abs, caret_color);
 }

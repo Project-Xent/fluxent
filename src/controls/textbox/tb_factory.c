@@ -80,6 +80,10 @@ static void tb_wire_behaviors(FluxNodeData *nd, FluxTextBoxInputData *tb) {
 	nd->behavior.on_char_ctx            = tb;
 	nd->behavior.on_pointer_down        = tb_on_pointer_down;
 	nd->behavior.on_pointer_down_ctx    = tb;
+	nd->behavior.on_click               = tb_on_pointer_finish;
+	nd->behavior.on_click_ctx           = tb;
+	nd->behavior.on_cancel              = tb_on_pointer_finish;
+	nd->behavior.on_cancel_ctx          = tb;
 	nd->behavior.on_ime_composition     = tb_on_ime_composition;
 	nd->behavior.on_ime_composition_ctx = tb;
 	nd->behavior.on_context_menu        = tb_on_context_menu;

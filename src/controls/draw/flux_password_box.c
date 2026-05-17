@@ -63,7 +63,6 @@ pb_masked_snapshot(FluxRenderSnapshot const *snap, bool has_text, bool revealed,
 	masked.cursor_position = pb_original_offset_to_mask(snap->text_content, text_len, snap->cursor_position);
 	masked.selection_start = pb_original_offset_to_mask(snap->text_content, text_len, snap->selection_start);
 	masked.selection_end   = pb_original_offset_to_mask(snap->text_content, text_len, snap->selection_end);
-	masked.scroll_offset_x = 0.0f;
 	return masked;
 }
 

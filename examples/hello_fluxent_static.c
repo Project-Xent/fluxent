@@ -123,6 +123,14 @@ demo_create_text(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char
 	return flux_create_text(&info);
 }
 
+static void demo_text_set_vertical_center(FluxNodeStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_node_store_get(store, node);
+	if (!nd || nd->component_type != FLUX_CONTROL_TEXT || !nd->component_data) return;
+
+	FluxTextData *td       = ( FluxTextData * ) nd->component_data;
+	td->vertical_alignment = FLUX_TEXT_VCENTER;
+}
+
 XentNodeId demo_create_card(XentContext *ctx, FluxNodeStore *store, XentNodeId parent) {
 	FluxContainerCreateInfo info = {ctx, store, parent};
 	return flux_create_card(&info);
@@ -139,21 +147,60 @@ XentNodeId make_row(XentContext *ctx, XentNodeId parent, float gap, float h) {
 	xent_set_flex_direction(ctx, row, XENT_FLEX_ROW);
 	xent_set_flex_align_items(ctx, row, XENT_FLEX_ALIGN_CENTER);
 	xent_set_gap(ctx, row, gap);
-	xent_set_size(ctx, row, (XentSize) {480, h});
+	xent_set_size(ctx, row, (XentSize) {454, h});
 	xent_append_child(ctx, parent, row);
 	return row;
 }
 
 XentNodeId make_section(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *text) {
 	XentNodeId t = demo_create_text(ctx, store, parent, text, 16.0f);
-	xent_set_size(ctx, t, (XentSize) {480, 24});
+	xent_set_size(ctx, t, (XentSize) {454, 24});
 	flux_text_set_weight(store, t, FLUX_FONT_SEMI_BOLD);
 	return t;
 }
 
 void add_divider(Demo *d) {
 	XentNodeId div = demo_create_divider(d->ctx, d->store, d->root);
-	xent_set_size(d->ctx, div, (XentSize) {480, 1});
+	xent_set_size(d->ctx, div, (XentSize) {454, 1});
+}
+
+XentNodeId make_dashboard_grid(Demo *d) {
+	XentNodeId grid = xent_create_node(d->ctx);
+	xent_set_protocol(d->ctx, grid, XENT_PROTOCOL_GRID);
+	xent_set_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 1228});
+	xent_set_min_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 1228});
+	xent_set_grid_column_gap(d->ctx, grid, 20);
+	xent_set_grid_row_gap(d->ctx, grid, 20);
+
+	XentGridSizeMode cols []  = {XENT_GRID_STAR, XENT_GRID_STAR};
+	float            cvals [] = {1.0f, 1.0f};
+	xent_set_grid_columns(d->ctx, grid, cols, cvals, 2);
+
+	XentGridSizeMode rows []  = {XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL};
+	float            rvals [] = {260.0f, 300.0f, 260.0f, 112.0f, 96.0f};
+	xent_set_grid_rows(d->ctx, grid, rows, rvals, 5);
+	xent_append_child(d->ctx, d->root, grid);
+	return grid;
+}
+
+XentNodeId demo_panel(Demo *d, XentNodeId grid, uint32_t row, uint32_t col, uint32_t row_span) {
+	XentNodeId panel = demo_create_card(d->ctx, d->store, grid);
+	xent_set_grid_row(d->ctx, panel, row);
+	xent_set_grid_column(d->ctx, panel, col);
+	if (row_span > 1) xent_set_grid_row_span(d->ctx, panel, row_span);
+	xent_set_protocol(d->ctx, panel, XENT_PROTOCOL_FLEX);
+	xent_set_flex_direction(d->ctx, panel, XENT_FLEX_COLUMN);
+	xent_set_flex_align_items(d->ctx, panel, XENT_FLEX_ALIGN_START);
+	xent_set_padding(d->ctx, panel, (XentInsets) {16, 16, 16, 16});
+	xent_set_gap(d->ctx, panel, 12);
+	return panel;
+}
+
+void demo_fill_panel(Demo *d, XentNodeId panel, void (*fill)(Demo *)) {
+	XentNodeId old_root = d->root;
+	d->root             = panel;
+	fill(d);
+	d->root = old_root;
 }
 
 void demo_make_scroll_root(Demo *d) {
@@ -181,22 +228,22 @@ void demo_make_root(Demo *d) {
 	xent_set_flex_direction(d->ctx, d->root, XENT_FLEX_COLUMN);
 	xent_set_flex_align_items(d->ctx, d->root, XENT_FLEX_ALIGN_CENTER);
 	xent_set_padding(d->ctx, d->root, (XentInsets) {32, 32, 32, 32});
-	xent_set_gap(d->ctx, d->root, 14);
+	xent_set_gap(d->ctx, d->root, 20);
 	xent_set_size(d->ctx, d->root, (XentSize) {( float ) NAN, ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H});
 	xent_append_child(d->ctx, d->scroll_root, d->root);
 }
 
 void demo_add_title(Demo *d) {
 	XentNodeId title = demo_create_text(d->ctx, d->store, d->root, "Hello, Fluxent!", 28.0f);
-	xent_set_size(d->ctx, title, (XentSize) {480, 40});
+	xent_set_size(d->ctx, title, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 40});
 	flux_text_set_weight(d->store, title, FLUX_FONT_BOLD);
 	flux_text_set_alignment(d->store, title, FLUX_TEXT_CENTER);
 
-	XentNodeId subtitle
-	  = demo_create_text(d->ctx, d->store, d->root, "A pure-C Fluent Design UI - All Controls Showcase", 13.0f);
-	xent_set_size(d->ctx, subtitle, (XentSize) {480, 20});
+	XentNodeId subtitle = demo_create_text(
+	  d->ctx, d->store, d->root, "A pure-C Fluent Design UI - nested Grid, Flex, Card, Scroll and Popup showcase", 13.0f
+	);
+	xent_set_size(d->ctx, subtitle, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 20});
 	flux_text_set_alignment(d->store, subtitle, FLUX_TEXT_CENTER);
-	add_divider(d);
 }
 
 static void demo_add_button_variants(Demo *d) {
@@ -249,6 +296,7 @@ static void demo_add_counter_button(Demo *d) {
 
 	XentNodeId clbl = demo_create_text(d->ctx, d->store, row, d->counter->buf, 14.0f);
 	xent_set_size(d->ctx, clbl, (XentSize) {140, 32});
+	demo_text_set_vertical_center(d->store, clbl);
 	d->counter->label_node = clbl;
 }
 
@@ -285,6 +333,7 @@ void demo_add_repeat(Demo *d) {
 
 	XentNodeId rlbl = demo_create_text(d->ctx, d->store, row, d->repeat->buf, 14.0f);
 	xent_set_size(d->ctx, rlbl, (XentSize) {160, 32});
+	demo_text_set_vertical_center(d->store, rlbl);
 	d->repeat->label_node = rlbl;
 	add_divider(d);
 }

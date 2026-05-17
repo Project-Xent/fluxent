@@ -7,15 +7,18 @@
 #include <stdbool.h>
 
 /** @brief Default main window width for hello_fluxent showcase apps. */
-#define HELLO_FLUXENT_DEMO_WINDOW_W         640
+#define HELLO_FLUXENT_DEMO_WINDOW_W         1080
 /** @brief Default main window height for hello_fluxent showcase apps. */
 #define HELLO_FLUXENT_DEMO_WINDOW_H         760
 /** @brief Node store / Xent arena initial capacity for hello_fluxent demos. */
 #define HELLO_FLUXENT_DEMO_STORE_CAPACITY   512
 /** @brief Scroll content height matching the static demo column layout extent. */
-#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H 2200
+#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H 1560
 /** @brief Scroll content width used to size the scroll viewport model. */
 #define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W HELLO_FLUXENT_DEMO_WINDOW_W
+
+#define HELLO_FLUXENT_DEMO_STAGE_W          1000
+#define HELLO_FLUXENT_DEMO_PANEL_W          486
 
 #define RADIO_GROUP_MAX                     8
 
@@ -57,6 +60,7 @@ typedef struct Demo {
 	FluxApp            *app;
 	XentNodeId          scroll_root;
 	XentNodeId          root;
+	XentNodeId          dashboard;
 	FluxNodeData       *scroll_nd;
 	XentNodeId          footer_div;
 	XentNodeId          footer;
@@ -73,6 +77,9 @@ typedef struct Demo {
 bool       demo_init(Demo *d);
 XentNodeId make_row(XentContext *ctx, XentNodeId parent, float gap, float h);
 XentNodeId make_section(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *text);
+XentNodeId make_dashboard_grid(Demo *d);
+XentNodeId demo_panel(Demo *d, XentNodeId grid, uint32_t row, uint32_t col, uint32_t row_span);
+void       demo_fill_panel(Demo *d, XentNodeId panel, void (*fill)(Demo *));
 void       add_divider(Demo *d);
 XentNodeId demo_button(Demo *d, XentNodeId parent, char const *label, void (*on_click)(void *), void *userdata);
 XentNodeId demo_slider(

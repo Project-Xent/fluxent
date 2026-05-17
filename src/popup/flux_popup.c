@@ -218,20 +218,9 @@ void flux_popup_set_dismiss_callback(FluxPopup *popup, FluxPopupDismissCallback 
 	popup->dismiss_ctx = ctx;
 }
 
-/* WS_EX_LAYERED for per-window alpha animation; DComp/DWM backdrop composites correctly under LWA_ALPHA. */
-static void popup_ensure_layered(FluxPopup *popup) {
-	if (!popup || !popup->popup_hwnd || popup->anim.is_layered) return;
-	LONG_PTR ex = GetWindowLongPtrW(popup->popup_hwnd, GWL_EXSTYLE);
-	SetWindowLongPtrW(popup->popup_hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED);
-	SetLayeredWindowAttributes(popup->popup_hwnd, 0, 255, LWA_ALPHA);
-	popup->anim.is_layered = true;
-}
-
 void flux_popup_set_anim_style(FluxPopup *popup, FluxPopupAnimStyle style) {
 	if (!popup) return;
 	popup->anim.style = style;
-	/* FLYOUT and TOOLTIP animate window opacity — need WS_EX_LAYERED. */
-	if (style == FLUX_POPUP_ANIM_FLYOUT || style == FLUX_POPUP_ANIM_TOOLTIP) popup_ensure_layered(popup);
 }
 
 static float popup_scale_for_owner(FluxPopup const *popup) {

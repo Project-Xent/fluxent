@@ -21,14 +21,6 @@ xmake run hello_fluxent
 
 Requires Windows 10 1903+ and a C17 compiler (MSVC or MinGW).
 
-## Demo
-
-<video src="https://raw.githubusercontent.com/Project-Xent/fluxent/main/examples/bin/HelloFluxentVideo.mp4" controls="controls" width="700"></video>
-
-**Downloads** (Windows x64, MinGW/UCRT):
-- [hello_fluxent.exe](examples/bin/hello_fluxent.exe)
-- [HelloFluxentVideo.mp4](examples/bin/HelloFluxentVideo.mp4)
-
 ## License
 
 0BSD

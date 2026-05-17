@@ -175,12 +175,15 @@ static void tooltip_hide(FluxTooltip *tt) {
 
 static void tooltip_start_timer(FluxTooltip *tt, UINT delay_ms) {
 	tooltip_kill_timer(tt);
-	tt->timer_id = SetTimer(NULL, ( UINT_PTR ) tt, delay_ms, tooltip_timer_proc);
+	HWND hwnd = flux_window_hwnd(tt->owner);
+	if (!hwnd) return;
+	tt->timer_id = SetTimer(hwnd, ( UINT_PTR ) tt, delay_ms, tooltip_timer_proc);
 }
 
 static void tooltip_kill_timer(FluxTooltip *tt) {
 	if (!tt->timer_id) return;
-	KillTimer(NULL, tt->timer_id);
+	HWND hwnd = flux_window_hwnd(tt->owner);
+	if (hwnd) KillTimer(hwnd, tt->timer_id);
 	tt->timer_id = 0;
 }
 

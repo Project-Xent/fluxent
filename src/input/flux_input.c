@@ -301,7 +301,12 @@ static void input_release_pressed_node(FluxInput *input, FluxNodeData *nd, XentN
 		xent_set_semantic_checked(input->ctx, input->pressed, 0);
 
 	FluxHitResult hit = input_hit_test_root(input, root, px, py);
-	if (hit.node == input->pressed && nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
+	if (hit.node == input->pressed) {
+		if (nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
+		return;
+	}
+
+	if (nd->behavior.on_cancel) nd->behavior.on_cancel(nd->behavior.on_cancel_ctx);
 }
 
 static void input_release_pressed(FluxInput *input, XentNodeId root, float px, float py) {

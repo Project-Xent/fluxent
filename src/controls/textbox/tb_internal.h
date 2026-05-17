@@ -164,6 +164,8 @@ void          tb_perform_paste(FluxTextBoxInputData *tb);
 FluxTextStyle tb_make_style(FluxTextBoxInputData const *tb);
 /** @brief Adjusts scroll_offset_x to keep the caret within the visible width. */
 void          tb_update_scroll(FluxTextBoxInputData *tb);
+/** @brief Clamps scroll_offset_x to the valid content range without following the caret. */
+void          tb_clamp_scroll(FluxTextBoxInputData *tb);
 /** @brief Repositions the IME candidate window to follow the composition cursor. */
 void          tb_update_ime_position(FluxTextBoxInputData *tb);
 /** @brief Fires the on_change callback with the current buffer contents. */
@@ -201,6 +203,8 @@ void          tb_on_char(void *ctx, wchar_t ch);
 void          tb_on_pointer_move(void *ctx, float local_x, float local_y);
 /** @brief Handles pointer press for cursor placement, drag start, and button hit-testing. */
 void          tb_on_pointer_down(void *ctx, float local_x, float local_y, int click_count);
+/** @brief Finishes active pointer selection after release or cancellation. */
+void          tb_on_pointer_finish(void *ctx);
 /** @brief Handles an IME composition update with inline text and cursor position. */
 void          tb_on_ime_composition(void *ctx, wchar_t const *text, uint32_t len, uint32_t cursor);
 /** @brief Handles a context menu request at the given window-local coordinates. */

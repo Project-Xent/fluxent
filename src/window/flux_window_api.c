@@ -69,6 +69,12 @@ void flux_window_set_char_callback(FluxWindow *win, FluxCharCallback cb, void *c
 	win->char_ctx = ctx;
 }
 
+void flux_window_set_uia_provider_callback(FluxWindow *win, FluxUiaProviderCallback cb, void *ctx) {
+	if (!win) return;
+	win->on_uia_provider  = cb;
+	win->uia_provider_ctx = ctx;
+}
+
 void flux_window_set_setting_changed_callback(FluxWindow *win, FluxSettingChangedCallback cb, void *ctx) {
 	if (!win) return;
 	win->on_setting_changed  = cb;

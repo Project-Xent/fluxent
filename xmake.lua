@@ -11,6 +11,7 @@ if is_plat("windows") then
 end
 
 includes("../xent-core")
+includes("../cwinrt")
 
 add_defines("COBJMACROS")
 add_defines("_WIN32_WINNT=0x0A00", "WINVER=0x0A00", "UNICODE", "_UNICODE")
@@ -18,14 +19,27 @@ add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
 
 target("fluxent")
     set_kind("static")
-    add_deps("xent_core")
+    -- Granular cwinrt deps instead of the `cwinrt` umbrella: the umbrella pulls
+    -- cwinrt-bindings-all (every generated namespace, 343 TUs). fluxent only uses
+    -- Foundation + Composition (+ Interactions), so depend on just those.
+    add_deps("xent_core", "cwinrt-rt",
+             "cwinrt-bindings-foundation",
+             "cwinrt-bindings-composition",
+             "cwinrt-bindings-interactions",
+             "cwinrt-bindings-viewmanagement",
+             "cwinrt-bindings-numberformatting")
     add_includedirs("include", { public = true })
     add_includedirs("src", { private = true })
     add_includedirs("thirdparty/c_d2d_dwrite", { public = true })
+    -- The granular binding targets don't export their include dir (the umbrella did,
+    -- {public}); add the cwinrt header path here so fluxent + its consumers resolve
+    -- cwinrt/*.h.
+    add_includedirs("../cwinrt/include", { public = true })
     add_headerfiles("include/fluxent/*.h")
     add_files(
         "src/*.c",
         "src/app/*.c",
+        "src/compose/*.c",
         "src/controls/behavior/*.c",
         "src/controls/draw/*.c",
         "src/controls/factory/*.c",
@@ -49,8 +63,8 @@ target("fluxent")
     end
     if is_plat("windows", "mingw") then
         add_syslinks("user32", "gdi32", "dcomp", "d2d1", "d3d11",
-                     "dxgi", "dwrite", "dwmapi", "ole32", "uuid", "uxtheme", "imm32",
-                     "advapi32", "shell32")
+                     "dxgi", "dwrite", "dwmapi", "ole32", "oleaut32", "uuid", "uxtheme", "imm32",
+                     "advapi32", "shell32", "coremessaging", "uiautomationcore", "runtimeobject")
     end
 target_end()
 

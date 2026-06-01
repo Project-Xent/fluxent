@@ -644,3 +644,54 @@ uint32_t flux_text_selection_rects(FluxTextSelectionQuery const *query) {
 	text_wide_buffer_free(&wide);
 	return n;
 }
+
+static IDWriteTextLayout *text_cluster_layout(FluxTextClusterQuery const *query, TextWideBuffer *wide, int *wlen) {
+	char const        *safe   = (query->layout.text && query->layout.text [0]) ? query->layout.text : " ";
+	TextLayoutRequest  req    = text_layout_request(&query->layout, safe);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, wide);
+	*wlen                     = layout ? wide->len : 0;
+	return layout;
+}
+
+uint32_t flux_text_cluster_next(FluxTextClusterQuery const *query) {
+	if (!query || !query->layout.renderer || !query->layout.style) return query ? query->index : 0;
+
+	query->layout.renderer->cache_tick++;
+
+	TextWideBuffer     wide;
+	int                wlen   = 0;
+	IDWriteTextLayout *layout = text_cluster_layout(query, &wide, &wlen);
+	if (!layout) return query->index;
+	if (( int ) query->index >= wlen) {
+		text_wide_buffer_free(&wide);
+		return ( uint32_t ) wlen;
+	}
+
+	float                   cx, cy;
+	DWRITE_HIT_TEST_METRICS htm;
+	HRESULT                 hr     = IDWriteTextLayout_HitTestTextPosition(layout, query->index, FALSE, &cx, &cy, &htm);
+	uint32_t                result = SUCCEEDED(hr) ? htm.textPosition + htm.length : query->index + 1;
+
+	text_wide_buffer_free(&wide);
+	return result;
+}
+
+uint32_t flux_text_cluster_prev(FluxTextClusterQuery const *query) {
+	if (!query || !query->layout.renderer || !query->layout.style) return query ? query->index : 0;
+	if (query->index == 0) return 0;
+
+	query->layout.renderer->cache_tick++;
+
+	TextWideBuffer     wide;
+	int                wlen   = 0;
+	IDWriteTextLayout *layout = text_cluster_layout(query, &wide, &wlen);
+	if (!layout) return query->index;
+
+	float                   cx, cy;
+	DWRITE_HIT_TEST_METRICS htm;
+	HRESULT                 hr = IDWriteTextLayout_HitTestTextPosition(layout, query->index - 1, FALSE, &cx, &cy, &htm);
+	uint32_t                result = SUCCEEDED(hr) ? htm.textPosition : query->index - 1;
+
+	text_wide_buffer_free(&wide);
+	return result;
+}

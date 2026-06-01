@@ -116,14 +116,8 @@ static void menu_inherit_child_context(FluxMenuFlyout *parent, FluxMenuFlyout *c
 }
 
 static void menu_prepare_child_popup(FluxMenuFlyout *child) {
-	FluxThemeColors const *theme   = NULL;
-	bool                   is_dark = false;
-	( void ) theme;
-
-	menu_resolve_theme(child, &theme, &is_dark);
 	menu_measure(child);
 	flux_popup_set_size(child->popup, child->total_w, child->total_h);
-	flux_popup_enable_system_backdrop(child->popup, is_dark);
 }
 
 static FluxRect menu_submenu_anchor(FluxMenuFlyout *m, StoredItem const *it) {
@@ -435,14 +429,6 @@ void flux_menu_flyout_show_for_input(
 	m->scroll_y = 0.0f;
 	menu_measure(m);
 	flux_popup_set_size(m->popup, m->total_w, m->total_h);
-
-	FluxThemeColors const *theme   = NULL;
-	bool                   is_dark = false;
-	menu_resolve_theme(m, &theme, &is_dark);
-
-	/* DWM transient-acrylic on Windows 11; resolve_colors() overlays a WinUI tint on top.
-	 * Falls back to opaque fill (#2C2C2C/#F9F9F9) on older Windows. */
-	flux_popup_enable_system_backdrop(m->popup, is_dark);
 
 	m->hovered_index  = -1;
 	m->keyboard_index = -1;

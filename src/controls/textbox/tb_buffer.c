@@ -2,20 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TB_ZWJ    0x200du
-#define TB_KEYCAP 0x20e3u
-#define TB_RI_LO  0x1f1e6u
-#define TB_RI_HI  0x1f1ffu
-#define TB_MOD_LO 0x1f3fbu
-#define TB_MOD_HI 0x1f3ffu
-#define TB_TAG_LO 0xe0020u
-#define TB_TAG_HI 0xe007fu
-
-typedef struct TbCpRange {
-	uint32_t lo;
-	uint32_t hi;
-} TbCpRange;
-
 typedef struct TbUtf8Head {
 	uint32_t cp;
 	uint32_t len;
@@ -27,104 +13,6 @@ typedef enum TbWordClass
 	TB_WC_SPACE = 1,
 	TB_WC_PUNCT = 2,
 } TbWordClass;
-
-static TbCpRange const tb_extend_ranges [] = {
-  {0x0300,  0x036f },
-  {0x0483,  0x0489 },
-  {0x0591,  0x05bd },
-  {0x05bf,  0x05bf },
-  {0x05c1,  0x05c2 },
-  {0x05c4,  0x05c5 },
-  {0x05c7,  0x05c7 },
-  {0x0610,  0x061a },
-  {0x064b,  0x065f },
-  {0x0670,  0x0670 },
-  {0x06d6,  0x06dc },
-  {0x06df,  0x06e4 },
-  {0x06e7,  0x06e8 },
-  {0x06ea,  0x06ed },
-  {0x0711,  0x0711 },
-  {0x0730,  0x074a },
-  {0x1ab0,  0x1aff },
-  {0x1dc0,  0x1dff },
-  {0x20d0,  0x20ff },
-  {0x2cef,  0x2cf1 },
-  {0x2d7f,  0x2d7f },
-  {0x2de0,  0x2dff },
-  {0x302a,  0x302f },
-  {0x3099,  0x309a },
-  {0xa66f,  0xa672 },
-  {0xa674,  0xa67d },
-  {0xa69e,  0xa69f },
-  {0xa6f0,  0xa6f1 },
-  {0xa802,  0xa802 },
-  {0xa806,  0xa806 },
-  {0xa80b,  0xa80b },
-  {0xa823,  0xa827 },
-  {0xfb1e,  0xfb1e },
-  {0xfe00,  0xfe0f },
-  {0xfe20,  0xfe2f },
-  {0x101fd, 0x101fd},
-  {0x102e0, 0x102e0},
-  {0x1d165, 0x1d169},
-  {0x1d16d, 0x1d172},
-  {0x1d17b, 0x1d182},
-  {0x1d185, 0x1d18b},
-  {0x1d1aa, 0x1d1ad},
-  {0x1d242, 0x1d244},
-  {0xe0100, 0xe01ef},
-};
-
-static TbCpRange const tb_emoji_ranges [] = {
-  {0x2600,  0x27bf },
-  {0x1f300, 0x1f6ff},
-  {0x1f900, 0x1f9ff},
-  {0x1fa70, 0x1faff},
-};
-
-static bool tb_in_range_table(TbCpRange const *table, size_t count, uint32_t cp) {
-	size_t lo = 0;
-	size_t hi = count;
-	while (lo < hi) {
-		size_t mid = lo + (hi - lo) / 2;
-		if (cp >= table [mid].lo && cp <= table [mid].hi) return true;
-		bool before = cp < table [mid].lo;
-		hi          = before ? mid : hi;
-		lo          = before ? lo : mid + 1;
-	}
-	return false;
-}
-
-static bool tb_cp_is_extend(uint32_t cp) {
-	return tb_in_range_table(tb_extend_ranges, sizeof(tb_extend_ranges) / sizeof(tb_extend_ranges [0]), cp);
-}
-
-static bool tb_cp_is_emoji_like(uint32_t cp) {
-	return tb_in_range_table(tb_emoji_ranges, sizeof(tb_emoji_ranges) / sizeof(tb_emoji_ranges [0]), cp);
-}
-
-static bool tb_cp_is_regional(uint32_t cp) { return cp >= TB_RI_LO && cp <= TB_RI_HI; }
-
-static bool tb_cp_is_modifier(uint32_t cp) { return cp >= TB_MOD_LO && cp <= TB_MOD_HI; }
-
-static bool tb_cp_is_tag(uint32_t cp) { return cp >= TB_TAG_LO && cp <= TB_TAG_HI; }
-
-static bool tb_cp_is_emoji_or_keycap(uint32_t cp) {
-	if (tb_cp_is_emoji_like(cp)) return true;
-	if (tb_cp_is_regional(cp)) return true;
-	return cp == TB_KEYCAP;
-}
-
-/** @brief Returns true if @p cp extends the cluster started by previous codepoint @p prev. */
-static bool tb_extends_cluster(uint32_t prev, uint32_t cp) {
-	if (tb_cp_is_extend(cp)) return true;
-	if (cp == TB_ZWJ) return true;
-	if (tb_cp_is_tag(cp)) return true;
-	if (tb_cp_is_modifier(cp)) return tb_cp_is_emoji_like(prev) || prev == TB_ZWJ || tb_cp_is_modifier(prev);
-	if (prev == TB_ZWJ && tb_cp_is_emoji_or_keycap(cp)) return true;
-	if (tb_cp_is_regional(prev) && tb_cp_is_regional(cp)) return true;
-	return false;
-}
 
 static bool       tb_utf8_is_cont(uint8_t c) { return (c & 0xc0) == 0x80; }
 
@@ -310,18 +198,6 @@ uint32_t tb_utf8_prev(char const *s, uint32_t len, uint32_t pos) {
 
 	uint32_t cur = pos - 1;
 	while (cur > 0 && tb_utf8_is_cont(( uint8_t ) s [cur])) cur--;
-
-	while (cur > 0) {
-		uint32_t prev = cur - 1;
-		while (prev > 0 && tb_utf8_is_cont(( uint8_t ) s [prev])) prev--;
-
-		uint32_t prev_cp = 0;
-		uint32_t cur_cp  = 0;
-		( void ) tb_utf8_char_len_bounded(s, len, prev, &prev_cp);
-		( void ) tb_utf8_char_len_bounded(s, len, cur, &cur_cp);
-		if (!tb_extends_cluster(prev_cp, cur_cp)) break;
-		cur = prev;
-	}
 	return cur;
 }
 
@@ -329,57 +205,53 @@ uint32_t tb_utf8_next(char const *s, uint32_t len, uint32_t pos) {
 	if (!s) return 0;
 	if (pos >= len) return len;
 
-	uint32_t cp       = 0;
-	uint32_t clen     = tb_utf8_char_len_bounded(s, len, pos, &cp);
-	uint32_t next     = pos + (clen ? clen : 1);
-	uint32_t previous = cp;
-
-	while (next < len) {
-		uint32_t ext_cp  = 0;
-		uint32_t ext_len = tb_utf8_char_len_bounded(s, len, next, &ext_cp);
-		if (ext_len == 0) break;
-		if (!tb_extends_cluster(previous, ext_cp)) break;
-		next     += ext_len;
-		previous  = ext_cp;
-	}
-	return next;
+	uint32_t clen = tb_utf8_char_len_bounded(s, len, pos, NULL);
+	return pos + (clen ? clen : 1);
 }
 
 uint32_t tb_buffer_utf8_prev(FluxTextBoxInputData const *tb, uint32_t pos) {
-	uint32_t cur = tb_buffer_utf8_scalar_prev(tb, pos);
 	if (!tb || !tb->buffer || pos == 0) return 0;
-
-	while (cur > 0) {
-		uint32_t prev    = tb_buffer_utf8_scalar_prev(tb, cur);
-
-		uint32_t prev_cp = 0;
-		uint32_t cur_cp  = 0;
-		( void ) tb_buffer_utf8_char_len_bounded(tb, prev, &prev_cp);
-		( void ) tb_buffer_utf8_char_len_bounded(tb, cur, &cur_cp);
-		if (!tb_extends_cluster(prev_cp, cur_cp)) break;
-		cur = prev;
-	}
-	return cur;
+	return tb_buffer_utf8_scalar_prev(tb, pos);
 }
 
 uint32_t tb_buffer_utf8_next(FluxTextBoxInputData const *tb, uint32_t pos) {
 	if (!tb || !tb->buffer) return 0;
 	if (pos >= tb->buf_len) return tb->buf_len;
 
-	uint32_t cp       = 0;
-	uint32_t clen     = tb_buffer_utf8_char_len_bounded(tb, pos, &cp);
-	uint32_t next     = pos + (clen ? clen : 1);
-	uint32_t previous = cp;
+	uint32_t clen = tb_buffer_utf8_char_len_bounded(tb, pos, NULL);
+	return pos + (clen ? clen : 1);
+}
 
-	while (next < tb->buf_len) {
-		uint32_t ext_cp  = 0;
-		uint32_t ext_len = tb_buffer_utf8_char_len_bounded(tb, next, &ext_cp);
-		if (ext_len == 0) break;
-		if (!tb_extends_cluster(previous, ext_cp)) break;
-		next     += ext_len;
-		previous  = ext_cp;
-	}
-	return next;
+static FluxTextClusterQuery tb_cluster_query(FluxTextBoxInputData *tb, FluxTextRenderer *tr, FluxTextStyle *style) {
+	char const *s              = tb_sync_content(tb);
+	*style                     = tb_make_style(tb);
+	FluxTextLayoutQuery layout = {tr, s, style, 0.0f};
+	return (FluxTextClusterQuery) {layout, 0};
+}
+
+uint32_t tb_grapheme_next(FluxTextBoxInputData *tb, uint32_t pos) {
+	if (!tb || !tb->buffer) return 0;
+	if (pos >= tb->buf_len) return tb->buf_len;
+
+	FluxTextRenderer *tr = flux_app_get_text_renderer(tb->app);
+	if (!tr) return tb_buffer_utf8_next(tb, pos);
+
+	FluxTextStyle        style;
+	FluxTextClusterQuery q = tb_cluster_query(tb, tr, &style);
+	q.index                = tb_byte_to_utf16_offset(q.layout.text, tb->buf_len, pos);
+	return tb_utf16_to_byte_offset(q.layout.text, tb->buf_len, flux_text_cluster_next(&q));
+}
+
+uint32_t tb_grapheme_prev(FluxTextBoxInputData *tb, uint32_t pos) {
+	if (!tb || !tb->buffer || pos == 0) return 0;
+
+	FluxTextRenderer *tr = flux_app_get_text_renderer(tb->app);
+	if (!tr) return tb_buffer_utf8_prev(tb, pos);
+
+	FluxTextStyle        style;
+	FluxTextClusterQuery q = tb_cluster_query(tb, tr, &style);
+	q.index                = tb_byte_to_utf16_offset(q.layout.text, tb->buf_len, pos);
+	return tb_utf16_to_byte_offset(q.layout.text, tb->buf_len, flux_text_cluster_prev(&q));
 }
 
 uint32_t tb_utf16_to_byte_offset(char const *s, uint32_t len, uint32_t utf16_pos) {

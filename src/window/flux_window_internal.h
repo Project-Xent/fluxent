@@ -35,6 +35,8 @@ struct FluxWindow {
 	void                      *ime_composition_ctx;
 	FluxSettingChangedCallback on_setting_changed;
 	void                      *setting_changed_ctx;
+	FluxUiaProviderCallback    on_uia_provider;
+	void                      *uia_provider_ctx;
 
 	int                        ime_x;
 	int                        ime_y;
@@ -42,5 +44,8 @@ struct FluxWindow {
 	bool                       ime_position_valid;
 	bool                       ime_applying_position;
 };
+
+/** @brief Handle WM_GETOBJECT via the UIA provider callback; 0 if not applicable. */
+LRESULT flux_window_uia_get_object(FluxWindow *win, HWND hwnd, WPARAM wp, LPARAM lp);
 
 #endif

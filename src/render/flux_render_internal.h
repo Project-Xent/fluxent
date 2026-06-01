@@ -37,6 +37,20 @@
 #define FLUX_RENDER_COMMAND_INITIAL_CAPACITY 256
 
 /** @brief Render context passed to all control render functions. */
+/**
+ * @brief Lets a control defer its solid background fill to the compositor.
+ *
+ * In the composition path the per-node visual carries an animated
+ * CompositionColorBrush, so a control writes its resolved fill here and skips
+ * painting it into the D2D surface; the compositor animates the fill off-thread.
+ * NULL in the classic path, where the control paints its own fill.
+ */
+typedef struct FluxFillSink {
+	FluxColor color;         /**< Resolved background fill the control would have drawn. */
+	float     corner_radius; /**< Corner radius for the deferred fill. */
+	bool      written;       /**< Set by the control when it deferred its fill. */
+} FluxFillSink;
+
 struct FluxRenderContext {
 	ID2D1DeviceContext    *d2d;
 	ID2D1SolidColorBrush  *brush;
@@ -48,6 +62,7 @@ struct FluxRenderContext {
 	float                  dt;                /**< Seconds since last frame. */
 	bool                  *animations_active; /**< Writable animation flag owned by the caller. */
 	bool                   is_dark;           /**< Current theme is dark. */
+	FluxFillSink          *fill_sink;         /**< Compositor-animated fill target, or NULL (classic path). */
 };
 
 typedef struct FluxEllipseSpec {

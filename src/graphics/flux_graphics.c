@@ -14,44 +14,42 @@
 #include <dxgi1_3.h>
 #include <cd2d.h>
 #include <cdwrite.h>
-#include "flux_dcomp.h"
 
-#define MIN_SURFACE_SIZE             1
+#include "compose/flux_compose.h"
+#include "compose/flux_effect.h"
 
-/** @brief Initial capacity for the dcomp overlay-visual tracking array. */
-#define FLUX_GFX_OVERLAY_INITIAL_CAP 8
+#define MIN_SURFACE_SIZE 1
 
 struct FluxGraphics {
-	HWND                  hwnd;
-	FluxDpiInfo           dpi;
+	HWND                           hwnd;
+	FluxDpiInfo                    dpi;
 
-	ID3D11Device         *d3d_device;
-	ID3D11DeviceContext  *d3d_context;
-	IDXGIDevice          *dxgi_device;
-	IDXGIFactory2        *dxgi_factory;
-	IDXGISwapChain1      *swap_chain;
+	ID3D11Device                  *d3d_device;
+	ID3D11DeviceContext           *d3d_context;
+	IDXGIDevice                   *dxgi_device;
+	IDXGIFactory2                 *dxgi_factory;
+	IDXGISwapChain1               *swap_chain;
 
-	ID2D1Factory1        *d2d_factory;
-	ID2D1Device          *d2d_device;
-	ID2D1DeviceContext   *d2d_context;
-	ID2D1Bitmap1         *d2d_target;
+	ID2D1Factory1                 *d2d_factory;
+	ID2D1Device                   *d2d_device;
+	ID2D1DeviceContext            *d2d_context;
+	ID2D1Bitmap1                  *d2d_target;
 
-	IDWriteFactory       *dwrite_factory;
+	IDWriteFactory                *dwrite_factory;
 
-	IDCompositionDevice  *dcomp_device;
-	IDCompositionTarget  *dcomp_target;
-	IDCompositionVisual  *root_visual;
-	IDCompositionVisual  *swap_visual;
-	IDCompositionVisual **overlay_visuals;
-	uint32_t              overlay_count;
-	uint32_t              overlay_cap;
+	FluxCompositor                *compositor;    /**< Thread-shared WUC compositor. */
+	FluxWindowTarget              *window_target; /**< Per-HWND WUC target + root visual. */
+	WUC_CompositionGraphicsDevice *gdevice;       /**< Lazily created for per-node surfaces. */
 
-	bool                  tearing_supported;
-	bool                  hwnd_mode;
-	HRESULT               last_hr;
+	bool                           tearing_supported;
+	bool                           hwnd_mode;
+	bool                           composition_mode; /**< Retained-tree path (FLUX_USE_COMPOSITION). */
+	bool                           popup_presented;  /**< Swap chain hosted in a content child (popup windows). */
+	bool                           window_acrylic;   /**< Host-backdrop acrylic backplate active (popup windows). */
+	HRESULT                        last_hr;
 
-	FluxRedrawCallback    redraw_cb;
-	void                 *redraw_ctx;
+	FluxRedrawCallback             redraw_cb;
+	void                          *redraw_ctx;
 };
 
 static HRESULT create_device_independent(FluxGraphics *gfx) {
@@ -97,23 +95,16 @@ static HRESULT create_device_resources(FluxGraphics *gfx) {
 	if (FAILED(hr)) return hr;
 
 	hr = ID2D1Device_CreateDeviceContext(gfx->d2d_device, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &gfx->d2d_context);
-	if (FAILED(hr)) return hr;
-
-	hr = DCompositionCreateDevice(gfx->dxgi_device, &IID_IDCompositionDevice, ( void ** ) &gfx->dcomp_device);
 	return hr;
 }
 
 static void release_window_resources(FluxGraphics *gfx) {
 	if (gfx->d2d_context) ID2D1DeviceContext_SetTarget(gfx->d2d_context, NULL);
-	for (uint32_t i = 0; i < gfx->overlay_count; i++) FLUX_RELEASE(gfx->overlay_visuals [i]);
-	free(gfx->overlay_visuals);
-	gfx->overlay_visuals = NULL;
-	gfx->overlay_count   = 0;
-	gfx->overlay_cap     = 0;
+	flux_window_target_destroy(gfx->window_target);
+	gfx->window_target  = NULL;
+	gfx->popup_presented = false; /* target gone; re-establish on next enable call */
+	gfx->window_acrylic  = false;
 	FLUX_RELEASE(gfx->d2d_target);
-	FLUX_RELEASE(gfx->dcomp_target);
-	FLUX_RELEASE(gfx->root_visual);
-	FLUX_RELEASE(gfx->swap_visual);
 	FLUX_RELEASE(gfx->swap_chain);
 }
 
@@ -174,26 +165,24 @@ static HRESULT graphics_create_composition_swap_chain(FluxGraphics *gfx, UINT w,
 	);
 }
 
-static HRESULT graphics_create_dcomp_tree(FluxGraphics *gfx) {
-	HRESULT hr = IDCompositionDevice_CreateTargetForHwnd(gfx->dcomp_device, gfx->hwnd, TRUE, &gfx->dcomp_target);
-	if (FAILED(hr)) return hr;
+static HRESULT graphics_create_composition_target(FluxGraphics *gfx) {
+	gfx->window_target = flux_window_target_create(gfx->compositor, gfx->hwnd);
+	if (!gfx->window_target) return E_FAIL;
 
-	hr = IDCompositionDevice_CreateVisual(gfx->dcomp_device, &gfx->root_visual);
-	if (FAILED(hr)) return hr;
+	/* In composition mode the root visual hosts the reconciled visual tree, so
+	 * its content is the per-node surfaces — not the swap chain. Otherwise the
+	 * root sprite shows the swap chain that the classic D2D renderer draws into. */
+	if (!gfx->composition_mode) {
+		HRESULT hr = flux_window_target_set_swapchain(gfx->window_target, ( IUnknown * ) gfx->swap_chain);
+		if (FAILED(hr)) return hr;
+	}
 
-	hr = IDCompositionDevice_CreateVisual(gfx->dcomp_device, &gfx->swap_visual);
-	if (FAILED(hr)) return hr;
-
-	hr = IDCompositionVisual_SetContent(gfx->swap_visual, ( IUnknown * ) gfx->swap_chain);
-	if (FAILED(hr)) return hr;
-
-	hr = IDCompositionVisual_AddVisual(gfx->root_visual, gfx->swap_visual, FALSE, NULL);
-	if (FAILED(hr)) return hr;
-
-	hr = IDCompositionTarget_SetRoot(gfx->dcomp_target, gfx->root_visual);
-	if (FAILED(hr)) return hr;
-
-	return IDCompositionDevice_Commit(gfx->dcomp_device);
+	/* DesktopWindowTarget composition space is physical pixels, 1:1 with the swap
+	 * chain buffer; D2D handles DPI when rendering into that buffer. */
+	UINT w, h;
+	graphics_client_size(gfx, &w, &h);
+	flux_window_target_set_size(gfx->window_target, ( float ) w, ( float ) h);
+	return S_OK;
 }
 
 static HRESULT create_window_resources(FluxGraphics *gfx) {
@@ -210,7 +199,7 @@ static HRESULT create_window_resources(FluxGraphics *gfx) {
 	hr = graphics_create_d2d_target(gfx);
 	if (FAILED(hr)) return hr;
 
-	return graphics_create_dcomp_tree(gfx);
+	return graphics_create_composition_target(gfx);
 }
 
 FluxGraphics *flux_graphics_create(void) {
@@ -240,7 +229,8 @@ void flux_graphics_destroy(FluxGraphics *gfx) {
 
 	release_window_resources(gfx);
 
-	FLUX_RELEASE(gfx->dcomp_device);
+	flux_compositor_graphics_device_release(gfx->gdevice);
+	gfx->gdevice = NULL;
 	FLUX_RELEASE(gfx->d2d_context);
 	FLUX_RELEASE(gfx->d2d_device);
 	FLUX_RELEASE(gfx->d2d_factory);
@@ -250,16 +240,27 @@ void flux_graphics_destroy(FluxGraphics *gfx) {
 	FLUX_RELEASE(gfx->d3d_context);
 	FLUX_RELEASE(gfx->d3d_device);
 
+	flux_compositor_release(gfx->compositor);
+	gfx->compositor = NULL;
+
 	free(gfx);
 }
 
 HRESULT flux_graphics_attach(FluxGraphics *gfx, HWND hwnd) {
 	if (!gfx || !hwnd) return E_INVALIDARG;
-	gfx->hwnd      = hwnd;
-	gfx->hwnd_mode = false;
-	UINT dpi       = GetDpiForWindow(hwnd);
-	gfx->dpi.dpi_x = ( float ) dpi;
-	gfx->dpi.dpi_y = ( float ) dpi;
+	gfx->hwnd             = hwnd;
+	gfx->hwnd_mode        = false;
+	UINT dpi              = GetDpiForWindow(hwnd);
+	gfx->dpi.dpi_x        = ( float ) dpi;
+	gfx->dpi.dpi_y        = ( float ) dpi;
+
+	char env [4]          = {0};
+	gfx->composition_mode = GetEnvironmentVariableA("FLUX_USE_COMPOSITION", env, sizeof(env)) > 0 && env [0] == '1';
+
+	if (!gfx->compositor) {
+		gfx->compositor = flux_compositor_acquire();
+		if (!gfx->compositor) return E_FAIL;
+	}
 	return create_window_resources(gfx);
 }
 
@@ -303,7 +304,13 @@ HRESULT flux_graphics_resize(FluxGraphics *gfx, int width, int height) {
 	  = IDXGISwapChain1_ResizeBuffers(gfx->swap_chain, 0, ( UINT ) width, ( UINT ) height, DXGI_FORMAT_UNKNOWN, 0);
 	if (FAILED(hr)) return hr;
 
-	return graphics_create_d2d_target(gfx);
+	hr = graphics_create_d2d_target(gfx);
+	if (FAILED(hr)) return hr;
+
+	/* The swap chain object persists across ResizeBuffers, so its composition
+	 * surface stays bound; only the root visual extent needs updating. */
+	if (gfx->window_target) flux_window_target_set_size(gfx->window_target, ( float ) width, ( float ) height);
+	return S_OK;
 }
 
 void flux_graphics_set_dpi(FluxGraphics *gfx, FluxDpiInfo dpi) {
@@ -348,7 +355,10 @@ void flux_graphics_clear(FluxGraphics *gfx, FluxColor color) {
 }
 
 void flux_graphics_commit(FluxGraphics *gfx) {
-	if (gfx && gfx->dcomp_device) IDCompositionDevice_Commit(gfx->dcomp_device);
+	/* The WUC compositor commits its batch automatically when the thread's
+	 * DispatcherQueue ticks during the message pump; no explicit commit needed.
+	 * Swap chain content is presented separately via flux_graphics_present(). */
+	( void ) gfx;
 }
 
 FluxSize flux_graphics_get_target_size(FluxGraphics const *gfx) {
@@ -374,39 +384,65 @@ IDWriteFactory3 *flux_graphics_get_dwrite_factory(FluxGraphics *gfx) {
 	return gfx ? ( IDWriteFactory3 * ) gfx->dwrite_factory : NULL;
 }
 
-IDCompositionDevice *flux_graphics_get_dcomp_device(FluxGraphics *gfx) { return gfx ? gfx->dcomp_device : NULL; }
+/* Legacy DirectComposition accessors. The composition root is now a WUC
+ * DesktopWindowTarget (see src/compose/), so these no longer expose a
+ * DirectComposition device or visual. Retained as no-ops for ABI compatibility
+ * until overlay consumers (e.g. lottiedc) migrate to the WUC visual tree. */
+IDCompositionDevice *flux_graphics_get_dcomp_device(FluxGraphics *gfx) {
+	( void ) gfx;
+	return NULL;
+}
 
-IDCompositionVisual *flux_graphics_get_root_visual(FluxGraphics *gfx) { return gfx ? gfx->root_visual : NULL; }
-
-static bool          graphics_track_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual) {
-	if (gfx->overlay_count >= gfx->overlay_cap) {
-		uint32_t new_cap = gfx->overlay_cap ? gfx->overlay_cap * 2 : FLUX_GFX_OVERLAY_INITIAL_CAP;
-		void    *items   = realloc(gfx->overlay_visuals, ( size_t ) new_cap * sizeof(*gfx->overlay_visuals));
-		if (!items) return false;
-		gfx->overlay_visuals = ( IDCompositionVisual ** ) items;
-		gfx->overlay_cap     = new_cap;
-	}
-	IDCompositionVisual_AddRef(visual);
-	gfx->overlay_visuals [gfx->overlay_count++] = visual;
-	return true;
+IDCompositionVisual *flux_graphics_get_root_visual(FluxGraphics *gfx) {
+	( void ) gfx;
+	return NULL;
 }
 
 void flux_graphics_add_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual) {
-	if (!gfx || !gfx->root_visual || !visual) return;
-	if (FAILED(IDCompositionVisual_AddVisual(gfx->root_visual, visual, FALSE, NULL))) return;
-	if (!graphics_track_overlay_visual(gfx, visual)) IDCompositionVisual_RemoveVisual(gfx->root_visual, visual);
+	( void ) gfx;
+	( void ) visual;
 }
 
 void flux_graphics_remove_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual) {
-	if (!gfx || !visual) return;
-	if (gfx->root_visual) IDCompositionVisual_RemoveVisual(gfx->root_visual, visual);
+	( void ) gfx;
+	( void ) visual;
+}
 
-	for (uint32_t i = 0; i < gfx->overlay_count; i++) {
-		if (gfx->overlay_visuals [i] != visual) continue;
-		FLUX_RELEASE(gfx->overlay_visuals [i]);
-		gfx->overlay_visuals [i] = gfx->overlay_visuals [--gfx->overlay_count];
-		return;
+FluxCompositor *flux_graphics_compositor(FluxGraphics *gfx) { return gfx ? gfx->compositor : NULL; }
+
+bool            flux_graphics_composition_enabled(FluxGraphics const *gfx) { return gfx && gfx->composition_mode; }
+
+WUC_Visual     *flux_graphics_composition_root(FluxGraphics *gfx) {
+	return gfx ? flux_window_target_root(gfx->window_target) : NULL;
+}
+
+bool flux_graphics_enable_window_acrylic(FluxGraphics *gfx, float blur) {
+	if (!gfx || !gfx->composition_mode || !gfx->window_target || !gfx->swap_chain) return false;
+	if (gfx->popup_presented) return gfx->window_acrylic;
+
+	/* The swap chain (the popup's drawn chrome + content) composes on top in a
+	 * content child; presenting it is what makes the popup visible at all in
+	 * composition mode, so it must not depend on the acrylic step succeeding. */
+	if (FAILED(flux_window_target_present_swapchain_child(gfx->window_target, ( IUnknown * ) gfx->swap_chain)))
+		return false;
+	gfx->popup_presented = true;
+
+	/* Optional: a desktop-sampling acrylic backplate behind the content child.
+	 * If unavailable, the popup still renders (opaque) over an empty root. */
+	WUC_Brush *backdrop  = flux_effect_make_host_backdrop_blur(gfx->compositor, blur);
+	if (backdrop) {
+		flux_window_target_set_backdrop_brush(gfx->window_target, backdrop);
+		(( IUnknown * ) backdrop)->lpVtbl->Release(( IUnknown * ) backdrop);
+		gfx->window_acrylic = true;
 	}
+	return gfx->window_acrylic;
+}
+
+WUC_CompositionGraphicsDevice *flux_graphics_graphics_device(FluxGraphics *gfx) {
+	if (!gfx || !gfx->compositor || !gfx->d2d_device) return NULL;
+	if (!gfx->gdevice)
+		gfx->gdevice = flux_compositor_create_graphics_device(gfx->compositor, ( IUnknown * ) gfx->d2d_device);
+	return gfx->gdevice;
 }
 
 void flux_graphics_request_redraw(FluxGraphics *gfx) {
@@ -431,7 +467,8 @@ HRESULT flux_graphics_handle_device_change(FluxGraphics *gfx) {
 
 	release_window_resources(gfx);
 
-	FLUX_RELEASE(gfx->dcomp_device);
+	flux_compositor_graphics_device_release(gfx->gdevice);
+	gfx->gdevice = NULL;
 	FLUX_RELEASE(gfx->d2d_context);
 	FLUX_RELEASE(gfx->d2d_device);
 	FLUX_RELEASE(gfx->dxgi_device);

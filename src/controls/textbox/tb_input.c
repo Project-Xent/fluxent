@@ -102,8 +102,8 @@ static void tb_leave_number_step(FluxTextBoxInputData *tb) {
 static void tb_move_horizontal(FluxTextBoxInputData *tb, bool forward, bool ctrl, bool shift) {
 	uint32_t pos = tb->base.cursor_position;
 	if (forward)
-		pos = pos < tb->buf_len ? (ctrl ? tb_buffer_word_end(tb, pos) : tb_buffer_utf8_next(tb, pos)) : tb->buf_len;
-	else pos = pos > 0 ? (ctrl ? tb_buffer_word_start(tb, pos) : tb_buffer_utf8_prev(tb, pos)) : 0;
+		pos = pos < tb->buf_len ? (ctrl ? tb_buffer_word_end(tb, pos) : tb_grapheme_next(tb, pos)) : tb->buf_len;
+	else pos = pos > 0 ? (ctrl ? tb_buffer_word_start(tb, pos) : tb_grapheme_prev(tb, pos)) : 0;
 	tb_set_cursor(tb, pos, shift);
 	tb_update_scroll(tb);
 }
@@ -119,13 +119,13 @@ static void tb_delete_selection_or_cursor(FluxTextBoxInputData *tb, bool backwar
 		return;
 	}
 	if (backward && tb->base.cursor_position > 0) {
-		uint32_t prev = tb_buffer_utf8_prev(tb, tb->base.cursor_position);
+		uint32_t prev = tb_grapheme_prev(tb, tb->base.cursor_position);
 		tb_delete_range(tb, prev, tb->base.cursor_position);
 		tb_set_cursor(tb, prev, false);
 		return;
 	}
 	if (!backward && tb->base.cursor_position < tb->buf_len) {
-		uint32_t next = tb_buffer_utf8_next(tb, tb->base.cursor_position);
+		uint32_t next = tb_grapheme_next(tb, tb->base.cursor_position);
 		tb_delete_range(tb, tb->base.cursor_position, next);
 	}
 }

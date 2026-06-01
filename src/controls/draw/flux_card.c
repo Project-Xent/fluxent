@@ -12,6 +12,11 @@ void flux_draw_card(
 
 	FluxColor stroke = t ? t->card_stroke_default : flux_color_rgba(0, 0, 0, 20);
 
-	flux_fill_rounded_rect(rc, bounds, radius, bg);
+	if (rc->fill_sink) {
+		rc->fill_sink->color         = bg;
+		rc->fill_sink->corner_radius = radius;
+		rc->fill_sink->written       = true;
+	}
+	else { flux_fill_rounded_rect(rc, bounds, radius, bg); }
 	flux_draw_rounded_rect(rc, bounds, radius, stroke, 1.0f);
 }

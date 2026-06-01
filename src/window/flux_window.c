@@ -611,7 +611,15 @@ static bool window_handle_layout(WindowMessage const *m, LRESULT *result) {
 	case WM_DPICHANGED : *result = window_on_dpi_changed(m->win, m->hwnd, m->wp, m->lp); return true;
 	case WM_ERASEBKGND : *result = 1; return true;
 	case WM_PAINT      : *result = window_on_paint(m->win, m->hwnd); return true;
-	default            : return false;
+	case WM_GETOBJECT  : {
+		LRESULT uia = flux_window_uia_get_object(m->win, m->hwnd, m->wp, m->lp);
+		if (uia) {
+			*result = uia;
+			return true;
+		}
+		return false;
+	}
+	default : return false;
 	}
 }
 

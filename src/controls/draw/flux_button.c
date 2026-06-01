@@ -36,22 +36,22 @@ static ButtonColors button_colors_disabled(bool is_accent, bool is_subtle, FluxT
 	c.use_elevation          = false;
 
 	if (is_accent) {
-		c.fill   = t ? t->accent_disabled : ft_accent_disabled();
+		c.fill   = t->accent_disabled;
 		c.stroke = transparent;
-		c.text   = t ? t->text_on_accent_disabled : ft_text_on_accent_disabled();
+		c.text   = t->text_on_accent_disabled;
 		return c;
 	}
 
 	if (is_subtle) {
 		c.fill   = transparent;
 		c.stroke = transparent;
-		c.text   = t ? t->text_disabled : ft_text_disabled();
+		c.text   = t->text_disabled;
 		return c;
 	}
 
-	c.fill   = t ? t->ctrl_fill_disabled : ft_ctrl_fill_disabled();
-	c.stroke = t ? t->ctrl_stroke_default : ft_ctrl_stroke_default();
-	c.text   = t ? t->text_disabled : ft_text_disabled();
+	c.fill   = t->ctrl_fill_disabled;
+	c.stroke = t->ctrl_stroke_default;
+	c.text   = t->text_disabled;
 	return c;
 }
 
@@ -62,18 +62,18 @@ static ButtonColors button_colors_accent(FluxControlState const *state, FluxThem
 	c.stroke        = flux_color_rgba(0, 0, 0, 0);
 
 	if (state->pressed) {
-		c.fill = t ? t->accent_tertiary : ft_accent_tertiary();
-		c.text = t ? t->text_on_accent_secondary : ft_text_on_accent_secondary();
+		c.fill = t->accent_tertiary;
+		c.text = t->text_on_accent_secondary;
 		return c;
 	}
 	if (state->hovered) {
-		c.fill = t ? t->accent_secondary : ft_accent_secondary();
-		c.text = t ? t->text_on_accent_primary : ft_text_on_accent_primary();
+		c.fill = t->accent_secondary;
+		c.text = t->text_on_accent_primary;
 		return c;
 	}
 
-	c.fill = t ? t->accent_default : ft_accent_default();
-	c.text = t ? t->text_on_accent_primary : ft_text_on_accent_primary();
+	c.fill = t->accent_default;
+	c.text = t->text_on_accent_primary;
 	return c;
 }
 
@@ -83,18 +83,18 @@ static ButtonColors button_colors_subtle(FluxControlState const *state, FluxThem
 	c.use_elevation = false;
 
 	if (state->pressed) {
-		c.fill = t ? t->subtle_fill_tertiary : ft_subtle_fill_tertiary();
-		c.text = t ? t->text_secondary : ft_text_secondary();
+		c.fill = t->subtle_fill_tertiary;
+		c.text = t->text_secondary;
 		return c;
 	}
 	if (state->hovered) {
-		c.fill = t ? t->subtle_fill_secondary : ft_subtle_fill_secondary();
-		c.text = t ? t->text_primary : ft_text_primary();
+		c.fill = t->subtle_fill_secondary;
+		c.text = t->text_primary;
 		return c;
 	}
 
 	c.fill = flux_color_rgba(0, 0, 0, 0);
-	c.text = t ? t->text_primary : ft_text_primary();
+	c.text = t->text_primary;
 	return c;
 }
 
@@ -104,13 +104,13 @@ static ButtonColors button_colors_default(FluxControlState const *state, FluxThe
 
 	FluxColor transparent = flux_color_rgba(0, 0, 0, 0);
 	c.stroke              = transparent;
-	c.text                = t ? t->text_primary : ft_text_primary();
-	c.fill                = t ? t->ctrl_fill_default : ft_ctrl_fill_default();
-	if (state->hovered) c.fill = t ? t->ctrl_fill_secondary : ft_ctrl_fill_secondary();
+	c.text                = t->text_primary;
+	c.fill                = t->ctrl_fill_default;
+	if (state->hovered) c.fill = t->ctrl_fill_secondary;
 	if (state->pressed) {
-		c.fill   = t ? t->ctrl_fill_tertiary : ft_ctrl_fill_tertiary();
-		c.stroke = t ? t->ctrl_stroke_default : ft_ctrl_stroke_default();
-		c.text   = t ? t->text_secondary : ft_text_secondary();
+		c.fill   = t->ctrl_fill_tertiary;
+		c.stroke = t->ctrl_stroke_default;
+		c.text   = t->text_secondary;
 	}
 	return c;
 }
@@ -297,16 +297,22 @@ static void render_button_common(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state,
   bool force_accent
 ) {
-	FluxRect     sb     = flux_snap_bounds(bounds, 1.0f, 1.0f);
-	float        radius = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-	ButtonColors colors = resolve_button_colors(snap, state, force_accent, rc->theme);
+	FluxRect               sb     = flux_snap_bounds(bounds, 1.0f, 1.0f);
+	float                  radius = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
+	FluxThemeColors const *theme  = rc->theme ? rc->theme : flux_theme_default_colors();
+	ButtonColors           colors = resolve_button_colors(snap, state, force_accent, theme);
 
-	colors.fill         = apply_user_background(colors.fill, snap, state, colors.is_accent);
+	colors.fill                   = apply_user_background(colors.fill, snap, state, colors.is_accent);
 	button_update_animation(rc, snap, state, &colors);
 
 	FluxRect fill_rect   = button_fill_rect(&sb, colors.is_accent);
 	float    fill_radius = button_fill_radius(radius, colors.is_accent);
-	flux_fill_rounded_rect(rc, &fill_rect, fill_radius, colors.fill);
+	if (rc->fill_sink) {
+		rc->fill_sink->color         = colors.fill;
+		rc->fill_sink->corner_radius = fill_radius;
+		rc->fill_sink->written       = true;
+	}
+	else { flux_fill_rounded_rect(rc, &fill_rect, fill_radius, colors.fill); }
 	button_draw_border(rc, &sb, radius, &colors);
 
 	if (state->focused && state->enabled) flux_draw_focus_rect(rc, &sb, radius);

@@ -119,6 +119,12 @@ uint32_t      tb_utf8_next(char const *s, uint32_t len, uint32_t pos);
 uint32_t      tb_buffer_utf8_prev(FluxTextBoxInputData const *tb, uint32_t pos);
 /** @brief Gap-aware variant of @ref tb_utf8_next for textbox buffers. */
 uint32_t      tb_buffer_utf8_next(FluxTextBoxInputData const *tb, uint32_t pos);
+/** @brief Byte offset of the next grapheme cluster after @p pos, via DirectWrite
+ *  cluster analysis. Falls back to a single code point when no renderer is bound. */
+uint32_t      tb_grapheme_next(FluxTextBoxInputData *tb, uint32_t pos);
+/** @brief Byte offset of the previous grapheme cluster before @p pos, via DirectWrite
+ *  cluster analysis. Falls back to a single code point when no renderer is bound. */
+uint32_t      tb_grapheme_prev(FluxTextBoxInputData *tb, uint32_t pos);
 /** @brief Converts a UTF-16 unit index to a UTF-8 byte offset in @p s. */
 uint32_t      tb_utf16_to_byte_offset(char const *s, uint32_t len, uint32_t utf16_pos);
 /** @brief Converts a UTF-8 byte offset to a UTF-16 unit index in @p s. */

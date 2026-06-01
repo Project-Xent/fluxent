@@ -96,11 +96,10 @@ static void ensure_brush(FluxMenuFlyout *m, ID2D1DeviceContext *d2d) {
 }
 
 static void resolve_presenter_colors(ResolvedColors *r, FluxMenuFlyout const *m, bool dark) {
-	bool have_backdrop  = m->popup && flux_popup_has_system_backdrop(m->popup);
-	r->presenter_bg     = have_backdrop
-	                      ? (dark ? flux_color_rgba(0x2c, 0x2c, 0x2c, 0x7a) : flux_color_rgba(0xfc, 0xfc, 0xfc, 0x66))
-	                      : (dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9));
-	r->presenter_border = dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
+	( void ) m;
+	r->presenter_bg = dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
+	if (dark) r->presenter_border = flux_color_rgba(0, 0, 0, 0x33);
+	else r->presenter_border = flux_color_rgba(0, 0, 0, 0x0f);
 }
 
 static void resolve_text_colors(ResolvedColors *r, FluxThemeColors const *t, bool dark) {
@@ -199,16 +198,48 @@ menu_draw_presenter(FluxRenderContext const *rc, MenuPresenterLayout const *layo
 	);
 }
 
-static void menu_begin_scroll_clip(
-  FluxMenuFlyout *m, ID2D1RenderTarget *rt, MenuPresenterLayout const *layout, D2D1_MATRIX_3X2_F *prev_xform
+static void menu_set_scale_y(ID2D1RenderTarget *rt, float scale_y, float center_y) {
+	D2D1_MATRIX_3X2_F xform;
+	xform._11 = 1.0f;
+	xform._12 = 0.0f;
+	xform._21 = 0.0f;
+	xform._22 = scale_y;
+	xform._31 = 0.0f;
+	xform._32 = center_y * (1.0f - scale_y);
+	ID2D1RenderTarget_SetTransform(rt, &xform);
+}
+
+static void menu_draw_presenter_transitioned(
+  FluxRenderContext const *rc, ID2D1RenderTarget *rt, MenuPresenterLayout const *layout, ResolvedColors const *colors,
+  FluxPopupMenuTransition const *tr
 ) {
-	D2D1_RECT_F clip_rect
-	  = {layout->content_x0, layout->content_y0, layout->content_x0 + layout->content_w, layout->content_y1};
+	if (!tr->active) {
+		menu_draw_presenter(rc, layout, colors);
+		return;
+	}
+
+	D2D1_MATRIX_3X2_F prev_xform;
+	ID2D1RenderTarget_GetTransform(rt, &prev_xform);
+	menu_set_scale_y(rt, tr->border_scale_y, tr->border_center_y);
+	menu_draw_presenter(rc, layout, colors);
+	ID2D1RenderTarget_SetTransform(rt, &prev_xform);
+}
+
+static void menu_begin_scroll_clip(
+  FluxMenuFlyout *m, ID2D1RenderTarget *rt, MenuPresenterLayout const *layout, FluxPopupMenuTransition const *tr,
+  D2D1_MATRIX_3X2_F *prev_xform
+) {
+	D2D1_RECT_F clip_rect = {
+	  layout->content_x0,
+	  layout->content_y0 + tr->clip_translate_y,
+	  layout->content_x0 + layout->content_w,
+	  layout->content_y1 + tr->clip_translate_y,
+	};
 	ID2D1RenderTarget_PushAxisAlignedClip(rt, &clip_rect, D2D1_ANTIALIAS_MODE_ALIASED);
 	ID2D1RenderTarget_GetTransform(rt, prev_xform);
 
 	D2D1_MATRIX_3X2_F scroll_xform  = *prev_xform;
-	scroll_xform._32               -= m->scroll_y;
+	scroll_xform._32               += tr->content_translate_y - m->scroll_y;
 	ID2D1RenderTarget_SetTransform(rt, &scroll_xform);
 }
 
@@ -398,15 +429,17 @@ void menu_paint(void *ctx, FluxPopup *popup) {
 	bool                   is_dark = false;
 	menu_resolve_theme(m, &theme, &is_dark);
 
-	ResolvedColors      c      = resolve_colors(m);
-	FluxRenderContext   rc     = menu_render_context(m, d2d, theme, is_dark);
-	ID2D1RenderTarget  *rt     = ( ID2D1RenderTarget * ) d2d;
-	MenuPresenterLayout layout = menu_presenter_layout(m);
-	MenuDrawContext     dc     = {.menu = m, .rc = &rc, .rt = rt, .layout = &layout, .colors = &c};
-	D2D1_MATRIX_3X2_F   prev_xform;
+	ResolvedColors          c      = resolve_colors(m);
+	c.presenter_bg                 = flux_popup_acrylic_tint(popup, c.presenter_bg); /* reveal blurred backdrop */
+	FluxRenderContext       rc     = menu_render_context(m, d2d, theme, is_dark);
+	ID2D1RenderTarget      *rt     = ( ID2D1RenderTarget * ) d2d;
+	MenuPresenterLayout     layout = menu_presenter_layout(m);
+	MenuDrawContext         dc     = {.menu = m, .rc = &rc, .rt = rt, .layout = &layout, .colors = &c};
+	D2D1_MATRIX_3X2_F       prev_xform;
+	FluxPopupMenuTransition tr = flux_popup_get_menu_transition(popup, layout.bounds.h);
 
-	menu_draw_presenter(&rc, &layout, &c);
-	menu_begin_scroll_clip(m, rt, &layout, &prev_xform);
+	menu_draw_presenter_transitioned(&rc, rt, &layout, &c, &tr);
+	menu_begin_scroll_clip(m, rt, &layout, &tr, &prev_xform);
 	for (int i = 0; i < m->item_count; i++) {
 		StoredItem *it = &m->items [i];
 		if (it->type == FLUX_MENU_ITEM_SEPARATOR) menu_draw_separator(&dc, it);

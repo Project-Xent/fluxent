@@ -1,3 +1,7 @@
+#ifndef COBJMACROS
+  #define COBJMACROS
+#endif
+
 #include "fluxent/flux_theme.h"
 #include <stdlib.h>
 #include <string.h>
@@ -9,12 +13,18 @@
   #include <windows.h>
 #endif
 
+#include <cwinrt/event.h>
+#include <cwinrt/Windows.UI.ViewManagement.h>
+
 struct FluxThemeManager {
-	FluxThemeMode   mode;
-	FluxThemeColors light;
-	FluxThemeColors dark;
-	FluxThemeColors current;
-	uint32_t        version;
+	FluxThemeMode     mode;
+	FluxThemeColors   light;
+	FluxThemeColors   dark;
+	FluxThemeColors   current;
+	uint32_t          version;
+	WUIVI_UISettings *settings;     /**< System UISettings; source of the accent palette + change events. */
+	cwinrt_token      accent_token; /**< Subscription to color-values-changed (0 when unsubscribed). */
+	volatile LONG     accent_dirty; /**< Set on the event thread; consumed on the UI thread in flux_theme_colors. */
 };
 
 static void init_light_palette(FluxThemeColors *c) {
@@ -121,6 +131,17 @@ static void init_dark_palette(FluxThemeColors *c) {
 	c->solid_background                = flux_color_rgb(32, 32, 32);
 }
 
+static void theme_apply_accent(FluxThemeColors *c, WUI_Color a) {
+	c->accent_default   = flux_color_rgb(a.R, a.G, a.B);
+	c->accent_secondary = flux_color_rgba(a.R, a.G, a.B, 0xe6);
+	c->accent_tertiary  = flux_color_rgba(a.R, a.G, a.B, 0xcc);
+}
+
+static bool theme_read_system_accent(WUIVI_UISettings *settings, WUI_Color *out) {
+	if (!settings) return false;
+	return SUCCEEDED(wuivi_u_i_settings_get_color_value(settings, WUIVI_UIColorType_Accent, out));
+}
+
 static void resolve_current(FluxThemeManager *tm) {
 	bool dark = false;
 	switch (tm->mode) {
@@ -131,6 +152,26 @@ static void resolve_current(FluxThemeManager *tm) {
 	memcpy(&tm->current, dark ? &tm->dark : &tm->light, sizeof(FluxThemeColors));
 }
 
+static void theme_rebuild(FluxThemeManager *tm) {
+	init_light_palette(&tm->light);
+	init_dark_palette(&tm->dark);
+
+	WUI_Color accent;
+	if (theme_read_system_accent(tm->settings, &accent)) {
+		theme_apply_accent(&tm->light, accent);
+		theme_apply_accent(&tm->dark, accent);
+	}
+	resolve_current(tm);
+	tm->version++;
+}
+
+static void theme_on_color_values_changed(void *sender, void *args, void *ctx) {
+	FluxThemeManager *tm = ( FluxThemeManager * ) ctx;
+	( void ) sender;
+	( void ) args;
+	if (tm) InterlockedExchange(&tm->accent_dirty, 1);
+}
+
 FluxThemeManager *flux_theme_create(void) {
 	FluxThemeManager *tm = calloc(1, sizeof(FluxThemeManager));
 	if (!tm) return NULL;
@@ -138,14 +179,21 @@ FluxThemeManager *flux_theme_create(void) {
 	tm->mode    = FLUX_THEME_LIGHT;
 	tm->version = 1;
 
-	init_light_palette(&tm->light);
-	init_dark_palette(&tm->dark);
-	resolve_current(tm);
+	if (SUCCEEDED(wuivi_u_i_settings_new(&tm->settings)) && tm->settings)
+		tm->accent_token = wuivi_u_i_settings_on_color_values_changed(tm->settings, theme_on_color_values_changed, tm);
 
+	theme_rebuild(tm);
 	return tm;
 }
 
-void flux_theme_destroy(FluxThemeManager *tm) { free(tm); }
+void flux_theme_destroy(FluxThemeManager *tm) {
+	if (!tm) return;
+	if (tm->settings) {
+		if (tm->accent_token.value) wuivi_u_i_settings_off_color_values_changed(tm->settings, tm->accent_token);
+		(( IUnknown * ) tm->settings)->lpVtbl->Release(( IUnknown * ) tm->settings);
+	}
+	free(tm);
+}
 
 void flux_theme_set_mode(FluxThemeManager *tm, FluxThemeMode mode) {
 	if (!tm) return;
@@ -159,9 +207,20 @@ FluxThemeMode flux_theme_get_mode(FluxThemeManager const *tm) {
 	return tm->mode;
 }
 
-FluxThemeColors const *flux_theme_colors(FluxThemeManager const *tm) {
+FluxThemeColors const *flux_theme_colors(FluxThemeManager *tm) {
 	if (!tm) return NULL;
+	if (InterlockedExchange(&tm->accent_dirty, 0)) theme_rebuild(tm);
 	return &tm->current;
+}
+
+FluxThemeColors const *flux_theme_default_colors(void) {
+	static FluxThemeColors c;
+	static bool            ready = false;
+	if (!ready) {
+		init_light_palette(&c);
+		ready = true;
+	}
+	return &c;
 }
 
 uint32_t flux_theme_version(FluxThemeManager const *tm) {

@@ -92,8 +92,14 @@ void                            flux_theme_set_mode(FluxThemeManager *tm, FluxTh
 /** @brief Get the active theme mode. */
 FluxThemeMode                   flux_theme_get_mode(FluxThemeManager const *tm);
 
-/** @brief Return the resolved colors for the currently active theme. */
-FluxThemeColors const          *flux_theme_colors(FluxThemeManager const *tm);
+/** @brief Return the resolved colors for the currently active theme.
+ *  Applies any pending system accent change on the calling (UI) thread. */
+FluxThemeColors const          *flux_theme_colors(FluxThemeManager *tm);
+
+/** @brief Return the built-in default (light) palette. Never NULL; use as a
+ *  fallback so draw code can read colors unconditionally instead of guarding
+ *  every field against a missing theme. */
+FluxThemeColors const          *flux_theme_default_colors(void);
 
 /** @brief Return a version counter incremented whenever theme colors may have changed. */
 uint32_t                        flux_theme_version(FluxThemeManager const *tm);

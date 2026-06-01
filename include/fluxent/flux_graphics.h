@@ -89,12 +89,12 @@ void                               flux_graphics_destroy(FluxGraphics *gfx);
 HRESULT                            flux_graphics_attach(FluxGraphics *gfx, HWND hwnd);
 
 /**
- * @brief Attach graphics to a window for DWM system backdrop compositing.
+ * @brief Attach graphics directly to an HWND swap chain.
  *
- * Creates a swap chain bound directly to the HWND (not DirectComposition).
- * This mode is required for DWM system backdrop (acrylic/mica) to show
- * through transparent areas in the D2D content. Use this for popup windows
- * that enable DWMWA_SYSTEMBACKDROP_TYPE.
+ * Creates a swap chain bound directly to the HWND instead of a
+ * DirectComposition visual tree. Use only for windows that are known to
+ * support direct HWND swap-chain presentation; popup windows in Fluxent use
+ * flux_graphics_attach() because they rely on the DirectComposition path.
  *
  * @param gfx Graphics context.
  * @param hwnd Window handle.

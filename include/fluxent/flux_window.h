@@ -37,6 +37,9 @@ typedef void                  (*FluxKeyCallback)(void *ctx, unsigned int vk, boo
 typedef void                  (*FluxCharCallback)(void *ctx, wchar_t ch);
 typedef void                  (*FluxImeCompositionCallback)(void *ctx, wchar_t const *text, int cursor_pos);
 typedef void                  (*FluxSettingChangedCallback)(void *ctx);
+/** @brief Returns a UIA root provider (IRawElementProviderSimple* as void*) for WM_GETOBJECT;
+ *  the caller releases it. Return NULL to fall back to default handling. */
+typedef void                 *(*FluxUiaProviderCallback)(void *ctx, void *hwnd);
 
 typedef struct FluxWindowConfig {
 	wchar_t const *title;
@@ -77,6 +80,8 @@ void            flux_window_set_char_callback(FluxWindow *win, FluxCharCallback 
 void            flux_window_set_ime_composition_callback(FluxWindow *win, FluxImeCompositionCallback cb, void *ctx);
 /** @brief Set the settings/theme changed callback. */
 void            flux_window_set_setting_changed_callback(FluxWindow *win, FluxSettingChangedCallback cb, void *ctx);
+/** @brief Set the UIA root-provider callback (answers WM_GETOBJECT for accessibility). */
+void            flux_window_set_uia_provider_callback(FluxWindow *win, FluxUiaProviderCallback cb, void *ctx);
 
 /** @brief Set the DWM backdrop type. */
 void            flux_window_set_backdrop(FluxWindow *win, int backdrop_type);

@@ -71,49 +71,63 @@ typedef enum FluxPopupAnimStyle
 } FluxPopupAnimStyle;
 
 /** @brief Set the entrance transition style before showing the popup. */
-void         flux_popup_set_anim_style(FluxPopup *popup, FluxPopupAnimStyle style);
+void flux_popup_set_anim_style(FluxPopup *popup, FluxPopupAnimStyle style);
+
+/**
+ * @brief MenuPopupThemeTransition values for renderers that split border/content drawing.
+ */
+typedef struct FluxPopupMenuTransition {
+	bool  active;
+	float border_scale_y;
+	float border_center_y;
+	float content_translate_y;
+	float clip_translate_y;
+} FluxPopupMenuTransition;
+
+/** @brief Resolve WinUI-style MenuPopupThemeTransition values for an opened menu length. */
+FluxPopupMenuTransition flux_popup_get_menu_transition(FluxPopup const *popup, float opened_length);
 
 /**
  * @brief Dismiss (hide) the popup.
  */
-void         flux_popup_dismiss(FluxPopup *popup);
+void                    flux_popup_dismiss(FluxPopup *popup);
 
 /**
  * @brief Update popup position (call when the owner window moves/resizes).
  */
-void         flux_popup_update_position(FluxPopup *popup);
+void                    flux_popup_update_position(FluxPopup *popup);
 
 /**
  * @brief Returns true if the popup is currently visible.
  */
-bool         flux_popup_is_visible(FluxPopup const *popup);
+bool                    flux_popup_is_visible(FluxPopup const *popup);
 
 /**
  * @brief Set the desired content size for the popup.
  * The popup window will be resized to fit this content.
  */
-void         flux_popup_set_size(FluxPopup *popup, float width, float height);
+void                    flux_popup_set_size(FluxPopup *popup, float width, float height);
 
 /**
  * @brief Set whether clicking outside the popup should dismiss it.
  * Default is true.
  */
-void         flux_popup_set_dismiss_on_outside(FluxPopup *popup, bool dismiss);
+void                    flux_popup_set_dismiss_on_outside(FluxPopup *popup, bool dismiss);
 
 /**
  * @brief Callback invoked when a popup is dismissed.
  */
-typedef void (*FluxPopupDismissCallback)(void *ctx);
+typedef void            (*FluxPopupDismissCallback)(void *ctx);
 /** @brief Set a callback for when the popup is dismissed. */
-void         flux_popup_set_dismiss_callback(FluxPopup *popup, FluxPopupDismissCallback cb, void *ctx);
+void                    flux_popup_set_dismiss_callback(FluxPopup *popup, FluxPopupDismissCallback cb, void *ctx);
 
 /**
  * @brief Paint callback called while the popup is drawing.
  * The callback should draw tooltip/flyout content using the popup's graphics.
  */
-typedef void (*FluxPopupPaintCallback)(void *ctx, FluxPopup *popup);
+typedef void            (*FluxPopupPaintCallback)(void *ctx, FluxPopup *popup);
 /** @brief Set the popup paint callback. */
-void         flux_popup_set_paint_callback(FluxPopup *popup, FluxPopupPaintCallback cb, void *ctx);
+void                    flux_popup_set_paint_callback(FluxPopup *popup, FluxPopupPaintCallback cb, void *ctx);
 
 /**
  * @brief Mouse event types forwarded from the popup window.
@@ -146,18 +160,22 @@ FluxGraphics *flux_popup_get_graphics(FluxPopup *popup);
 HWND          flux_popup_get_hwnd(FluxPopup *popup);
 
 /**
- * @brief Try to enable a Windows 11 transient acrylic system backdrop.
- * Returns true when the attribute was successfully applied. Returns
- * false when the backdrop is unavailable and callers should draw a solid fallback.
+ * @brief Whether the popup window currently has a host-backdrop acrylic
+ * backplate behind its content (composition mode only).
+ *
+ * Chrome painters should draw their background as a translucent tint when this
+ * is true, so the blurred desktop behind the window shows through.
  */
-bool          flux_popup_enable_system_backdrop(FluxPopup *popup, bool is_dark);
+bool          flux_popup_acrylic_active(FluxPopup const *popup);
 
 /**
- * @brief Query whether the popup currently has a working system backdrop.
- * Controls use this to decide whether to draw an opaque fallback or
- * leave the card transparent.
+ * @brief Tint a chrome fill for acrylic: returns @p fill scaled to a translucent
+ * tint when the popup's acrylic backplate is active, otherwise @p fill unchanged.
+ *
+ * Lets chrome painters stay agnostic — call it on the background color before
+ * filling, and the blurred backdrop shows through only when acrylic is on.
  */
-bool          flux_popup_has_system_backdrop(FluxPopup const *popup);
+FluxColor     flux_popup_acrylic_tint(FluxPopup const *popup, FluxColor fill);
 
 /**
  * @brief Set the maximum permitted popup content height in DIPs. The popup

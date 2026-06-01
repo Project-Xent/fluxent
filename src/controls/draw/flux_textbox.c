@@ -455,7 +455,12 @@ static void textbox_draw_fill(
 		fill        = tweened;
 		if (active && rc->animations_active) *rc->animations_active = true;
 	}
-	flux_fill_rounded_rect(rc, bounds, radius, fill);
+	if (rc->fill_sink) {
+		rc->fill_sink->color         = fill;
+		rc->fill_sink->corner_radius = radius;
+		rc->fill_sink->written       = true;
+	}
+	else { flux_fill_rounded_rect(rc, bounds, radius, fill); }
 }
 
 static void

@@ -91,6 +91,12 @@ typedef struct FluxTextSelectionQuery {
 	uint32_t            max_rects;
 } FluxTextSelectionQuery;
 
+/** @brief Grapheme-cluster navigation input. @ref index is a UTF-16 code-unit offset. */
+typedef struct FluxTextClusterQuery {
+	FluxTextLayoutQuery layout;
+	uint32_t            index;
+} FluxTextClusterQuery;
+
 /**
  * @brief Create a text renderer.
  *
@@ -193,6 +199,19 @@ FluxRect flux_text_caret_rect(FluxTextCaretQuery const *query);
  * @return Number of rectangles written to out_rects.
  */
 uint32_t flux_text_selection_rects(FluxTextSelectionQuery const *query);
+
+/**
+ * @brief UTF-16 offset of the next grapheme-cluster boundary at or after the
+ * query index, using DirectWrite cluster analysis. Returns the text's UTF-16
+ * length when already at the end.
+ */
+uint32_t flux_text_cluster_next(FluxTextClusterQuery const *query);
+
+/**
+ * @brief UTF-16 offset of the previous grapheme-cluster boundary before the
+ * query index, using DirectWrite cluster analysis. Returns 0 at the start.
+ */
+uint32_t flux_text_cluster_prev(FluxTextClusterQuery const *query);
 
 #ifdef __cplusplus
 }

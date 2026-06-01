@@ -21,6 +21,7 @@ compile_commands.json
 *.idb
 *.pch
 *.dSYM/
+*.zip
 
 # Visual Studio
 .vs/

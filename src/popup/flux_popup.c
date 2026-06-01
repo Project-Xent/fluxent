@@ -1,4 +1,5 @@
 #include "fluxent/flux_popup.h"
+#include "graphics/flux_graphics_compose.h"
 #include "render/flux_scroll_geom.h"
 
 #ifndef COBJMACROS
@@ -7,38 +8,17 @@
 
 #include <cd2d.h>
 #include <windows.h>
-#include <dwmapi.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-
-/* Windows 11 DWM backdrop attributes (some SDKs are missing these). */
-#ifndef DWMWA_SYSTEMBACKDROP_TYPE
-  #define DWMWA_SYSTEMBACKDROP_TYPE 38
-#endif
-#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
-  #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
-#endif
-#ifndef DWMSBT_TRANSIENTWINDOW
-  #define DWMSBT_TRANSIENTWINDOW 3
-#endif
-#ifndef DWMSBT_NONE
-  #define DWMSBT_NONE 1
-#endif
-#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
-  #define DWMWA_WINDOW_CORNER_PREFERENCE 33
-#endif
-#ifndef DWMWCP_DEFAULT
-  #define DWMWCP_DEFAULT    0
-  #define DWMWCP_DONOTROUND 1
-  #define DWMWCP_ROUND      2
-  #define DWMWCP_ROUNDSMALL 3
-#endif
 
 typedef struct FluxPopupAnim {
 	FluxPopupAnimStyle style;
 	bool               active;
 	bool               is_layered;
+	float              progress;
+	ULONGLONG          start_ms;
+	DWORD              duration_ms;
 	int                final_x, final_y, final_pw, final_ph;
 	FluxPlacement      final_placement;
 } FluxPopupAnim;
@@ -71,8 +51,9 @@ struct FluxPopup {
 	void                    *mouse_ctx;
 	bool                     mouse_tracking;
 
-	bool                     backdrop_enabled;
 	float                    max_content_h; /* 0 = no clamp */
+
+	bool                     acrylic_active; /* host-backdrop backplate live this frame (composition mode) */
 
 	FluxPopupAnim            anim;
 };
@@ -111,10 +92,17 @@ static void popup_registry_remove(FluxPopup *p) {
 	}
 }
 
-/* WinUI 3 MenuPopupThemeTransition: ScaleY 0.5→1.0 from anchor edge, 250 ms, Cubic-Bezier(0,0,0,1).
+/* WinUI 3 MenuPopupThemeTransition: ScaleY 0.5->1.0 from anchor edge, 250 ms, Cubic-Bezier(0,0,0,1).
  * Source: microsoft-ui-xaml MenuPopupThemeTransition_Partial.h, closedRatio=0.5. */
-/* PopupThemeTransition (Flyout): translate 50 DIP + fade, 167 ms, ease-out. */
-#define POPUP_FLYOUT_OFFSET_DIP 50.0f
+/* PopupThemeTransition (Flyout): translate 50 DIP, 167 ms, ease-out. */
+#define POPUP_ANIM_TIMER_ID      1
+#define POPUP_ANIM_TIMER_MS      16
+#define POPUP_MENU_DURATION_MS   250
+#define POPUP_MENU_CLOSED_SCALE  0.5f
+#define POPUP_FLYOUT_DURATION_MS 167
+#define POPUP_FLYOUT_OFFSET_DIP  50.0f
+/* Gaussian std-dev for the popup window's host-backdrop acrylic (composition). */
+#define POPUP_ACRYLIC_BLUR       30.0f
 
 static LRESULT CALLBACK popup_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 static void             popup_position(FluxPopup *popup);
@@ -186,6 +174,7 @@ void flux_popup_destroy(FluxPopup *popup) {
 	if (!popup) return;
 	popup_registry_remove(popup);
 	if (popup->popup_hwnd) {
+		KillTimer(popup->popup_hwnd, POPUP_ANIM_TIMER_ID);
 		SetWindowLongPtrW(popup->popup_hwnd, GWLP_USERDATA, 0);
 		DestroyWindow(popup->popup_hwnd);
 	}
@@ -387,19 +376,39 @@ static void popup_position(FluxPopup *popup) {
 	flux_graphics_resize(popup->graphics, pw, ph);
 }
 
-/* Resize HWND each frame so DWM backdrop tracks ScaleY — skips flux_graphics_resize() to avoid ResizeBuffers judder. */
-static void popup_apply_animated_rect(FluxPopup *popup, float scaleY) {
-	if (!popup || !popup->popup_hwnd || popup->anim.final_ph <= 0) return;
+static float popup_clampf(float v, float lo, float hi) {
+	if (v < lo) return lo;
+	if (v > hi) return hi;
+	return v;
+}
 
-	int cur_ph = ( int ) (( float ) popup->anim.final_ph * scaleY + 0.5f);
-	if (cur_ph < 1) cur_ph = 1;
+static float popup_cubic_bezier(float t, float x1, float y1, float x2, float y2) {
+	t       = popup_clampf(t, 0.0f, 1.0f);
+	float u = t;
 
-	int cur_y = popup->anim.final_y;
-	if (popup->anim.final_placement == FLUX_PLACEMENT_TOP)
-		cur_y = popup->anim.final_y + (popup->anim.final_ph - cur_ph);
+	for (int i = 0; i < 6; i++) {
+		float inv = 1.0f - u;
+		float x   = 3.0f * inv * inv * u * x1 + 3.0f * inv * u * u * x2 + u * u * u;
+		float dx  = 3.0f * inv * inv * x1 + 6.0f * inv * u * (x2 - x1) + 3.0f * u * u * (1.0f - x2);
+		if (fabsf(dx) < 0.0001f) break;
+		u -= (x - t) / dx;
+		u  = popup_clampf(u, 0.0f, 1.0f);
+	}
 
+	float inv = 1.0f - u;
+	return 3.0f * inv * inv * u * y1 + 3.0f * inv * u * u * y2 + u * u * u;
+}
+
+static float popup_menu_ease(float t) { return popup_cubic_bezier(t, 0.0f, 0.0f, 0.0f, 1.0f); }
+
+static float popup_flyout_ease(float t) { return popup_cubic_bezier(t, 0.0f, 0.0f, 0.0f, 1.0f); }
+
+static void  popup_apply_menu_frame(FluxPopup *popup, float t) {
+	if (!popup || !popup->popup_hwnd) return;
+	popup->anim.progress = popup_clampf(t, 0.0f, 1.0f);
 	SetWindowPos(
-	  popup->popup_hwnd, HWND_TOPMOST, popup->anim.final_x, cur_y, popup->anim.final_pw, cur_ph, SWP_NOACTIVATE
+	  popup->popup_hwnd, HWND_TOPMOST, popup->anim.final_x, popup->anim.final_y, popup->anim.final_pw,
+	  popup->anim.final_ph, SWP_NOACTIVATE | SWP_NOREDRAW
 	);
 }
 
@@ -436,6 +445,50 @@ static void popup_apply_tooltip_frame(FluxPopup *popup, float t) {
 	SetLayeredWindowAttributes(popup->popup_hwnd, 0, alpha, LWA_ALPHA);
 }
 
+static void popup_apply_open_frame(FluxPopup *popup, float t) {
+	switch (popup->anim.style) {
+	case FLUX_POPUP_ANIM_MENU    : popup_apply_menu_frame(popup, popup_menu_ease(t)); break;
+	case FLUX_POPUP_ANIM_FLYOUT  : popup_apply_flyout_frame(popup, popup_flyout_ease(t)); break;
+	case FLUX_POPUP_ANIM_TOOLTIP : popup_apply_tooltip_frame(popup, t); break;
+	case FLUX_POPUP_ANIM_NONE    :
+	default                      : break;
+	}
+}
+
+static DWORD popup_open_duration(FluxPopupAnimStyle style) {
+	switch (style) {
+	case FLUX_POPUP_ANIM_MENU   : return POPUP_MENU_DURATION_MS;
+	case FLUX_POPUP_ANIM_FLYOUT : return POPUP_FLYOUT_DURATION_MS;
+	default                     : return 0;
+	}
+}
+
+static void popup_stop_animation(FluxPopup *popup) {
+	if (!popup || !popup->popup_hwnd) return;
+	KillTimer(popup->popup_hwnd, POPUP_ANIM_TIMER_ID);
+	popup->anim.active   = false;
+	popup->anim.progress = 1.0f;
+}
+
+static void popup_start_open_animation(FluxPopup *popup) {
+	if (!popup || !popup->popup_hwnd) return;
+
+	popup_stop_animation(popup);
+	popup->anim.duration_ms = popup_open_duration(popup->anim.style);
+	if (popup->anim.duration_ms == 0) {
+		popup_apply_open_frame(popup, 1.0f);
+		return;
+	}
+
+	popup->anim.active   = true;
+	popup->anim.start_ms = GetTickCount64();
+	popup_apply_open_frame(popup, 0.0f);
+	if (!SetTimer(popup->popup_hwnd, POPUP_ANIM_TIMER_ID, POPUP_ANIM_TIMER_MS, NULL)) {
+		popup_apply_open_frame(popup, 1.0f);
+		popup->anim.active = false;
+	}
+}
+
 void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement) {
 	if (!popup) return;
 
@@ -445,16 +498,7 @@ void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement)
 
 	popup_position(popup);
 
-	popup->anim.active = false;
-
-	switch (popup->anim.style) {
-	case FLUX_POPUP_ANIM_FLYOUT  : popup_apply_flyout_frame(popup, 1.0f); break;
-	case FLUX_POPUP_ANIM_TOOLTIP : popup_apply_tooltip_frame(popup, 1.0f); break;
-	case FLUX_POPUP_ANIM_NONE    : break;
-	case FLUX_POPUP_ANIM_MENU    :
-	default                      : popup_apply_animated_rect(popup, 1.0f); break;
-	}
-
+	popup_start_open_animation(popup);
 	ShowWindow(popup->popup_hwnd, SW_SHOWNOACTIVATE);
 	InvalidateRect(popup->popup_hwnd, NULL, FALSE);
 }
@@ -462,9 +506,8 @@ void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement)
 void flux_popup_dismiss(FluxPopup *popup) {
 	if (!popup || !popup->is_visible) return;
 
-	popup->is_visible  = false;
-
-	popup->anim.active = false;
+	popup->is_visible = false;
+	popup_stop_animation(popup);
 
 	ShowWindow(popup->popup_hwnd, SW_HIDE);
 	if (popup->dismiss_cb) popup->dismiss_cb(popup->dismiss_ctx);
@@ -475,7 +518,31 @@ void flux_popup_update_position(FluxPopup *popup) {
 	popup_position(popup);
 }
 
-bool flux_popup_is_visible(FluxPopup const *popup) { return popup ? popup->is_visible : false; }
+bool                    flux_popup_is_visible(FluxPopup const *popup) { return popup ? popup->is_visible : false; }
+
+FluxPopupMenuTransition flux_popup_get_menu_transition(FluxPopup const *popup, float opened_length) {
+	FluxPopupMenuTransition tr = {
+	  .active              = false,
+	  .border_scale_y      = 1.0f,
+	  .border_center_y     = 0.0f,
+	  .content_translate_y = 0.0f,
+	  .clip_translate_y    = 0.0f,
+	};
+	if (!popup || !popup->anim.active || popup->anim.style != FLUX_POPUP_ANIM_MENU) return tr;
+	if (popup->anim.final_placement != FLUX_PLACEMENT_TOP && popup->anim.final_placement != FLUX_PLACEMENT_BOTTOM)
+		return tr;
+
+	float progress         = popup_clampf(popup->anim.progress, 0.0f, 1.0f);
+	float remaining        = opened_length * POPUP_MENU_CLOSED_SCALE * (1.0f - progress);
+	float direction        = popup->anim.final_placement == FLUX_PLACEMENT_BOTTOM ? 1.0f : -1.0f;
+
+	tr.active              = true;
+	tr.border_scale_y      = 1.0f - POPUP_MENU_CLOSED_SCALE * (1.0f - progress);
+	tr.border_center_y     = popup->anim.final_placement == FLUX_PLACEMENT_TOP ? opened_length : 0.0f;
+	tr.content_translate_y = direction * remaining;
+	tr.clip_translate_y    = -tr.content_translate_y;
+	return tr;
+}
 
 void flux_popup_set_paint_callback(FluxPopup *popup, FluxPopupPaintCallback cb, void *ctx) {
 	if (!popup) return;
@@ -493,30 +560,20 @@ FluxGraphics *flux_popup_get_graphics(FluxPopup *popup) { return popup ? popup->
 
 HWND          flux_popup_get_hwnd(FluxPopup *popup) { return popup ? popup->popup_hwnd : NULL; }
 
-bool          flux_popup_enable_system_backdrop(FluxPopup *popup, bool is_dark) {
-	if (!popup || !popup->popup_hwnd) return false;
+bool          flux_popup_acrylic_active(FluxPopup const *popup) { return popup && popup->acrylic_active; }
 
-	/* Dark-mode tint: set before backdrop type so first DWM frame uses correct tint. */
-	BOOL dark = is_dark ? TRUE : FALSE;
-	DwmSetWindowAttribute(popup->popup_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
+/* WinUI flyout/menu acrylic keeps the surface fairly opaque for legibility while
+ * still revealing the blurred backdrop. Tuning value (GPU-validated). */
+#define POPUP_ACRYLIC_TINT_OPACITY 0.80f
 
-	/* DWMWCP_ROUND clips DWM acrylic to match the 8-DIP D2D card corners. */
-	int corner = DWMWCP_ROUND;
-	DwmSetWindowAttribute(popup->popup_hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
-
-	int     backdrop = DWMSBT_TRANSIENTWINDOW;
-	HRESULT hr       = DwmSetWindowAttribute(popup->popup_hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
-	if (SUCCEEDED(hr)) {
-		popup->backdrop_enabled = true;
-		return true;
-	}
-	popup->backdrop_enabled = false;
-	return false;
+FluxColor flux_popup_acrylic_tint(FluxPopup const *popup, FluxColor fill) {
+	if (!popup || !popup->acrylic_active) return fill;
+	uint32_t  a = ( uint32_t ) ((fill.rgba & 0xffu) * POPUP_ACRYLIC_TINT_OPACITY + 0.5f);
+	FluxColor t = {(fill.rgba & 0xffffff00u) | (a & 0xffu)};
+	return t;
 }
 
-bool flux_popup_has_system_backdrop(FluxPopup const *popup) { return popup ? popup->backdrop_enabled : false; }
-
-void flux_popup_set_max_content_height(FluxPopup *popup, float max_h) {
+void          flux_popup_set_max_content_height(FluxPopup *popup, float max_h) {
 	if (!popup) return;
 	popup->max_content_h = (max_h > 0.0f) ? max_h : 0.0f;
 	if (popup->is_visible) popup_position(popup);
@@ -592,33 +649,6 @@ static LRESULT popup_on_mouse_leave(FluxPopup *popup) {
 	return 0;
 }
 
-static float popup_menu_top_translate_y(FluxPopup *popup, HWND hwnd) {
-	if (!popup->anim.active || popup->anim.style != FLUX_POPUP_ANIM_MENU) return 0.0f;
-	if (popup->anim.final_placement != FLUX_PLACEMENT_TOP) return 0.0f;
-
-	float scale = popup_window_scale(hwnd);
-	RECT  wr;
-	GetClientRect(hwnd, &wr);
-
-	float cur_h_dip = (( float ) (wr.bottom - wr.top)) / scale;
-	float fin_h_dip = (( float ) popup->anim.final_ph) / scale;
-	return cur_h_dip - fin_h_dip;
-}
-
-static void popup_set_rt_translate(ID2D1RenderTarget *rt, float translate_y) {
-	if (!rt || fabsf(translate_y) <= 0.1f) return;
-
-	D2D1_MATRIX_3X2_F xform = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, translate_y};
-	ID2D1RenderTarget_SetTransform(rt, &xform);
-}
-
-static void popup_reset_rt_transform(ID2D1RenderTarget *rt, float translate_y) {
-	if (!rt || fabsf(translate_y) <= 0.1f) return;
-
-	D2D1_MATRIX_3X2_F identity = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
-	ID2D1RenderTarget_SetTransform(rt, &identity);
-}
-
 static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
 	PAINTSTRUCT ps;
 	BeginPaint(hwnd, &ps);
@@ -627,15 +657,14 @@ static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
 		return 0;
 	}
 
+	/* In composition mode, sample the desktop behind the window into a blurred
+	 * backplate so chrome painted with a translucent fill reads as acrylic. */
+	popup->acrylic_active = flux_graphics_enable_window_acrylic(popup->graphics, POPUP_ACRYLIC_BLUR);
+
 	flux_graphics_begin_draw(popup->graphics);
 	flux_graphics_clear(popup->graphics, flux_color_rgba(0, 0, 0, 0));
 
-	ID2D1RenderTarget *rt          = ( ID2D1RenderTarget * ) flux_graphics_get_d2d_context(popup->graphics);
-	float              translate_y = popup_menu_top_translate_y(popup, hwnd);
-
-	popup_set_rt_translate(rt, translate_y);
 	if (popup->paint_cb) popup->paint_cb(popup->paint_ctx, popup);
-	popup_reset_rt_transform(rt, translate_y);
 
 	flux_graphics_end_draw(popup->graphics);
 	flux_graphics_present(popup->graphics, true);
@@ -658,6 +687,26 @@ static LRESULT popup_on_size(FluxPopup *popup, LPARAM lp) {
 	return 0;
 }
 
+static LRESULT popup_on_timer(FluxPopup *popup, WPARAM wp) {
+	if (!popup || wp != POPUP_ANIM_TIMER_ID) return 0;
+	if (!popup->anim.active || popup->anim.duration_ms == 0) {
+		popup_stop_animation(popup);
+		return 0;
+	}
+
+	ULONGLONG now     = GetTickCount64();
+	float     elapsed = ( float ) (now - popup->anim.start_ms);
+	float     t       = elapsed / ( float ) popup->anim.duration_ms;
+	if (t >= 1.0f) {
+		popup_apply_open_frame(popup, 1.0f);
+		popup_stop_animation(popup);
+	}
+	else { popup_apply_open_frame(popup, t); }
+
+	InvalidateRect(popup->popup_hwnd, NULL, FALSE);
+	return 0;
+}
+
 static bool popup_handle_mouse_message(PopupWindowMessage const *m, LRESULT *result) {
 	switch (m->msg) {
 	case WM_MOUSEMOVE   : *result = popup_on_mouse_event(m, FLUX_POPUP_MOUSE_MOVE); return true;
@@ -675,6 +724,7 @@ static bool popup_handle_system_message(PopupWindowMessage const *m, LRESULT *re
 	case WM_ACTIVATE      : *result = popup_on_activate(m->popup, m->wp); return true;
 	case WM_MOUSEACTIVATE : *result = MA_NOACTIVATE; return true;
 	case WM_SIZE          : *result = popup_on_size(m->popup, m->lp); return true;
+	case WM_TIMER         : *result = popup_on_timer(m->popup, m->wp); return true;
 	default               : return false;
 	}
 }

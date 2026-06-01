@@ -63,17 +63,17 @@ static void flyout_resolve_theme(FluxFlyout *fly, FluxThemeColors const **out_th
 }
 
 static void resolve_card_colors(FluxFlyout const *fly, bool is_dark, FluxColor *out_bg, FluxColor *out_border) {
-	/* AcrylicInAppFillColorDefaultBrush FallbackColor: #F9F9F9 light / #2C2C2C dark.
-	 * If DWM transient-acrylic is active, emit fully-transparent so the system material shows through. */
-	FluxColor bg;
-	if (flux_popup_has_system_backdrop(fly->popup)) bg = flux_color_rgba(0, 0, 0, 0);
-	else bg = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
+	( void ) fly;
+
+	FluxColor bg = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
 
 	/* SurfaceStrokeColorFlyoutBrush (not ControlStrokeColorDefault): dark #33000000 / light #0F000000. */
-	FluxColor border = is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
+	FluxColor border;
+	if (is_dark) border = flux_color_rgba(0, 0, 0, 0x33);
+	else border = flux_color_rgba(0, 0, 0, 0x0f);
 
-	*out_bg          = bg;
-	*out_border      = border;
+	*out_bg     = bg;
+	*out_border = border;
 }
 
 static FluxRenderContext
@@ -130,6 +130,7 @@ static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
 	FluxRect  bounds = flyout_bounds(fly);
 	FluxColor bg, border;
 	resolve_card_colors(fly, is_dark, &bg, &border);
+	bg                   = flux_popup_acrylic_tint(popup, bg);
 	FluxRenderContext rc = flyout_render_context(fly, d2d, theme, is_dark);
 
 	flux_fill_rounded_rect(&rc, &bounds, FLUX_FLYOUT_CORNER_RADIUS, bg);
@@ -220,13 +221,6 @@ void flux_flyout_show(FluxFlyout *fly, FluxRect anchor, FluxPlacement placement)
 	if (!fly) return;
 
 	flux_flyout_set_content_size(fly, fly->content_w, fly->content_h);
-
-	FluxThemeColors const *theme   = NULL;
-	bool                   is_dark = false;
-	flyout_resolve_theme(fly, &theme, &is_dark);
-
-	/* Request Win11 DWM transient-acrylic; no-op on older Windows, falls back to opaque fill. */
-	flux_popup_enable_system_backdrop(fly->popup, is_dark);
 
 	flux_popup_show(fly->popup, anchor, placement);
 }

@@ -14,6 +14,9 @@
 #include "controls/behavior/flux_control_cursor.h"
 #include "controls/draw/flux_control_draw.h"
 #include "controls/factory/flux_factory.h"
+#include "compose/flux_compose_render.h"
+#include "compose/flux_uia.h"
+#include "graphics/flux_graphics_compose.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -27,23 +30,30 @@
 #define FLUX_APP_TOOLTIP_ANCHOR_H       20.0f
 
 /** @brief Present the frame with vsync enabled (default FluxApp render path). */
-static bool const kFluxAppPresentUseVsync = true;
+static bool const                kFluxAppPresentUseVsync = true;
+
+/** @brief Render backend strategy, selected once by capability. See definition below. */
+typedef struct FluxRenderBackend FluxRenderBackend;
 
 struct FluxApp {
-	FluxWindow           *window;
-	FluxEngine           *engine;
-	FluxInput            *input;
-	FluxTextRenderer     *text;
-	FluxRenderCache      *cache;
-	FluxThemeManager     *theme;
-	FluxScene            *scene;
+	FluxWindow              *window;
+	FluxEngine              *engine;
+	FluxInput               *input;
+	FluxTextRenderer        *text;
+	FluxRenderCache         *cache;
+	FluxThemeManager        *theme;
+	FluxScene               *scene;
 
-	ID2D1SolidColorBrush *shared_brush;
-	int64_t               last_frame_ticks;
+	ID2D1SolidColorBrush    *shared_brush;
+	int64_t                  last_frame_ticks;
+	XentNodeId               last_uia_focus; /**< Last node reported to UIA as focused (focus-event de-dup). */
 
-	FluxTooltip          *tooltip;
+	FluxTooltip             *tooltip;
 
-	FluxDManip           *dmanip;
+	FluxDManip              *dmanip;
+
+	FluxComposeRender       *compose; /**< Retained-composition path (FLUX_USE_COMPOSITION). */
+	FluxRenderBackend const *backend; /**< Chosen render strategy (d2d or composition); set on first frame. */
 };
 
 static XentContext   *app_ctx(FluxApp const *app) { return app ? flux_scene_context(app->scene) : NULL; }
@@ -144,12 +154,39 @@ static void app_sync_tooltip_theme(FluxApp *app, FluxRenderContext const *rc) {
 	flux_tooltip_set_theme(app->tooltip, rc->theme, rc->is_dark);
 }
 
-static void app_render(void *ctx) {
-	FluxApp *app = ( FluxApp * ) ctx;
-	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return;
+static void app_ensure_compose(FluxApp *app, FluxGraphics *gfx) {
+	if (app->compose) return;
+	FluxCompositor                *c    = flux_graphics_compositor(gfx);
+	WUC_CompositionGraphicsDevice *gdev = flux_graphics_graphics_device(gfx);
+	WUC_Visual                    *root = flux_graphics_composition_root(gfx);
+	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root);
+}
 
-	FluxGraphics *gfx = flux_app_get_graphics(app);
-	FluxDpiInfo   dpi = flux_window_dpi(app->window);
+/* Retained-composition frame: reconcile the layout into a WUC visual tree and
+ * paint each node into its own surface via the existing renderers. The swap
+ * chain / immediate-mode execute path is bypassed entirely in this mode. */
+static void app_render_composition(FluxApp *app, FluxGraphics *gfx, FluxDpiInfo dpi) {
+	app_prepare_layout_tree(app, dpi);
+	if (app->cache) flux_render_cache_begin_frame(app->cache);
+	app_ensure_compose(app, gfx);
+	if (!app->compose) return;
+
+	int64_t           now_ticks = flux_perf_now();
+	FluxRenderContext rc        = app_render_context(app, gfx, dpi, now_ticks);
+	app->last_frame_ticks       = now_ticks;
+
+	bool anims_active           = false;
+	rc.animations_active        = &anims_active;
+	app_sync_tooltip_theme(app, &rc);
+
+	flux_compose_render_frame(app->compose, app_ctx(app), app_store(app), app_root(app), &rc);
+
+	if (anims_active) flux_app_request_render(app);
+}
+
+/* Immediate-mode swapchain frame: collect the layout into a command list and
+ * execute it into the D2D swap chain. The classic (default) render path. */
+static void app_render_classic(FluxApp *app, FluxGraphics *gfx, FluxDpiInfo dpi) {
 	app_prepare_layout_tree(app, dpi);
 	if (app->cache) flux_render_cache_begin_frame(app->cache);
 
@@ -171,6 +208,50 @@ static void app_render(void *ctx) {
 	flux_graphics_present(gfx, kFluxAppPresentUseVsync);
 
 	if (anims_active) flux_app_request_render(app);
+}
+
+/* The render backend is the cohesive strategy chosen once by capability: the
+ * immediate-mode D2D swapchain path, or the retained WUC composition path. The
+ * animator (tween / flux_compose_anim) and scroller (DManip / InteractionTracker)
+ * are facets of the same choice and join this strategy as they are abstracted. */
+struct FluxRenderBackend {
+	char const *name;
+	void        (*render_frame)(FluxApp *app, FluxGraphics *gfx, FluxDpiInfo dpi);
+};
+
+static FluxRenderBackend const  g_backend_d2d         = {"d2d", app_render_classic};
+static FluxRenderBackend const  g_backend_composition = {"composition", app_render_composition};
+
+/* Capability gate for the composition backend. It costs per-node GPU surfaces
+ * (memory scales with visible nodes), so fall back to the immediate-mode d2d
+ * backend where composition is a poor fit: not requested, or a remote session
+ * (DWM composition degrades badly over RDP). */
+static FluxRenderBackend const *app_select_backend(FluxGraphics *gfx) {
+	if (!flux_graphics_composition_enabled(gfx)) return &g_backend_d2d;
+	if (GetSystemMetrics(SM_REMOTESESSION)) return &g_backend_d2d;
+	return &g_backend_composition;
+}
+
+static void app_pump_uia_focus(FluxApp *app) {
+	XentNodeId focused = flux_input_get_focused(app->input);
+	if (focused == app->last_uia_focus) return;
+	app->last_uia_focus = focused;
+
+	FluxUiaContext info = {app_ctx(app), app_root(app), flux_app_get_hwnd(app), app_store(app)};
+	flux_uia_raise_focus_changed(&info, focused);
+}
+
+static void app_render(void *ctx) {
+	FluxApp *app = ( FluxApp * ) ctx;
+	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return;
+
+	app_pump_uia_focus(app);
+
+	FluxGraphics *gfx = flux_app_get_graphics(app);
+	FluxDpiInfo   dpi = flux_window_dpi(app->window);
+
+	if (!app->backend) app->backend = app_select_backend(gfx);
+	app->backend->render_frame(app, gfx, dpi);
 }
 
 static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool is_touch) {
@@ -398,6 +479,14 @@ static bool app_create_window(FluxApp *app, FluxAppConfig const *cfg) {
 	return SUCCEEDED(hr);
 }
 
+static void *app_uia_provider(void *ctx, void *hwnd) {
+	FluxApp *app = ( FluxApp * ) ctx;
+	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return NULL;
+
+	FluxUiaContext info = {app_ctx(app), app_root(app), ( HWND ) hwnd, app_store(app)};
+	return flux_uia_provider_create(&info);
+}
+
 static void app_bind_window_callbacks(FluxApp *app) {
 	flux_window_set_render_callback(app->window, app_render, app);
 	flux_window_set_pointer_callback(app->window, app_pointer, app);
@@ -405,6 +494,7 @@ static void app_bind_window_callbacks(FluxApp *app) {
 	flux_window_set_char_callback(app->window, app_char, app);
 	flux_window_set_setting_changed_callback(app->window, app_setting_changed, app);
 	flux_window_set_ime_composition_callback(app->window, app_ime_composition, app);
+	flux_window_set_uia_provider_callback(app->window, app_uia_provider, app);
 	flux_graphics_set_redraw_callback(flux_window_get_graphics(app->window), app_request_render, app);
 }
 
@@ -454,6 +544,9 @@ static void app_release_shared_brush(FluxApp *app) {
 }
 
 static void app_destroy_render_state(FluxApp *app) {
+	/* Destroy before the window/graphics: holds WUC visuals tied to the target. */
+	if (app->compose) flux_compose_render_destroy(app->compose);
+	app->compose = NULL;
 	app_release_shared_brush(app);
 	if (app->cache) flux_render_cache_destroy(app->cache);
 	if (app->theme) flux_theme_destroy(app->theme);

@@ -217,7 +217,8 @@ static void tooltip_resolve_colors(FluxTooltip const *tt, FluxColor *bg, FluxCol
 	FluxThemeColors const *theme = tt->theme;
 
 	*bg                          = tt->is_dark ? flux_color_rgb(44, 44, 44) : flux_color_rgb(249, 249, 249);
-	*border                      = tt->is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
+	if (tt->is_dark) *border = flux_color_rgba(0, 0, 0, 0x33);
+	else *border = flux_color_rgba(0, 0, 0, 0x0f);
 	if (theme) *text_color = theme->text_primary;
 	else if (tt->is_dark) *text_color = flux_color_rgba(255, 255, 255, 0xe4);
 	else *text_color = flux_color_rgba(0, 0, 0, 0xe4);
@@ -278,6 +279,7 @@ static void tooltip_paint(void *ctx, FluxPopup *popup) {
 	FluxColor border     = {0};
 	FluxColor text_color = {0};
 	tooltip_resolve_colors(tt, &bg, &border, &text_color);
+	bg = flux_popup_acrylic_tint(popup, bg); /* reveal blurred backdrop in composition mode */
 
 	FluxSize          popup_size = tooltip_measure_content(tt);
 	FluxRect          bounds     = {0.0f, 0.0f, popup_size.w, popup_size.h};

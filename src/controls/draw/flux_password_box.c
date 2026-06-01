@@ -41,7 +41,12 @@ static void pb_draw_chrome(
 		if (a && rc->animations_active) *rc->animations_active = true;
 	}
 
-	flux_fill_rounded_rect(rc, bounds, radius, fill);
+	if (rc->fill_sink) {
+		rc->fill_sink->color         = fill;
+		rc->fill_sink->corner_radius = radius;
+		rc->fill_sink->written       = true;
+	}
+	else { flux_fill_rounded_rect(rc, bounds, radius, fill); }
 	if (!state->enabled) {
 		FluxColor dis_stroke = t ? t->ctrl_stroke_default : flux_color_rgba(0, 0, 0, 0x0f);
 		flux_draw_rounded_rect(rc, bounds, radius, dis_stroke, 1.0f);

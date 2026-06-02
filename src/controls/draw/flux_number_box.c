@@ -140,7 +140,12 @@ static void nb_draw_chrome(NbDrawContext const *dc, bool chrome_hovered) {
 		if (a && dc->rc->animations_active) *dc->rc->animations_active = true;
 	}
 
-	flux_fill_rounded_rect(dc->rc, dc->bounds, dc->radius, fill);
+	if (dc->rc->fill_sink) {
+		dc->rc->fill_sink->color         = fill;
+		dc->rc->fill_sink->corner_radius = dc->radius;
+		dc->rc->fill_sink->written       = true;
+	}
+	else { flux_fill_rounded_rect(dc->rc, dc->bounds, dc->radius, fill); }
 	if (!dc->state->enabled) {
 		FluxColor dis_stroke = t ? t->ctrl_stroke_default : flux_color_rgba(0, 0, 0, 0x0f);
 		flux_draw_rounded_rect(dc->rc, dc->bounds, dc->radius, dis_stroke, 1.0f);

@@ -20,6 +20,7 @@
 #include "compose/flux_compose.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <windows.h>
 
 #ifdef __cplusplus
@@ -41,7 +42,11 @@ FluxInteraction               *flux_interaction_create(FluxCompositor *c, WUC_Vi
 /** @brief Destroy the tracker and release its source. NULL-safe. */
 void                           flux_interaction_destroy(FluxInteraction *it);
 
-/** @brief Set the scrollable extent (content minus viewport) in DIPs; clamps the
+/** @brief Bind @p target_visual's Offset to `-tracker.Position` via a compositor
+ *  expression animation, so the content scrolls on the compositor thread. */
+HRESULT                        flux_interaction_bind_offset(FluxInteraction *it, WUC_Visual *target_visual);
+
+/** @brief Set the scrollable extent (content minus viewport); clamps the
  *  tracker's min/max position to [0, max]. */
 void                           flux_interaction_set_extent(FluxInteraction *it, float max_x, float max_y);
 
@@ -49,6 +54,10 @@ void                           flux_interaction_set_extent(FluxInteraction *it, 
  *  @param pointer_point A Windows.UI.Input.PointerPoint* (WUIIN_PointerPoint), from
  *         the host's WM_POINTER stream via pointer-interop. */
 HRESULT                        flux_interaction_redirect(FluxInteraction *it, void *pointer_point);
+
+/** @brief Hand pointer @p pointer_id to the tracker: resolves the WM_POINTER id to a
+ *  Windows.UI.Input.PointerPoint via interop, then redirects. */
+HRESULT                        flux_interaction_redirect_pointer_id(FluxInteraction *it, uint32_t pointer_id);
 
 /** @brief Programmatically scroll to an absolute offset (DIPs). */
 void                           flux_interaction_scroll_to(FluxInteraction *it, float x, float y);

@@ -60,11 +60,25 @@ void                          flux_visual_tree_destroy(FluxVisualTree *vt);
  * Cheap when nothing structural changed; only touches visuals whose nodes are
  * present, and removes those whose nodes vanished.
  *
- * @param vt   Reconciler.
- * @param ctx  Xent layout context (must be laid out already).
- * @param root Subtree root to reconcile.
+ * Layout is in DIPs; the compositor works in physical pixels. `scale`
+ * (dpi/96) converts node offsets and sizes to physical pixels so the mirrored
+ * tree matches the display, exactly as D2D's device-context DPI does for the
+ * classic path.
+ *
+ * Scroll nodes are clipped to their viewport and their content is shifted by the
+ * current scroll offset (read from the node store), so scrolling works without a
+ * command list -- the retained-tree equivalent of the classic path's clip +
+ * translate.
+ *
+ * @param vt    Reconciler.
+ * @param ctx   Xent layout context (must be laid out already).
+ * @param store Node store, for per-node component data (scroll offsets); may be NULL.
+ * @param root  Subtree root to reconcile.
+ * @param scale DIP-to-pixel factor (dpi/96); values <= 0 are treated as 1.
  */
-void                          flux_visual_tree_reconcile(FluxVisualTree *vt, XentContext *ctx, XentNodeId root);
+void flux_visual_tree_reconcile(
+  FluxVisualTree *vt, XentContext *ctx, FluxNodeStore *store, XentNodeId root, float scale
+);
 
 /**
  * @brief The container visual mirroring a layout node, or NULL if absent.
@@ -72,6 +86,23 @@ void                          flux_visual_tree_reconcile(FluxVisualTree *vt, Xen
  * Control payload builders attach shapes/surfaces to this container.
  */
 WUC_Container                *flux_visual_tree_node_visual(FluxVisualTree *vt, XentNodeId node);
+
+/**
+ * @brief The scroll content holder visual for a scroll node, or NULL.
+ *
+ * A scroll node routes its children through this holder; binding the holder's
+ * Offset to an InteractionTracker's -Position scrolls the content on the
+ * compositor thread. Returns NULL for non-scroll nodes or unknown ids.
+ */
+WUC_Visual                   *flux_visual_tree_node_scroll_holder(FluxVisualTree *vt, XentNodeId node);
+
+/**
+ * @brief Mark whether a scroll node's holder Offset is tracker-driven.
+ *
+ * When set, the reconciler stops folding the scroll offset into child positions
+ * (the tracker-bound holder owns the offset instead). NULL/unknown id is a no-op.
+ */
+void                          flux_visual_tree_set_tracker_bound(FluxVisualTree *vt, XentNodeId node, bool bound);
 
 #ifdef __cplusplus
 }

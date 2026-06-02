@@ -55,19 +55,29 @@ static uint8_t inline flux_quantize_unit_to_byte(float v) {
 	return ( uint8_t ) (v * 255.0f + 0.5f);
 }
 
-/** @brief Gamma-correct sRGB color lerp: decodes RGB to linear, blends, re-encodes; alpha stays linear. */
+/** @brief Gamma-correct, alpha-correct color lerp: blends in premultiplied linear
+ * space, then un-premultiplies back to straight RGBA. Premultiplying is what keeps
+ * a transition between colors of differing alpha (e.g. dark mode's faint-white
+ * `ctrl_fill_default` -> opaque-dark `ctrl_fill_input_active`) from passing through
+ * a bright intermediate -- straight-alpha lerp ramps RGB and alpha independently,
+ * so mid-transition you briefly get near-white at rising opacity (a white flash).
+ * For equal-alpha or opaque endpoints this reduces to the former straight lerp. */
 static FluxColor inline flux_anim_lerp_color(FluxColor c0, FluxColor c1, float t) {
 	if (t <= 0.0f) return c0;
 	if (t >= 1.0f) return c1;
 
-	float lr = flux_anim_mixf(flux_srgb_to_linear(flux_color_rf(c0)), flux_srgb_to_linear(flux_color_rf(c1)), t);
-	float lg = flux_anim_mixf(flux_srgb_to_linear(flux_color_gf(c0)), flux_srgb_to_linear(flux_color_gf(c1)), t);
-	float lb = flux_anim_mixf(flux_srgb_to_linear(flux_color_bf(c0)), flux_srgb_to_linear(flux_color_bf(c1)), t);
-	float la = flux_anim_mixf(flux_color_af(c0), flux_color_af(c1), t);
+	float a0 = flux_color_af(c0);
+	float a1 = flux_color_af(c1);
+	float la = flux_anim_mixf(a0, a1, t);
 
+	float pr = flux_anim_mixf(flux_srgb_to_linear(flux_color_rf(c0)) * a0, flux_srgb_to_linear(flux_color_rf(c1)) * a1, t);
+	float pg = flux_anim_mixf(flux_srgb_to_linear(flux_color_gf(c0)) * a0, flux_srgb_to_linear(flux_color_gf(c1)) * a1, t);
+	float pb = flux_anim_mixf(flux_srgb_to_linear(flux_color_bf(c0)) * a0, flux_srgb_to_linear(flux_color_bf(c1)) * a1, t);
+
+	float inv = la > 0.0001f ? 1.0f / la : 0.0f; /* un-premultiply to straight RGB */
 	return flux_color_rgba(
-	  flux_quantize_unit_to_byte(flux_linear_to_srgb(lr)), flux_quantize_unit_to_byte(flux_linear_to_srgb(lg)),
-	  flux_quantize_unit_to_byte(flux_linear_to_srgb(lb)), flux_quantize_unit_to_byte(la)
+	  flux_quantize_unit_to_byte(flux_linear_to_srgb(pr * inv)), flux_quantize_unit_to_byte(flux_linear_to_srgb(pg * inv)),
+	  flux_quantize_unit_to_byte(flux_linear_to_srgb(pb * inv)), flux_quantize_unit_to_byte(la)
 	);
 }
 

@@ -47,3 +47,5 @@ Desktop.ini
 *.swo
 
 microsoft-ui-xaml/
+# Cloned dependencies (xmake)
+.deps/

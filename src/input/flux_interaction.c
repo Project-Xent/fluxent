@@ -5,11 +5,16 @@
 #include "flux_interaction.h"
 
 #include <cwinrt/cast.h>
+#include <cwinrt/factory.h>
+#include <cwinrt/hstring.h>
+#include <cwinrt/Windows.UI.Composition.h>
 #include <cwinrt/Windows.UI.Composition.Interactions.h>
+#include <cwinrt/Windows.UI.Input.h>
 
 #include <stdlib.h>
 
 struct FluxInteraction {
+	WUC_Comp                        *comp;
 	WUICOIN_InteractionTracker      *tracker;
 	WUICOIN_VisualInteractionSource *source;
 	float                            last_x;
@@ -48,6 +53,7 @@ FluxInteraction *flux_interaction_create(FluxCompositor *c, WUC_Visual *scroll_v
 
 	FluxInteraction *it = ( FluxInteraction * ) calloc(1, sizeof(*it));
 	if (!it) return NULL;
+	it->comp = comp;
 	if (FAILED(wuicoin_interaction_tracker_create(comp, &it->tracker)) || !it->tracker) {
 		free(it);
 		return NULL;
@@ -66,6 +72,43 @@ void flux_interaction_destroy(FluxInteraction *it) {
 	free(it);
 }
 
+HRESULT flux_interaction_bind_offset(FluxInteraction *it, WUC_Visual *target_visual) {
+	if (!it || !it->comp || !it->tracker || !target_visual) return E_INVALIDARG;
+
+	cwinrt_hstring expr_str = NULL;
+	HRESULT        hr       = cwinrt_hstring_from(L"-tracker.Position", &expr_str);
+	if (FAILED(hr)) return hr;
+	WUC_ExpressionAnimation *expr = NULL;
+	hr                            = wuc_comp_create_expression_animation_str_p(it->comp, expr_str, &expr);
+	cwinrt_hstring_free(expr_str);
+	if (FAILED(hr)) return hr;
+
+	WUC_CompositionAnimation *anim    = NULL;
+	WUC_CompositionObject    *tracker = NULL;
+	WUC_CompositionObject    *target  = NULL;
+	cwinrt_hstring            key     = NULL;
+	cwinrt_hstring            prop    = NULL;
+	hr = cwinrt_query(expr, &CWINRT_IID_WUC_ICompositionAnimation, ( void ** ) &anim);
+	if (SUCCEEDED(hr)) hr = cwinrt_query(it->tracker, &CWINRT_IID_WUC_ICompositionObject, ( void ** ) &tracker);
+	if (SUCCEEDED(hr)) hr = cwinrt_hstring_from(L"tracker", &key);
+	if (SUCCEEDED(hr)) {
+		( void ) wuc_composition_animation_set_reference_parameter(anim, key, tracker);
+		cwinrt_hstring_free(key);
+		hr = cwinrt_query(target_visual, &CWINRT_IID_WUC_ICompositionObject, ( void ** ) &target);
+	}
+	if (SUCCEEDED(hr)) hr = cwinrt_hstring_from(L"Offset", &prop);
+	if (SUCCEEDED(hr)) {
+		( void ) wuc_composition_object_start_animation(target, prop, anim);
+		cwinrt_hstring_free(prop);
+	}
+
+	if (target) (( IUnknown * ) target)->lpVtbl->Release(( IUnknown * ) target);
+	if (tracker) (( IUnknown * ) tracker)->lpVtbl->Release(( IUnknown * ) tracker);
+	if (anim) (( IUnknown * ) anim)->lpVtbl->Release(( IUnknown * ) anim);
+	(( IUnknown * ) expr)->lpVtbl->Release(( IUnknown * ) expr);
+	return hr;
+}
+
 void flux_interaction_set_extent(FluxInteraction *it, float max_x, float max_y) {
 	if (!it || !it->tracker) return;
 	WFN_Vector_3 lo = {0.0f, 0.0f, 0.0f};
@@ -79,6 +122,25 @@ HRESULT flux_interaction_redirect(FluxInteraction *it, void *pointer_point) {
 	return wuicoin_visual_interaction_source_try_redirect_for_manipulation(
 	  it->source, ( WUIIN_PointerPoint * ) pointer_point
 	);
+}
+
+HRESULT flux_interaction_redirect_pointer_id(FluxInteraction *it, uint32_t pointer_id) {
+	if (!it || !it->source) return E_INVALIDARG;
+
+	WUIIN_IPointerPointStatics *statics = NULL;
+	HRESULT                     hr      = cwinrt_factory_get_statics(
+      L"Windows.UI.Input.PointerPoint", &CWINRT_IID_WUIIN_IPointerPointStatics, ( void ** ) &statics
+    );
+	if (FAILED(hr)) return hr;
+
+	WUIIN_PointerPoint *pp = NULL;
+	hr                     = wuiin_pointer_point_statics_get_current_point(statics, pointer_id, &pp);
+	(( IUnknown * ) statics)->lpVtbl->Release(( IUnknown * ) statics);
+	if (FAILED(hr) || !pp) return FAILED(hr) ? hr : E_FAIL;
+
+	hr = flux_interaction_redirect(it, pp);
+	(( IUnknown * ) pp)->lpVtbl->Release(( IUnknown * ) pp);
+	return hr;
 }
 
 void flux_interaction_scroll_to(FluxInteraction *it, float x, float y) {

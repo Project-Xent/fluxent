@@ -2,8 +2,8 @@
  * @file flux_plugin.h
  * @brief Renderer plugin interface for extending control rendering.
  *
- * Allows external libraries (e.g. lottiedc) to register custom renderers
- * that override or extend the default drawing for specific control types.
+ * Allows external libraries to register custom renderers that override or
+ * extend the default drawing for specific control types.
  */
 
 #ifndef FLUX_PLUGIN_H

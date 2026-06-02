@@ -58,6 +58,13 @@ void               flux_compose_render_frame(
   FluxComposeRender *r, XentContext *ctx, FluxNodeStore *store, XentNodeId root, FluxRenderContext const *rc_tmpl
 );
 
+/**
+ * @brief Hand pointer @p pointer_id to scroll node @p node's InteractionTracker
+ *        (touch/touchpad pan handoff, the composition counterpart of the DManip
+ *        handoff). Returns true if the pointer was redirected.
+ */
+bool               flux_compose_render_redirect_scroll(FluxComposeRender *r, XentNodeId node, uint32_t pointer_id);
+
 #ifdef __cplusplus
 }
 #endif

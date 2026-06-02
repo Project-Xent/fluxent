@@ -8,9 +8,12 @@
 #include "compose/flux_shape.h"
 #include "compose/flux_surface.h"
 #include "compose/flux_visual_tree.h"
+#include "input/flux_interaction.h"
 
+#include "fluxent/controls/flux_scroll_data.h"
 #include "fluxent/flux_control_type.h"
 #include "fluxent/flux_engine.h"
+#include "fluxent/flux_node_store.h"
 #include "fluxent/flux_render_snapshot.h"
 #include "render/flux_render_internal.h"
 
@@ -30,10 +33,11 @@
 #define FLUX_ACRYLIC_TINT_OPACITY   0.72f
 
 /* Inline (in-window) acrylic for cards: a blurred backdrop behind the content.
- * Uses flux_shape (ICompositor5) + flux_effect (ICompositor2 backdrop), reached
- * through cwinrt's versioned interface functions (the flat `wuc_comp_*` wrappers
- * mis-dispatch non-default-interface methods). */
-#define FLUX_COMPOSE_INLINE_ACRYLIC 1
+ * Disabled: the backdrop-blur brush samples nothing usable in this windowed
+ * composition target, so it renders opaque black over the card's fill (verified
+ * on a local GPU session). Until the backdrop source is wired correctly, cards
+ * fall back to the solid fill_sink path, which matches the classic D2D look. */
+#define FLUX_COMPOSE_INLINE_ACRYLIC 0
 
 typedef struct ContentNode {
 	WUC_Sprite                *sprite;
@@ -44,6 +48,8 @@ typedef struct ContentNode {
 	WUC_CompositionColorBrush *fill_brush;
 	FluxColor                  fill_color; /**< Last fill target handed to the compositor (animation de-dup). */
 	bool                       fill_set;
+	FluxInteraction           *tracker;      /**< Scroll node: InteractionTracker driving the content holder. */
+	bool                       scroll_bound; /**< Holder Offset is bound to the tracker. */
 	int                        w;
 	int                        h;
 	uint32_t                   seen;
@@ -79,6 +85,9 @@ flux_compose_render_create(FluxCompositor *c, WUC_CompositionGraphicsDevice *gde
 }
 
 static void content_release(ContentNode *cn) {
+	if (cn->tracker) flux_interaction_destroy(cn->tracker);
+	cn->tracker      = NULL;
+	cn->scroll_bound = false;
 	if (cn->visual) (( IUnknown * ) cn->visual)->lpVtbl->Release(( IUnknown * ) cn->visual);
 	if (cn->sprite) (( IUnknown * ) cn->sprite)->lpVtbl->Release(( IUnknown * ) cn->sprite);
 	if (cn->fill_brush) (( IUnknown * ) cn->fill_brush)->lpVtbl->Release(( IUnknown * ) cn->fill_brush);
@@ -246,6 +255,13 @@ static void content_paint(
 	ID2D1DeviceContext *dc = flux_surface_begin(cn->surface, &offset);
 	if (!dc) return;
 
+	/* The surface is sized in physical pixels; drive the dc at the real DPI so the
+	 * renderers (which emit DIPs) rasterize crisply, matching the classic path. */
+	float dpi_x = rc_tmpl->dpi.dpi_x > 0.0f ? rc_tmpl->dpi.dpi_x : FLUX_DPI_BASE;
+	float dpi_y = rc_tmpl->dpi.dpi_y > 0.0f ? rc_tmpl->dpi.dpi_y : FLUX_DPI_BASE;
+	float scale = dpi_x / FLUX_DPI_BASE;
+	ID2D1DeviceContext_SetDpi(dc, dpi_x, dpi_y);
+
 	ID2D1SolidColorBrush *brush = NULL;
 	D2D1_COLOR_F          black = {0, 0, 0, 1};
 	ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) dc, &black, NULL, &brush);
@@ -257,8 +273,9 @@ static void content_paint(
 	rc.brush                = brush;
 	rc.fill_sink            = out_sink;
 
+	/* BeginDraw's offset is physical; the dc now works in DIPs, so convert. */
 	FluxControlState state  = content_state(nd);
-	FluxRect         bounds = {( float ) offset.x, ( float ) offset.y, rect->w, rect->h};
+	FluxRect         bounds = {offset.x / scale, offset.y / scale, rect->w, rect->h};
 
 	flux_engine_dispatch_render(store, &rc, snap, &bounds, &state);
 
@@ -316,6 +333,56 @@ static void content_fill_apply(
 	( void ) wuc_composition_color_brush_put__color(cn->fill_brush, content_wui_color(sink->color));
 }
 
+/* Drive a scroll node's content holder from an InteractionTracker: create the
+ * tracker on first sight (bound to the viewport container, offset expression-bound
+ * to the holder so motion runs on the compositor), set the scrollable extent, then
+ * reconcile position with FluxScrollData -- poll tracker-driven motion (touch /
+ * inertia) back out, and push externally-changed offsets (wheel) into the tracker.
+ * Falls back to the reconciler's static offset if the tracker cannot be created. */
+static void content_scroll_sync(
+  FluxComposeRender *r, FluxNodeStore *store, XentNodeId node, XentRect const *rect, float scale, bool *anim_active
+) {
+	ContentNode *cn     = &r->nodes [node];
+	WUC_Visual  *holder = flux_visual_tree_node_scroll_holder(r->vt, node);
+	if (!holder) return;
+
+	if (!cn->tracker) {
+		WUC_Container *container = flux_visual_tree_node_visual(r->vt, node);
+		WUC_Visual    *cv        = container ? flux_compose_as_visual(container) : NULL;
+		if (cv) {
+			cn->tracker = flux_interaction_create(r->c, cv);
+			(( IUnknown * ) cv)->lpVtbl->Release(( IUnknown * ) cv);
+		}
+		if (cn->tracker && SUCCEEDED(flux_interaction_bind_offset(cn->tracker, holder))) {
+			cn->scroll_bound = true;
+			flux_visual_tree_set_tracker_bound(r->vt, node, true);
+		}
+	}
+	if (!cn->scroll_bound) return;
+
+	FluxNodeData   *nd = flux_node_store_get(store, node);
+	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
+	if (!sd) return;
+
+	flux_interaction_set_extent(cn->tracker, (sd->content_w - rect->w) * scale, (sd->content_h - rect->h) * scale);
+
+	float px = 0.0f, py = 0.0f;
+	if (flux_interaction_poll(cn->tracker, &px, &py)) {
+		sd->scroll_x = px / scale;
+		sd->scroll_y = py / scale;
+		if (anim_active) *anim_active = true;
+		return;
+	}
+	float tx = sd->scroll_x * scale;
+	float ty = sd->scroll_y * scale;
+	if (tx != px || ty != py) flux_interaction_scroll_to(cn->tracker, tx, ty);
+}
+
+bool flux_compose_render_redirect_scroll(FluxComposeRender *r, XentNodeId node, uint32_t pointer_id) {
+	if (!r || node >= r->cap || !r->nodes [node].tracker) return false;
+	return SUCCEEDED(flux_interaction_redirect_pointer_id(r->nodes [node].tracker, pointer_id));
+}
+
 static void content_sweep(FluxComposeRender *r) {
 	for (uint32_t i = 0; i < r->cap; i++)
 		if (r->nodes [i].in_use && r->nodes [i].seen != r->generation) content_release(&r->nodes [i]);
@@ -326,7 +393,12 @@ void flux_compose_render_frame(
 ) {
 	if (!r || !ctx || root == XENT_NODE_INVALID) return;
 
-	flux_visual_tree_reconcile(r->vt, ctx, root);
+	/* Layout is in DIPs; the compositor is physical-pixel. Scale visual sizes,
+	 * surfaces and shapes by dpi/96 so the tree matches the display (the classic
+	 * path gets this for free from the D2D device-context DPI). */
+	float scale = rc_tmpl && rc_tmpl->dpi.dpi_x > 0.0f ? rc_tmpl->dpi.dpi_x / FLUX_DPI_BASE : 1.0f;
+
+	flux_visual_tree_reconcile(r->vt, ctx, store, root, scale);
 	r->generation++;
 
 	uint32_t    cap   = 64;
@@ -340,8 +412,8 @@ void flux_compose_render_frame(
 
 		XentRect   rect = {0};
 		xent_get_layout_rect(ctx, node, &rect);
-		int            w         = ( int ) ceilf(rect.w);
-		int            h         = ( int ) ceilf(rect.h);
+		int            w         = ( int ) ceilf(rect.w * scale);
+		int            h         = ( int ) ceilf(rect.h * scale);
 
 		WUC_Container *container = flux_visual_tree_node_visual(r->vt, node);
 		if (container && w >= 1 && h >= 1 && render_reserve(r, node) && content_ensure(r, node, container, w, h)) {
@@ -350,19 +422,21 @@ void flux_compose_render_frame(
 			memset(&snap, 0, sizeof(snap));
 			flux_snapshot_build(&snap, ctx, node, nd);
 
-			/* Inline acrylic builds a CompositionShape (flux_shape), which needs
-			 * ICompositor2/5 methods that the current cwinrt bindings dispatch via
-			 * wrong vtable slots and crash. Gated off until cwinrt's ICompositorN
-			 * dispatch is fixed; the node then paints its normal background. */
+			/* Inline acrylic builds a blurred-backdrop CompositionShape; gated off
+			 * (see FLUX_COMPOSE_INLINE_ACRYLIC) because the backdrop renders black
+			 * in this target. With it off, the node paints its normal fill. */
 			if (FLUX_COMPOSE_INLINE_ACRYLIC && node_is_acrylic(ctx, node)) {
-				acrylic_ensure(r, node, container, w, h, snap.corner_radius);
+				acrylic_ensure(r, node, container, w, h, snap.corner_radius * scale);
 				snap.background = acrylic_tint(snap.background); /* tint over the blurred backdrop */
 			}
 			else { acrylic_release(r, node); }
 
 			FluxFillSink sink = {0};
 			content_paint(r, store, node, &rect, rc_tmpl, nd, &snap, &sink);
+			sink.corner_radius *= scale; /* control wrote radius in DIPs; shape space is physical */
 			content_fill_apply(r, node, container, w, h, &sink);
+			if (flux_get_control_type(ctx, node) == FLUX_CONTROL_SCROLL)
+				content_scroll_sync(r, store, node, &rect, scale, rc_tmpl->animations_active);
 			r->nodes [node].seen = r->generation;
 		}
 

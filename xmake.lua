@@ -10,8 +10,21 @@ if is_plat("windows") then
     add_defines("_CRT_SECURE_NO_WARNINGS")
 end
 
-includes("../xent-core")
-includes("../cwinrt")
+-- Dependencies resolve from a sibling checkout when present (local dev), and are
+-- otherwise cloned from GitHub into .deps/ on first configure.
+local function flux_dep(name, url)
+    local sibling = path.absolute(path.join(os.scriptdir(), "..", name))
+    if os.isdir(sibling) then return sibling end
+    local vendor = path.join(os.scriptdir(), ".deps", name)
+    if not os.isdir(vendor) then
+        print("fluxent: cloning %s from %s", name, url)
+        os.vrunv("git", {"clone", "--depth=1", url, vendor})
+    end
+    return vendor
+end
+
+includes(flux_dep("xent-core", "https://github.com/Project-Xent/xent-core.git"))
+includes(flux_dep("cwinrt", "https://github.com/Project-Xent/cwinrt.git"))
 
 add_defines("COBJMACROS")
 add_defines("_WIN32_WINNT=0x0A00", "WINVER=0x0A00", "UNICODE", "_UNICODE")
@@ -27,7 +40,8 @@ target("fluxent")
              "cwinrt-bindings-composition",
              "cwinrt-bindings-interactions",
              "cwinrt-bindings-viewmanagement",
-             "cwinrt-bindings-numberformatting")
+             "cwinrt-bindings-numberformatting",
+             "cwinrt-bindings-input")
     add_includedirs("include", { public = true })
     add_includedirs("src", { private = true })
     add_includedirs("thirdparty/c_d2d_dwrite", { public = true })

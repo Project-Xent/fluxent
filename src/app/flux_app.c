@@ -83,6 +83,16 @@ static void app_try_dmanip_handoff(FluxApp *app, FluxPointerEvent const *ev) {
 		flux_window_abandon_pointer(app->window, ev->pointer_id);
 }
 
+/* Composition counterpart of the DManip handoff: when a touch pan is promoted over
+ * a scroll node, hand the pointer to that node's InteractionTracker. */
+static void app_try_interaction_handoff(FluxApp *app, FluxPointerEvent const *ev) {
+	if (!app->compose || !flux_input_take_pan_promoted(app->input)) return;
+	XentNodeId target = flux_input_get_touch_pan_target(app->input);
+	if (target == XENT_NODE_INVALID) return;
+	if (flux_compose_render_redirect_scroll(app->compose, target, ev->pointer_id))
+		flux_window_abandon_pointer(app->window, ev->pointer_id);
+}
+
 static void app_init_dmanip(FluxApp *app) {
 	char  val [FLUX_APP_DISABLE_DMANIP_ENV_CAP] = {0};
 	DWORD n                                     = GetEnvironmentVariableA("FLUXENT_DISABLE_DMANIP", val, sizeof(val));
@@ -288,7 +298,8 @@ static bool app_active_menu_visible(FluxApp *app, FluxMenuFlyout **out_menu) {
 
 static void app_pointer_move(FluxApp *app, FluxPointerEvent const *ev, bool is_touch) {
 	flux_input_dispatch(app->input, app_root(app), ev);
-	if (is_touch) app_try_dmanip_handoff(app, ev);
+	if (is_touch && app->compose) app_try_interaction_handoff(app, ev);
+	else if (is_touch) app_try_dmanip_handoff(app, ev);
 	app_update_cursor_and_tooltip(app, ev->x, ev->y, is_touch);
 }
 

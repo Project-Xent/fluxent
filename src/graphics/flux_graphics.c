@@ -387,7 +387,7 @@ IDWriteFactory3 *flux_graphics_get_dwrite_factory(FluxGraphics *gfx) {
 /* Legacy DirectComposition accessors. The composition root is now a WUC
  * DesktopWindowTarget (see src/compose/), so these no longer expose a
  * DirectComposition device or visual. Retained as no-ops for ABI compatibility
- * until overlay consumers (e.g. lottiedc) migrate to the WUC visual tree. */
+ * until overlay consumers migrate to the WUC visual tree. */
 IDCompositionDevice *flux_graphics_get_dcomp_device(FluxGraphics *gfx) {
 	( void ) gfx;
 	return NULL;

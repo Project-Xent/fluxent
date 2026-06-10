@@ -18,14 +18,12 @@ typedef struct SnapshotButtonFields {
 	FluxColor       label_color;
 	float           font_size;
 	FluxButtonStyle style;
-	bool            enabled;
 } SnapshotButtonFields;
 
 static void snapshot_base(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {
 	memset(snap, 0, sizeof(*snap));
-	snap->id      = ( uint64_t ) node;
-	snap->type    = flux_get_control_type(ctx, node);
-	snap->enabled = xent_get_semantic_enabled(ctx, node);
+	snap->id   = ( uint64_t ) node;
+	snap->type = flux_get_control_type(ctx, node);
 	if (!nd) return;
 
 	snap->background    = nd->visuals.background;
@@ -34,6 +32,7 @@ static void snapshot_base(FluxRenderSnapshot *snap, XentContext const *ctx, Xent
 	snap->border_width  = nd->visuals.border_width;
 	snap->opacity       = nd->visuals.opacity;
 	snap->hover_local_x = nd->hover_local_x;
+	snap->hover_local_y = nd->hover_local_y;
 }
 
 static void snapshot_text(FluxRenderSnapshot *snap, FluxTextData const *t) {
@@ -54,12 +53,11 @@ static void snapshot_button_fields(FluxRenderSnapshot *snap, SnapshotButtonField
 	snap->text_color   = fields.label_color;
 	snap->font_size    = fields.font_size;
 	snap->button_style = fields.style;
-	snap->enabled      = fields.enabled;
 }
 
 static void snapshot_button(FluxRenderSnapshot *snap, FluxButtonData const *b) {
 	snapshot_button_fields(
-	  snap, (SnapshotButtonFields) {b->label, b->icon_name, b->label_color, b->font_size, b->style, b->enabled}
+	  snap, (SnapshotButtonFields) {b->label, b->icon_name, b->label_color, b->font_size, b->style}
 	);
 	snap->is_checked = b->is_checked;
 }
@@ -74,7 +72,6 @@ static void snapshot_textbox(FluxRenderSnapshot *snap, FluxTextBoxData const *tb
 	snap->selection_start    = tb->selection_start;
 	snap->selection_end      = tb->selection_end;
 	snap->scroll_offset_x    = tb->scroll_offset_x;
-	snap->enabled            = tb->enabled;
 	snap->composition_text   = tb->composition_text;
 	snap->composition_length = tb->composition_length;
 	snap->composition_cursor = tb->composition_cursor;
@@ -85,7 +82,6 @@ static void snapshot_textbox(FluxRenderSnapshot *snap, FluxTextBoxData const *tb
 static void snapshot_checkbox_like(FluxRenderSnapshot *snap, FluxCheckboxData const *c) {
 	snap->label       = c->label;
 	snap->check_state = c->state;
-	snap->enabled     = c->enabled;
 }
 
 static void snapshot_slider(FluxRenderSnapshot *snap, FluxSliderData const *s) {
@@ -93,7 +89,6 @@ static void snapshot_slider(FluxRenderSnapshot *snap, FluxSliderData const *s) {
 	snap->max_value     = s->max_value;
 	snap->current_value = s->current_value;
 	snap->step          = s->step;
-	snap->enabled       = s->enabled;
 }
 
 static void snapshot_scroll(FluxRenderSnapshot *snap, FluxScrollData const *sc) {
@@ -141,14 +136,13 @@ static void snapshot_number_box_spin(FluxRenderSnapshot *snap, XentContext const
 
 static void snapshot_hyperlink(FluxRenderSnapshot *snap, FluxHyperlinkData const *hl) {
 	snapshot_button_fields(
-	  snap,
-	  (SnapshotButtonFields) {hl->label, hl->icon_name, hl->label_color, hl->font_size, FLUX_BUTTON_TEXT, hl->enabled}
+	  snap, (SnapshotButtonFields) {hl->label, hl->icon_name, hl->label_color, hl->font_size, FLUX_BUTTON_TEXT}
 	);
 }
 
 static void snapshot_repeat_button(FluxRenderSnapshot *snap, FluxRepeatButtonData const *rb) {
 	snapshot_button_fields(
-	  snap, (SnapshotButtonFields) {rb->label, rb->icon_name, rb->label_color, rb->font_size, rb->style, rb->enabled}
+	  snap, (SnapshotButtonFields) {rb->label, rb->icon_name, rb->label_color, rb->font_size, rb->style}
 	);
 }
 
@@ -162,6 +156,41 @@ static void snapshot_info_badge(FluxRenderSnapshot *snap, FluxInfoBadgeData cons
 	snap->background    = ib->background;
 	snap->is_checked    = (ib->mode == FLUX_BADGE_DOT);
 	snap->indeterminate = (ib->mode == FLUX_BADGE_ICON);
+}
+
+static void snapshot_info_bar(FluxRenderSnapshot *snap, FluxInfoBarData const *ib) {
+	snap->label         = ib->title;
+	snap->text_content  = ib->message;
+	snap->current_value = ( float ) ib->severity;
+	snap->is_checked    = ib->is_closable;
+}
+
+static void snapshot_handle_info_bar(SnapshotContext const *ctx) {
+	snapshot_info_bar(ctx->snap, ( FluxInfoBarData const * ) ctx->data);
+}
+
+static void snapshot_handle_expander_header(SnapshotContext const *ctx) {
+	ctx->snap->is_checked = (( FluxExpanderData const * ) ctx->data)->expanded;
+}
+
+static void snapshot_image(FluxRenderSnapshot *snap, FluxImageData const *im) {
+	snap->text_content  = im->source;
+	snap->current_value = ( float ) im->stretch;
+}
+
+static void snapshot_handle_image(SnapshotContext const *ctx) {
+	snapshot_image(ctx->snap, ( FluxImageData const * ) ctx->data);
+}
+
+static void snapshot_combo_box(FluxRenderSnapshot *snap, FluxComboBoxData const *cb) {
+	bool valid         = cb->selected_index >= 0 && cb->selected_index < cb->item_count;
+	snap->text_content = valid ? cb->items [cb->selected_index] : NULL;
+	snap->placeholder  = cb->placeholder;
+	snap->is_checked   = cb->open;
+}
+
+static void snapshot_handle_combo_box(SnapshotContext const *ctx) {
+	snapshot_combo_box(ctx->snap, ( FluxComboBoxData const * ) ctx->data);
 }
 
 static void snapshot_handle_text(SnapshotContext const *ctx) {
@@ -223,22 +252,28 @@ static void snapshot_handle_info_badge(SnapshotContext const *ctx) {
 }
 
 static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
-  [FLUX_CONTROL_TEXT]          = snapshot_handle_text,
-  [FLUX_CONTROL_BUTTON]        = snapshot_handle_button,
-  [FLUX_CONTROL_TOGGLE_BUTTON] = snapshot_handle_button,
-  [FLUX_CONTROL_CHECKBOX]      = snapshot_handle_checkbox_like,
-  [FLUX_CONTROL_RADIO]         = snapshot_handle_checkbox_like,
-  [FLUX_CONTROL_SWITCH]        = snapshot_handle_checkbox_like,
-  [FLUX_CONTROL_SLIDER]        = snapshot_handle_slider,
-  [FLUX_CONTROL_TEXT_INPUT]    = snapshot_handle_textbox,
-  [FLUX_CONTROL_SCROLL]        = snapshot_handle_scroll,
-  [FLUX_CONTROL_PROGRESS]      = snapshot_handle_progress,
-  [FLUX_CONTROL_PASSWORD_BOX]  = snapshot_handle_password_box,
-  [FLUX_CONTROL_NUMBER_BOX]    = snapshot_handle_number_box,
-  [FLUX_CONTROL_HYPERLINK]     = snapshot_handle_hyperlink,
-  [FLUX_CONTROL_REPEAT_BUTTON] = snapshot_handle_repeat_button,
-  [FLUX_CONTROL_PROGRESS_RING] = snapshot_handle_progress_ring,
-  [FLUX_CONTROL_INFO_BADGE]    = snapshot_handle_info_badge,
+  [FLUX_CONTROL_TEXT]            = snapshot_handle_text,
+  [FLUX_CONTROL_BUTTON]          = snapshot_handle_button,
+  [FLUX_CONTROL_TOGGLE_BUTTON]   = snapshot_handle_button,
+  [FLUX_CONTROL_DROPDOWN_BUTTON] = snapshot_handle_button,
+  [FLUX_CONTROL_SPLIT_BUTTON]    = snapshot_handle_button,
+  [FLUX_CONTROL_CHECKBOX]        = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_RADIO]           = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_SWITCH]          = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_SLIDER]          = snapshot_handle_slider,
+  [FLUX_CONTROL_TEXT_INPUT]      = snapshot_handle_textbox,
+  [FLUX_CONTROL_SCROLL]          = snapshot_handle_scroll,
+  [FLUX_CONTROL_PROGRESS]        = snapshot_handle_progress,
+  [FLUX_CONTROL_PASSWORD_BOX]    = snapshot_handle_password_box,
+  [FLUX_CONTROL_NUMBER_BOX]      = snapshot_handle_number_box,
+  [FLUX_CONTROL_HYPERLINK]       = snapshot_handle_hyperlink,
+  [FLUX_CONTROL_REPEAT_BUTTON]   = snapshot_handle_repeat_button,
+  [FLUX_CONTROL_PROGRESS_RING]   = snapshot_handle_progress_ring,
+  [FLUX_CONTROL_INFO_BADGE]      = snapshot_handle_info_badge,
+  [FLUX_CONTROL_INFO_BAR]        = snapshot_handle_info_bar,
+  [FLUX_CONTROL_EXPANDER_HEADER] = snapshot_handle_expander_header,
+  [FLUX_CONTROL_IMAGE]           = snapshot_handle_image,
+  [FLUX_CONTROL_COMBO_BOX]       = snapshot_handle_combo_box,
 };
 
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {

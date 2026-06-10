@@ -41,6 +41,7 @@
 #define FLUX_UIA_EVENT_FOCUS_CHANGED        20005
 
 #define FLUX_UIA_CT_BUTTON                  50000
+#define FLUX_UIA_CT_COMBOBOX                50003
 #define FLUX_UIA_CT_CHECKBOX                50002
 #define FLUX_UIA_CT_EDIT                    50004
 #define FLUX_UIA_CT_HYPERLINK               50005
@@ -126,33 +127,39 @@ typedef struct FluxUiaControlInfo {
 /* Control type -> UIA control type + the patterns it answers. Table-driven so the
  * provider stays free of per-control branching. */
 static FluxUiaControlInfo const kFluxUiaControls [] = {
-  [FLUX_CONTROL_CONTAINER]     = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_TEXT]          = {FLUX_UIA_CT_TEXT,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_BUTTON]        = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
-  [FLUX_CONTROL_TOGGLE_BUTTON] = {FLUX_UIA_CT_BUTTON,      1, 1, 0, 0, 0},
-  [FLUX_CONTROL_CHECKBOX]      = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
-  [FLUX_CONTROL_RADIO]         = {FLUX_UIA_CT_RADIO,       0, 0, 0, 0, 1},
-  [FLUX_CONTROL_SWITCH]        = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
-  [FLUX_CONTROL_SLIDER]        = {FLUX_UIA_CT_SLIDER,      0, 0, 1, 0, 0},
-  [FLUX_CONTROL_TEXT_INPUT]    = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
-  [FLUX_CONTROL_SCROLL]        = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_IMAGE]         = {FLUX_UIA_CT_IMAGE,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_PROGRESS]      = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
-  [FLUX_CONTROL_LIST]          = {FLUX_UIA_CT_LIST,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_TAB]           = {FLUX_UIA_CT_TAB,         0, 0, 0, 0, 0},
-  [FLUX_CONTROL_CARD]          = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_DIVIDER]       = {FLUX_UIA_CT_SEPARATOR,   0, 0, 0, 0, 0},
-  [FLUX_CONTROL_CANVAS]        = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_PASSWORD_BOX]  = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
-  [FLUX_CONTROL_NUMBER_BOX]    = {FLUX_UIA_CT_SPINNER,     0, 0, 1, 1, 0},
-  [FLUX_CONTROL_HYPERLINK]     = {FLUX_UIA_CT_HYPERLINK,   1, 0, 0, 0, 0},
-  [FLUX_CONTROL_REPEAT_BUTTON] = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
-  [FLUX_CONTROL_PROGRESS_RING] = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
-  [FLUX_CONTROL_INFO_BADGE]    = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_TOOLTIP]       = {FLUX_UIA_CT_TOOLTIP,     0, 0, 0, 0, 0},
-  [FLUX_CONTROL_FLYOUT]        = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_MENU_FLYOUT]   = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_CUSTOM]        = {FLUX_UIA_CT_CUSTOM,      0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CONTAINER]       = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_TEXT]            = {FLUX_UIA_CT_TEXT,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_BUTTON]          = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_TOGGLE_BUTTON]   = {FLUX_UIA_CT_BUTTON,      1, 1, 0, 0, 0},
+  [FLUX_CONTROL_CHECKBOX]        = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
+  [FLUX_CONTROL_RADIO]           = {FLUX_UIA_CT_RADIO,       0, 0, 0, 0, 1},
+  [FLUX_CONTROL_SWITCH]          = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
+  [FLUX_CONTROL_SLIDER]          = {FLUX_UIA_CT_SLIDER,      0, 0, 1, 0, 0},
+  [FLUX_CONTROL_TEXT_INPUT]      = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
+  [FLUX_CONTROL_SCROLL]          = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_IMAGE]           = {FLUX_UIA_CT_IMAGE,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_PROGRESS]        = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
+  [FLUX_CONTROL_LIST]            = {FLUX_UIA_CT_LIST,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_TAB]             = {FLUX_UIA_CT_TAB,         0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CARD]            = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_DIVIDER]         = {FLUX_UIA_CT_SEPARATOR,   0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CANVAS]          = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_PASSWORD_BOX]    = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
+  [FLUX_CONTROL_NUMBER_BOX]      = {FLUX_UIA_CT_SPINNER,     0, 0, 1, 1, 0},
+  [FLUX_CONTROL_HYPERLINK]       = {FLUX_UIA_CT_HYPERLINK,   1, 0, 0, 0, 0},
+  [FLUX_CONTROL_REPEAT_BUTTON]   = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_PROGRESS_RING]   = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
+  [FLUX_CONTROL_INFO_BADGE]      = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_TOOLTIP]         = {FLUX_UIA_CT_TOOLTIP,     0, 0, 0, 0, 0},
+  [FLUX_CONTROL_FLYOUT]          = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_MENU_FLYOUT]     = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_DROPDOWN_BUTTON] = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_SPLIT_BUTTON]    = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_COMBO_BOX]       = {FLUX_UIA_CT_COMBOBOX,    0, 0, 0, 1, 0},
+  [FLUX_CONTROL_EXPANDER]        = {FLUX_UIA_CT_GROUP,       1, 0, 0, 0, 0},
+  [FLUX_CONTROL_INFO_BAR]        = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CONTENT_DIALOG]  = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CUSTOM]          = {FLUX_UIA_CT_CUSTOM,      0, 0, 0, 0, 0},
 };
 
 static FluxUia           *uia_alloc(FluxUiaContext const *info, XentNodeId node);
@@ -167,8 +174,6 @@ static FluxUiaControlInfo uia_control_info(FluxUia const *self) {
 static FluxNodeData *uia_node_data(FluxUia const *self) {
 	return self->info.store ? flux_node_store_get(self->info.store, self->node) : NULL;
 }
-
-/* ---- shared IUnknown + pattern dispatch ---- */
 
 static void *uia_pattern_iface(FluxUia *self, REFIID riid) {
 	FluxUiaControlInfo info = uia_control_info(self);
@@ -185,9 +190,10 @@ static HRESULT uia_qi_impl(FluxUia *self, REFIID riid, void **ppv) {
 
 	*ppv = NULL;
 	if (IsEqualGUID(riid, &Flux_IID_IUnknown) || IsEqualGUID(riid, &Flux_IID_REPSimple)) *ppv = &self->lpVtblSimple;
-	else if (IsEqualGUID(riid, &Flux_IID_REPFragment)) *ppv = &self->lpVtblFragment;
-	else if (IsEqualGUID(riid, &Flux_IID_REPFragmentRoot) && self->node == self->info.root) *ppv = &self->lpVtblRoot;
-	else *ppv = uia_pattern_iface(self, riid);
+	if (!*ppv && IsEqualGUID(riid, &Flux_IID_REPFragment)) *ppv = &self->lpVtblFragment;
+	if (!*ppv && IsEqualGUID(riid, &Flux_IID_REPFragmentRoot) && self->node == self->info.root)
+		*ppv = &self->lpVtblRoot;
+	if (!*ppv) *ppv = uia_pattern_iface(self, riid);
 
 	if (!*ppv) return E_NOINTERFACE;
 	InterlockedIncrement(&self->ref);
@@ -201,8 +207,6 @@ static ULONG uia_release_impl(FluxUia *self) {
 	if (r == 0) free(self);
 	return ( ULONG ) r;
 }
-
-/* ---- IRawElementProviderSimple ---- */
 
 static HRESULT STDMETHODCALLTYPE s_qi(IRawElementProviderSimple *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_SIMPLE(p), riid, ppv);
@@ -225,11 +229,21 @@ static HRESULT STDMETHODCALLTYPE s_get_pattern(IRawElementProviderSimple *p, PAT
 	if (!out) return E_POINTER;
 
 	*out = NULL;
-	if (id == FLUX_UIA_PATTERN_INVOKE && info.invoke) *out = ( IUnknown * ) &self->lpVtblInvoke;
-	else if (id == FLUX_UIA_PATTERN_TOGGLE && info.toggle) *out = ( IUnknown * ) &self->lpVtblToggle;
-	else if (id == FLUX_UIA_PATTERN_RANGE_VALUE && info.range) *out = ( IUnknown * ) &self->lpVtblRange;
-	else if (id == FLUX_UIA_PATTERN_VALUE && info.value) *out = ( IUnknown * ) &self->lpVtblValue;
-	else if (id == FLUX_UIA_PATTERN_SELECTION_ITEM && info.selection) *out = ( IUnknown * ) &self->lpVtblSelection;
+
+	struct {
+		PATTERNID id;
+		bool      available;
+		void     *iface;
+	} const map [] = {
+	  {FLUX_UIA_PATTERN_INVOKE,         info.invoke,    &self->lpVtblInvoke   },
+	  {FLUX_UIA_PATTERN_TOGGLE,         info.toggle,    &self->lpVtblToggle   },
+	  {FLUX_UIA_PATTERN_RANGE_VALUE,    info.range,     &self->lpVtblRange    },
+	  {FLUX_UIA_PATTERN_VALUE,          info.value,     &self->lpVtblValue    },
+	  {FLUX_UIA_PATTERN_SELECTION_ITEM, info.selection, &self->lpVtblSelection},
+	};
+
+	for (size_t i = 0; i < sizeof(map) / sizeof(map [0]); i++)
+		if (map [i].id == id && map [i].available) *out = ( IUnknown * ) map [i].iface;
 
 	if (*out) InterlockedIncrement(&self->ref);
 	return S_OK;
@@ -259,27 +273,33 @@ static bool uia_has_focus(FluxUia *self) {
 	return nd && nd->state.focused && GetFocus() == self->info.hwnd;
 }
 
+/* Returns true when `id` is a scalar property handled directly into `out`; false
+ * means the caller falls through to the BSTR name property. */
+static bool s_get_scalar_property(FluxUia *self, FluxUiaControlInfo info, PROPERTYID id, VARIANT *out) {
+	switch (id) {
+	case FLUX_UIA_PROP_CONTROL_TYPE  : variant_set_i4(out, info.control_type); return true;
+	case FLUX_UIA_PROP_AUTOMATION_ID : variant_set_i4(out, ( int ) self->node); return true;
+	case FLUX_UIA_PROP_IS_ENABLED :
+		variant_set_bool(out, xent_get_semantic_enabled(self->info.ctx, self->node));
+		return true;
+	case FLUX_UIA_PROP_IS_CONTROL_ELEMENT :
+	case FLUX_UIA_PROP_IS_CONTENT_ELEMENT : variant_set_bool(out, true); return true;
+	case FLUX_UIA_PROP_IS_KEYBOARD_FOCUSABLE :
+		variant_set_bool(out, info.control_type != FLUX_UIA_CT_GROUP);
+		return true;
+	case FLUX_UIA_PROP_HAS_KEYBOARD_FOCUS : variant_set_bool(out, uia_has_focus(self)); return true;
+	default                               : return false;
+	}
+}
+
 static HRESULT STDMETHODCALLTYPE s_get_property(IRawElementProviderSimple *p, PROPERTYID id, VARIANT *out) {
 	FluxUia           *self = SELF_SIMPLE(p);
 	FluxUiaControlInfo info = uia_control_info(self);
 	if (!out) return E_POINTER;
 	VariantInit(out);
 
-	switch (id) {
-	case FLUX_UIA_PROP_NAME          : break;
-	case FLUX_UIA_PROP_CONTROL_TYPE  : variant_set_i4(out, info.control_type); return S_OK;
-	case FLUX_UIA_PROP_AUTOMATION_ID : variant_set_i4(out, ( int ) self->node); return S_OK;
-	case FLUX_UIA_PROP_IS_ENABLED :
-		variant_set_bool(out, xent_get_semantic_enabled(self->info.ctx, self->node));
-		return S_OK;
-	case FLUX_UIA_PROP_IS_CONTROL_ELEMENT : variant_set_bool(out, true); return S_OK;
-	case FLUX_UIA_PROP_IS_CONTENT_ELEMENT : variant_set_bool(out, true); return S_OK;
-	case FLUX_UIA_PROP_IS_KEYBOARD_FOCUSABLE :
-		variant_set_bool(out, info.control_type != FLUX_UIA_CT_GROUP);
-		return S_OK;
-	case FLUX_UIA_PROP_HAS_KEYBOARD_FOCUS : variant_set_bool(out, uia_has_focus(self)); return S_OK;
-	default                               : return S_OK;
-	}
+	if (s_get_scalar_property(self, info, id, out)) return S_OK;
+	if (id != FLUX_UIA_PROP_NAME) return S_OK;
 
 	BSTR name = utf8_to_bstr(xent_get_semantic_label(self->info.ctx, self->node));
 	if (name) {
@@ -306,8 +326,6 @@ static IRawElementProviderSimpleVtbl const g_simple_vtbl = {
   s_get_property,
   s_get_host,
 };
-
-/* ---- IRawElementProviderFragment ---- */
 
 static HRESULT STDMETHODCALLTYPE f_qi(IRawElementProviderFragment *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_FRAG(p), riid, ppv);
@@ -416,8 +434,6 @@ static IRawElementProviderFragmentVtbl const g_fragment_vtbl = {
   f_get_fragment_root,
 };
 
-/* ---- IRawElementProviderFragmentRoot ---- */
-
 static HRESULT STDMETHODCALLTYPE r_qi(IRawElementProviderFragmentRoot *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_ROOT(p), riid, ppv);
 }
@@ -483,8 +499,6 @@ static IRawElementProviderFragmentRootVtbl const g_root_vtbl = {
   r_get_focus,
 };
 
-/* ---- shared action helpers ---- */
-
 static HRESULT uia_invoke_behavior(FluxUia *self) {
 	FluxNodeData *nd = uia_node_data(self);
 	if (!nd || !nd->behavior.on_click) return UIA_E_INVALIDOPERATION;
@@ -497,8 +511,6 @@ static void uia_raise_self_event(FluxUia *self, int event_id) {
 	if (UiaClientsAreListening())
 		UiaRaiseAutomationEvent(( IRawElementProviderSimple * ) &self->lpVtblSimple, event_id);
 }
-
-/* ---- IInvokeProvider ---- */
 
 static HRESULT STDMETHODCALLTYPE inv_qi(IInvokeProvider *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_INVOKE(p), riid, ppv);
@@ -516,8 +528,6 @@ static HRESULT STDMETHODCALLTYPE inv_invoke(IInvokeProvider *p) {
 }
 
 static IInvokeProviderVtbl const g_invoke_vtbl = {inv_qi, inv_addref, inv_release, inv_invoke};
-
-/* ---- IToggleProvider ---- */
 
 static HRESULT STDMETHODCALLTYPE tog_qi(IToggleProvider *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_TOGGLE(p), riid, ppv);
@@ -538,8 +548,6 @@ static HRESULT STDMETHODCALLTYPE tog_get_state(IToggleProvider *p, enum ToggleSt
 }
 
 static IToggleProviderVtbl const g_toggle_vtbl = {tog_qi, tog_addref, tog_release, tog_toggle, tog_get_state};
-
-/* ---- IRangeValueProvider ---- */
 
 static HRESULT STDMETHODCALLTYPE rng_qi(IRangeValueProvider *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_RANGE(p), riid, ppv);
@@ -565,37 +573,33 @@ static HRESULT STDMETHODCALLTYPE rng_set_value(IRangeValueProvider *p, double va
 	return S_OK;
 }
 
-static HRESULT STDMETHODCALLTYPE rng_get_value(IRangeValueProvider *p, double *out) {
+/* Shared body for the three range getters: fetch the semantic (value, min, max) triple
+ * and return the requested component (0=value, 1=min, 2=max). */
+static HRESULT rng_get_component(IRangeValueProvider *p, double *out, int component) {
 	FluxUia *self = SELF_RANGE(p);
 	if (!out) return E_POINTER;
-	float v = 0.0f, lo = 0.0f, hi = 0.0f;
-	xent_get_semantic_value(self->info.ctx, self->node, &v, &lo, &hi);
-	*out = v;
+	float vals [3] = {0.0f, 0.0f, 0.0f};
+	xent_get_semantic_value(self->info.ctx, self->node, &vals [0], &vals [1], &vals [2]);
+	*out = vals [component];
 	return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE rng_get_value(IRangeValueProvider *p, double *out) {
+	return rng_get_component(p, out, 0);
+}
+
+static HRESULT STDMETHODCALLTYPE rng_get_max(IRangeValueProvider *p, double *out) {
+	return rng_get_component(p, out, 2);
+}
+
+static HRESULT STDMETHODCALLTYPE rng_get_min(IRangeValueProvider *p, double *out) {
+	return rng_get_component(p, out, 1);
 }
 
 static HRESULT STDMETHODCALLTYPE rng_get_readonly(IRangeValueProvider *p, BOOL *out) {
 	FluxUia *self = SELF_RANGE(p);
 	if (!out) return E_POINTER;
 	*out = uia_range_is_readonly(self) ? TRUE : FALSE;
-	return S_OK;
-}
-
-static HRESULT STDMETHODCALLTYPE rng_get_max(IRangeValueProvider *p, double *out) {
-	FluxUia *self = SELF_RANGE(p);
-	if (!out) return E_POINTER;
-	float v = 0.0f, lo = 0.0f, hi = 0.0f;
-	xent_get_semantic_value(self->info.ctx, self->node, &v, &lo, &hi);
-	*out = hi;
-	return S_OK;
-}
-
-static HRESULT STDMETHODCALLTYPE rng_get_min(IRangeValueProvider *p, double *out) {
-	FluxUia *self = SELF_RANGE(p);
-	if (!out) return E_POINTER;
-	float v = 0.0f, lo = 0.0f, hi = 0.0f;
-	xent_get_semantic_value(self->info.ctx, self->node, &v, &lo, &hi);
-	*out = lo;
 	return S_OK;
 }
 
@@ -625,8 +629,6 @@ static IRangeValueProviderVtbl const g_range_vtbl = {
   rng_get_large,
   rng_get_small,
 };
-
-/* ---- IValueProvider ---- */
 
 static HRESULT STDMETHODCALLTYPE val_qi(IValueProvider *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_VALUE(p), riid, ppv);
@@ -685,8 +687,6 @@ static IValueProviderVtbl const g_value_vtbl = {
   val_get_readonly,
 };
 
-/* ---- ISelectionItemProvider ---- */
-
 static HRESULT STDMETHODCALLTYPE sel_qi(ISelectionItemProvider *p, REFIID riid, void **ppv) {
 	return uia_qi_impl(SELF_SELECTION(p), riid, ppv);
 }
@@ -730,8 +730,6 @@ static ISelectionItemProviderVtbl const g_selection_vtbl = {
   sel_is_selected,
   sel_container,
 };
-
-/* ---- lifetime + entry points ---- */
 
 static FluxUia *uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	FluxUia *p = ( FluxUia * ) calloc(1, sizeof(*p));

@@ -384,23 +384,24 @@ static bool tb_handle_history_shortcut(FluxTextBoxInputData *tb, unsigned int vk
 	}
 }
 
-void tb_on_key(void *ctx, unsigned int vk, bool down) {
-	if (!down) return;
+bool tb_on_key(void *ctx, unsigned int vk, bool down) {
+	if (!down) return false;
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
-	if (!tb->base.enabled) return;
+	if (!tb->base.enabled) return false;
 
 	uint32_t old_cursor = tb->base.cursor_position;
 	bool     shift      = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 	bool     ctrl       = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 
-	if (tb_handle_history_shortcut(tb, vk, ctrl)) return;
+	if (tb_handle_history_shortcut(tb, vk, ctrl)) return true;
 	if (!tb_handle_navigation_key(tb, vk, shift, ctrl)
 		&& !tb_handle_edit_key(tb, vk)
 		&& !tb_handle_submit_key(tb, vk)
 		&& !tb_handle_clipboard_shortcut(tb, vk, ctrl))
-		return;
+		return false;
 
 	if (tb->base.cursor_position != old_cursor) tb_update_ime_position(tb);
+	return true;
 }
 
 void tb_on_char(void *ctx, wchar_t ch) {

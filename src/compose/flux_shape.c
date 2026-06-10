@@ -10,7 +10,7 @@
 #include <stdlib.h>
 
 struct FluxShapeRect {
-	WUC_Comp                                *c; /**< Compositor (not owned). */
+	WUC_Comp                                *c;    /**< Compositor (not owned). */
 	WUC_ShapeVisual                         *visual;
 	WUC_Visual                              *base; /**< IVisual facet of visual (size + tree insertion). */
 	WUC_CompositionRoundedRectangleGeometry *geometry;
@@ -35,6 +35,48 @@ static WUC_Brush *color_brush_base(WUC_CompositionColorBrush *cb) {
 	return base;
 }
 
+static bool shape_build_geometry(FluxShapeRect *s, WUC_Comp *comp, float w, float h, float radius) {
+	if (FAILED(wuc_comp_create_rounded_rectangle_geometry(comp, &s->geometry))) return false;
+	WFN_Vector_2 size = {w, h};
+	( void ) wuc_composition_rounded_rectangle_geometry_put__size(s->geometry, size);
+	WFN_Vector_2 cr = {radius, radius};
+	( void ) wuc_composition_rounded_rectangle_geometry_put__corner_radius(s->geometry, cr);
+
+	WUC_CompositionGeometry *geo_base = NULL;
+	if (FAILED(cwinrt_query(s->geometry, &CWINRT_IID_WUC_ICompositionGeometry, ( void ** ) &geo_base))) return false;
+	HRESULT hr = wuc_comp_create_sprite_shape_p_p(comp, geo_base, &s->shape);
+	(( IUnknown * ) geo_base)->lpVtbl->Release(( IUnknown * ) geo_base);
+	return SUCCEEDED(hr);
+}
+
+/* Attach an opaque-black fill brush to the sprite shape (recolored later via put_color). */
+static void shape_set_fill(FluxShapeRect *s, WUC_Comp *comp) {
+	WUI_Color black = {255, 0, 0, 0};
+	if (FAILED(wuc_comp_create_color_brush_color_p(comp, black, &s->fill))) return;
+	WUC_Brush *fill_base = color_brush_base(s->fill);
+	if (!fill_base) return;
+	( void ) wuc_composition_sprite_shape_put__fill_brush(s->shape, fill_base);
+	(( IUnknown * ) fill_base)->lpVtbl->Release(( IUnknown * ) fill_base);
+}
+
+static bool shape_build_visual(FluxShapeRect *s, WUC_Comp *comp, float w, float h) {
+	if (FAILED(wuc_comp_create_shape_visual(comp, &s->visual))) return false;
+	s->base = flux_compose_as_visual(s->visual);
+	if (!s->base) return false;
+	WFN_Vector_2 vsize = {w, h};
+	( void ) wuc_visual_put__size(s->base, vsize);
+
+	WUC_CompositionShapeCollection *shapes = NULL;
+	if (FAILED(wuc_shape_visual_get__shapes(s->visual, &shapes))) return false;
+	WUC_CompositionShape *shape_base = NULL;
+	if (SUCCEEDED(cwinrt_query(s->shape, &CWINRT_IID_WUC_ICompositionShape, ( void ** ) &shape_base))) {
+		( void ) wuc_composition_shape_collection_append(shapes, shape_base);
+		(( IUnknown * ) shape_base)->lpVtbl->Release(( IUnknown * ) shape_base);
+	}
+	(( IUnknown * ) shapes)->lpVtbl->Release(( IUnknown * ) shapes);
+	return true;
+}
+
 FluxShapeRect *flux_shape_rect_create(FluxCompositor *c, float w, float h, float radius) {
 	WUC_Comp *comp = flux_compositor_comp(c);
 	if (!comp) return NULL;
@@ -43,41 +85,9 @@ FluxShapeRect *flux_shape_rect_create(FluxCompositor *c, float w, float h, float
 	if (!s) return NULL;
 	s->c = comp;
 
-	if (FAILED(wuc_comp_create_rounded_rectangle_geometry(comp, &s->geometry))) goto fail;
-	WFN_Vector_2 size = {w, h};
-	( void ) wuc_composition_rounded_rectangle_geometry_put__size(s->geometry, size);
-	WFN_Vector_2 cr = {radius, radius};
-	( void ) wuc_composition_rounded_rectangle_geometry_put__corner_radius(s->geometry, cr);
-
-	WUC_CompositionGeometry *geo_base = NULL;
-	if (FAILED(cwinrt_query(s->geometry, &CWINRT_IID_WUC_ICompositionGeometry, ( void ** ) &geo_base))) goto fail;
-	HRESULT hr = wuc_comp_create_sprite_shape_p_p(comp, geo_base, &s->shape);
-	(( IUnknown * ) geo_base)->lpVtbl->Release(( IUnknown * ) geo_base);
-	if (FAILED(hr)) goto fail;
-
-	WUI_Color black = {255, 0, 0, 0};
-	if (FAILED(wuc_comp_create_color_brush_color_p(comp, black, &s->fill))) goto fail;
-	WUC_Brush *fill_base = color_brush_base(s->fill);
-	if (fill_base) {
-		( void ) wuc_composition_sprite_shape_put__fill_brush(s->shape, fill_base);
-		(( IUnknown * ) fill_base)->lpVtbl->Release(( IUnknown * ) fill_base);
-	}
-
-	if (FAILED(wuc_comp_create_shape_visual(comp, &s->visual))) goto fail;
-	s->base = flux_compose_as_visual(s->visual);
-	if (!s->base) goto fail;
-	WFN_Vector_2 vsize = {w, h};
-	( void ) wuc_visual_put__size(s->base, vsize);
-
-	WUC_CompositionShapeCollection *shapes = NULL;
-	if (FAILED(wuc_shape_visual_get__shapes(s->visual, &shapes))) goto fail;
-	WUC_CompositionShape *shape_base = NULL;
-	if (SUCCEEDED(cwinrt_query(s->shape, &CWINRT_IID_WUC_ICompositionShape, ( void ** ) &shape_base))) {
-		( void ) wuc_composition_shape_collection_append(shapes, shape_base);
-		(( IUnknown * ) shape_base)->lpVtbl->Release(( IUnknown * ) shape_base);
-	}
-	(( IUnknown * ) shapes)->lpVtbl->Release(( IUnknown * ) shapes);
-
+	if (!shape_build_geometry(s, comp, w, h, radius)) goto fail;
+	shape_set_fill(s, comp);
+	if (!shape_build_visual(s, comp, w, h)) goto fail;
 	return s;
 
 fail:

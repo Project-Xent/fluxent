@@ -1,5 +1,6 @@
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
+#include "controls/draw/flux_button_internal.h"
 
 typedef struct {
 	FluxColor fill;
@@ -229,7 +230,24 @@ static void button_draw_content_parts(
 	}
 }
 
-static void draw_button_content(
+void flux_button_draw_chevron(
+  FluxRenderContext const *rc, FluxRect const *box, wchar_t const *glyph, float font_size, FluxColor color
+) {
+	if (!rc->text) return;
+	char utf8 [8];
+	flux_icon_to_utf8(glyph, utf8, sizeof(utf8));
+
+	FluxTextStyle ts;
+	memset(&ts, 0, sizeof(ts));
+	ts.font_family = "Segoe Fluent Icons";
+	ts.font_size   = font_size;
+	ts.text_align  = FLUX_TEXT_CENTER;
+	ts.vert_align  = FLUX_TEXT_VCENTER;
+	ts.color       = color;
+	flux_text_draw(rc->text, FLUX_RT(rc), utf8, box, &ts);
+}
+
+void flux_button_draw_content(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *sb, FluxColor text_color
 ) {
 	if (!rc->text) return;
@@ -293,7 +311,7 @@ button_draw_border(FluxRenderContext const *rc, FluxRect const *sb, float radius
 	flux_draw_rounded_rect(rc, &stroke_rect, radius, colors->stroke, FLUX_STROKE_WIDTH);
 }
 
-static void render_button_common(
+FluxButtonChrome flux_button_paint_chrome(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state,
   bool force_accent
 ) {
@@ -317,7 +335,15 @@ static void render_button_common(
 
 	if (state->focused && state->enabled) flux_draw_focus_rect(rc, &sb, radius);
 
-	draw_button_content(rc, snap, &sb, colors.text);
+	return (FluxButtonChrome) {sb, radius, colors.text, colors.fill, colors.is_accent};
+}
+
+static void render_button_common(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state,
+  bool force_accent
+) {
+	FluxButtonChrome chrome = flux_button_paint_chrome(rc, snap, bounds, state, force_accent);
+	flux_button_draw_content(rc, snap, &chrome.sb, chrome.text_color);
 }
 
 void flux_draw_button(

@@ -96,7 +96,9 @@ static int input_arrow_delta(int direction) {
 }
 
 void flux_input_tab(FluxInput *input, XentNodeId root, bool shift) {
-	if (!input || root == XENT_NODE_INVALID) return;
+	if (!input) return;
+	if (input->modal_root != XENT_NODE_INVALID) root = input->modal_root;
+	if (root == XENT_NODE_INVALID) return;
 
 	XentNodeId focusable [512];
 	uint32_t   count = 0;
@@ -150,14 +152,35 @@ void flux_input_activate(FluxInput *input) {
 void flux_input_escape(FluxInput *input) {
 	if (!input) return;
 
+	if (input->modal_root != XENT_NODE_INVALID && input->modal_escape) {
+		input->modal_escape(input->modal_escape_ctx);
+		return;
+	}
+
 	input_blur_focused(input);
 	input->focused = XENT_NODE_INVALID;
 }
 
-void flux_input_set_focus(FluxInput *input, XentNodeId node) {
+void flux_input_set_modal(FluxInput *input, XentNodeId root, void (*on_escape)(void *ctx), void *ctx) {
 	if (!input) return;
+	input->modal_root       = root;
+	input->modal_escape     = on_escape;
+	input->modal_escape_ctx = ctx;
+}
+
+void flux_input_set_focus(FluxInput *input, XentNodeId node) {
+	if (!input || node == XENT_NODE_INVALID) return;
 
 	if (input->focused != node) input_blur_focused(input);
-	input->focused = node;
-	input_focus_node(input, node);
+	input->focused   = node;
+
+	/* Programmatic focus (WinUI FocusState_Programmatic): set logical focus and raise
+	 * GotFocus, but do NOT engage the keyboard focus visual. The focus rectangle appears
+	 * only once the user navigates by keyboard (Tab/arrows) — same rule as pointer focus,
+	 * where only a text input shows a visual (its caret). This is why a ContentDialog's
+	 * default button is focused on open without a focus ring drawn around it. */
+	FluxNodeData *nd = flux_node_store_get(input->store, node);
+	if (!nd) return;
+	if (flux_get_control_type(input->ctx, node) == FLUX_CONTROL_TEXT_INPUT) nd->state.focused = 1;
+	if (nd->behavior.on_focus) nd->behavior.on_focus(nd->behavior.on_focus_ctx);
 }

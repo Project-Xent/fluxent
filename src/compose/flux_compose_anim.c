@@ -69,7 +69,6 @@ static WF_TimeSpan seconds_to_timespan(double s) {
 	return ts;
 }
 
-/* Set the keyframe animation's duration via its IKeyFrameAnimation facet. */
 static void anim_set_duration(void *kf_anim, double seconds) {
 	WUC_KeyFrameAnimation *kf = NULL;
 	if (FAILED(cwinrt_query(kf_anim, &CWINRT_IID_WUC_IKeyFrameAnimation, ( void ** ) &kf))) return;

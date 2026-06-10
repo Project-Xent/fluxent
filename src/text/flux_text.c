@@ -78,6 +78,7 @@ struct FluxTextRenderer {
 	FluxLayoutCacheEntry  layout_cache [FLUX_LAYOUT_CACHE_SIZE];
 	ID2D1SolidColorBrush *shared_brush;
 	ID2D1RenderTarget    *brush_rt;
+	XentTextBackend       backend; /**< Persistent storage; xent stores the pointer, not a copy. */
 };
 
 static uint32_t fnv1a_str(char const *s) {
@@ -416,10 +417,12 @@ void flux_text_renderer_destroy(FluxTextRenderer *tr) {
 bool flux_text_renderer_register(FluxTextRenderer *tr, XentContext *ctx) {
 	if (!tr || !ctx) return false;
 
-	XentTextBackend backend = kDWriteBackend;
-	backend.userdata        = tr;
+	/* xent_set_text_backend stores the pointer, not a copy, so the backend must
+	 * outlive the call — keep it in the renderer (which lives with the app). */
+	tr->backend          = kDWriteBackend;
+	tr->backend.userdata = tr;
 
-	return xent_set_text_backend(ctx, &backend);
+	return xent_set_text_backend(ctx, &tr->backend);
 }
 
 #define FLUX_TEXT_UNBOUNDED 100000.0f

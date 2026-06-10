@@ -70,9 +70,11 @@ typedef enum FluxCommandPhase
  */
 typedef enum FluxClipAction
 {
-	FLUX_CLIP_NONE, /**< No clip change */
-	FLUX_CLIP_PUSH, /**< Push new clip region onto stack */
-	FLUX_CLIP_POP,  /**< Pop clip region from stack */
+	FLUX_CLIP_NONE,           /**< No clip change */
+	FLUX_CLIP_PUSH,           /**< Push new clip region (+ scroll translate) onto stack */
+	FLUX_CLIP_POP,            /**< Pop clip region from stack */
+	FLUX_CLIP_PUSH_TRANSFORM, /**< Push a scale/translate transform + opacity layer (+ optional subtree clip) */
+	FLUX_CLIP_POP_TRANSFORM,  /**< Pop the transform + opacity layer (+ optional subtree clip) */
 } FluxClipAction;
 
 /**
@@ -82,13 +84,19 @@ typedef enum FluxClipAction
  * computed bounds, interaction state, and clipping information.
  */
 typedef struct FluxRenderCommand {
-	FluxRenderSnapshot snapshot;    /**< Control-specific render data */
-	FluxRect           bounds;      /**< Layout-computed bounding rect */
-	FluxControlState   state;       /**< Interaction state at collection time */
-	FluxCommandPhase   phase;       /**< Which pass to render in */
-	FluxClipAction     clip_action; /**< Clip stack operation */
-	float              scroll_x;    /**< Horizontal scroll offset */
-	float              scroll_y;    /**< Vertical scroll offset */
+	FluxRenderSnapshot snapshot;     /**< Control-specific render data */
+	FluxRect           bounds;       /**< Layout-computed bounding rect */
+	FluxControlState   state;        /**< Interaction state at collection time */
+	FluxCommandPhase   phase;        /**< Which pass to render in */
+	FluxClipAction     clip_action;  /**< Clip stack operation */
+	float              scroll_x;     /**< Horizontal scroll offset */
+	float              scroll_y;     /**< Vertical scroll offset */
+	float              scale;        /**< Subtree scale for FLUX_CLIP_PUSH_TRANSFORM (1 = none) */
+	float              pivot_x;      /**< Scale pivot X (absolute) */
+	float              pivot_y;      /**< Scale pivot Y (absolute) */
+	float              opacity;      /**< Subtree opacity for FLUX_CLIP_PUSH_TRANSFORM (1 = opaque) */
+	float              translate_y;  /**< Subtree Y translate for FLUX_CLIP_PUSH_TRANSFORM (0 = none) */
+	bool               clip_subtree; /**< Clip the subtree to @ref bounds (slide animations) */
 } FluxRenderCommand;
 
 /**

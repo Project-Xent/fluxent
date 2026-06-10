@@ -33,6 +33,12 @@ struct FluxInput {
 	float           scroll_drag_thumb_len;
 	float           scroll_drag_max_scroll;
 	XentNodeId      scroll_hover_target;
+
+	/* Modal focus trap (ContentDialog): when modal_root is set, Tab navigation is
+	 * confined to its subtree and Escape invokes modal_escape instead of blurring. */
+	XentNodeId      modal_root;
+	void            (*modal_escape)(void *ctx);
+	void           *modal_escape_ctx;
 };
 
 void input_blur_focused(FluxInput *input);

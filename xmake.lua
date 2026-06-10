@@ -78,7 +78,7 @@ target("fluxent")
     if is_plat("windows", "mingw") then
         add_syslinks("user32", "gdi32", "dcomp", "d2d1", "d3d11",
                      "dxgi", "dwrite", "dwmapi", "ole32", "oleaut32", "uuid", "uxtheme", "imm32",
-                     "advapi32", "shell32", "coremessaging", "uiautomationcore", "runtimeobject")
+                     "advapi32", "shell32", "coremessaging", "uiautomationcore", "runtimeobject", "windowscodecs")
     end
 target_end()
 
@@ -90,7 +90,8 @@ target("hello_fluxent")
         "examples/hello_fluxent_dynamic.c",
         "examples/hello_fluxent_lifecycle.c",
         "examples/hello_fluxent_showcase.c",
-        "examples/hello_fluxent_static.c"
+        "examples/hello_fluxent_static.c",
+        "examples/hello_fluxent_phase2.c"
     )
     add_includedirs("include")
     if is_plat("mingw") then

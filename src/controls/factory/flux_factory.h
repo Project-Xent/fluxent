@@ -32,6 +32,13 @@ typedef struct FluxFlyout FluxFlyout;
 XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, FluxControlType type);
 
 /**
+ * @brief Resolve a node's on-screen anchor rect (DPI-scaled, scroll-adjusted).
+ * Falls back to the cursor position when window/ctx/node are unavailable.
+ * Used by flyout/split-button bindings to position popups under a control.
+ */
+FluxRect   flux_binding_screen_anchor(FluxWindow *window, XentContext *ctx, FluxNodeStore *store, XentNodeId node);
+
+/**
  * @brief Bind a flyout to a node's pointer-down event.
  */
 void       flux_node_set_flyout(FluxNodeStore *store, XentNodeId id, FluxFlyout *flyout, FluxPlacement placement);

@@ -195,6 +195,27 @@ void flux_info_badge_set_value(FluxNodeStore *store, XentNodeId id, int32_t valu
 /** @brief Set the icon name (for icon mode). */
 void flux_info_badge_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name);
 
+/** @brief Set the info bar severity (icon glyph + color scheme). */
+void flux_info_bar_set_severity(FluxNodeStore *store, XentNodeId id, FluxInfoBarSeverity severity);
+
+/** @brief Set the info bar title (bold leading text). */
+void flux_info_bar_set_title(FluxNodeStore *store, XentNodeId id, char const *title);
+
+/** @brief Set the info bar message (body text). */
+void flux_info_bar_set_message(FluxNodeStore *store, XentNodeId id, char const *message);
+
+/** @brief Show or hide the info bar. */
+void flux_info_bar_set_open(FluxNodeStore *store, XentNodeId id, bool open);
+
+/** @brief Expand or collapse the expander (attaches/detaches its content). */
+void flux_expander_set_expanded(FluxNodeStore *store, XentNodeId id, XentContext *ctx, bool expanded);
+
+/** @brief Set the image source path / URI. */
+void flux_image_set_source(FluxNodeStore *store, XentNodeId id, char const *source);
+
+/** @brief Set the image stretch mode. */
+void flux_image_set_stretch(FluxNodeStore *store, XentNodeId id, FluxImageStretch stretch);
+
 /** @brief Attach a tooltip to any node. Shown on hover after a delay. */
 void flux_node_set_tooltip(FluxNodeStore *store, XentNodeId id, char const *text);
 
@@ -213,11 +234,33 @@ void flux_node_set_flyout(FluxNodeStore *store, XentNodeId id, FluxFlyout *flyou
  */
 void flux_node_set_flyout_ex(FluxFlyoutBindingInfo const *info);
 
+/**
+ * @brief Attach a flyout to a split button's secondary (dropdown) zone.
+ * The primary zone continues to fire the action callback set at creation.
+ */
+void flux_split_button_set_flyout_ex(FluxFlyoutBindingInfo const *info);
+
+/**
+ * @brief Attach a MenuFlyout to a split button's secondary (dropdown) zone -- the WinUI
+ * default. Opens on secondary-zone click or Alt+Down / F4; keyboard invoke highlights the
+ * first item. The primary zone still fires the action callback set at creation.
+ */
+void flux_split_button_set_menu_flyout_ex(FluxContextFlyoutBindingInfo const *info);
+
 /** @brief Attach a context menu shown on right-click / long-press. */
 void flux_node_set_context_flyout(FluxNodeStore *store, XentNodeId id, FluxMenuFlyout *menu);
 
 /** @brief Attach a context menu with explicit context references. */
 void flux_node_set_context_flyout_ex(FluxContextFlyoutBindingInfo const *info);
+
+/**
+ * @brief Attach a MenuFlyout opened by primary invoke (WinUI Button.Flyout == MenuFlyout):
+ * click or Space/Enter opens it; a keyboard invoke highlights the first item immediately.
+ */
+void flux_node_set_menu_flyout(FluxNodeStore *store, XentNodeId id, FluxMenuFlyout *menu);
+
+/** @brief Attach a primary-invoke MenuFlyout with explicit context references. */
+void flux_node_set_menu_flyout_ex(FluxContextFlyoutBindingInfo const *info);
 
 #ifdef __cplusplus
 }

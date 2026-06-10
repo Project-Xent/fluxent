@@ -36,15 +36,17 @@ bool demo_create_app(Demo *d) {
 	d->app            = flux_app_create(&cfg);
 	if (!d->app) return false;
 
-	d->ctx         = flux_app_get_context(d->app);
-	d->store       = flux_app_get_store(d->app);
-	d->scroll_root = flux_app_get_root(d->app);
-	if (!d->ctx || !d->store || d->scroll_root == XENT_NODE_INVALID) return false;
+	d->ctx        = flux_app_get_context(d->app);
+	d->store      = flux_app_get_store(d->app);
+	d->scene_root = flux_app_get_root(d->app);
+	if (!d->ctx || !d->store || d->scene_root == XENT_NODE_INVALID) return false;
 	return demo_alloc_state(d);
 }
 
 void demo_destroy(Demo *d) {
 	if (d->menu) flux_menu_flyout_destroy(d->menu);
+	if (d->dd_menu) flux_menu_flyout_destroy(d->dd_menu);
+	if (d->sb_menu) flux_menu_flyout_destroy(d->sb_menu);
 	if (d->flyout) flux_flyout_destroy(d->flyout);
 	if (d->app) flux_app_destroy(d->app);
 	free(d->counter);

@@ -148,15 +148,16 @@ static void demo_add_popup_buttons(Demo *d) {
 	flux_node_set_flyout_ex(&flyout_info);
 	flux_node_set_tooltip(d->store, fly, "Click to show a Flyout popup below this button");
 
-	XentNodeId ctx_btn = demo_button(d, row, "Right-click (Menu)", NULL, NULL);
-	xent_set_size(d->ctx, ctx_btn, (XentSize) {200, 32});
-	FluxContextFlyoutBindingInfo context_info = {d->store, ctx_btn, d->menu, d->ctx, flux_app_get_window(d->app)};
-	flux_node_set_context_flyout_ex(&context_info);
-	flux_node_set_tooltip(d->store, ctx_btn, "Right-click to show a MenuFlyout context menu");
+	XentNodeId menu_btn = demo_button(d, row, "Click me (Menu)", NULL, NULL);
+	xent_set_size(d->ctx, menu_btn, (XentSize) {200, 32});
+	FluxContextFlyoutBindingInfo menu_info = {d->store, menu_btn, d->menu, d->ctx, flux_app_get_window(d->app)};
+	flux_node_set_menu_flyout_ex(&menu_info);
+	flux_node_set_tooltip(d->store, menu_btn, "Click (or Space/Enter) to open a MenuFlyout below this button");
 }
 
 void demo_add_dynamic_content(Demo *d) {
 	demo_add_text_inputs(d);
 	demo_add_flyout_menu(d);
 	demo_add_popup_buttons(d);
+	demo_add_phase2_content(d);
 }

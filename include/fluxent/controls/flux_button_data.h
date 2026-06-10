@@ -35,7 +35,6 @@ typedef struct FluxButtonData {
 	FluxColor       pressed_color;          /**< Background when pressed */
 	float           font_size;              /**< Font size in DIPs */
 	FluxButtonStyle style;                  /**< Visual style variant */
-	bool            enabled;                /**< Is button interactive? */
 	bool            is_checked;             /**< For toggle buttons */
 	void            (*on_click)(void *ctx); /**< Callback invoked when the button is clicked. */
 	void           *on_click_ctx;
@@ -54,7 +53,6 @@ typedef struct FluxRepeatButtonData {
 	FluxColor       label_color;
 	float           font_size;
 	FluxButtonStyle style;
-	bool            enabled;
 	uint32_t        repeat_delay_ms;        /**< Initial delay before repeat (default 400) */
 	uint32_t        repeat_interval_ms;     /**< Interval between repeats (default 50) */
 	void            (*on_click)(void *ctx); /**< Callback invoked for each repeat activation. */
@@ -65,12 +63,11 @@ typedef struct FluxRepeatButtonData {
  * @brief Configuration for a hyperlink button.
  */
 typedef struct FluxHyperlinkData {
-	char const *label;       /**< Link text */
-	char const *url;         /**< Target URL (NULL if using on_click) */
-	char const *icon_name;   /**< Optional icon */
-	FluxColor   label_color; /**< Text color (typically accent) */
+	char const *label;                  /**< Link text */
+	char const *url;                    /**< Target URL (NULL if using on_click) */
+	char const *icon_name;              /**< Optional icon */
+	FluxColor   label_color;            /**< Text color (typically accent) */
 	float       font_size;
-	bool        enabled;
 	bool        visited;                /**< Has the link been clicked? */
 	void        (*on_click)(void *ctx); /**< Callback invoked when the link is clicked. */
 	void       *on_click_ctx;

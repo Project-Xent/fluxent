@@ -81,6 +81,68 @@ void flux_draw_info_badge(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw a drop-down button (button chrome + trailing chevron). */
+void flux_draw_dropdown_button(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/* SplitButton zone geometry, shared by the renderer and pointer-down routing:
+ * WinUI SplitButtonSecondaryButtonSize=35 plus a 1px divider. */
+#define FLUX_SPLIT_SECONDARY_W 35.0f
+#define FLUX_SPLIT_DIVIDER_W   1.0f
+
+/** @brief Draw a split button (primary action zone + divider + secondary chevron zone). */
+void flux_draw_split_button(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw a combo box closed box (selected text + chevron). */
+void flux_draw_combo_box(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/* Expander metrics (Expander_themeresources.xaml), shared by the renderers and
+ * the factory/layout: header MinHeight 48, header padding 16,0,0,0; chevron 32x32
+ * box, margin 20,0,8,0, glyph 12px. The header content cell is inset on the right
+ * by the full chevron zone (box + left + right margin) so labels never collide. */
+#define FLUX_EXPANDER_MIN_HEIGHT   48.0f
+#define FLUX_EXPANDER_HEADER_PAD   16.0f
+#define FLUX_EXPANDER_CHEVRON_BOX  32.0f
+#define FLUX_EXPANDER_CHEVRON_ML   20.0f
+#define FLUX_EXPANDER_CHEVRON_MR   8.0f
+#define FLUX_EXPANDER_CHEVRON_ZONE (FLUX_EXPANDER_CHEVRON_ML + FLUX_EXPANDER_CHEVRON_BOX + FLUX_EXPANDER_CHEVRON_MR)
+#define FLUX_EXPANDER_CONTENT_PAD  16.0f
+
+/** @brief Draw the expander toggle header (background + border + chevron box). */
+void flux_draw_expander_header(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw the expander content panel (secondary fill + bottom-rounded 1,0,1,1 border). */
+void flux_draw_expander_content(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw an info bar (severity icon + title + message + close button). */
+void flux_draw_info_bar(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw a content dialog scrim (full-window dimming behind the card). */
+void flux_draw_content_dialog(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw the dialog content region (LayerFillColorAlt fill + bottom separator hairline). */
+void flux_draw_dialog_content(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw an image (decoded bitmap with stretch mode), or a placeholder. */
+void flux_draw_image(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw a text box. */
 void flux_draw_textbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

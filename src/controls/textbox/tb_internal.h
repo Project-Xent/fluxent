@@ -201,8 +201,8 @@ void          nb_coerce_value(FluxTextBoxInputData *tb);
 /** @brief Writes nb_value, nb_minimum, nb_maximum, and spin placement to the node's semantic properties. */
 void          nb_sync_semantics(FluxTextBoxInputData *tb);
 
-/** @brief Handles a keyboard key press or release event. */
-void          tb_on_key(void *ctx, unsigned int vk, bool down);
+/** @brief Handles a keyboard key press; returns true if the key was consumed. */
+bool          tb_on_key(void *ctx, unsigned int vk, bool down);
 /** @brief Handles a character input event (WM_CHAR). */
 void          tb_on_char(void *ctx, wchar_t ch);
 /** @brief Handles pointer move for hit-testing and drag selection. */

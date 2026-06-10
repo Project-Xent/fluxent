@@ -13,7 +13,7 @@
 /** @brief Node store / Xent arena initial capacity for hello_fluxent demos. */
 #define HELLO_FLUXENT_DEMO_STORE_CAPACITY   512
 /** @brief Scroll content height matching the static demo column layout extent. */
-#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H 1560
+#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H 2320
 /** @brief Scroll content width used to size the scroll viewport model. */
 #define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W HELLO_FLUXENT_DEMO_WINDOW_W
 
@@ -58,7 +58,8 @@ typedef struct Demo {
 	XentContext        *ctx;
 	FluxNodeStore      *store;
 	FluxApp            *app;
-	XentNodeId          scroll_root;
+	XentNodeId          scene_root;  /**< App root: absolute container hosting the page scroll + modal overlays. */
+	XentNodeId          scroll_root; /**< Scrolling page container (child of scene_root). */
 	XentNodeId          root;
 	XentNodeId          dashboard;
 	FluxNodeData       *scroll_nd;
@@ -72,6 +73,9 @@ typedef struct Demo {
 	RadioGroupMember   *members;
 	FluxFlyout         *flyout;
 	FluxMenuFlyout     *menu;
+	FluxMenuFlyout     *dd_menu; /**< MenuFlyout hosted by the DropDownButton. */
+	FluxMenuFlyout     *sb_menu; /**< MenuFlyout hosted by the SplitButton's secondary. */
+	XentNodeId          dialog;  /**< ContentDialog node. */
 } Demo;
 
 bool       demo_init(Demo *d);
@@ -104,6 +108,7 @@ void       demo_add_radio(Demo *d);
 void       demo_build_static_content(Demo *d);
 bool       demo_create_app(Demo *d);
 void       demo_add_dynamic_content(Demo *d);
+void       demo_add_phase2_content(Demo *d);
 void       demo_destroy(Demo *d);
 
 #endif

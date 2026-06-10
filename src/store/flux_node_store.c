@@ -18,6 +18,7 @@ struct FluxNodeStore {
 	uint32_t            capacity;
 	uint32_t            count;
 	uint32_t            tombstones;
+	XentContext        *ctx; /**< Context the nodes live in; bound at scene creation. */
 	FluxControlRenderer renderers [FLUX_CONTROL_CUSTOM + 1];
 };
 
@@ -102,7 +103,8 @@ static void flux_node_data_init(FluxNodeData *d, XentNodeId id) {
 	memset(d, 0, sizeof(*d));
 	d->node_id         = id;
 	d->visuals.opacity = 1.0f;
-	d->state.enabled   = 1;
+	d->render_scale    = 1.0f;
+	d->render_opacity  = 1.0f;
 	d->state.visible   = 1;
 	d->component_type  = FLUX_CONTROL_CONTAINER;
 }
@@ -186,8 +188,15 @@ void flux_node_store_remove(FluxNodeStore *store, XentNodeId id) {
 
 uint32_t flux_node_store_count(FluxNodeStore const *store) { return store ? store->count : 0; }
 
-void     flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx) {
+void     flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx) {
+	if (store) store->ctx = ctx;
+}
+
+XentContext *flux_node_store_context(FluxNodeStore const *store) { return store ? store->ctx : NULL; }
+
+void         flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx) {
 	if (!store || !ctx) return;
+	store->ctx = ctx;
 	for (uint32_t i = 0; i < store->capacity; i++) {
 		if (store->slots [i].tag != FLUX_NS_OCCUPIED) continue;
 		FluxNodeData *d = &store->slots [i].data;

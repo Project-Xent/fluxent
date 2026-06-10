@@ -33,7 +33,6 @@ typedef struct FluxCheckboxData {
 	FluxColor      check_color;                                       /**< Checkmark / fill color */
 	FluxColor      box_color;                                         /**< Border / box color */
 	FluxCheckState state;                                             /**< Current check state */
-	bool           enabled;                                           /**< Is checkbox interactive? */
 	void           (*on_change)(void *ctx, FluxCheckState new_state); /**< Callback invoked when state changes. */
 	void          *on_change_ctx;
 } FluxCheckboxData;

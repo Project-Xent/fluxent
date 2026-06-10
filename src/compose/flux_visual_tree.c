@@ -16,15 +16,15 @@
 #include <string.h>
 
 typedef struct VisNode {
-	WUC_Container *container; /**< This node's container visual (we hold one ref). */
-	WUC_Visual    *visual;    /**< IVisual facet of container (offset/size + collection ops). */
-	WUC_Container *holder;    /**< Scroll node only: content sub-visual the children attach to,
-	                           *   so an InteractionTracker can move all content as one (NULL otherwise). */
+	WUC_Container *container;     /**< This node's container visual (we hold one ref). */
+	WUC_Visual    *visual;        /**< IVisual facet of container (offset/size + collection ops). */
+	WUC_Container *holder;        /**< Scroll node only: content sub-visual the children attach to,
+	                               *   so an InteractionTracker can move all content as one (NULL otherwise). */
 	WUC_Visual    *holder_visual; /**< IVisual facet of holder (offset binding target). */
-	XentNodeId     parent;    /**< Parent node id, for detach on removal. */
-	float          abs_x;     /**< Absolute layout x, so children can offset relatively. */
+	XentNodeId     parent;        /**< Parent node id, for detach on removal. */
+	float          abs_x;         /**< Absolute layout x, so children can offset relatively. */
 	float          abs_y;
-	uint32_t       seen;      /**< Last generation this node was reconciled. */
+	uint32_t       seen;          /**< Last generation this node was reconciled. */
 	bool           in_use;
 	bool           clipped;       /**< Scroll node: an inset clip is installed on the container. */
 	bool           tracker_bound; /**< Scroll node: holder Offset is driven by an InteractionTracker. */
@@ -93,7 +93,7 @@ static void tree_node_scroll(FluxVisualTree const *vt, XentNodeId node, float *s
 	*sx = 0.0f;
 	*sy = 0.0f;
 	if (!vt->store || flux_get_control_type(vt->ctx, node) != FLUX_CONTROL_SCROLL) return;
-	FluxNodeData *nd = flux_node_store_get(vt->store, node);
+	FluxNodeData   *nd = flux_node_store_get(vt->store, node);
 	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
 	if (!sd) return;
 	*sx = sd->scroll_x;
@@ -224,6 +224,28 @@ typedef struct ReconcileFrame {
 	XentNodeId parent;
 } ReconcileFrame;
 
+/* Push a frame onto the traversal stack, growing it on demand. False on OOM. */
+static bool reconcile_stack_push(ReconcileFrame **stack, uint32_t *top, uint32_t *cap, ReconcileFrame f) {
+	if (*top == *cap) {
+		uint32_t        ncap = *cap * 2;
+		ReconcileFrame *ns   = ( ReconcileFrame * ) realloc(*stack, sizeof(**stack) * ncap);
+		if (!ns) return false;
+		*stack = ns;
+		*cap   = ncap;
+	}
+	(*stack) [(*top)++] = f;
+	return true;
+}
+
+/* Push every child of `parent` as a frame. False on OOM (caller should stop). */
+static bool
+reconcile_push_children(ReconcileFrame **stack, uint32_t *top, uint32_t *cap, XentContext *ctx, XentNodeId parent) {
+	for (XentNodeId child = xent_get_first_child(ctx, parent); child != XENT_NODE_INVALID;
+	  child               = xent_get_next_sibling(ctx, child))
+		if (!reconcile_stack_push(stack, top, cap, (ReconcileFrame) {child, parent})) return false;
+	return true;
+}
+
 void flux_visual_tree_reconcile(
   FluxVisualTree *vt, XentContext *ctx, FluxNodeStore *store, XentNodeId root, float scale
 ) {
@@ -246,19 +268,7 @@ void flux_visual_tree_reconcile(
 		xent_get_layout_rect(ctx, f.node, &rect);
 
 		if (!tree_sync_node(vt, f.node, f.parent, &rect)) continue;
-
-		for (XentNodeId child = xent_get_first_child(ctx, f.node); child != XENT_NODE_INVALID;
-		  child               = xent_get_next_sibling(ctx, child))
-		{
-			if (top == cap) {
-				uint32_t        ncap = cap * 2;
-				ReconcileFrame *ns   = ( ReconcileFrame * ) realloc(stack, sizeof(*stack) * ncap);
-				if (!ns) goto done;
-				stack = ns;
-				cap   = ncap;
-			}
-			stack [top++] = (ReconcileFrame) {child, f.node};
-		}
+		if (!reconcile_push_children(&stack, &top, &cap, ctx, f.node)) goto done;
 	}
 
 done:

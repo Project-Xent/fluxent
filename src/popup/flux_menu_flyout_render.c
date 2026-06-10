@@ -429,8 +429,8 @@ void menu_paint(void *ctx, FluxPopup *popup) {
 	bool                   is_dark = false;
 	menu_resolve_theme(m, &theme, &is_dark);
 
-	ResolvedColors          c      = resolve_colors(m);
-	c.presenter_bg                 = flux_popup_acrylic_tint(popup, c.presenter_bg); /* reveal blurred backdrop */
+	ResolvedColors c               = resolve_colors(m);
+	c.presenter_bg                 = flux_popup_acrylic_tint(popup, c.presenter_bg);
 	FluxRenderContext       rc     = menu_render_context(m, d2d, theme, is_dark);
 	ID2D1RenderTarget      *rt     = ( ID2D1RenderTarget * ) d2d;
 	MenuPresenterLayout     layout = menu_presenter_layout(m);

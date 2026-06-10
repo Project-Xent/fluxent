@@ -41,7 +41,6 @@ XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
 	bd->label                  = info->label;
 	bd->font_size              = 14.0f;
 	bd->style                  = FLUX_BUTTON_STANDARD;
-	bd->enabled                = true;
 	bd->on_click               = info->on_click;
 	bd->on_click_ctx           = info->userdata;
 
@@ -52,6 +51,35 @@ XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
 
 	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
 	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
+	xent_set_focusable(info->ctx, node, true);
+
+	return node;
+}
+
+XentNodeId flux_create_dropdown_button(FluxDropDownButtonCreateInfo const *info) {
+	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_DROPDOWN_BUTTON, flux_draw_dropdown_button, NULL);
+
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_DROPDOWN_BUTTON);
+	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+	FluxNodeData   *nd = flux_node_store_get(info->store, node);
+	FluxButtonData *bd = nd ? ( FluxButtonData * ) calloc(1, sizeof(FluxButtonData)) : NULL;
+	if (!nd || !bd) {
+		free(bd);
+		return node;
+	}
+	bd->label                  = info->label;
+	bd->icon_name              = info->icon_name;
+	bd->font_size              = 14.0f;
+	bd->style                  = FLUX_BUTTON_STANDARD;
+
+	nd->component_data         = bd;
+	nd->destroy_component_data = free;
+
+	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
+	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
+	xent_set_focusable(info->ctx, node, true);
 
 	return node;
 }
@@ -96,11 +124,10 @@ typedef struct FluxSliderInputData {
 
 static void slider_move_trampoline(void *ctx, float local_x, float local_y) {
 	( void ) local_y;
-	FluxSliderInputData *sid = ( FluxSliderInputData * ) ctx;
-	FluxSliderData      *sd  = &sid->base;
-	if (!sd->enabled) return;
+	FluxSliderInputData *sid  = ( FluxSliderInputData * ) ctx;
+	FluxSliderData      *sd   = &sid->base;
 
-	XentRect rect = {0};
+	XentRect             rect = {0};
 	if (!xent_get_layout_rect(sid->ctx, sid->node, &rect)) return;
 
 	float pad     = 10.0f;
@@ -117,6 +144,32 @@ static void slider_move_trampoline(void *ctx, float local_x, float local_y) {
 
 	sd->current_value = value;
 	if (sd->on_change) sd->on_change(sd->on_change_ctx, value);
+}
+
+/* Keyboard control matching WinUI Slider: arrows step by SmallChange (the slider's
+ * step, default 1), PageUp/Down by 10x, Home/End jump to the range ends. */
+static bool slider_on_key(void *ctx, unsigned int vk, bool down) {
+	if (!down) return false;
+	FluxSliderInputData *sid   = ( FluxSliderInputData * ) ctx;
+	FluxSliderData      *sd    = &sid->base;
+	float                small = sd->step > 0.0f ? sd->step : 1.0f;
+	float                v     = sd->current_value;
+	switch (vk) {
+	case VK_LEFT :
+	case VK_DOWN  : v -= small; break;
+	case VK_RIGHT :
+	case VK_UP    : v += small; break;
+	case VK_PRIOR : v += small * 10.0f; break;
+	case VK_NEXT  : v -= small * 10.0f; break;
+	case VK_HOME  : v = sd->min_value; break;
+	case VK_END   : v = sd->max_value; break;
+	default       : return false;
+	}
+	v = fclampf(v, sd->min_value, sd->max_value);
+	if (v == sd->current_value) return true;
+	sd->current_value = v;
+	if (sd->on_change) sd->on_change(sd->on_change_ctx, v);
+	return true;
 }
 
 XentNodeId flux_create_slider(FluxSliderCreateInfo const *info) {
@@ -138,7 +191,6 @@ XentNodeId flux_create_slider(FluxSliderCreateInfo const *info) {
 	sid->base.max_value              = info->max;
 	sid->base.current_value          = info->value;
 	sid->base.step                   = 0.0f;
-	sid->base.enabled                = true;
 	sid->base.on_change              = info->on_change;
 	sid->base.on_change_ctx          = info->userdata;
 	sid->ctx                         = info->ctx;
@@ -148,13 +200,17 @@ XentNodeId flux_create_slider(FluxSliderCreateInfo const *info) {
 	nd->destroy_component_data       = free;
 	nd->behavior.on_pointer_move     = slider_move_trampoline;
 	nd->behavior.on_pointer_move_ctx = sid;
+	nd->behavior.on_key              = slider_on_key;
+	nd->behavior.on_key_ctx          = sid;
+
+	xent_set_focusable(info->ctx, node, true);
 
 	return node;
 }
 
 static void checkbox_click_trampoline(void *ctx) {
 	FluxCheckboxData *cd = ( FluxCheckboxData * ) ctx;
-	if (!cd || !cd->enabled) return;
+	if (!cd) return;
 	cd->state = (cd->state == FLUX_CHECK_CHECKED) ? FLUX_CHECK_UNCHECKED : FLUX_CHECK_CHECKED;
 	if (cd->on_change) cd->on_change(cd->on_change_ctx, cd->state);
 }
@@ -173,7 +229,6 @@ static XentNodeId create_toggle_node(FluxToggleCreateInfo const *info, FluxContr
 	}
 	cd->label                  = info->label;
 	cd->state                  = info->checked ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED;
-	cd->enabled                = true;
 	cd->on_change              = info->on_change;
 	cd->on_change_ctx          = info->userdata;
 
@@ -183,6 +238,7 @@ static XentNodeId create_toggle_node(FluxToggleCreateInfo const *info, FluxContr
 	nd->behavior.on_click_ctx  = cd;
 
 	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
+	xent_set_focusable(info->ctx, node, true);
 
 	return node;
 }
@@ -287,7 +343,6 @@ XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info) {
 	hd->label                  = info->label;
 	hd->url                    = info->url;
 	hd->font_size              = 14.0f;
-	hd->enabled                = true;
 	hd->on_click               = info->on_click;
 	hd->on_click_ctx           = info->userdata;
 
@@ -312,6 +367,41 @@ XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info) {
 	}
 
 	return node;
+}
+
+XentNodeId flux_create_image(FluxImageCreateInfo const *info) {
+	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
+	flux_node_store_register_renderer(info->store, FLUX_CONTROL_IMAGE, flux_draw_image, NULL);
+
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_IMAGE);
+	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+	FluxNodeData  *nd = flux_node_store_get(info->store, node);
+	FluxImageData *im = nd ? ( FluxImageData * ) calloc(1, sizeof(FluxImageData)) : NULL;
+	if (!nd || !im) {
+		free(im);
+		return node;
+	}
+	im->source                 = info->source;
+	im->stretch                = info->stretch;
+
+	nd->component_data         = im;
+	nd->destroy_component_data = free;
+
+	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_IMAGE);
+	return node;
+}
+
+void flux_image_set_source(FluxNodeStore *store, XentNodeId id, char const *source) {
+	FluxNodeData *nd = flux_node_store_get(store, id);
+	if (!nd || nd->component_type != FLUX_CONTROL_IMAGE) return;
+	(( FluxImageData * ) nd->component_data)->source = source;
+}
+
+void flux_image_set_stretch(FluxNodeStore *store, XentNodeId id, FluxImageStretch stretch) {
+	FluxNodeData *nd = flux_node_store_get(store, id);
+	if (!nd || nd->component_type != FLUX_CONTROL_IMAGE) return;
+	(( FluxImageData * ) nd->component_data)->stretch = stretch;
 }
 
 XentNodeId flux_create_info_badge(FluxInfoBadgeCreateInfo const *info) {

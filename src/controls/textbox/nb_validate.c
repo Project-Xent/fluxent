@@ -134,11 +134,9 @@ static void nb_format_free(NbFormatResult *fmt) {
 
 void nb_coerce_value(FluxTextBoxInputData *tb) {
 	double v = tb->nb->value;
-	if (isnan(v)) return;
-	if (tb->nb->validation == 0) {
-		if (v > tb->nb->maximum) tb->nb->value = tb->nb->maximum;
-		else if (v < tb->nb->minimum) tb->nb->value = tb->nb->minimum;
-	}
+	if (isnan(v) || tb->nb->validation != 0) return;
+	if (v > tb->nb->maximum) tb->nb->value = tb->nb->maximum;
+	else if (v < tb->nb->minimum) tb->nb->value = tb->nb->minimum;
 }
 
 void nb_sync_semantics(FluxTextBoxInputData *tb) {
@@ -227,6 +225,13 @@ void nb_validate_input(FluxTextBoxInputData *tb) {
 	else nb_set_value(tb, parsed);
 }
 
+/* Wrap a stepped value around the [min, max] range (WinUI NumberBox wrap behavior). */
+static double nb_wrap(double v, double min, double max) {
+	if (v > max) return min;
+	if (v < min) return max;
+	return v;
+}
+
 void nb_step_value(FluxTextBoxInputData *tb, double change) {
 	nb_validate_input(tb);
 
@@ -234,11 +239,7 @@ void nb_step_value(FluxTextBoxInputData *tb, double change) {
 	if (isnan(v)) return;
 
 	v += change;
-
-	if (tb->nb->is_wrap_enabled) {
-		if (v > tb->nb->maximum) v = tb->nb->minimum;
-		else if (v < tb->nb->minimum) v = tb->nb->maximum;
-	}
+	if (tb->nb->is_wrap_enabled) v = nb_wrap(v, tb->nb->minimum, tb->nb->maximum);
 
 	nb_set_value(tb, v);
 }

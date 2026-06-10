@@ -1,4 +1,5 @@
 #include "render/flux_render_internal.h"
+#include "render/flux_fluent.h"
 #include <math.h>
 
 static float slider_clampf(float value, float min, float max) {
@@ -181,4 +182,11 @@ void flux_draw_slider(
 	SliderColors colors = slider_colors(rc->theme, state, &anim);
 	slider_draw_track(rc, snap, &geom, &colors);
 	slider_draw_thumb(rc, state, &geom, &colors, &anim);
+
+	if (state->focused && state->enabled) {
+		FluxRect thumb = {
+		  geom.thumb_x - geom.thumb_outer, geom.cy - geom.thumb_outer, geom.thumb_outer * 2.0f,
+		  geom.thumb_outer * 2.0f};
+		flux_draw_focus_rect(rc, &thumb, geom.thumb_outer);
+	}
 }

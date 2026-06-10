@@ -113,13 +113,34 @@ static void repeat_on_pointer_move(void *ctx, float local_x, float local_y) {
 	rb->pointer_inside = true;
 	if (!rb->repeat_active || rb->timer_id) return;
 
-	uint32_t interval = rb->base.repeat_interval_ms;
-	repeat_start_timer(rb, interval < 10 ? 50 : interval);
+	/* WinUI re-applies the initial Delay when the pointer re-enters a held button
+	 * (UpdateRepeatState -> StartTimer, which always arms with Delay first). */
+	uint32_t delay = rb->base.repeat_delay_ms;
+	repeat_start_timer(rb, delay < 10 ? 400 : delay);
 }
 
 static void repeat_on_blur(void *ctx) { repeat_stop_timer(( FluxRepeatButtonInputData * ) ctx); }
 
 static void repeat_on_pointer_up(void *ctx) { repeat_stop_timer(( FluxRepeatButtonInputData * ) ctx); }
+
+/* WinUI RepeatButton repeats while Space is held: OnKeyDown fires the first click and
+ * starts the timer, OnKeyUp stops it (lost focus also stops, via on_blur). The OS key
+ * auto-repeat is ignored -- the control drives its own Delay/Interval. Enter is not a
+ * repeat key. */
+static bool repeat_on_key(void *ctx, unsigned int vk, bool down) {
+	FluxRepeatButtonInputData *rb = ( FluxRepeatButtonInputData * ) ctx;
+	if (!rb || vk != VK_SPACE) return false;
+	if (!down) {
+		repeat_stop_timer(rb);
+		return true;
+	}
+	if (rb->repeat_active) return true; /* swallow OS auto-repeat key-downs */
+	rb->repeat_active = true;
+	if (rb->base.on_click) rb->base.on_click(rb->base.on_click_ctx);
+	uint32_t delay = rb->base.repeat_delay_ms;
+	repeat_start_timer(rb, delay < 10 ? 400 : delay);
+	return true;
+}
 
 static void repeat_destroy(void *component_data) {
 	FluxRepeatButtonInputData *rb = ( FluxRepeatButtonInputData * ) component_data;
@@ -144,7 +165,6 @@ XentNodeId flux_create_repeat_button(FluxButtonCreateInfo const *info) {
 	rb->base.label                   = info->label;
 	rb->base.font_size               = 14.0f;
 	rb->base.style                   = FLUX_BUTTON_STANDARD;
-	rb->base.enabled                 = true;
 	rb->base.repeat_delay_ms         = 400;
 	rb->base.repeat_interval_ms      = 50;
 	rb->base.on_click                = info->on_click;
@@ -164,6 +184,8 @@ XentNodeId flux_create_repeat_button(FluxButtonCreateInfo const *info) {
 	nd->behavior.on_cancel_ctx       = rb;
 	nd->behavior.on_blur             = repeat_on_blur;
 	nd->behavior.on_blur_ctx         = rb;
+	nd->behavior.on_key              = repeat_on_key;
+	nd->behavior.on_key_ctx          = rb;
 
 	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
 	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);

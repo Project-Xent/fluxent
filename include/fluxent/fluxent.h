@@ -157,6 +157,24 @@ typedef struct FluxHyperlinkCreateInfo {
 	void          *userdata;
 } FluxHyperlinkCreateInfo;
 
+typedef struct FluxDropDownButtonCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	char const    *label;
+	char const    *icon_name;
+} FluxDropDownButtonCreateInfo;
+
+typedef struct FluxSplitButtonCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	char const    *label;
+	char const    *icon_name;
+	void           (*on_click)(void *); /**< Primary action (left zone). */
+	void          *userdata;
+} FluxSplitButtonCreateInfo;
+
 typedef struct FluxProgressCreateInfo {
 	XentContext   *ctx;
 	FluxNodeStore *store;
@@ -165,6 +183,14 @@ typedef struct FluxProgressCreateInfo {
 	float          max_value;
 } FluxProgressCreateInfo;
 
+typedef struct FluxImageCreateInfo {
+	XentContext     *ctx;
+	FluxNodeStore   *store;
+	XentNodeId       parent;
+	char const      *source;  /**< File path / URI. */
+	FluxImageStretch stretch; /**< Scaling mode (FLUX_IMAGE_UNIFORM recommended). */
+} FluxImageCreateInfo;
+
 typedef struct FluxInfoBadgeCreateInfo {
 	XentContext      *ctx;
 	FluxNodeStore    *store;
@@ -172,6 +198,66 @@ typedef struct FluxInfoBadgeCreateInfo {
 	FluxInfoBadgeMode mode;
 	int32_t           value;
 } FluxInfoBadgeCreateInfo;
+
+typedef struct FluxContentDialogCreateInfo {
+	XentContext      *ctx;
+	FluxNodeStore    *store;
+	XentNodeId        overlay_parent; /**< Full-window container to host the dialog (e.g. app root). */
+	FluxInput        *input;          /**< For the modal focus trap. */
+	FluxWindow       *window;         /**< For repaint requests. */
+	FluxThemeManager *theme;          /**< Card background follows this theme. */
+	char const       *title;
+	char const       *primary_text;   /**< NULL omits the button. Accent-styled. */
+	char const       *secondary_text; /**< NULL omits the button. */
+	char const       *close_text;     /**< NULL omits the button. */
+	float             width;          /**< Card width, clamped to [320,548] (xent has no wrap-content). */
+	float             content_height; /**< Height reserved for the body content region. */
+	void              (*on_result)(void *, FluxDialogResult);
+	void             *userdata;
+	XentNodeId       *out_content; /**< Optional: receives the content node to fill. */
+} FluxContentDialogCreateInfo;
+
+typedef struct FluxComboBoxCreateInfo {
+	XentContext       *ctx;
+	FluxNodeStore     *store;
+	XentNodeId         parent;
+	FluxWindow        *window;         /**< For the drop-down popup + coordinate mapping. */
+	FluxTextRenderer  *text;           /**< Shared text renderer for drop-down items. */
+	FluxThemeManager  *theme;          /**< Theme source for the drop-down. */
+	char const *const *items;          /**< Borrowed array of UTF-8 item strings. */
+	int                item_count;
+	int                selected_index; /**< Initial selection, or -1. */
+	char const        *placeholder;
+	void               (*on_select)(void *, int);
+	void              *userdata;
+} FluxComboBoxCreateInfo;
+
+typedef struct FluxExpanderCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	FluxWindow    *window;         /**< For repaint while the content slides; may be NULL. */
+	char const    *header;         /**< Optional convenience label placed in the header. */
+	bool           expanded;
+	float          width;          /**< Control width (xent has no wrap-content; size is explicit). */
+	float          content_height; /**< Height reserved for the content region when expanded. */
+	void           (*on_toggle)(void *, bool);
+	void          *userdata;
+	XentNodeId    *out_content; /**< Optional: receives the content node to fill. */
+	XentNodeId    *out_header;  /**< Optional: receives the header node for arbitrary content. */
+} FluxExpanderCreateInfo;
+
+typedef struct FluxInfoBarCreateInfo {
+	XentContext        *ctx;
+	FluxNodeStore      *store;
+	XentNodeId          parent;
+	FluxInfoBarSeverity severity;
+	char const         *title;
+	char const         *message;
+	bool                is_closable;
+	void                (*on_close)(void *);
+	void               *userdata;
+} FluxInfoBarCreateInfo;
 
 /** @brief Create a Fluxent application, or NULL on failure. */
 FluxApp          *flux_app_create(FluxAppConfig const *cfg);
@@ -231,6 +317,12 @@ XentNodeId        flux_create_radio(FluxToggleCreateInfo const *info);
 /** @brief Create a switch node. */
 XentNodeId        flux_create_switch(FluxToggleCreateInfo const *info);
 
+/** @brief Create a drop-down button node. Bind a flyout with flux_node_set_flyout_ex. */
+XentNodeId        flux_create_dropdown_button(FluxDropDownButtonCreateInfo const *info);
+
+/** @brief Create a split button node (primary action + dropdown chevron). */
+XentNodeId        flux_create_split_button(FluxSplitButtonCreateInfo const *info);
+
 /** @brief Create a progress bar node. */
 XentNodeId        flux_create_progress(FluxProgressCreateInfo const *info);
 
@@ -269,6 +361,33 @@ XentNodeId        flux_create_progress_ring(FluxProgressCreateInfo const *info);
 
 /** @brief Create an info badge node. */
 XentNodeId        flux_create_info_badge(FluxInfoBadgeCreateInfo const *info);
+
+/** @brief Create an image node (WIC-decoded bitmap with a stretch mode). */
+XentNodeId        flux_create_image(FluxImageCreateInfo const *info);
+
+/** @brief Create a combo box node with a drop-down list of string items. */
+XentNodeId        flux_create_combo_box(FluxComboBoxCreateInfo const *info);
+
+/** @brief Create a content dialog (detached). Show it with flux_content_dialog_show. */
+XentNodeId        flux_create_content_dialog(FluxContentDialogCreateInfo const *info);
+
+/** @brief Show the content dialog modally (attaches overlay, traps focus). */
+void              flux_content_dialog_show(FluxNodeStore *store, XentNodeId dialog);
+
+/** @brief Hide the content dialog (detaches overlay, releases the focus trap). */
+void              flux_content_dialog_hide(FluxNodeStore *store, XentNodeId dialog);
+
+/** @brief Create an info bar node (status banner with severity icon + close). */
+XentNodeId        flux_create_info_bar(FluxInfoBarCreateInfo const *info);
+
+/** @brief Create an expander node; fills out_content with the child to populate. */
+XentNodeId        flux_create_expander(FluxExpanderCreateInfo const *info);
+
+/** @brief Get the expander's content node (the child the caller fills). */
+XentNodeId        flux_expander_content_node(FluxNodeStore *store, XentNodeId id);
+
+/** @brief Get the expander's header node (host for arbitrary header content). */
+XentNodeId        flux_expander_header_node(FluxNodeStore *store, XentNodeId id);
 
 #ifdef __cplusplus
 }

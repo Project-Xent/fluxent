@@ -279,7 +279,7 @@ static void tooltip_paint(void *ctx, FluxPopup *popup) {
 	FluxColor border     = {0};
 	FluxColor text_color = {0};
 	tooltip_resolve_colors(tt, &bg, &border, &text_color);
-	bg = flux_popup_acrylic_tint(popup, bg); /* reveal blurred backdrop in composition mode */
+	bg                           = flux_popup_acrylic_tint(popup, bg);
 
 	FluxSize          popup_size = tooltip_measure_content(tt);
 	FluxRect          bounds     = {0.0f, 0.0f, popup_size.w, popup_size.h};

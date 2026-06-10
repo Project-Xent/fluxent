@@ -51,7 +51,7 @@ struct FluxPopup {
 	void                    *mouse_ctx;
 	bool                     mouse_tracking;
 
-	float                    max_content_h; /* 0 = no clamp */
+	float                    max_content_h;  /* 0 = no clamp */
 
 	bool                     acrylic_active; /* host-backdrop backplate live this frame (composition mode) */
 
@@ -412,7 +412,6 @@ static void  popup_apply_menu_frame(FluxPopup *popup, float t) {
 	);
 }
 
-/* Content slides from offset into final position along placement axis. */
 static void popup_apply_flyout_frame(FluxPopup *popup, float t) {
 	if (!popup || !popup->popup_hwnd) return;
 
@@ -573,10 +572,19 @@ FluxColor flux_popup_acrylic_tint(FluxPopup const *popup, FluxColor fill) {
 	return t;
 }
 
-void          flux_popup_set_max_content_height(FluxPopup *popup, float max_h) {
+void flux_popup_set_max_content_height(FluxPopup *popup, float max_h) {
 	if (!popup) return;
 	popup->max_content_h = (max_h > 0.0f) ? max_h : 0.0f;
 	if (popup->is_visible) popup_position(popup);
+}
+
+bool flux_popup_lightdismiss_visible(HWND owner_hwnd) {
+	if (!owner_hwnd) return false;
+	for (int i = 0; i < g_popup_registry_count; i++) {
+		FluxPopup *p = g_popup_registry [i];
+		if (p && p->is_visible && p->dismiss_on_outside && p->owner_hwnd == owner_hwnd) return true;
+	}
+	return false;
 }
 
 void flux_popup_dismiss_all_for_owner(HWND owner_hwnd) {

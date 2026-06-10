@@ -11,22 +11,27 @@
 
 /* The SDK's <dispatcherqueue.h> is C++-only (declares ABI:: types), so hand-declare
  * the CoreMessaging C ABI. Layout/values match the SDK header exactly. */
-typedef enum DISPATCHERQUEUE_THREAD_TYPE {
+typedef enum DISPATCHERQUEUE_THREAD_TYPE
+{
 	DQTYPE_THREAD_DEDICATED = 1,
 	DQTYPE_THREAD_CURRENT   = 2,
 } DISPATCHERQUEUE_THREAD_TYPE;
-typedef enum DISPATCHERQUEUE_THREAD_APARTMENTTYPE {
+
+typedef enum DISPATCHERQUEUE_THREAD_APARTMENTTYPE
+{
 	DQTAT_COM_NONE = 0,
 	DQTAT_COM_ASTA = 1,
 	DQTAT_COM_STA  = 2,
 } DISPATCHERQUEUE_THREAD_APARTMENTTYPE;
+
 typedef struct DispatcherQueueOptions {
 	DWORD                                dwSize;
 	DISPATCHERQUEUE_THREAD_TYPE          threadType;
 	DISPATCHERQUEUE_THREAD_APARTMENTTYPE apartmentType;
 } DispatcherQueueOptions;
+
 typedef IUnknown *PDISPATCHERQUEUECONTROLLER;
-HRESULT WINAPI    CreateDispatcherQueueController(DispatcherQueueOptions options, PDISPATCHERQUEUECONTROLLER *controller);
+HRESULT WINAPI CreateDispatcherQueueController(DispatcherQueueOptions options, PDISPATCHERQUEUECONTROLLER *controller);
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -210,6 +215,33 @@ HRESULT flux_window_target_set_swapchain(FluxWindowTarget *t, IUnknown *swapchai
 	return S_OK;
 }
 
+/* Insert the content sprite at the top of the root visual's child collection. */
+static void swapchain_attach_content_to_root(FluxWindowTarget *t) {
+	WUC_Container *root_container = NULL;
+	if (FAILED(cwinrt_query(t->root, &CWINRT_IID_WUC_IContainerVisual, ( void ** ) &root_container))) return;
+
+	WUC_VisualCollection *children = NULL;
+	if (SUCCEEDED(wuc_container_get__children(root_container, &children))) {
+		( void ) wuc_visual_collection_insert_at_top(children, t->content_visual);
+		(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
+	}
+	(( IUnknown * ) root_container)->lpVtbl->Release(( IUnknown * ) root_container);
+}
+
+/* Create the content sprite visual on first present and attach it to the root. */
+static HRESULT swapchain_ensure_content(FluxWindowTarget *t) {
+	HRESULT hr = wuc_comp_create_sprite_visual(t->owner->comp, &t->content);
+	if (FAILED(hr)) return hr;
+	t->content_visual = flux_compose_as_visual(t->content);
+	if (!t->content_visual) return E_NOINTERFACE;
+
+	/* Fill the root regardless of window size, so only the root is resized. */
+	WFN_Vector_2 fill = {1.0f, 1.0f};
+	( void ) wuc_visual_put__relative_size_adjustment(t->content_visual, fill);
+	swapchain_attach_content_to_root(t);
+	return S_OK;
+}
+
 HRESULT flux_window_target_present_swapchain_child(FluxWindowTarget *t, IUnknown *swapchain) {
 	if (!t || !t->owner || !t->owner->comp || !swapchain) return E_INVALIDARG;
 
@@ -218,27 +250,8 @@ HRESULT flux_window_target_present_swapchain_child(FluxWindowTarget *t, IUnknown
 
 	HRESULT hr = S_OK;
 	if (!t->content) {
-		hr = wuc_comp_create_sprite_visual(t->owner->comp, &t->content);
+		hr = swapchain_ensure_content(t);
 		if (FAILED(hr)) goto fail;
-		t->content_visual = flux_compose_as_visual(t->content);
-		if (!t->content_visual) {
-			hr = E_NOINTERFACE;
-			goto fail;
-		}
-
-		/* Fill the root regardless of window size, so only the root is resized. */
-		WFN_Vector_2 fill = {1.0f, 1.0f};
-		( void ) wuc_visual_put__relative_size_adjustment(t->content_visual, fill);
-
-		WUC_Container *root_container = NULL;
-		if (SUCCEEDED(cwinrt_query(t->root, &CWINRT_IID_WUC_IContainerVisual, ( void ** ) &root_container))) {
-			WUC_VisualCollection *children = NULL;
-			if (SUCCEEDED(wuc_container_get__children(root_container, &children))) {
-				( void ) wuc_visual_collection_insert_at_top(children, t->content_visual);
-				(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
-			}
-			(( IUnknown * ) root_container)->lpVtbl->Release(( IUnknown * ) root_container);
-		}
 	}
 
 	hr = wuc_sprite_put__brush(t->content, ( WUC_Brush * ) brush);

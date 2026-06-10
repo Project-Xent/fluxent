@@ -7,12 +7,12 @@ static void radio_group_apply(RadioGroupMember const *m, int index) {
 	RadioGroup   *g  = m->group;
 	FluxNodeData *nd = flux_node_store_get(g->store, g->nodes [index]);
 	if (!nd || !nd->component_data) return;
+	if (!xent_get_semantic_enabled(flux_node_store_context(g->store), g->nodes [index])) return;
 
-	FluxCheckboxData *cd = ( FluxCheckboxData * ) nd->component_data;
-	if (!cd->enabled) return;
+	FluxCheckboxData *cd    = ( FluxCheckboxData * ) nd->component_data;
 
-	FluxCheckState state = (index == m->index) ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED;
-	cd->state            = state;
+	FluxCheckState    state = (index == m->index) ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED;
+	cd->state               = state;
 	if (index == m->index && cd->on_change) cd->on_change(cd->on_change_ctx, state);
 }
 
@@ -167,8 +167,8 @@ void add_divider(Demo *d) {
 XentNodeId make_dashboard_grid(Demo *d) {
 	XentNodeId grid = xent_create_node(d->ctx);
 	xent_set_protocol(d->ctx, grid, XENT_PROTOCOL_GRID);
-	xent_set_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 1228});
-	xent_set_min_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 1228});
+	xent_set_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 2020});
+	xent_set_min_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 2020});
 	xent_set_grid_column_gap(d->ctx, grid, 20);
 	xent_set_grid_row_gap(d->ctx, grid, 20);
 
@@ -176,9 +176,13 @@ XentNodeId make_dashboard_grid(Demo *d) {
 	float            cvals [] = {1.0f, 1.0f};
 	xent_set_grid_columns(d->ctx, grid, cols, cvals, 2);
 
-	XentGridSizeMode rows []  = {XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL};
-	float            rvals [] = {260.0f, 300.0f, 260.0f, 112.0f, 96.0f};
-	xent_set_grid_rows(d->ctx, grid, rows, rvals, 5);
+	/* Rows 0-2: core controls; 3-4: editable + popups; 5: dropdown/split/combo; 6: expander;
+	 * 7: info bars; 8: image + dialog. */
+	XentGridSizeMode rows [] = {
+	  XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL,
+	  XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL};
+	float rvals [] = {260.0f, 300.0f, 260.0f, 112.0f, 96.0f, 130.0f, 220.0f, 300.0f, 180.0f};
+	xent_set_grid_rows(d->ctx, grid, rows, rvals, 9);
 	xent_append_child(d->ctx, d->root, grid);
 	return grid;
 }
@@ -204,6 +208,15 @@ void demo_fill_panel(Demo *d, XentNodeId panel, void (*fill)(Demo *)) {
 }
 
 void demo_make_scroll_root(Demo *d) {
+	/* The app root is an absolute container so modal overlays (ContentDialog) can be
+	 * stacked on top of the scrolling page instead of pushing it out of flex flow. */
+	xent_set_protocol(d->ctx, d->scene_root, XENT_PROTOCOL_ABSOLUTE);
+
+	d->scroll_root = xent_create_node(d->ctx);
+	xent_append_child(d->ctx, d->scene_root, d->scroll_root);
+	xent_set_absolute_position(d->ctx, d->scroll_root, (XentPoint) {0.0f, 0.0f});
+	xent_set_size_percent(d->ctx, d->scroll_root, (XentSize) {1.0f, 1.0f});
+
 	flux_set_control_type(d->ctx, d->scroll_root, FLUX_CONTROL_SCROLL);
 	xent_set_protocol(d->ctx, d->scroll_root, XENT_PROTOCOL_FLEX);
 	xent_set_flex_direction(d->ctx, d->scroll_root, XENT_FLEX_COLUMN);
@@ -367,7 +380,9 @@ void demo_add_check_switch(Demo *d) {
 	flux_checkbox_set_enabled(d->store, chk_d, false);
 	XentNodeId sw_d = demo_toggle(d, row, FLUX_CONTROL_SWITCH, "Disabled", false, on_switch_change, NULL);
 	xent_set_size(d->ctx, sw_d, (XentSize) {120, 32});
-	xent_set_semantic_enabled(d->ctx, sw_d, false);
+	flux_checkbox_set_enabled(
+	  d->store, sw_d, false
+	); /* toggle setter covers switch; greys + blocks input + drops focus */
 	add_divider(d);
 }
 

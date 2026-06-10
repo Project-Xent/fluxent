@@ -28,7 +28,6 @@ typedef struct FluxSliderData {
 	FluxColor track_color;                          /**< Background track color */
 	FluxColor fill_color;                           /**< Filled portion color */
 	FluxColor thumb_color;                          /**< Thumb (handle) color */
-	bool      enabled;                              /**< Is slider interactive? */
 	void      (*on_change)(void *ctx, float value); /**< Callback invoked when the value changes. */
 	void     *on_change_ctx;
 } FluxSliderData;

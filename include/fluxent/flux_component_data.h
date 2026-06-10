@@ -28,5 +28,9 @@
 #include "controls/flux_progress_data.h"
 #include "controls/flux_image_data.h"
 #include "controls/flux_info_badge_data.h"
+#include "controls/flux_info_bar_data.h"
+#include "controls/flux_expander_data.h"
+#include "controls/flux_combo_box_data.h"
+#include "controls/flux_content_dialog_data.h"
 
 #endif

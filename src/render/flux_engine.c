@@ -31,16 +31,13 @@ static bool flux_command_buffer_push(FluxCommandBuffer *buf, FluxRenderCommand c
 	return true;
 }
 
-static FluxControlState flux_compute_control_state(FluxNodeData const *nd) {
+static FluxControlState flux_compute_control_state(XentContext *ctx, XentNodeId node, FluxNodeData const *nd) {
 	FluxControlState s = {0};
-	if (!nd) {
-		s.enabled = 1;
-		return s;
-	}
+	s.enabled          = xent_get_semantic_enabled(ctx, node);
+	if (!nd) return s;
 	s.hovered      = nd->state.hovered;
 	s.pressed      = nd->state.pressed;
 	s.focused      = nd->state.focused;
-	s.enabled      = nd->state.enabled;
 	s.pointer_type = nd->state.pointer_type;
 	return s;
 }
@@ -58,6 +55,7 @@ typedef struct CollectFrame {
 	FluxRenderSnapshot snapshot;
 	FluxControlState   state;
 	XentNodeId         current_child;
+	bool               has_transform; /**< Subtree wrapped in a render transform (scale/opacity). */
 } CollectFrame;
 
 static CollectFrame collect_root_frame(XentNodeId root) {
@@ -101,6 +99,22 @@ static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentR
 	flux_command_buffer_push(&eng->commands, &cmd);
 }
 
+static void
+collect_emit_transform_push(FluxEngine *eng, CollectFrame const *frame, XentRect const *rect, FluxNodeData const *nd) {
+	FluxRenderCommand cmd;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.phase        = FLUX_PHASE_MAIN;
+	cmd.clip_action  = FLUX_CLIP_PUSH_TRANSFORM;
+	cmd.scale        = nd->render_scale;
+	cmd.opacity      = nd->render_opacity;
+	cmd.translate_y  = nd->render_translate_y;
+	cmd.pivot_x      = frame->abs_x + rect->w * 0.5f;
+	cmd.pivot_y      = frame->abs_y + rect->h * 0.5f;
+	cmd.clip_subtree = nd->render_clip_subtree;
+	cmd.bounds       = (FluxRect) {frame->abs_x, frame->abs_y, rect->w, rect->h};
+	flux_command_buffer_push(&eng->commands, &cmd);
+}
+
 static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *frame) {
 	XentRect rect = {0};
 	xent_get_layout_rect(ctx, frame->node, &rect);
@@ -110,8 +124,12 @@ static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *f
 
 	FluxNodeData *nd = ( FluxNodeData * ) xent_get_userdata(ctx, frame->node);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
-	frame->state          = flux_compute_control_state(nd);
-	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;
+	frame->state     = flux_compute_control_state(ctx, frame->node, nd);
+	frame->is_scroll = frame->snapshot.type == FLUX_CONTROL_SCROLL;
+
+	frame->has_transform
+	  = nd && (nd->render_scale != 1.0f || nd->render_opacity < 1.0f || nd->render_translate_y != 0.0f);
+	if (frame->has_transform) collect_emit_transform_push(eng, frame, &rect, nd);
 
 	FluxRenderCommand cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_MAIN);
 	flux_command_buffer_push(&eng->commands, &cmd);
@@ -178,6 +196,14 @@ static void collect_emit_finish(FluxEngine *eng, XentContext *ctx, CollectFrame 
 	xent_get_layout_rect(ctx, frame->node, &rect);
 	FluxRenderCommand overlay_cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_OVERLAY);
 	flux_command_buffer_push(&eng->commands, &overlay_cmd);
+
+	if (frame->has_transform) {
+		FluxRenderCommand pop_cmd;
+		memset(&pop_cmd, 0, sizeof(pop_cmd));
+		pop_cmd.phase       = FLUX_PHASE_MAIN;
+		pop_cmd.clip_action = FLUX_CLIP_POP_TRANSFORM;
+		flux_command_buffer_push(&eng->commands, &pop_cmd);
+	}
 }
 
 static void collect_commands(FluxEngine *eng, XentContext *ctx, XentNodeId root) {
@@ -259,8 +285,9 @@ static D2D1_MATRIX_3X2_F flux_matrix_multiply(D2D1_MATRIX_3X2_F const *a, D2D1_M
 
 typedef struct FluxTransformStack {
 	D2D1_MATRIX_3X2_F frames [FLUX_RENDER_MAX_TRANSFORM_DEPTH];
+	bool              clipped [FLUX_RENDER_MAX_TRANSFORM_DEPTH]; /**< Frame also pushed an axis-aligned clip. */
 	uint32_t          top;
-	uint32_t          clamped; /**< Pushes coalesced into the topmost frame. */
+	uint32_t          clamped;                                   /**< Pushes coalesced into the topmost frame. */
 } FluxTransformStack;
 
 static void execute_note_overflow(FluxEngine *eng) {
@@ -309,6 +336,62 @@ static void execute_clip_pop(FluxRenderContext const *rc, FluxTransformStack *st
 	ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
 }
 
+static void execute_transform_push(
+  FluxEngine *eng, FluxRenderContext const *rc, FluxRenderCommand const *cmd, FluxTransformStack *stack
+) {
+	D2D1_LAYER_PARAMETERS lp;
+	lp.contentBounds     = (D2D1_RECT_F) {-1.0e9f, -1.0e9f, 1.0e9f, 1.0e9f};
+	lp.geometricMask     = NULL;
+	lp.maskAntialiasMode = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
+	lp.maskTransform     = flux_identity_matrix();
+	lp.opacity           = cmd->opacity;
+	lp.opacityBrush      = NULL;
+	lp.layerOptions      = D2D1_LAYER_OPTIONS_NONE;
+	ID2D1RenderTarget_PushLayer(FLUX_RT(rc), &lp, NULL);
+
+	D2D1_MATRIX_3X2_F current;
+	ID2D1RenderTarget_GetTransform(FLUX_RT(rc), &current);
+	if (stack->top >= FLUX_RENDER_MAX_TRANSFORM_DEPTH) {
+		stack->clamped++;
+		execute_note_overflow(eng);
+		return;
+	}
+	stack->frames [stack->top]  = current;
+
+	/* Optional subtree clip, recorded in the parent (pre-transform) space so a
+	 * slid child is clipped to its own layout rect — content sliding out from
+	 * behind the Expander header never overdraws the header. */
+	stack->clipped [stack->top] = cmd->clip_subtree;
+	if (cmd->clip_subtree) {
+		D2D1_RECT_F clip = {cmd->bounds.x, cmd->bounds.y, cmd->bounds.x + cmd->bounds.w, cmd->bounds.y + cmd->bounds.h};
+		ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(rc), &clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+	}
+	stack->top++;
+
+	float             s = cmd->scale;
+	D2D1_MATRIX_3X2_F scale;
+	scale._11                  = s;
+	scale._12                  = 0.0f;
+	scale._21                  = 0.0f;
+	scale._22                  = s;
+	scale._31                  = cmd->pivot_x * (1.0f - s);
+	scale._32                  = cmd->pivot_y * (1.0f - s) + cmd->translate_y;
+	D2D1_MATRIX_3X2_F combined = flux_matrix_multiply(&scale, &current);
+	ID2D1RenderTarget_SetTransform(FLUX_RT(rc), &combined);
+}
+
+static void transform_restore_top(FluxRenderContext const *rc, FluxTransformStack *stack) {
+	D2D1_MATRIX_3X2_F restored = stack->frames [--stack->top];
+	ID2D1RenderTarget_SetTransform(FLUX_RT(rc), &restored);
+	if (stack->clipped [stack->top]) ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
+}
+
+static void execute_transform_pop(FluxRenderContext const *rc, FluxTransformStack *stack) {
+	if (stack->clamped > 0) stack->clamped--;
+	else if (stack->top > 0) transform_restore_top(rc, stack);
+	ID2D1RenderTarget_PopLayer(FLUX_RT(rc));
+}
+
 static void execute_draw(FluxEngine const *eng, FluxRenderContext const *rc, FluxRenderCommand const *cmd) {
 	if (cmd->phase == FLUX_PHASE_MAIN)
 		flux_engine_dispatch_render(eng->store, rc, &cmd->snapshot, &cmd->bounds, &cmd->state);
@@ -329,6 +412,14 @@ void flux_engine_execute(FluxEngine const *eng, FluxRenderContext const *rc) {
 		}
 		if (cmd->clip_action == FLUX_CLIP_POP) {
 			execute_clip_pop(rc, &stack);
+			continue;
+		}
+		if (cmd->clip_action == FLUX_CLIP_PUSH_TRANSFORM) {
+			execute_transform_push(mut, rc, cmd, &stack);
+			continue;
+		}
+		if (cmd->clip_action == FLUX_CLIP_POP_TRANSFORM) {
+			execute_transform_pop(rc, &stack);
 			continue;
 		}
 		execute_draw(eng, rc, cmd);

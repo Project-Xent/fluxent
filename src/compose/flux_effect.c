@@ -56,8 +56,6 @@ static FluxEffect *effect_from_interop(FluxIGraphicsEffectD2D1Interop *p) {
 	return ( FluxEffect * ) (( char * ) p - offsetof(FluxEffect, lpVtblInterop));
 }
 
-/* ---- primary IInspectable / IGraphicsEffect facet ---- */
-
 static HRESULT STDMETHODCALLTYPE eff_qi(FluxEffect *self, REFIID riid, void **ppv) {
 	if (!ppv) return E_POINTER;
 	if (IsEqualGUID(riid, &Flux_IID_IUnknown)
@@ -131,8 +129,6 @@ static FluxEffectVtbl const g_effect_vtbl = {
   eff_get_name,
   eff_put_name,
 };
-
-/* ---- IGraphicsEffectD2D1Interop facet ---- */
 
 static HRESULT STDMETHODCALLTYPE iop_qi(FluxIGraphicsEffectD2D1Interop *p, REFIID riid, void **ppv) {
 	return eff_qi(effect_from_interop(p), riid, ppv);
@@ -263,6 +259,28 @@ static FluxEffect *effect_create(float blur, wchar_t const *source_name) {
 /* Assemble a blur effect brush over a backdrop source. `host` selects whether
  * the backdrop samples the window's own content (in-app acrylic, for inline
  * controls) or the desktop behind the window (host acrylic, for popup windows). */
+/* Intermediate COM objects of a backdrop-blur brush, owned by the caller for cleanup. */
+typedef struct BlurParts {
+	WUC_CompositionEffectFactory *factory;
+	WUC_CompositionEffectBrush   *brush;
+	WUC_BackdropBrush            *backdrop;
+	cwinrt_hstring                hsrc;
+	WUC_Brush                    *out; /**< The finished ICompositionBrush, or NULL. */
+} BlurParts;
+
+static HRESULT blur_build(WUC_Comp *comp, FluxEffect *eff, bool host, BlurParts *p) {
+	if (FAILED(wuc_comp_create_effect_factory(comp, ( WGREF_IGraphicsEffect * ) eff, &p->factory))) return E_FAIL;
+	if (FAILED(wuc_composition_effect_factory_create_brush(p->factory, &p->brush))) return E_FAIL;
+	HRESULT hr = host ? wuc_comp_create_host_backdrop_brush(comp, &p->backdrop)
+	                  : wuc_comp_create_backdrop_brush(comp, &p->backdrop);
+	if (FAILED(hr)) return hr;
+	if (FAILED(cwinrt_hstring_from(L"source", &p->hsrc))) return E_FAIL;
+
+	( void ) wuc_composition_effect_brush_set_source_parameter(p->brush, p->hsrc, ( WUC_Brush * ) p->backdrop);
+	( void ) cwinrt_query(p->brush, &CWINRT_IID_WUC_ICompositionBrush, ( void ** ) &p->out);
+	return S_OK;
+}
+
 static WUC_Brush *make_blur_brush(FluxCompositor *c, float blur_amount, bool host) {
 	WUC_Comp *comp = flux_compositor_comp(c);
 	if (!comp) return NULL;
@@ -270,28 +288,15 @@ static WUC_Brush *make_blur_brush(FluxCompositor *c, float blur_amount, bool hos
 	FluxEffect *eff = effect_create(blur_amount, L"source");
 	if (!eff) return NULL;
 
-	WUC_Brush                    *out      = NULL;
-	WUC_CompositionEffectFactory *factory  = NULL;
-	WUC_CompositionEffectBrush   *brush    = NULL;
-	WUC_BackdropBrush            *backdrop = NULL;
-	cwinrt_hstring                hsrc     = NULL;
+	BlurParts p = {0};
+	blur_build(comp, eff, host, &p);
 
-	if (FAILED(wuc_comp_create_effect_factory(comp, ( WGREF_IGraphicsEffect * ) eff, &factory))) goto done;
-	if (FAILED(wuc_composition_effect_factory_create_brush(factory, &brush))) goto done;
-	HRESULT hr = host ? wuc_comp_create_host_backdrop_brush(comp, &backdrop) : wuc_comp_create_backdrop_brush(comp, &backdrop);
-	if (FAILED(hr)) goto done;
-	if (FAILED(cwinrt_hstring_from(L"source", &hsrc))) goto done;
-
-	( void ) wuc_composition_effect_brush_set_source_parameter(brush, hsrc, ( WUC_Brush * ) backdrop);
-	( void ) cwinrt_query(brush, &CWINRT_IID_WUC_ICompositionBrush, ( void ** ) &out);
-
-done:
-	if (hsrc) cwinrt_hstring_free(hsrc);
-	if (backdrop) (( IUnknown * ) backdrop)->lpVtbl->Release(( IUnknown * ) backdrop);
-	if (brush) (( IUnknown * ) brush)->lpVtbl->Release(( IUnknown * ) brush);
-	if (factory) (( IUnknown * ) factory)->lpVtbl->Release(( IUnknown * ) factory);
+	if (p.hsrc) cwinrt_hstring_free(p.hsrc);
+	if (p.backdrop) (( IUnknown * ) p.backdrop)->lpVtbl->Release(( IUnknown * ) p.backdrop);
+	if (p.brush) (( IUnknown * ) p.brush)->lpVtbl->Release(( IUnknown * ) p.brush);
+	if (p.factory) (( IUnknown * ) p.factory)->lpVtbl->Release(( IUnknown * ) p.factory);
 	eff_release(eff);
-	return out;
+	return p.out;
 }
 
 WUC_Brush *flux_effect_make_backdrop_blur(FluxCompositor *c, float blur_amount) {

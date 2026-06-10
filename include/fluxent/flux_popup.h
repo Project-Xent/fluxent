@@ -190,6 +190,12 @@ void          flux_popup_set_max_content_height(FluxPopup *popup, float max_h);
  */
 void          flux_popup_dismiss_all_for_owner(HWND owner_hwnd);
 
+/**
+ * @brief True if any visible light-dismiss popup (dismiss-on-outside, e.g. a flyout,
+ * menu, or ComboBox drop-down) is open for `owner_hwnd`. Tooltips are excluded.
+ */
+bool          flux_popup_lightdismiss_visible(HWND owner_hwnd);
+
 #ifdef __cplusplus
 }
 #endif

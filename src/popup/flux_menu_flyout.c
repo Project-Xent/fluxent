@@ -431,7 +431,9 @@ void flux_menu_flyout_show_for_input(
 	flux_popup_set_size(m->popup, m->total_w, m->total_h);
 
 	m->hovered_index  = -1;
-	m->keyboard_index = -1;
+	/* WinUI FlyoutBase opens a keyboard-invoked MenuFlyout with Keyboard focus on its
+	 * first item, so arrow/Enter work immediately; pointer/touch opens with no highlight. */
+	m->keyboard_index = (input_kind == FLUX_MENU_INPUT_KEYBOARD) ? first_enabled(m) : -1;
 	m->pressed_index  = -1;
 	close_submenu(m);
 

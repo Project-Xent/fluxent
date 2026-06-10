@@ -41,8 +41,10 @@ FluxHitResult            flux_input_hit_test(FluxInput *input, XentNodeId root, 
 /** @brief Dispatch one unified pointer event through hit-testing and capture logic. */
 void                     flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev);
 
-/** @brief Dispatch a key-down event to the focused node. */
-void                     flux_input_key_down(FluxInput *input, unsigned int vk);
+/** @brief Dispatch a key-down event to the focused node. Returns true if consumed. */
+bool                     flux_input_key_down(FluxInput *input, unsigned int vk);
+/** @brief Dispatch a key-up event to the focused node (e.g. to stop a RepeatButton). */
+void                     flux_input_key_up(FluxInput *input, unsigned int vk);
 /** @brief Dispatch character input to the focused node. */
 void                     flux_input_char(FluxInput *input, wchar_t ch);
 
@@ -90,6 +92,15 @@ void            flux_input_escape(FluxInput *input);
 
 /** @brief Set focus to a specific node programmatically. */
 void            flux_input_set_focus(FluxInput *input, XentNodeId node);
+
+/**
+ * @brief Install or clear a modal focus trap (used by ContentDialog).
+ *
+ * While @p root is valid, Tab navigation is confined to its subtree and Escape
+ * invokes @p on_escape instead of clearing focus. Pass XENT_NODE_INVALID and
+ * NULL to remove the trap.
+ */
+void            flux_input_set_modal(FluxInput *input, XentNodeId root, void (*on_escape)(void *ctx), void *ctx);
 
 #ifdef __cplusplus
 }

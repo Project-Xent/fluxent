@@ -29,6 +29,8 @@ FluxScene *flux_scene_create(uint32_t initial_capacity) {
 		return NULL;
 	}
 
+	flux_node_store_bind_context(scene->store, scene->ctx);
+
 	flux_set_control_type(scene->ctx, scene->root, FLUX_CONTROL_CONTAINER);
 	xent_set_semantic_role(scene->ctx, scene->root, XENT_SEMANTIC_CUSTOM);
 
@@ -50,6 +52,7 @@ FluxScene *flux_scene_borrow(XentContext *ctx, FluxNodeStore *store, XentNodeId 
 	scene->ctx   = ctx;
 	scene->store = store;
 	scene->root  = root;
+	flux_node_store_bind_context(store, ctx);
 	return scene;
 }
 

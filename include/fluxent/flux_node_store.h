@@ -51,7 +51,6 @@ typedef struct FluxNodeVisuals {
  * apply visual feedback (hover highlights, press effects, focus rings).
  */
 typedef struct FluxNodeState {
-	uint8_t enabled       :1; /**< Control is interactable */
 	uint8_t visible       :1; /**< Control should be rendered */
 	uint8_t hovered       :1; /**< Pointer is over this node */
 	uint8_t pressed       :1; /**< Pointer is pressed on this node */
@@ -94,8 +93,9 @@ typedef struct FluxNodeBehavior {
 	void  (*on_blur)(void *ctx);
 	void *on_blur_ctx;
 
-	/** @brief Key press or release callback. */
-	void  (*on_key)(void *ctx, unsigned int vk, bool down);
+	/** @brief Key callback; returns true if the control consumed the key (suppressing
+	 * app-level fallbacks like focus navigation or activation). */
+	bool  (*on_key)(void *ctx, unsigned int vk, bool down);
 	void *on_key_ctx;
 
 	/** @brief Character input callback after keyboard translation. */
@@ -138,6 +138,18 @@ typedef struct FluxNodeData {
 	float            hover_local_y; /**< Sub-element hover Y in node-local coordinates. */
 
 	char const      *tooltip_text;  /**< Tooltip text, or NULL when unset. */
+
+	/**
+	 * Transient render transform applied to this node's subtree (entrance/exit
+	 * animations, e.g. ContentDialog). Both default to 1.0 (identity); the engine
+	 * wraps the subtree in a scale-about-center + opacity layer only when either
+	 * differs from 1.0 (or render_translate_y is non-zero), so untouched nodes
+	 * incur no cost.
+	 */
+	float            render_scale;
+	float            render_opacity;
+	float            render_translate_y;  /**< Subtree Y translate in px (0 = none); for slide animations. */
+	bool             render_clip_subtree; /**< Clip the subtree to this node's layout rect while transformed. */
 } FluxNodeData;
 
 typedef struct FluxNodeStore      FluxNodeStore;
@@ -159,6 +171,18 @@ typedef struct FluxControlRenderer {
  * @return New store, or NULL on allocation failure.
  */
 FluxNodeStore *flux_node_store_create(uint32_t initial_capacity);
+
+/**
+ * @brief Bind the XentContext this store's nodes live in.
+ *
+ * Lets store-only APIs (e.g. flux_*_set_enabled) reach context-scoped node
+ * properties such as semantic enabled. Set once, at scene creation, before the
+ * tree is built. Safe to call again (idempotent).
+ */
+void           flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx);
+
+/** @brief The XentContext bound via flux_node_store_bind_context (NULL if unbound). */
+XentContext   *flux_node_store_context(FluxNodeStore const *store);
 
 /**
  * @brief Destroy a node store and free all associated memory.

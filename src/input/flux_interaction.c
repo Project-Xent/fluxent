@@ -72,23 +72,23 @@ void flux_interaction_destroy(FluxInteraction *it) {
 	free(it);
 }
 
-HRESULT flux_interaction_bind_offset(FluxInteraction *it, WUC_Visual *target_visual) {
-	if (!it || !it->comp || !it->tracker || !target_visual) return E_INVALIDARG;
-
+static WUC_ExpressionAnimation *interaction_make_offset_expr(FluxInteraction *it) {
 	cwinrt_hstring expr_str = NULL;
-	HRESULT        hr       = cwinrt_hstring_from(L"-tracker.Position", &expr_str);
-	if (FAILED(hr)) return hr;
+	if (FAILED(cwinrt_hstring_from(L"-tracker.Position", &expr_str))) return NULL;
 	WUC_ExpressionAnimation *expr = NULL;
-	hr                            = wuc_comp_create_expression_animation_str_p(it->comp, expr_str, &expr);
+	HRESULT                  hr   = wuc_comp_create_expression_animation_str_p(it->comp, expr_str, &expr);
 	cwinrt_hstring_free(expr_str);
-	if (FAILED(hr)) return hr;
+	return SUCCEEDED(hr) ? expr : NULL;
+}
 
+static HRESULT
+interaction_start_offset_expr(FluxInteraction *it, WUC_ExpressionAnimation *expr, WUC_Visual *target_visual) {
 	WUC_CompositionAnimation *anim    = NULL;
 	WUC_CompositionObject    *tracker = NULL;
 	WUC_CompositionObject    *target  = NULL;
 	cwinrt_hstring            key     = NULL;
 	cwinrt_hstring            prop    = NULL;
-	hr = cwinrt_query(expr, &CWINRT_IID_WUC_ICompositionAnimation, ( void ** ) &anim);
+	HRESULT                   hr      = cwinrt_query(expr, &CWINRT_IID_WUC_ICompositionAnimation, ( void ** ) &anim);
 	if (SUCCEEDED(hr)) hr = cwinrt_query(it->tracker, &CWINRT_IID_WUC_ICompositionObject, ( void ** ) &tracker);
 	if (SUCCEEDED(hr)) hr = cwinrt_hstring_from(L"tracker", &key);
 	if (SUCCEEDED(hr)) {
@@ -105,6 +105,16 @@ HRESULT flux_interaction_bind_offset(FluxInteraction *it, WUC_Visual *target_vis
 	if (target) (( IUnknown * ) target)->lpVtbl->Release(( IUnknown * ) target);
 	if (tracker) (( IUnknown * ) tracker)->lpVtbl->Release(( IUnknown * ) tracker);
 	if (anim) (( IUnknown * ) anim)->lpVtbl->Release(( IUnknown * ) anim);
+	return hr;
+}
+
+HRESULT flux_interaction_bind_offset(FluxInteraction *it, WUC_Visual *target_visual) {
+	if (!it || !it->comp || !it->tracker || !target_visual) return E_INVALIDARG;
+
+	WUC_ExpressionAnimation *expr = interaction_make_offset_expr(it);
+	if (!expr) return E_FAIL;
+
+	HRESULT hr = interaction_start_offset_expr(it, expr, target_visual);
 	(( IUnknown * ) expr)->lpVtbl->Release(( IUnknown * ) expr);
 	return hr;
 }
@@ -129,8 +139,8 @@ HRESULT flux_interaction_redirect_pointer_id(FluxInteraction *it, uint32_t point
 
 	WUIIN_IPointerPointStatics *statics = NULL;
 	HRESULT                     hr      = cwinrt_factory_get_statics(
-      L"Windows.UI.Input.PointerPoint", &CWINRT_IID_WUIIN_IPointerPointStatics, ( void ** ) &statics
-    );
+	  L"Windows.UI.Input.PointerPoint", &CWINRT_IID_WUIIN_IPointerPointStatics, ( void ** ) &statics
+	);
 	if (FAILED(hr)) return hr;
 
 	WUIIN_PointerPoint *pp = NULL;

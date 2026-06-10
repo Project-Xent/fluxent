@@ -233,6 +233,11 @@ static void input_set_touch_press_hover(FluxInput *input, FluxHitResult const *h
 static void input_press_hit(FluxInput *input, FluxHitResult const *hit) {
 	if (hit->node == XENT_NODE_INVALID || !hit->data) return;
 
+	/* Single interactive gate: a semantically-disabled node consumes the press but
+	 * dispatches nothing (no down/move/click/drag). All input enters through here, so
+	 * this is the only place controls need to test for disabled. */
+	if (!xent_get_semantic_enabled(input->ctx, hit->node)) return;
+
 	hit->data->state.pressed      = 1;
 	hit->data->state.pointer_type = ( uint8_t ) input->pointer_type;
 	input->pressed                = hit->node;
@@ -481,10 +486,17 @@ bool flux_input_take_pan_promoted(FluxInput *input) {
 	return v;
 }
 
-void flux_input_key_down(FluxInput *input, unsigned int vk) {
+bool flux_input_key_down(FluxInput *input, unsigned int vk) {
+	if (!input || input->focused == XENT_NODE_INVALID) return false;
+	FluxNodeData *nd = flux_node_store_get(input->store, input->focused);
+	if (!nd || !nd->behavior.on_key) return false;
+	return nd->behavior.on_key(nd->behavior.on_key_ctx, vk, true);
+}
+
+void flux_input_key_up(FluxInput *input, unsigned int vk) {
 	if (!input || input->focused == XENT_NODE_INVALID) return;
 	FluxNodeData *nd = flux_node_store_get(input->store, input->focused);
-	if (nd && nd->behavior.on_key) nd->behavior.on_key(nd->behavior.on_key_ctx, vk, true);
+	if (nd && nd->behavior.on_key) nd->behavior.on_key(nd->behavior.on_key_ctx, vk, false);
 }
 
 void flux_input_char(FluxInput *input, wchar_t ch) {

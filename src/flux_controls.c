@@ -23,13 +23,13 @@ static FluxNodeData *flux_component_node(FluxNodeStore *store, XentNodeId id) {
 		d->field    = value;                                                          \
 	}
 
-#define FLUX_SETTER_ENABLED(prefix, DataType, expect)                              \
+/* Enabled is a single source of truth: xent's semantic enabled. Rendering, focus,
+ * input gating and UIA all read it; this setter is the only writer. */
+#define FLUX_SETTER_ENABLED(prefix, expect)                                        \
 	void prefix##_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled) { \
 		FluxNodeData *nd = flux_component_node(store, id);                         \
 		if (!nd || !(expect)) return;                                              \
-		DataType *d       = ( DataType * ) nd->component_data;                     \
-		d->enabled        = enabled;                                               \
-		nd->state.enabled = enabled ? 1 : 0;                                       \
+		xent_set_semantic_enabled(flux_node_store_context(store), id, enabled);    \
 	}
 
 #define FLUX_SETTER_2(prefix, DataType, func, f1, f2, T1, T2, expect)             \
@@ -44,7 +44,7 @@ static FluxNodeData *flux_component_node(FluxNodeStore *store, XentNodeId id) {
 FLUX_SETTER(flux_button, FluxButtonData, label, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
 FLUX_SETTER(flux_button, FluxButtonData, icon_name, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
 FLUX_SETTER(flux_button, FluxButtonData, style, FluxButtonStyle, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
-FLUX_SETTER_ENABLED(flux_button, FluxButtonData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
+FLUX_SETTER_ENABLED(flux_button, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_BUTTON))
 
 void flux_button_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name) {
 	flux_button_set_icon_name(store, id, icon_name);
@@ -52,13 +52,13 @@ void flux_button_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_
 
 FLUX_SETTER(flux_checkbox, FluxCheckboxData, label, char const *, FLUX_EXPECT_TOGGLE(nd))
 FLUX_SETTER(flux_checkbox, FluxCheckboxData, state, FluxCheckState, FLUX_EXPECT_TOGGLE(nd))
-FLUX_SETTER_ENABLED(flux_checkbox, FluxCheckboxData, FLUX_EXPECT_TOGGLE(nd))
+FLUX_SETTER_ENABLED(flux_checkbox, FLUX_EXPECT_TOGGLE(nd))
 
 FLUX_SETTER(flux_slider, FluxSliderData, current_value, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER))
 FLUX_SETTER_2(
   flux_slider, FluxSliderData, range, min_value, max_value, float, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER)
 )
-FLUX_SETTER_ENABLED(flux_slider, FluxSliderData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER))
+FLUX_SETTER_ENABLED(flux_slider, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER))
 
 void flux_slider_set_value(FluxNodeStore *store, XentNodeId id, float value) {
 	flux_slider_set_current_value(store, id, value);
@@ -87,9 +87,11 @@ static FluxTextBoxInputData *flux_text_input_data(FluxNodeStore *store, XentNode
 static void flux_text_input_set_enabled(FluxNodeStore *store, XentNodeId id, FluxControlType type, bool enabled) {
 	FluxNodeData *nd = flux_component_node(store, id);
 	if (!nd || nd->component_type != type) return;
-	FluxTextBoxData *tb = ( FluxTextBoxData * ) nd->component_data;
-	tb->enabled         = enabled;
-	nd->state.enabled   = enabled ? 1 : 0;
+	xent_set_semantic_enabled(flux_node_store_context(store), id, enabled);
+	/* Text editing has key/IME/selection gates that fire on the focused node outside the
+	 * pointer path, so the box keeps a local flag to also reject input if disabled while
+	 * focused. Kept in sync with the canonical semantic enabled here. */
+	(( FluxTextBoxData * ) nd->component_data)->enabled = enabled;
 }
 
 void flux_textbox_set_content(FluxNodeStore *store, XentNodeId id, char const *content) {
@@ -223,7 +225,7 @@ void flux_numberbox_set_value(FluxNodeStore *store, XentNodeId id, double value)
 
 FLUX_SETTER(flux_hyperlink, FluxHyperlinkData, label, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_HYPERLINK))
 FLUX_SETTER(flux_hyperlink, FluxHyperlinkData, url, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_HYPERLINK))
-FLUX_SETTER_ENABLED(flux_hyperlink, FluxHyperlinkData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_HYPERLINK))
+FLUX_SETTER_ENABLED(flux_hyperlink, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_HYPERLINK))
 
 FLUX_SETTER(
   flux_repeat_button, FluxRepeatButtonData, label, char const *, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON)
@@ -238,7 +240,7 @@ FLUX_SETTER_2(
   flux_repeat_button, FluxRepeatButtonData, timing, repeat_delay_ms, repeat_interval_ms, uint32_t, uint32_t,
   FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON)
 )
-FLUX_SETTER_ENABLED(flux_repeat_button, FluxRepeatButtonData, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON))
+FLUX_SETTER_ENABLED(flux_repeat_button, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_REPEAT_BUTTON))
 
 void flux_repeat_button_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name) {
 	flux_repeat_button_set_icon_name(store, id, icon_name);

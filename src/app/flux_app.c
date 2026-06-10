@@ -303,23 +303,27 @@ static void app_pointer_move(FluxApp *app, FluxPointerEvent const *ev, bool is_t
 	app_update_cursor_and_tooltip(app, ev->x, ev->y, is_touch);
 }
 
+/* WinUI light-dismiss: a press or wheel landing outside an open flyout / MenuFlyout /
+ * ComboBox drop-down closes it (and its whole submenu chain) and is absorbed -- it does
+ * not also activate the control underneath. Every popup is a separate window, so any
+ * input in the main window is by definition outside them. Returns true if anything was
+ * dismissed (and the caller should swallow the event). */
+static bool app_lightdismiss_popups(FluxApp *app) {
+	if (!flux_popup_lightdismiss_visible(flux_app_get_hwnd(app))) return false;
+	FluxMenuFlyout *menu;
+	if (app_active_menu_visible(app, &menu)) flux_menu_flyout_dismiss_all(menu);
+	flux_popup_dismiss_all_for_owner(flux_app_get_hwnd(app));
+	return true;
+}
+
 static void app_pointer_down(FluxApp *app, FluxPointerEvent const *ev) {
 	if (app->tooltip) flux_tooltip_dismiss(app->tooltip);
-	if (ev->changed_button == FLUX_POINTER_BUTTON_LEFT) {
-		FluxMenuFlyout *menu;
-		if (app_active_menu_visible(app, &menu)) flux_menu_flyout_dismiss(menu);
-	}
+	if (app_lightdismiss_popups(app)) return;
 	flux_input_dispatch(app->input, app_root(app), ev);
 }
 
 static void app_pointer_wheel(FluxApp *app, FluxPointerEvent const *ev) {
-	FluxMenuFlyout *menu;
-	if (app_active_menu_visible(app, &menu)) {
-		flux_menu_flyout_dismiss(menu);
-		return;
-	}
-
-	flux_popup_dismiss_all_for_owner(flux_app_get_hwnd(app));
+	if (app_lightdismiss_popups(app)) return;
 	flux_input_dispatch(app->input, app_root(app), ev);
 }
 
@@ -384,6 +388,9 @@ static bool app_handle_key_command(FluxApp *app, unsigned int vk) {
 		flux_input_tab(app->input, app_root(app), (GetKeyState(VK_SHIFT) & 0x8000) != 0);
 		return true;
 	}
+	/* The focused control gets first refusal (Slider arrows, ComboBox list, text edit);
+	 * only keys it leaves unconsumed fall through to app-level navigation below. */
+	if (flux_input_key_down(app->input, vk)) return true;
 	if (app_handle_arrow_key(app, vk)) return true;
 	if (app_handle_activation_key(app, vk)) return true;
 	if (vk != VK_ESCAPE) return false;
@@ -397,7 +404,8 @@ static void app_key(void *ctx, unsigned int vk, bool down) {
 	if (!app || !app->input) return;
 
 	if (down && app->tooltip) flux_tooltip_dismiss(app->tooltip);
-	if (down && !app_handle_key_command(app, vk)) flux_input_key_down(app->input, vk);
+	if (down) app_handle_key_command(app, vk);
+	else flux_input_key_up(app->input, vk);
 	flux_app_request_render(app);
 }
 

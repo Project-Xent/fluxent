@@ -79,12 +79,11 @@ typedef struct FluxRenderSnapshot {
 	bool             readonly;
 	bool             indeterminate;
 
-	bool             enabled;
-
 	uint8_t          nb_spin_placement; /**< FluxNBSpinPlacement value. */
 	bool             nb_up_enabled;
 	bool             nb_down_enabled;
 	float            hover_local_x; /**< Cursor X within bounds, or -1 when not hovered. */
+	float            hover_local_y; /**< Cursor Y within bounds. */
 } FluxRenderSnapshot;
 
 /** @brief Build an immutable render snapshot for one node. */

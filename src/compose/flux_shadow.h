@@ -1,9 +1,9 @@
 /**
  * @file flux_shadow.h
- * @brief Composition drop shadow for elevation (ADR 0001 §4 #7).
+ * @brief Composition drop shadow for elevation.
  *
  * Replaces hand-drawn elevation gradients with a real `DropShadow` composited
- * off-thread. NOTE: compile-verified; shadow appearance is a runtime judgment.
+ * off-thread.
  */
 #ifndef FLUX_COMPOSE_SHADOW_H
 #define FLUX_COMPOSE_SHADOW_H

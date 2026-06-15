@@ -45,6 +45,24 @@ void flux_window_set_resize_callback(FluxWindow *win, FluxResizeCallback cb, voi
 	win->resize_ctx = ctx;
 }
 
+void flux_window_add_resize_observer(FluxWindow *win, FluxResizeCallback cb, void *ctx) {
+	if (!win || !cb || win->resize_observer_count >= FLUX_WINDOW_MAX_RESIZE_OBSERVERS) return;
+	win->resize_observers [win->resize_observer_count]   = cb;
+	win->resize_observer_ctx [win->resize_observer_count] = ctx;
+	win->resize_observer_count++;
+}
+
+void flux_window_remove_resize_observer(FluxWindow *win, FluxResizeCallback cb, void *ctx) {
+	if (!win) return;
+	for (int i = 0; i < win->resize_observer_count; i++) {
+		if (win->resize_observers [i] != cb || win->resize_observer_ctx [i] != ctx) continue;
+		win->resize_observers [i]   = win->resize_observers [win->resize_observer_count - 1];
+		win->resize_observer_ctx [i] = win->resize_observer_ctx [win->resize_observer_count - 1];
+		win->resize_observer_count--;
+		return;
+	}
+}
+
 void flux_window_set_dpi_changed_callback(FluxWindow *win, FluxDpiChangedCallback cb, void *ctx) {
 	if (!win) return;
 	win->on_dpi_changed  = cb;

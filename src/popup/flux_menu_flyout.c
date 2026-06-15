@@ -3,19 +3,12 @@
 #endif
 
 #include "flux_menu_flyout_internal.h"
+#include "runtime/flux_str.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <windows.h>
-
-static char *dup_cstr(char const *s) {
-	if (!s) return NULL;
-	size_t n = strlen(s);
-	char  *c = ( char * ) malloc(n + 1);
-	if (c) memcpy(c, s, n + 1);
-	return c;
-}
 
 void invalidate(FluxMenuFlyout *m) {
 	if (!m) return;
@@ -366,10 +359,10 @@ int flux_menu_flyout_add_item(FluxMenuFlyout *m, FluxMenuItemDef const *def) {
 	memset(it, 0, sizeof(*it));
 
 	it->type             = def->type;
-	it->label            = dup_cstr(def->label);
-	it->icon_glyph       = dup_cstr(def->icon_glyph);
-	it->accelerator_text = dup_cstr(def->accelerator_text);
-	it->radio_group      = dup_cstr(def->radio_group);
+	it->label            = flux_str_dup(def->label);
+	it->icon_glyph       = flux_str_dup(def->icon_glyph);
+	it->accelerator_text = flux_str_dup(def->accelerator_text);
+	it->radio_group      = flux_str_dup(def->radio_group);
 	it->enabled          = def->enabled;
 	it->checked          = def->checked;
 	it->on_click         = def->on_click;

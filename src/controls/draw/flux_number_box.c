@@ -122,16 +122,9 @@ static void nb_draw_icon(FluxRenderContext const *rc, NbIconSpec const *icon) {
 	flux_text_draw(rc->text, FLUX_RT(rc), icon->icon_utf8, &r, &ts);
 }
 
-static FluxColor nb_fill_color(FluxControlState const *state, bool chrome_hovered, FluxThemeColors const *t) {
-	if (!state->enabled) return t ? t->ctrl_fill_disabled : flux_color_rgba(249, 249, 249, 0x4d);
-	if (state->focused) return t ? t->ctrl_fill_input_active : flux_color_rgba(255, 255, 255, 0xff);
-	if (chrome_hovered) return t ? t->ctrl_fill_secondary : flux_color_rgba(249, 249, 249, 0x80);
-	return t ? t->ctrl_fill_default : flux_color_rgba(255, 255, 255, 0xb3);
-}
-
 static void nb_draw_chrome(NbDrawContext const *dc, bool chrome_hovered) {
 	FluxThemeColors const *t    = dc->rc->theme;
-	FluxColor              fill = nb_fill_color(dc->state, chrome_hovered, t);
+	FluxColor              fill = flux_input_fill_color(t, dc->state->enabled, dc->state->focused, chrome_hovered);
 	FluxCacheEntry        *ce   = dc->rc->cache ? flux_render_cache_get_or_create(dc->rc->cache, dc->snap->id) : NULL;
 	if (ce) {
 		FluxColor tweened;
@@ -224,7 +217,7 @@ void flux_draw_number_box(
 	bool  has_text     = snap->text_content && snap->text_content [0];
 	bool  spin_visible = (snap->nb_spin_placement == 2);
 
-	bool  show_delete  = has_text && state->focused && !snap->readonly && state->enabled;
+	bool  show_delete  = has_text && state->focused && !snap->edit.readonly && state->enabled;
 
 	float spin_w       = spin_visible ? FLUX_NUMBER_BOX_SPIN_W : 0.0f;
 	float delete_w     = show_delete ? FLUX_NUMBER_BOX_DELETE_BTN_W : 0.0f;

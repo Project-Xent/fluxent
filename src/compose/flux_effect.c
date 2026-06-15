@@ -256,9 +256,6 @@ static FluxEffect *effect_create(float blur, wchar_t const *source_name) {
 	return e;
 }
 
-/* Assemble a blur effect brush over a backdrop source. `host` selects whether
- * the backdrop samples the window's own content (in-app acrylic, for inline
- * controls) or the desktop behind the window (host acrylic, for popup windows). */
 /* Intermediate COM objects of a backdrop-blur brush, owned by the caller for cleanup. */
 typedef struct BlurParts {
 	WUC_CompositionEffectFactory *factory;
@@ -268,6 +265,9 @@ typedef struct BlurParts {
 	WUC_Brush                    *out; /**< The finished ICompositionBrush, or NULL. */
 } BlurParts;
 
+/* Assemble a blur effect brush over a backdrop source. `host` selects whether
+ * the backdrop samples the window's own content (in-app acrylic, for inline
+ * controls) or the desktop behind the window (host acrylic, for popup windows). */
 static HRESULT blur_build(WUC_Comp *comp, FluxEffect *eff, bool host, BlurParts *p) {
 	if (FAILED(wuc_comp_create_effect_factory(comp, ( WGREF_IGraphicsEffect * ) eff, &p->factory))) return E_FAIL;
 	if (FAILED(wuc_composition_effect_factory_create_brush(p->factory, &p->brush))) return E_FAIL;

@@ -210,7 +210,7 @@ typedef struct FluxContentDialogCreateInfo {
 	char const       *primary_text;   /**< NULL omits the button. Accent-styled. */
 	char const       *secondary_text; /**< NULL omits the button. */
 	char const       *close_text;     /**< NULL omits the button. */
-	float             width;          /**< Card width, clamped to [320,548] (xent has no wrap-content). */
+	float             width;          /**< Card width, clamped to [320,548]. */
 	float             content_height; /**< Height reserved for the body content region. */
 	void              (*on_result)(void *, FluxDialogResult);
 	void             *userdata;
@@ -224,7 +224,7 @@ typedef struct FluxComboBoxCreateInfo {
 	FluxWindow        *window;         /**< For the drop-down popup + coordinate mapping. */
 	FluxTextRenderer  *text;           /**< Shared text renderer for drop-down items. */
 	FluxThemeManager  *theme;          /**< Theme source for the drop-down. */
-	char const *const *items;          /**< Borrowed array of UTF-8 item strings. */
+	char const *const *items;          /**< UTF-8 item strings; the control deep-copies them. */
 	int                item_count;
 	int                selected_index; /**< Initial selection, or -1. */
 	char const        *placeholder;
@@ -239,7 +239,7 @@ typedef struct FluxExpanderCreateInfo {
 	FluxWindow    *window;         /**< For repaint while the content slides; may be NULL. */
 	char const    *header;         /**< Optional convenience label placed in the header. */
 	bool           expanded;
-	float          width;          /**< Control width (xent has no wrap-content; size is explicit). */
+	float          width;          /**< Control width in DIPs. */
 	float          content_height; /**< Height reserved for the content region when expanded. */
 	void           (*on_toggle)(void *, bool);
 	void          *userdata;
@@ -258,6 +258,34 @@ typedef struct FluxInfoBarCreateInfo {
 	void                (*on_close)(void *);
 	void               *userdata;
 } FluxInfoBarCreateInfo;
+
+typedef struct FluxMenuBarCreateInfo {
+	XentContext      *ctx;
+	FluxNodeStore    *store;
+	XentNodeId        parent;
+	FluxWindow       *window; /**< Owner for the drop-down flyouts + coordinate mapping. */
+	FluxTextRenderer *text;   /**< Measures item titles and draws the flyouts. */
+	FluxThemeManager *theme;  /**< Theme source for the flyouts. */
+} FluxMenuBarCreateInfo;
+
+typedef enum FluxNavDisplayMode FluxNavDisplayMode;
+
+typedef struct FluxNavViewCreateInfo {
+	XentContext      *ctx;
+	FluxNodeStore    *store;
+	XentNodeId        parent;
+	FluxWindow       *window;   /**< For repaint, adaptive width, coordinate mapping. */
+	FluxTextRenderer *text;     /**< Measures/draws item labels. */
+	FluxThemeManager *theme;    /**< Children-flyout chrome (Compact/Top hierarchical items). */
+	float             width;    /**< Initial control size (DIPs); tracks the window when it fills it.
+	                             *   <= 0 fills the window and tracks the client size on both axes. */
+	float             height;
+	int               mode;     /**< Initial FluxNavDisplayMode (ignored when adaptive). */
+	bool              adaptive; /**< Auto-switch Expanded/Compact/Minimal by window width. */
+	void              (*on_selection_changed)(void *ctx, int index);
+	void             *userdata;
+	XentNodeId       *out_content; /**< Optional: receives the content host node to fill. */
+} FluxNavViewCreateInfo;
 
 /** @brief Create a Fluxent application, or NULL on failure. */
 FluxApp          *flux_app_create(FluxAppConfig const *cfg);
@@ -289,6 +317,13 @@ XentNodeId        flux_app_get_root(FluxApp *app);
 
 /** @brief Request rendering for the next compositor frame on the app window. */
 void              flux_app_request_render(FluxApp *app);
+
+/**
+ * @brief Install a per-frame callback that runs at frame start, after input
+ * dispatch and before layout/paint. The FX runtime uses this to drain its
+ * message queue and reconcile the view. NULL clears it.
+ */
+void              flux_app_set_frame_callback(FluxApp *app, void (*cb)(void *ctx), void *ctx);
 
 /** @brief Get the Direct2D-backed graphics context owned by the app's window. */
 FluxGraphics     *flux_app_get_graphics(FluxApp *app);
@@ -328,6 +363,13 @@ XentNodeId        flux_create_progress(FluxProgressCreateInfo const *info);
 
 /** @brief Create a card node. */
 XentNodeId        flux_create_card(FluxContainerCreateInfo const *info);
+
+/**
+ * @brief Create a scroll viewport (flex column). The engine derives the
+ * scrollable content extent from the laid-out children each frame; write
+ * FluxScrollData.content_manual to take over the extent by hand.
+ */
+XentNodeId        flux_create_scroll(FluxContainerCreateInfo const *info);
 
 /** @brief Create a divider node. */
 XentNodeId        flux_create_divider(FluxContainerCreateInfo const *info);
@@ -377,6 +419,9 @@ void              flux_content_dialog_show(FluxNodeStore *store, XentNodeId dial
 /** @brief Hide the content dialog (detaches overlay, releases the focus trap). */
 void              flux_content_dialog_hide(FluxNodeStore *store, XentNodeId dialog);
 
+/** @brief Get the dialog's body content node (the child the caller fills). */
+XentNodeId        flux_content_dialog_content_node(FluxNodeStore *store, XentNodeId dialog);
+
 /** @brief Create an info bar node (status banner with severity icon + close). */
 XentNodeId        flux_create_info_bar(FluxInfoBarCreateInfo const *info);
 
@@ -388,6 +433,105 @@ XentNodeId        flux_expander_content_node(FluxNodeStore *store, XentNodeId id
 
 /** @brief Get the expander's header node (host for arbitrary header content). */
 XentNodeId        flux_expander_header_node(FluxNodeStore *store, XentNodeId id);
+
+/** @brief Create a menu bar (horizontal row of top-level menus). */
+XentNodeId        flux_create_menu_bar(FluxMenuBarCreateInfo const *info);
+
+/**
+ * @brief Append a top-level menu titled @p title and return its (empty) flyout.
+ * Populate the returned flyout with flux_menu_flyout_add_item / _add_separator.
+ * @p title is copied. Returns NULL if the bar is full/invalid.
+ */
+FluxMenuFlyout   *flux_menu_bar_add_menu(FluxNodeStore *store, XentNodeId bar, char const *title);
+
+/** @brief Create a left-nav NavigationView; out_content receives the content host to fill. */
+XentNodeId        flux_create_nav_view(FluxNavViewCreateInfo const *info);
+
+/**
+ * @brief Append a menu item (icon name + label) and return its selection index.
+ * @p icon_name and @p label are copied. The first menu item is auto-selected.
+ */
+int  flux_nav_view_add_item(FluxNodeStore *store, XentNodeId nav, char const *icon_name, char const *label);
+
+/** @brief Append a footer item (e.g. Settings); returns its selection index. */
+int  flux_nav_view_add_footer_item(FluxNodeStore *store, XentNodeId nav, char const *icon_name, char const *label);
+
+/** @brief Programmatically select an item by index (fires on_selection_changed). */
+void flux_nav_view_select(FluxNodeStore *store, XentNodeId nav, int index);
+
+/** @brief Get the content host node (the child the caller fills / swaps). */
+XentNodeId  flux_nav_view_content_node(FluxNodeStore *store, XentNodeId nav);
+
+/**
+ * @brief Set PaneDisplayMode (FluxNavPaneDisplayMode). Auto re-enables adaptive
+ * threshold behavior; Left/LeftCompact/LeftMinimal/Top are sticky.
+ */
+void        flux_nav_view_set_pane_display_mode(FluxNodeStore *store, XentNodeId nav, int mode);
+
+/** @brief Append a NavigationViewItemSeparator (1px rule) to the menu list. */
+int         flux_nav_view_add_separator(FluxNodeStore *store, XentNodeId nav);
+
+/** @brief Append a NavigationViewItemHeader (section caption) to the menu list. */
+int         flux_nav_view_add_header(FluxNodeStore *store, XentNodeId nav, char const *label);
+
+/** @brief Item label by index, owned by the control (NULL for separators/invalid). */
+char const *flux_nav_view_item_label(FluxNodeStore *store, XentNodeId nav, int index);
+
+/**
+ * @brief Append a child under @p parent_index (hierarchical item). Children
+ * expand inline in Expanded/Minimal (31px indent per depth) and open in a
+ * flyout from Compact/Top, like WinUI's hierarchical NavigationView.
+ */
+int         flux_nav_view_add_child_item(
+  FluxNodeStore *store, XentNodeId nav, int parent_index, char const *icon_name, char const *label
+);
+
+typedef struct FluxTabViewCreateInfo {
+	XentContext      *ctx;
+	FluxNodeStore    *store;
+	XentNodeId        parent;
+	FluxWindow       *window;          /**< For repaint + coordinate mapping. */
+	FluxTextRenderer *text;            /**< Measures/draws tab headers. */
+	FluxInput        *input;           /**< Arrow-key focus moves between tab headers. */
+	int               width_mode;      /**< FluxTabWidthMode; 0 = Equal (WinUI default). */
+	int               close_overlay;   /**< FluxTabCloseOverlayMode; 0 = Auto (always visible). */
+	bool              disable_reorder; /**< Opt out of drag-reorder (CanReorderTabs defaults true). */
+	void              (*on_selection_changed)(void *ctx, int index);
+	bool              (*on_close_requested)(void *ctx, int index); /**< Veto hook; NULL = always close. */
+	void              (*on_tab_closed)(void *ctx, int index);
+	void              (*on_add_tab)(void *ctx);                    /**< NULL hides the (+) button. */
+	void             *userdata;
+} FluxTabViewCreateInfo;
+
+/** @brief Create a TabView (tab strip over a content host). */
+XentNodeId flux_create_tab_view(FluxTabViewCreateInfo const *info);
+
+/**
+ * @brief Append a tab (icon name + label) and return its index; out_content
+ * receives the content subtree to fill. @p icon_name / @p label are copied.
+ * The first tab is auto-selected.
+ */
+int        flux_tab_view_add_tab(
+  FluxNodeStore *store, XentNodeId tabview, char const *icon_name, char const *label, XentNodeId *out_content
+);
+
+/** @brief Select a tab by index (fires on_selection_changed, swaps content). */
+void flux_tab_view_select(FluxNodeStore *store, XentNodeId tabview, int index);
+
+/** @brief Close a tab by index (collapse animation, then detach; fires on_tab_closed). */
+void flux_tab_view_close(FluxNodeStore *store, XentNodeId tabview, int index);
+
+/** @brief Per-tab TabViewItem.IsClosable: hides the close glyph and blocks Ctrl+F4/middle-click. */
+void flux_tab_view_set_closable(FluxNodeStore *store, XentNodeId tabview, int index, bool closable);
+
+/** @brief Switch TabWidthMode (FluxTabWidthMode) and re-lay the strip. */
+void flux_tab_view_set_width_mode(FluxNodeStore *store, XentNodeId tabview, int width_mode);
+
+/** @brief Place a caller-built node before the tabs (TabStripHeader). */
+void flux_tab_view_set_strip_header(FluxNodeStore *store, XentNodeId tabview, XentNodeId node);
+
+/** @brief Place a caller-built node after the (+) button (TabStripFooter). */
+void flux_tab_view_set_strip_footer(FluxNodeStore *store, XentNodeId tabview, XentNodeId node);
 
 #ifdef __cplusplus
 }

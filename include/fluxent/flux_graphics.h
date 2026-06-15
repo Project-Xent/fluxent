@@ -217,20 +217,6 @@ ID2D1Factory3                     *flux_graphics_get_d2d_factory(FluxGraphics *g
 IDWriteFactory3                   *flux_graphics_get_dwrite_factory(FluxGraphics *gfx);
 
 /**
- * @brief Get the DirectComposition device.
- * @param gfx Graphics context.
- * @return DComp device (caller does NOT own; do not Release).
- */
-IDCompositionDevice               *flux_graphics_get_dcomp_device(FluxGraphics *gfx);
-
-/**
- * @brief Get the root DirectComposition visual.
- * @param gfx Graphics context.
- * @return Root visual (caller does NOT own; do not Release).
- */
-IDCompositionVisual               *flux_graphics_get_root_visual(FluxGraphics *gfx);
-
-/**
  * @brief Add an overlay visual to the composition tree.
  *
  * Overlay visuals are rendered on top of the main swap chain content.

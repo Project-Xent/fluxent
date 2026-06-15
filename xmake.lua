@@ -5,6 +5,13 @@ add_rules("mode.debug", "mode.release")
 set_warnings("all")
 set_runtimes("MT")
 
+-- Release builds at -O2 (xmake's "faster") rather than mode.release's default -O3.
+-- O3's extra inlining/unrolling/vectorization buys nothing for event-driven UI code
+-- and only adds size; O2 is a few KB smaller at equal (often better) runtime perf.
+if is_mode("release") then
+    set_optimize("faster")
+end
+
 
 if is_plat("windows") then
     add_defines("_CRT_SECURE_NO_WARNINGS")
@@ -58,6 +65,7 @@ target("fluxent")
         "src/controls/draw/*.c",
         "src/controls/factory/*.c",
         "src/controls/textbox/*.c",
+        "src/fx/*.c",
         "src/graphics/*.c",
         "src/input/*.c",
         "src/popup/*.c",
@@ -82,21 +90,79 @@ target("fluxent")
     end
 target_end()
 
+target("fluxent_gallery")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/gallery/*.c")
+    add_includedirs("include", "examples/gallery")
+    if is_plat("mingw") then
+        add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
+        -- --icf=safe folds byte-identical functions (the MSVC /OPT:ICF equivalent);
+        -- "safe" leaves address-taken functions alone so fn-pointer identity holds.
+        add_ldflags("-Wl,--subsystem,windows", "-Wl,--gc-sections", "-Wl,--icf=safe", { force = true })
+    end
+    if is_plat("windows") then
+        add_ldflags("/SUBSYSTEM:WINDOWS", "/OPT:REF", "/OPT:ICF", { force = true })
+    end
+target_end()
+
+target("test_subtree")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_subtree.c")
+    add_includedirs("include")
+target_end()
+
+target("test_fx_el")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_el.c")
+    add_includedirs("include")
+target_end()
+
+target("test_fx_reconcile")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_reconcile.c")
+    add_includedirs("include", "src", "src/fx")
+target_end()
+
+target("test_fx_rows")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_rows.c")
+    add_includedirs("include", "src", "src/fx")
+target_end()
+
+target("test_fx_probe")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_probe.c")
+    add_includedirs("include", "src", "src/fx")
+target_end()
+
+target("test_fx_crossaxis")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_crossaxis.c")
+    add_includedirs("include", "src", "src/fx")
+target_end()
+
+target("test_fx_grow_wrap")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_grow_wrap.c")
+    add_includedirs("include", "src", "src/fx")
+target_end()
+
 target("hello_fluxent")
     set_kind("binary")
     add_deps("fluxent")
-    add_files(
-        "examples/hello_fluxent.c",
-        "examples/hello_fluxent_dynamic.c",
-        "examples/hello_fluxent_lifecycle.c",
-        "examples/hello_fluxent_showcase.c",
-        "examples/hello_fluxent_static.c",
-        "examples/hello_fluxent_phase2.c"
-    )
-    add_includedirs("include")
+    add_files("examples/hello_fluxent/*.c")
+    add_includedirs("include", "examples/hello_fluxent")
     if is_plat("mingw") then
         add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
-        add_ldflags("-Wl,--subsystem,windows", "-Wl,--gc-sections", { force = true })
+        add_ldflags("-Wl,--subsystem,windows", "-Wl,--gc-sections", "-Wl,--icf=safe", { force = true })
     end
     if is_plat("windows") then
         add_ldflags("/SUBSYSTEM:WINDOWS", "/OPT:REF", "/OPT:ICF", { force = true })

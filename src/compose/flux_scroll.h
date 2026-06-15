@@ -1,15 +1,12 @@
 /**
  * @file flux_scroll.h
- * @brief Off-thread inertial scrolling via InteractionTracker (ADR 0001 §4 #6).
+ * @brief Off-thread inertial scrolling via InteractionTracker.
  *
  * The no-compromise answer to drag/inertia/rubber-band: an `InteractionTracker`
  * fed by a `VisualInteractionSource` runs on the compositor thread, so scrolling
  * stays responsive even when the UI thread is busy. The tracker's `Position`
  * drives the scrolled content's `Offset` via an expression animation (the
  * binding + gesture tuning are the runtime step on a GPU/input session).
- *
- * NOTE: compile-verified scaffold (create + configure + bounds). Touch/wheel
- * feel requires hardware to validate.
  */
 #ifndef FLUX_COMPOSE_SCROLL_H
 #define FLUX_COMPOSE_SCROLL_H

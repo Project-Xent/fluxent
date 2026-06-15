@@ -4,6 +4,7 @@
 #include "fluxent/flux_node_store.h"
 #include "fluxent/fluxent.h"
 #include <xent/xent.h>
+#include <math.h>
 #include <stdbool.h>
 
 /** @brief Default main window width for hello_fluxent showcase apps. */
@@ -12,13 +13,7 @@
 #define HELLO_FLUXENT_DEMO_WINDOW_H         760
 /** @brief Node store / Xent arena initial capacity for hello_fluxent demos. */
 #define HELLO_FLUXENT_DEMO_STORE_CAPACITY   512
-/** @brief Scroll content height matching the static demo column layout extent. */
-#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H 2320
-/** @brief Scroll content width used to size the scroll viewport model. */
-#define HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W HELLO_FLUXENT_DEMO_WINDOW_W
-
 #define HELLO_FLUXENT_DEMO_STAGE_W          1000
-#define HELLO_FLUXENT_DEMO_PANEL_W          486
 
 #define RADIO_GROUP_MAX                     8
 
@@ -62,7 +57,6 @@ typedef struct Demo {
 	XentNodeId          scroll_root; /**< Scrolling page container (child of scene_root). */
 	XentNodeId          root;
 	XentNodeId          dashboard;
-	FluxNodeData       *scroll_nd;
 	XentNodeId          footer_div;
 	XentNodeId          footer;
 	XentNodeId          spacer;
@@ -109,6 +103,7 @@ void       demo_build_static_content(Demo *d);
 bool       demo_create_app(Demo *d);
 void       demo_add_dynamic_content(Demo *d);
 void       demo_add_phase2_content(Demo *d);
+void       demo_add_phase3_content(Demo *d);
 void       demo_destroy(Demo *d);
 
 #endif

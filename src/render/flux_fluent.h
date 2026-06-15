@@ -155,6 +155,38 @@ static FluxColor inline ft_focus_stroke_inner(void) { return flux_color_rgb(255,
 
 static FluxColor inline ft_transparent(void) { return flux_color_rgba(0, 0, 0, 0); }
 
+/**
+ * @brief Per-interaction-state color tokens, resolved by flux_resolve_state_color.
+ *
+ * Expresses "which token for which state" as data instead of an if/else chain,
+ * so retargeting a design system becomes swapping the map, not editing renderers.
+ */
+typedef struct FluxStateColorMap {
+	FluxColor disabled;
+	FluxColor focused;
+	FluxColor hovered;
+	FluxColor normal;
+} FluxStateColorMap;
+
+/** @brief Resolve a state color with WinUI precedence: disabled > focused > hovered > normal. */
+static FluxColor inline flux_resolve_state_color(FluxStateColorMap const *m, bool enabled, bool focused, bool hovered) {
+	if (!enabled) return m->disabled;
+	if (focused) return m->focused;
+	if (hovered) return m->hovered;
+	return m->normal;
+}
+
+/** @brief WinUI input-chrome fill (TextBox/PasswordBox/NumberBox), resolved by state. */
+static FluxColor inline flux_input_fill_color(FluxThemeColors const *t, bool enabled, bool focused, bool hovered) {
+	FluxStateColorMap m = {
+	  .disabled = t ? t->ctrl_fill_disabled : ft_ctrl_fill_disabled(),
+	  .focused  = t ? t->ctrl_fill_input_active : ft_ctrl_fill_input_active(),
+	  .hovered  = t ? t->ctrl_fill_secondary : ft_ctrl_fill_secondary(),
+	  .normal   = t ? t->ctrl_fill_default : ft_ctrl_fill_default(),
+	};
+	return flux_resolve_state_color(&m, enabled, focused, hovered);
+}
+
 static float inline flux_clamp01(float v) {
 	if (v < 0.0f) return 0.0f;
 	if (v > 1.0f) return 1.0f;

@@ -8,7 +8,7 @@
  *
  * ## Usage Pattern
  *
- * 1. Create engine with `flux_engine_create(store)`
+ * 1. Create engine with `flux_engine_create(store, registry)`
  * 2. Each frame:
  *    - Call `flux_engine_collect(eng, ctx, root)` to walk the tree
  *    - Call `flux_engine_execute(eng, rc)` to render all controls
@@ -22,14 +22,15 @@
  *
  * ## Custom Renderers
  *
- * Use `flux_node_store_register_renderer()` to register custom draw functions for
- * control types. The engine will dispatch to your renderer during execution.
+ * Use `flux_control_registry_register()` to bind custom draw functions to
+ * control types. The engine dispatches through the registry during execution.
  */
 #ifndef FLUX_ENGINE_H
 #define FLUX_ENGINE_H
 
 #include "flux_render_snapshot.h"
 #include "flux_node_store.h"
+#include "flux_control_registry.h"
 
 #ifdef __cplusplus
 extern "C"
@@ -95,6 +96,7 @@ typedef struct FluxRenderCommand {
 	float              pivot_x;      /**< Scale pivot X (absolute) */
 	float              pivot_y;      /**< Scale pivot Y (absolute) */
 	float              opacity;      /**< Subtree opacity for FLUX_CLIP_PUSH_TRANSFORM (1 = opaque) */
+	float              translate_x;  /**< Subtree X translate for FLUX_CLIP_PUSH_TRANSFORM (0 = none) */
 	float              translate_y;  /**< Subtree Y translate for FLUX_CLIP_PUSH_TRANSFORM (0 = none) */
 	bool               clip_subtree; /**< Clip the subtree to @ref bounds (slide animations) */
 } FluxRenderCommand;
@@ -104,7 +106,7 @@ typedef struct FluxRenderCommand {
  * @param store Node store containing control metadata.
  * @return New engine instance, or NULL on failure.
  */
-FluxEngine              *flux_engine_create(FluxNodeStore *store);
+FluxEngine              *flux_engine_create(FluxNodeStore *store, FluxControlRegistry const *registry);
 
 /**
  * @brief Destroy a render engine.
@@ -157,15 +159,16 @@ void                     flux_engine_execute(FluxEngine const *eng, FluxRenderCo
  * directly for custom rendering pipelines.
  */
 void                     flux_engine_dispatch_render(
-  FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds,
-  FluxControlState const *state
+  FluxControlRegistry const *registry, FluxRenderContext const *rc, FluxRenderSnapshot const *snap,
+  FluxRect const *bounds, FluxControlState const *state
 );
 
 /**
  * @brief Dispatch overlay rendering for a control.
  */
 void flux_engine_dispatch_render_overlay(
-  FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds
+  FluxControlRegistry const *registry, FluxRenderContext const *rc, FluxRenderSnapshot const *snap,
+  FluxRect const *bounds
 );
 
 #ifdef __cplusplus

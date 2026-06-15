@@ -213,10 +213,6 @@ static void expander_finalize(FluxExpanderData *d, FluxExpanderCreateInfo const 
 
 XentNodeId flux_create_expander(FluxExpanderCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_EXPANDER_HEADER, flux_draw_expander_header, NULL);
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_EXPANDER_CONTENT, flux_draw_expander_content, NULL);
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_CONTAINER, flux_draw_container, NULL);
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_TEXT, flux_draw_text, NULL);
 
 	XentNodeId root = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_EXPANDER);
 	if (root == XENT_NODE_INVALID) return XENT_NODE_INVALID;

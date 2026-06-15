@@ -4,14 +4,10 @@
  *
  * Replaces the UI-thread `FluxTween` model: instead of recomputing a value
  * every frame, a control sets a target and the DWM compositor interpolates it
- * on its own thread (ADR 0001 §4). A `FluxAnimKit` caches the reusable WinUI
+ * on its own thread. A `FluxAnimKit` caches the reusable WinUI
  * easing curves and starts scalar/color keyframe animations against any
  * composition object property (Offset/Scale/Opacity/RotationAngle on a visual,
  * Color on a brush, etc.).
- *
- * NOTE: built and compile-verified; wiring control state transitions onto these
- * helpers (and deleting the old tween loop) is Phase C, gated on GPU runtime
- * validation of timing and feel.
  */
 #ifndef FLUX_COMPOSE_ANIM_H
 #define FLUX_COMPOSE_ANIM_H

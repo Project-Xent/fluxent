@@ -1,6 +1,6 @@
 /**
  * @file flux_uia.h
- * @brief UI Automation provider projecting the xent semantic tree (ADR 0001 §4 #10).
+ * @brief UI Automation provider projecting the xent semantic tree.
  *
  * Accessibility is a *projection* of the semantic tree xent-core already
  * maintains, not a parallel structure. Each provider wraps one node and answers
@@ -9,9 +9,6 @@
  * RangeValue, Value, SelectionItem). Pattern actions are routed back into the
  * control layer through the node store. The window's `WM_GETOBJECT` returns the
  * root provider.
- *
- * NOTE: compile/link-verified. Whether Narrator navigates, announces, and acts
- * correctly is a runtime judgment requiring an accessibility client.
  */
 #ifndef FLUX_COMPOSE_UIA_H
 #define FLUX_COMPOSE_UIA_H

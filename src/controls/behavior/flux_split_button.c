@@ -1,10 +1,12 @@
 #include "controls/factory/flux_factory.h"
 #include "controls/draw/flux_control_draw.h"
+#include "runtime/flux_str.h"
 
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_flyout.h"
 #include "fluxent/flux_menu_flyout.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <windows.h>
 
@@ -99,7 +101,6 @@ static bool split_on_key(void *ctx, unsigned int vk, bool down) {
 
 XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_SPLIT_BUTTON, flux_draw_split_button, NULL);
 
 	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_SPLIT_BUTTON);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -112,8 +113,8 @@ XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
 		free(b);
 		return node;
 	}
-	bd->label                        = info->label;
-	bd->icon_name                    = info->icon_name;
+	bd->label                        = flux_str_dup(info->label);
+	bd->icon_name                    = flux_str_dup(info->icon_name);
 	bd->font_size                    = 14.0f;
 	bd->style                        = FLUX_BUTTON_STANDARD;
 	bd->on_click                     = info->on_click;
@@ -125,7 +126,7 @@ XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
 	b->ctx                           = info->ctx;
 
 	nd->component_data               = bd;
-	nd->destroy_component_data       = free;
+	nd->destroy_component_data       = flux_button_data_destroy;
 	nd->behavior.on_pointer_down     = split_on_pointer_down;
 	nd->behavior.on_pointer_down_ctx = b;
 	nd->behavior.on_click            = split_on_click;
@@ -136,6 +137,13 @@ XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
 	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
 	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
 	xent_set_focusable(info->ctx, node, true);
+
+	/* Right inset reserves the divider + secondary chevron zone after the label. */
+	flux_leaf_default_metrics(&(FluxLeafMetrics) {
+	  info->ctx, node, info->label, {11.0f, 5.0f, 11.0f + FLUX_SPLIT_DIVIDER_W + FLUX_SPLIT_SECONDARY_W, 6.0f},
+	  {0.0f, 32.0f},
+         {68.0f, 32.0f}
+    });
 
 	return node;
 }

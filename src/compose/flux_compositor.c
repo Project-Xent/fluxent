@@ -195,7 +195,18 @@ static WUC_CompositionSurfaceBrush *swapchain_surface_brush(FluxWindowTarget *t,
 	WUC_CompositionSurfaceBrush *brush = NULL;
 	hr = wuc_comp_create_surface_brush_p_p(t->owner->comp, ( WUC_ICompositionSurface * ) surface, &brush);
 	(( IUnknown * ) surface)->lpVtbl->Release(( IUnknown * ) surface);
-	return SUCCEEDED(hr) ? brush : NULL;
+	if (FAILED(hr)) return NULL;
+
+	/* Draw the swap chain 1:1 at the top-left instead of the default Fill
+	 * stretch. During a live resize the visual takes the new window size one
+	 * compositor frame before the freshly-presented buffer arrives; Fill
+	 * stretches the stale frame to the new size for that frame (a visible
+	 * zoom pulse), while None leaves it pinned and at most exposes a sliver
+	 * of backdrop on the growing edge. */
+	( void ) wuc_composition_surface_brush_put__stretch(brush, WUC_CompositionStretch_None);
+	( void ) wuc_composition_surface_brush_put__horizontal_alignment_ratio(brush, 0.0f);
+	( void ) wuc_composition_surface_brush_put__vertical_alignment_ratio(brush, 0.0f);
+	return brush;
 }
 
 HRESULT flux_window_target_set_swapchain(FluxWindowTarget *t, IUnknown *swapchain) {

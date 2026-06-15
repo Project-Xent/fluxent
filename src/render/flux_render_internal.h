@@ -167,6 +167,35 @@ static void inline flux_fill_rect(FluxRenderContext const *rc, FluxRect const *r
 	ID2D1RenderTarget_FillRectangle(rt, &dr, ( ID2D1Brush * ) rc->brush);
 }
 
+/** @brief Fill a rect with a left→right linear gradient between two colors. */
+static void inline flux_fill_h_gradient(
+  FluxRenderContext const *rc, FluxRect const *r, FluxColor left, FluxColor right
+) {
+	ID2D1RenderTarget *rt = FLUX_RT(rc);
+	D2D1_GRADIENT_STOP stops [2];
+	stops [0].position                      = 0.0f;
+	stops [0].color                         = flux_d2d_color(left);
+	stops [1].position                      = 1.0f;
+	stops [1].color                         = flux_d2d_color(right);
+
+	ID2D1GradientStopCollection *collection = NULL;
+	ID2D1RenderTarget_CreateGradientStopCollection(rt, stops, 2, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &collection);
+	if (!collection) return;
+
+	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp = {flux_point(r->x, r->y), flux_point(r->x + r->w, r->y)};
+	D2D1_BRUSH_PROPERTIES                 bp = {
+	  1.0f, {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}
+    };
+	ID2D1LinearGradientBrush *grad = NULL;
+	ID2D1RenderTarget_CreateLinearGradientBrush(rt, &gp, &bp, collection, &grad);
+	ID2D1GradientStopCollection_Release(collection);
+	if (!grad) return;
+
+	D2D1_RECT_F dr = flux_d2d_rect(r);
+	ID2D1RenderTarget_FillRectangle(rt, &dr, ( ID2D1Brush * ) grad);
+	ID2D1LinearGradientBrush_Release(grad);
+}
+
 static void inline flux_fill_ellipse(FluxRenderContext const *rc, FluxEllipseSpec const *spec, FluxColor color) {
 	D2D1_ELLIPSE       e  = flux_ellipse(spec);
 	ID2D1RenderTarget *rt = FLUX_RT(rc);

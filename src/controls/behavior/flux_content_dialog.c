@@ -251,10 +251,6 @@ static void dialog_init_runtime(FluxDialogRuntime *rt, XentNodeId root, FluxCont
 
 XentNodeId flux_create_content_dialog(FluxContentDialogCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_CONTENT_DIALOG, flux_draw_content_dialog, NULL);
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_CARD, flux_draw_card, NULL);
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_CONTAINER, flux_draw_container, NULL);
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_DIALOG_CONTENT, flux_draw_dialog_content, NULL);
 
 	XentNodeId root = flux_factory_create_node(info->ctx, info->store, XENT_NODE_INVALID, FLUX_CONTROL_CONTENT_DIALOG);
 	if (root == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -311,4 +307,9 @@ void flux_content_dialog_show(FluxNodeStore *store, XentNodeId dialog) {
 void flux_content_dialog_hide(FluxNodeStore *store, XentNodeId dialog) {
 	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
 	if (rt) dialog_close(rt, FLUX_DIALOG_NONE);
+}
+
+XentNodeId flux_content_dialog_content_node(FluxNodeStore *store, XentNodeId dialog) {
+	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
+	return rt ? rt->content : XENT_NODE_INVALID;
 }

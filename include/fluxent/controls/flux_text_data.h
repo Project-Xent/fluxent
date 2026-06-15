@@ -43,6 +43,11 @@ typedef enum FluxFontWeight
 	FLUX_FONT_BLACK       = 900,
 } FluxFontWeight;
 
+/** FluxFontWeight values are DWrite-style numerics; 0 falls back to regular. */
+static uint16_t inline flux_font_weight_numeric(FluxFontWeight weight) {
+	return ( uint16_t ) (weight > 0 ? weight : FLUX_FONT_REGULAR);
+}
+
 /**
  * @brief Configuration for a static text label.
  *

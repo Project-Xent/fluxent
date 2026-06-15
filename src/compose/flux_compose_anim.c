@@ -15,7 +15,7 @@ struct FluxAnimKit {
 	WUC_CubicBezierEasingFunction *easings [FLUX_EASE_COUNT]; /**< Lazily created; [LINEAR] unused. */
 };
 
-/* WinUI-ish cubic-bezier control points; tuned against runtime feel in Phase C. */
+/* WinUI-ish cubic-bezier control points. */
 static WFN_Vector_2 const kEaseCP1 [FLUX_EASE_COUNT] = {
   {0.0f, 0.0f},
   {0.1f, 0.9f},
@@ -76,7 +76,6 @@ static void anim_set_duration(void *kf_anim, double seconds) {
 	(( IUnknown * ) kf)->lpVtbl->Release(( IUnknown * ) kf);
 }
 
-/* QI target -> ICompositionObject, anim -> ICompositionAnimation, then start. */
 static HRESULT anim_start(void *target, wchar_t const *prop, void *kf_anim) {
 	WUC_CompositionObject *obj = NULL;
 	HRESULT                hr  = cwinrt_query(target, &CWINRT_IID_WUC_ICompositionObject, ( void ** ) &obj);

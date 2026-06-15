@@ -59,6 +59,14 @@ bool flux_dmanip_handoff_touch_pan(FluxDManip *dmanip, FluxInput *input, FluxNod
  */
 void flux_dmanip_cleanup_tree(XentContext *ctx, FluxNodeStore *store, XentNodeId root);
 
+/**
+ * @brief Release one node's DManip viewport, if it is a scroll node that has one.
+ *
+ * Identity is read from the store (not the layout tree), so this is safe to
+ * call from the node-removed listener after the node is already dead in xent.
+ */
+void flux_dmanip_release_node_viewport(FluxNodeStore *store, XentNodeId node);
+
 #ifdef __cplusplus
 }
 #endif

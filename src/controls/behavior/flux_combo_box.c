@@ -5,11 +5,14 @@
 #include "controls/factory/flux_factory.h"
 #include "controls/draw/flux_control_draw.h"
 #include "render/flux_fluent.h"
+#include "runtime/flux_str.h"
 
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_graphics.h"
 #include "fluxent/flux_popup.h"
 #include "fluxent/flux_window.h"
+
+#include <math.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -46,13 +49,20 @@ typedef struct FluxComboRuntime {
 	FluxPopup            *popup;
 	ID2D1SolidColorBrush *brush;
 	int                   highlight;
-	int                   pressed_index; /**< Item the press landed on; -1 when none. */
+	int                   pressed_index;    /**< Item the press landed on; -1 when none. */
 	float                 width;
 	float                 height;
-	float                 scroll_y;  /**< Drop-down scroll offset when items exceed 504px. */
-	float                 content_h; /**< Total item-block height. */
-	float                 row_h;     /**< Per-item height; grows under touch input. */
+	float                 scroll_y;         /**< Drop-down scroll offset when items exceed 504px. */
+	float                 content_h;        /**< Total item-block height. */
+	float                 row_h;            /**< Per-item height; grows under touch input. */
+	bool                  panning;          /**< Touch drag exceeded the slop: scroll, don't select. */
+	float                 press_y;          /**< Pointer y at the press, for the pan slop test. */
+	float                 pan_start_scroll; /**< scroll_y at the press; the pan offsets from here. */
 } FluxComboRuntime;
+
+/* WinUI lists treat a touch contact as a tap only until it travels past the
+ * DirectManipulation slop; beyond it the gesture becomes a pan. */
+#define CB_TOUCH_PAN_SLOP 10.0f
 
 static void combo_ensure_brush(FluxComboRuntime *rt, ID2D1DeviceContext *d2d) {
 	if (rt->brush || !d2d) return;
@@ -113,7 +123,9 @@ static void combo_draw_item(FluxRenderContext const *rc, FluxComboRuntime const 
 
 	bool selected = i == rt->model.selected_index;
 	bool hot      = i == rt->highlight;
-	if (hot)
+	bool pressed  = i == rt->pressed_index;
+	if (pressed) flux_fill_rounded_rect(rc, &item, CB_ITEM_CORNER, t->subtle_fill_tertiary);
+	else if (hot)
 		flux_fill_rounded_rect(
 		  rc, &item, CB_ITEM_CORNER, selected ? t->subtle_fill_tertiary : t->subtle_fill_secondary
 		);
@@ -200,6 +212,15 @@ static void combo_repaint_owner(FluxComboRuntime *rt) {
 	if (h) InvalidateRect(h, NULL, FALSE);
 }
 
+static void combo_update_layout_text(FluxComboRuntime *rt) {
+	char const *text = NULL;
+	if (rt->model.selected_index >= 0 && rt->model.selected_index < rt->model.item_count)
+		text = rt->model.items[rt->model.selected_index];
+	if (!text || !text[0])
+		text = rt->model.placeholder;
+	xent_set_text(rt->ctx, rt->node, text);
+}
+
 static void combo_close(FluxComboRuntime *rt) {
 	rt->model.open = false;
 	flux_popup_dismiss(rt->popup);
@@ -209,6 +230,7 @@ static void combo_close(FluxComboRuntime *rt) {
 static void combo_commit(FluxComboRuntime *rt, int index) {
 	if (index < 0 || index >= rt->model.item_count) return;
 	rt->model.selected_index = index;
+	combo_update_layout_text(rt);
 	if (rt->model.on_select) rt->model.on_select(rt->model.on_select_ctx, index);
 	combo_close(rt);
 }
@@ -223,7 +245,20 @@ static void combo_open(FluxComboRuntime *rt) {
 	bool          touch = nd && nd->state.pointer_type == 1;
 	rt->row_h           = touch ? CB_ROW_H_TOUCH : CB_ROW_H;
 
-	rt->width           = r.w > 0.0f ? r.w : 120.0f;
+	float base_w = r.w > 0.0f ? r.w : 120.0f;
+	if (rt->text) {
+		FluxTextStyle ts;
+		memset(&ts, 0, sizeof(ts));
+		ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
+		ts.font_weight = FLUX_FONT_REGULAR;
+		float pad      = 2.0f * (CB_BORDER + CB_ITEM_MARGIN_X) + CB_ITEM_PAD_LEFT + 4.0f;
+		for (int i = 0; i < rt->model.item_count; i++) {
+			if (!rt->model.items[i]) continue;
+			float w = flux_text_measure(rt->text, rt->model.items[i], &ts, 0).w + pad;
+			if (w > base_w) base_w = w;
+		}
+	}
+	rt->width           = base_w;
 	rt->height          = combo_dropdown_height(rt->model.item_count, rt->row_h);
 	rt->content_h       = ( float ) rt->model.item_count * rt->row_h;
 	flux_popup_set_size(rt->popup, rt->width, rt->height);
@@ -246,21 +281,45 @@ static void combo_on_click(void *ctx) {
 	else combo_open(rt);
 }
 
+/* A held touch contact that travels past the slop becomes a pan: the pressed
+ * item is released (no selection on lift) and the list scrolls with the
+ * finger. Mouse drags never pan — they cancel via the release-on-same-item
+ * rule, and mouse scrolling stays on the wheel. */
+static bool combo_touch_pan(FluxComboRuntime *rt, FluxPopup *popup, float y) {
+	if (rt->pressed_index < 0 && !rt->panning) return false;
+	if (!flux_popup_last_input_is_touch(popup)) return false;
+	if (!rt->panning) {
+		if (fabsf(y - rt->press_y) < CB_TOUCH_PAN_SLOP) return false;
+		rt->panning       = true;
+		rt->pressed_index = -1;
+		rt->highlight     = -1;
+	}
+	rt->scroll_y = rt->pan_start_scroll + (rt->press_y - y);
+	combo_clamp_scroll(rt);
+	combo_repaint_popup(rt);
+	return true;
+}
+
 static void combo_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y) {
-	( void ) popup;
 	( void ) x;
 	FluxComboRuntime *rt = ( FluxComboRuntime * ) ctx;
 	if (!rt) return;
 	/* WinUI selects on release: the press marks the item, the release on the same item
 	 * commits (press-cancel if you drag off). Matches MenuFlyout item activation. */
 	if (event == FLUX_POPUP_MOUSE_DOWN) {
-		rt->pressed_index = combo_item_at(rt, y);
+		rt->pressed_index    = combo_item_at(rt, y);
+		rt->panning          = false;
+		rt->press_y          = y;
+		rt->pan_start_scroll = rt->scroll_y;
+		combo_repaint_popup(rt);
 		return;
 	}
 	if (event == FLUX_POPUP_MOUSE_UP) {
 		int idx = combo_item_at(rt, y);
-		if (idx >= 0 && idx == rt->pressed_index) combo_commit(rt, idx);
+		if (!rt->panning && idx >= 0 && idx == rt->pressed_index) combo_commit(rt, idx);
 		rt->pressed_index = -1;
+		rt->panning       = false;
+		combo_repaint_popup(rt);
 		return;
 	}
 	if (event == FLUX_POPUP_MOUSE_WHEEL) {
@@ -269,6 +328,7 @@ static void combo_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, 
 		combo_repaint_popup(rt);
 		return;
 	}
+	if (event == FLUX_POPUP_MOUSE_MOVE && combo_touch_pan(rt, popup, y)) return;
 	int hot = (event == FLUX_POPUP_MOUSE_LEAVE) ? -1 : combo_item_at(rt, y);
 	if (hot != rt->highlight) {
 		rt->highlight = hot;
@@ -284,6 +344,7 @@ static void combo_step_selection(FluxComboRuntime *rt, int delta) {
 	if (next >= n) next = n - 1;
 	if (next == rt->model.selected_index) return;
 	rt->model.selected_index = next;
+	combo_update_layout_text(rt);
 	if (rt->model.on_select) rt->model.on_select(rt->model.on_select_ctx, next);
 	combo_repaint_owner(rt);
 }
@@ -328,9 +389,52 @@ static bool combo_on_key(void *ctx, unsigned int vk, bool down) {
 static void combo_destroy(void *component_data) {
 	FluxComboRuntime *rt = ( FluxComboRuntime * ) component_data;
 	if (!rt) return;
+	for (int i = 0; i < rt->model.item_count; i++) flux_str_free(rt->model.items [i]);
+	free(( void * ) rt->model.items);
+	flux_str_free(rt->model.placeholder);
 	if (rt->brush) ID2D1SolidColorBrush_Release(rt->brush);
 	if (rt->popup) flux_popup_destroy(rt->popup);
 	free(rt);
+}
+
+/* Deep-copy the caller's item array so the model owns its strings. */
+static char const **combo_copy_items(char const *const *items, int count) {
+	if (!items || count <= 0) return NULL;
+	char const **copy = ( char const ** ) calloc(( size_t ) count, sizeof(*copy));
+	if (!copy) return NULL;
+	for (int i = 0; i < count; i++) copy [i] = flux_str_dup(items [i]);
+	return copy;
+}
+
+static FluxComboRuntime *combo_runtime(FluxNodeStore *store, XentNodeId id) {
+	FluxNodeData *nd = flux_node_store_get(store, id);
+	if (!nd || nd->component_type != FLUX_CONTROL_COMBO_BOX || !nd->component_data) return NULL;
+	return ( FluxComboRuntime * ) nd->component_data;
+}
+
+void flux_combo_box_set_selected(FluxNodeStore *store, XentNodeId id, int index) {
+	FluxComboRuntime *rt = combo_runtime(store, id);
+	if (!rt) return;
+	if (index < -1 || index >= rt->model.item_count) index = -1;
+	rt->model.selected_index = index;
+	combo_update_layout_text(rt);
+}
+
+void flux_combo_box_set_items(FluxNodeStore *store, XentNodeId id, char const *const *items, int count) {
+	FluxComboRuntime *rt = combo_runtime(store, id);
+	if (!rt) return;
+
+	char const **copy = combo_copy_items(items, count);
+	for (int i = 0; i < rt->model.item_count; i++) flux_str_free(rt->model.items [i]);
+	free(( void * ) rt->model.items);
+
+	rt->model.items      = copy;
+	rt->model.item_count = copy ? count : 0;
+	if (rt->model.selected_index >= rt->model.item_count) rt->model.selected_index = -1;
+	if (rt->highlight >= rt->model.item_count) rt->highlight = -1;
+	rt->content_h = ( float ) rt->model.item_count * rt->row_h;
+	combo_clamp_scroll(rt);
+	combo_update_layout_text(rt);
 }
 
 static void combo_dismissed(void *ctx) {
@@ -342,7 +446,6 @@ static void combo_dismissed(void *ctx) {
 
 XentNodeId flux_create_combo_box(FluxComboBoxCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store || !info->window) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_COMBO_BOX, flux_draw_combo_box, NULL);
 
 	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_COMBO_BOX);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -353,10 +456,10 @@ XentNodeId flux_create_combo_box(FluxComboBoxCreateInfo const *info) {
 		free(rt);
 		return node;
 	}
-	rt->model.items          = info->items;
-	rt->model.item_count     = info->item_count;
+	rt->model.items          = combo_copy_items(info->items, info->item_count);
+	rt->model.item_count     = rt->model.items ? info->item_count : 0;
 	rt->model.selected_index = info->selected_index;
-	rt->model.placeholder    = info->placeholder;
+	rt->model.placeholder    = flux_str_dup(info->placeholder);
 	rt->model.on_select      = info->on_select;
 	rt->model.on_select_ctx  = info->userdata;
 	rt->store                = info->store;
@@ -386,5 +489,9 @@ XentNodeId flux_create_combo_box(FluxComboBoxCreateInfo const *info) {
 
 	xent_set_focusable(info->ctx, node, true);
 	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
+	xent_set_size(info->ctx, node, (XentSize) {NAN, 32.0f});
+	xent_set_min_size(info->ctx, node, (XentSize) {80.0f, 32.0f});
+	xent_set_padding(info->ctx, node, (XentInsets) {12.0f, 0, 32.0f, 0});
+	combo_update_layout_text(rt);
 	return node;
 }

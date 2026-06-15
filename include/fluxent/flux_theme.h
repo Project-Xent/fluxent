@@ -76,7 +76,10 @@ typedef struct FluxThemeColors {
 
 	FluxColor layer_default;
 	FluxColor layer_alt;
+	FluxColor layer_on_mica_alt_default;   /**< LayerOnMicaBaseAltFillColorDefault. */
+	FluxColor layer_on_mica_alt_secondary; /**< LayerOnMicaBaseAltFillColorSecondary. */
 	FluxColor solid_background;
+	FluxColor solid_background_tertiary;   /**< SolidBackgroundFillColorTertiary. */
 } FluxThemeColors;
 
 /** @brief Opaque theme manager. */

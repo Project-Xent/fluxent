@@ -32,12 +32,12 @@
 /** @brief Present the frame with vsync enabled (default FluxApp render path). */
 static bool const                kFluxAppPresentUseVsync = true;
 
-/** @brief Render backend strategy, selected once by capability. See definition below. */
 typedef struct FluxRenderBackend FluxRenderBackend;
 
 struct FluxApp {
 	FluxWindow              *window;
 	FluxEngine              *engine;
+	FluxControlRegistry     *registry; /**< Control type → renderer table; built once, shared by both render paths. */
 	FluxInput               *input;
 	FluxTextRenderer        *text;
 	FluxRenderCache         *cache;
@@ -54,6 +54,9 @@ struct FluxApp {
 
 	FluxComposeRender       *compose; /**< Retained-composition path (FLUX_USE_COMPOSITION). */
 	FluxRenderBackend const *backend; /**< Chosen render strategy (d2d or composition); set on first frame. */
+
+	void                     (*frame_cb)(void *ctx); /**< Runs at frame start, before layout (FX message pump). */
+	void                    *frame_cb_ctx;
 };
 
 static XentContext   *app_ctx(FluxApp const *app) { return app ? flux_scene_context(app->scene) : NULL; }
@@ -169,7 +172,7 @@ static void app_ensure_compose(FluxApp *app, FluxGraphics *gfx) {
 	FluxCompositor                *c    = flux_graphics_compositor(gfx);
 	WUC_CompositionGraphicsDevice *gdev = flux_graphics_graphics_device(gfx);
 	WUC_Visual                    *root = flux_graphics_composition_root(gfx);
-	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root);
+	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root, app->registry);
 }
 
 /* Retained-composition frame: reconcile the layout into a WUC visual tree and
@@ -255,6 +258,7 @@ static void app_render(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return;
 
+	if (app->frame_cb) app->frame_cb(app->frame_cb_ctx);
 	app_pump_uia_focus(app);
 
 	FluxGraphics *gfx = flux_app_get_graphics(app);
@@ -424,17 +428,6 @@ static void app_ime_composition(void *ctx, wchar_t const *text, int cursor_pos) 
 	flux_app_request_render(app);
 }
 
-static void app_register_core_renderers(FluxNodeStore *store) {
-	if (!store) return;
-	flux_node_store_register_renderer(store, FLUX_CONTROL_CONTAINER, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, FLUX_CONTROL_SCROLL, flux_draw_scroll, flux_draw_scroll_overlay);
-	flux_node_store_register_renderer(store, FLUX_CONTROL_IMAGE, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, FLUX_CONTROL_LIST, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, FLUX_CONTROL_TAB, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, FLUX_CONTROL_CANVAS, flux_draw_container, NULL);
-	flux_node_store_register_renderer(store, FLUX_CONTROL_CUSTOM, flux_draw_container, NULL);
-}
-
 static void app_cleanup_dmanip_tree(FluxApp *app) {
 	if (app->dmanip && app_ctx(app) && app_store(app) && app_root(app) != XENT_NODE_INVALID)
 		flux_dmanip_cleanup_tree(app_ctx(app), app_store(app), app_root(app));
@@ -449,19 +442,24 @@ static void app_destroy_scene_runtime(FluxApp *app) {
 	app->text   = NULL;
 }
 
+static void app_on_node_removed(void *userdata, XentNodeId id) {
+	FluxApp *app = ( FluxApp * ) userdata;
+	flux_input_node_destroyed(app->input, id);
+	if (app->cache) flux_render_cache_remove(app->cache, id);
+}
+
 static bool app_bind_scene_runtime(FluxApp *app) {
 	XentContext   *ctx   = app_ctx(app);
 	FluxNodeStore *store = app_store(app);
 	if (!ctx || !store || app_root(app) == XENT_NODE_INVALID) return false;
 
-	app_register_core_renderers(store);
-
-	app->engine = flux_engine_create(store);
+	app->engine = flux_engine_create(store, app->registry);
 	app->input  = flux_input_create(ctx, store);
 	app->text   = flux_text_renderer_create();
 	if (app->text) flux_text_renderer_register(app->text, ctx);
 
 	flux_node_store_attach_userdata(store, ctx);
+	flux_node_store_set_remove_listener(store, app_on_node_removed, app);
 	if (app->tooltip && app->text) flux_tooltip_set_text_renderer(app->tooltip, app->text);
 
 	return app->engine && app->input;
@@ -518,6 +516,8 @@ static void app_bind_window_callbacks(FluxApp *app) {
 }
 
 static void app_create_runtime_services(FluxApp *app) {
+	app->registry = flux_control_registry_create();
+	if (app->registry) flux_register_builtins(app->registry);
 	app->cache = flux_render_cache_create(FLUX_APP_RENDER_CACHE_CAPACITY);
 	app->theme = flux_theme_create();
 	if (app->theme) flux_theme_set_mode(app->theme, FLUX_THEME_SYSTEM);
@@ -570,6 +570,8 @@ static void app_destroy_render_state(FluxApp *app) {
 	if (app->cache) flux_render_cache_destroy(app->cache);
 	if (app->theme) flux_theme_destroy(app->theme);
 	if (app->engine) flux_engine_destroy(app->engine);
+	flux_control_registry_destroy(app->registry); /* after both render paths that reference it */
+	app->registry = NULL;
 	if (app->text) flux_text_renderer_destroy(app->text);
 }
 
@@ -622,6 +624,12 @@ XentNodeId        flux_app_get_root(FluxApp *app) { return app ? app_root(app) :
 void              flux_app_request_render(FluxApp *app) {
 	if (!app || !app->window) return;
 	flux_window_request_render(app->window);
+}
+
+void flux_app_set_frame_callback(FluxApp *app, void (*cb)(void *ctx), void *ctx) {
+	if (!app) return;
+	app->frame_cb     = cb;
+	app->frame_cb_ctx = ctx;
 }
 
 FluxGraphics *flux_app_get_graphics(FluxApp *app) {

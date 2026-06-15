@@ -174,11 +174,6 @@ void flux_input_set_focus(FluxInput *input, XentNodeId node) {
 	if (input->focused != node) input_blur_focused(input);
 	input->focused   = node;
 
-	/* Programmatic focus (WinUI FocusState_Programmatic): set logical focus and raise
-	 * GotFocus, but do NOT engage the keyboard focus visual. The focus rectangle appears
-	 * only once the user navigates by keyboard (Tab/arrows) — same rule as pointer focus,
-	 * where only a text input shows a visual (its caret). This is why a ContentDialog's
-	 * default button is focused on open without a focus ring drawn around it. */
 	FluxNodeData *nd = flux_node_store_get(input->store, node);
 	if (!nd) return;
 	if (flux_get_control_type(input->ctx, node) == FLUX_CONTROL_TEXT_INPUT) nd->state.focused = 1;

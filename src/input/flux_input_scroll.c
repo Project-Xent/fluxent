@@ -1,5 +1,6 @@
 #include "flux_input_internal.h"
 
+#include <assert.h>
 #include <windows.h>
 
 #define FLUX_TOUCH_PAN_THRESHOLD 10.0f
@@ -123,30 +124,37 @@ input_find_scroll_at_pointer(FluxInput *input, XentNodeId hit_node, float px, fl
 }
 
 static bool input_scroll_drag_active(FluxInput const *input) {
-	return input->scroll_drag_axis != 0 && input->scroll_drag_node != XENT_NODE_INVALID;
+	return input->scroll_drag.axis != 0 && input->scroll_drag.node != XENT_NODE_INVALID;
 }
 
 static void input_scroll_drag_reset(FluxInput *input) {
-	input->scroll_drag_node = XENT_NODE_INVALID;
-	input->scroll_drag_axis = 0;
+	input->scroll_drag.node = XENT_NODE_INVALID;
+	input->scroll_drag.axis = 0;
+}
+
+FluxScrollPhase flux_input_scroll_phase(FluxInput const *input) {
+	if (input->touch.active) return FLUX_SCROLL_TOUCH_PAN;
+	if (input->touch.target != XENT_NODE_INVALID) return FLUX_SCROLL_TOUCH_PENDING;
+	if (input_scroll_drag_active(input)) return FLUX_SCROLL_THUMB_DRAG;
+	return FLUX_SCROLL_IDLE;
 }
 
 bool input_update_scroll_drag(FluxInput *input, float px, float py) {
 	if (!input_scroll_drag_active(input)) return false;
 
-	FluxScrollData *sd = input_scroll_data(input, input->scroll_drag_node);
+	FluxScrollData *sd = input_scroll_data(input, input->scroll_drag.node);
 	if (!sd) return true;
 
-	float travel = input->scroll_drag_track_len - input->scroll_drag_thumb_len;
-	if (travel <= 0.5f || input->scroll_drag_max_scroll <= 0.0f) return true;
+	float travel = input->scroll_drag.track_len - input->scroll_drag.thumb_len;
+	if (travel <= 0.5f || input->scroll_drag.max_scroll <= 0.0f) return true;
 
-	float pointer = input->scroll_drag_axis == 1 ? py : px;
-	float delta   = pointer - input->scroll_drag_pointer_start;
+	float pointer = input->scroll_drag.axis == 1 ? py : px;
+	float delta   = pointer - input->scroll_drag.pointer_start;
 	float pct     = delta / travel;
-	float target  = input->scroll_drag_scroll_start + pct * input->scroll_drag_max_scroll;
-	target        = input_clampf(target, 0.0f, input->scroll_drag_max_scroll);
+	float target  = input->scroll_drag.scroll_start + pct * input->scroll_drag.max_scroll;
+	target        = input_clampf(target, 0.0f, input->scroll_drag.max_scroll);
 
-	if (input->scroll_drag_axis == 1) sd->scroll_y = target;
+	if (input->scroll_drag.axis == 1) sd->scroll_y = target;
 	else sd->scroll_x = target;
 	sd->last_activity_time = flux_now_seconds();
 	return true;
@@ -166,10 +174,10 @@ static void input_clear_pressed_for_pan(FluxInput *input) {
 }
 
 static bool input_should_promote_touch_pan(FluxInput *input, float px, float py) {
-	if (input->touch_pan_active) return false;
+	if (input->touch.active) return false;
 
-	float tdx = px - input->touch_start_x;
-	float tdy = py - input->touch_start_y;
+	float tdx = px - input->touch.start_x;
+	float tdy = py - input->touch.start_y;
 	return tdx * tdx + tdy * tdy >= FLUX_TOUCH_PAN_THRESHOLD * FLUX_TOUCH_PAN_THRESHOLD;
 }
 
@@ -177,29 +185,29 @@ static void input_promote_touch_pan(FluxInput *input, float px, float py) {
 	if (!input_should_promote_touch_pan(input, px, py)) return;
 
 	input_clear_pressed_for_pan(input);
-	input->touch_pan_active  = true;
-	input->pan_just_promoted = true;
+	input->touch.active        = true;
+	input->touch.just_promoted = true;
 }
 
 bool input_drive_touch_pan(FluxInput *input, float px, float py) {
-	if (input->pointer_type != FLUX_POINTER_TOUCH || input->touch_pan_target == XENT_NODE_INVALID) return false;
+	if (input->pointer_type != FLUX_POINTER_TOUCH || input->touch.target == XENT_NODE_INVALID) return false;
 
 	input_promote_touch_pan(input, px, py);
-	if (!input->touch_pan_active) return false;
+	if (!input->touch.active) return false;
 
-	FluxScrollData *sd = input_scroll_data(input, input->touch_pan_target);
+	FluxScrollData *sd = input_scroll_data(input, input->touch.target);
 	if (!sd) return true;
 
 	XentRect srect = {0};
-	xent_get_layout_rect(input->ctx, input->touch_pan_target, &srect);
+	xent_get_layout_rect(input->ctx, input->touch.target, &srect);
 
 	float max_x = sd->content_w - srect.w;
 	if (max_x < 0.0f) max_x = 0.0f;
 	float max_y = sd->content_h - srect.h;
 	if (max_y < 0.0f) max_y = 0.0f;
 
-	float new_sx           = input->touch_pan_origin_sx - (px - input->touch_start_x);
-	float new_sy           = input->touch_pan_origin_sy - (py - input->touch_start_y);
+	float new_sx           = input->touch.origin_sx - (px - input->touch.start_x);
+	float new_sy           = input->touch.origin_sy - (py - input->touch.start_y);
 	sd->scroll_x           = input_clampf(new_sx, 0.0f, max_x);
 	sd->scroll_y           = input_clampf(new_sy, 0.0f, max_y);
 	sd->last_activity_time = flux_now_seconds();
@@ -216,13 +224,15 @@ static bool input_press_scroll_delta(FluxInput *input, InputScrollDelta const *e
 }
 
 static bool input_start_scroll_drag(FluxInput *input, InputScrollHit const *hit, InputScrollAxis const *axis) {
-	input->scroll_drag_node          = hit->node;
-	input->scroll_drag_axis          = axis->axis;
-	input->scroll_drag_pointer_start = axis->pointer;
-	input->scroll_drag_scroll_start  = *axis->scroll;
-	input->scroll_drag_track_len     = axis->axis == 1 ? axis->track->h : axis->track->w;
-	input->scroll_drag_thumb_len     = axis->axis == 1 ? axis->thumb->h : axis->thumb->w;
-	input->scroll_drag_max_scroll    = axis->max_scroll < 0.0f ? 0.0f : axis->max_scroll;
+	/* Mouse thumb-drag and touch pan are pointer-type-exclusive; never overlap. */
+	assert(flux_input_scroll_phase(input) != FLUX_SCROLL_TOUCH_PAN);
+	input->scroll_drag.node          = hit->node;
+	input->scroll_drag.axis          = axis->axis;
+	input->scroll_drag.pointer_start = axis->pointer;
+	input->scroll_drag.scroll_start  = *axis->scroll;
+	input->scroll_drag.track_len     = axis->axis == 1 ? axis->track->h : axis->track->w;
+	input->scroll_drag.thumb_len     = axis->axis == 1 ? axis->thumb->h : axis->thumb->w;
+	input->scroll_drag.max_scroll    = axis->max_scroll < 0.0f ? 0.0f : axis->max_scroll;
 	hit->data->drag_axis             = ( uint8_t ) axis->axis;
 	hit->data->last_activity_time    = flux_now_seconds();
 	input->pressed                   = XENT_NODE_INVALID;
@@ -308,17 +318,17 @@ static bool input_assign_touch_pan_target(FluxInput *input, XentNodeId node) {
 	FluxScrollData *sd = input_scroll_data(input, node);
 	if (!sd) return false;
 
-	input->touch_pan_target    = node;
-	input->touch_pan_origin_sx = sd->scroll_x;
-	input->touch_pan_origin_sy = sd->scroll_y;
+	input->touch.target    = node;
+	input->touch.origin_sx = sd->scroll_x;
+	input->touch.origin_sy = sd->scroll_y;
 	return true;
 }
 
 bool input_setup_touch_pan(FluxInput *input, FluxHitResult const *hit, float px, float py) {
-	input->touch_pan_target = XENT_NODE_INVALID;
-	input->touch_pan_active = false;
-	input->touch_start_x    = px;
-	input->touch_start_y    = py;
+	input->touch.target  = XENT_NODE_INVALID;
+	input->touch.active  = false;
+	input->touch.start_x = px;
+	input->touch.start_y = py;
 
 	if (input->pointer_type != FLUX_POINTER_TOUCH || hit->node == XENT_NODE_INVALID) return false;
 
@@ -335,7 +345,7 @@ bool input_setup_touch_pan(FluxInput *input, FluxHitResult const *hit, float px,
 bool input_finish_scroll_drag(FluxInput *input) {
 	if (!input_scroll_drag_active(input)) return false;
 
-	FluxScrollData *sd = input_scroll_data(input, input->scroll_drag_node);
+	FluxScrollData *sd = input_scroll_data(input, input->scroll_drag.node);
 	if (sd) {
 		sd->drag_axis          = 0;
 		sd->last_activity_time = flux_now_seconds();
@@ -361,11 +371,11 @@ bool input_release_scroll_buttons(FluxInput *input) {
 }
 
 bool input_finish_touch_pan(FluxInput *input) {
-	if (!input->touch_pan_active) return false;
+	if (!input->touch.active) return false;
 
-	input->touch_pan_active = false;
-	input->touch_pan_target = XENT_NODE_INVALID;
-	input->pressed          = XENT_NODE_INVALID;
+	input->touch.active = false;
+	input->touch.target = XENT_NODE_INVALID;
+	input->pressed      = XENT_NODE_INVALID;
 	if (input->pointer_type == FLUX_POINTER_TOUCH) input_clear_hovered(input);
 	return true;
 }

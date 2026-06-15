@@ -1,4 +1,5 @@
 #include "fluxent/flux_node_store.h"
+#include "runtime/flux_str.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -14,12 +15,13 @@ typedef struct FluxNodeSlot {
 } FluxNodeSlot;
 
 struct FluxNodeStore {
-	FluxNodeSlot       *slots;
-	uint32_t            capacity;
-	uint32_t            count;
-	uint32_t            tombstones;
-	XentContext        *ctx; /**< Context the nodes live in; bound at scene creation. */
-	FluxControlRenderer renderers [FLUX_CONTROL_CUSTOM + 1];
+	FluxNodeSlot     *slots;
+	uint32_t          capacity;
+	uint32_t          count;
+	uint32_t          tombstones;
+	XentContext      *ctx;        /**< Context the nodes live in; bound at scene creation. */
+	FluxNodeRemovedFn removed_fn; /**< Notified before a destroyed node's data is freed. */
+	void             *removed_userdata;
 };
 
 static uint32_t flux_ns_hash(XentNodeId id, uint32_t cap) {
@@ -79,7 +81,12 @@ static bool flux_ns_prepare_insert(FluxNodeStore *store) {
 }
 
 static void flux_node_data_destroy_component(FluxNodeData *d) {
-	if (!d || !d->component_data) return;
+	if (!d) return;
+
+	flux_str_free(d->tooltip_text);
+	d->tooltip_text = NULL;
+
+	if (!d->component_data) return;
 
 	if (d->destroy_component_data) d->destroy_component_data(d->component_data);
 
@@ -152,6 +159,7 @@ FluxNodeStore *flux_node_store_create(uint32_t initial_capacity) {
 
 void flux_node_store_destroy(FluxNodeStore *store) {
 	if (!store) return;
+	if (store->ctx) xent_set_node_lifecycle_callback(store->ctx, NULL, NULL);
 	for (uint32_t i = 0; i < store->capacity; i++)
 		if (store->slots [i].tag == FLUX_NS_OCCUPIED) flux_node_data_destroy_component(&store->slots [i].data);
 	free(store->slots);
@@ -186,10 +194,43 @@ void flux_node_store_remove(FluxNodeStore *store, XentNodeId id) {
 	store->tombstones++;
 }
 
-uint32_t flux_node_store_count(FluxNodeStore const *store) { return store ? store->count : 0; }
+uint32_t    flux_node_store_count(FluxNodeStore const *store) { return store ? store->count : 0; }
 
-void     flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx) {
-	if (store) store->ctx = ctx;
+/* xent invokes this for every node freed by xent_destroy_node, including each
+ * node of a destroyed subtree. The node is already dead in xent at this point,
+ * so consumers must read control identity from the store data, not the layout
+ * tree. Listener runs first: it may still need the component data (e.g. the
+ * input boundary releasing a scroll node's DirectManipulation viewport). */
+static void flux_ns_on_node_lifecycle(
+  XentContext *ctx, XentNodeId node, XentNodeLifecycleEvent event, XentNodeId old_parent, XentNodeId new_parent,
+  void *userdata
+) {
+	( void ) ctx;
+	( void ) old_parent;
+	( void ) new_parent;
+	if (event != XENT_NODE_EVENT_DESTROY) return;
+
+	FluxNodeStore *store = ( FluxNodeStore * ) userdata;
+	if (store->removed_fn) store->removed_fn(store->removed_userdata, node);
+	flux_node_store_remove(store, node);
+}
+
+void flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx) {
+	if (!store) return;
+	store->ctx = ctx;
+	if (ctx) xent_set_node_lifecycle_callback(ctx, flux_ns_on_node_lifecycle, store);
+}
+
+void flux_node_store_set_remove_listener(FluxNodeStore *store, FluxNodeRemovedFn fn, void *userdata) {
+	if (!store) return;
+	store->removed_fn       = fn;
+	store->removed_userdata = userdata;
+}
+
+void flux_subtree_destroy(FluxNodeStore *store, XentNodeId node) {
+	XentContext *ctx = flux_node_store_context(store);
+	if (!ctx || node == XENT_NODE_INVALID) return;
+	xent_destroy_node(ctx, node);
 }
 
 XentContext *flux_node_store_context(FluxNodeStore const *store) { return store ? store->ctx : NULL; }
@@ -202,19 +243,4 @@ void         flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *
 		FluxNodeData *d = &store->slots [i].data;
 		xent_set_userdata(ctx, d->node_id, d);
 	}
-}
-
-void flux_node_store_register_renderer(
-  FluxNodeStore *store, FluxControlType type,
-  void (*draw)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *, FluxControlState const *),
-  void (*draw_overlay)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *)
-) {
-	if (!store || ( uint32_t ) type > FLUX_CONTROL_CUSTOM) return;
-	store->renderers [type].draw         = draw;
-	store->renderers [type].draw_overlay = draw_overlay;
-}
-
-FluxControlRenderer const *flux_node_store_get_renderer(FluxNodeStore const *store, FluxControlType type) {
-	if (!store || ( uint32_t ) type > FLUX_CONTROL_CUSTOM) return NULL;
-	return &store->renderers [type];
 }

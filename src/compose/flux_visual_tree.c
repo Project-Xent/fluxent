@@ -142,6 +142,20 @@ static void tree_make_holder(FluxVisualTree *vt, VisNode *vn) {
 /* Ensure a container exists for `node` under `parent_node`, then position it
  * relative to the parent. Parent is always reconciled before its children, so
  * its entry is valid here. Returns the container, or NULL on failure. */
+static bool tree_ensure_container(FluxVisualTree *vt, VisNode *vn, WUC_Container *parent_container) {
+	if (vn->in_use) return true;
+	if (FAILED(wuc_comp_create_container_visual(vt->c, &vn->container))) return false;
+	vn->visual = flux_compose_as_visual(vn->container);
+	if (!vn->visual) {
+		(( IUnknown * ) vn->container)->lpVtbl->Release(( IUnknown * ) vn->container);
+		vn->container = NULL;
+		return false;
+	}
+	vn->in_use = true;
+	tree_insert_child(parent_container, vn->visual);
+	return true;
+}
+
 static WUC_Container *
 tree_sync_node(FluxVisualTree *vt, XentNodeId node, XentNodeId parent_node, XentRect const *rect) {
 	if (!tree_reserve(vt, node)) return NULL;
@@ -150,17 +164,7 @@ tree_sync_node(FluxVisualTree *vt, XentNodeId node, XentNodeId parent_node, Xent
 	if (!parent_container) return NULL;
 
 	VisNode *vn = &vt->nodes [node];
-	if (!vn->in_use) {
-		if (FAILED(wuc_comp_create_container_visual(vt->c, &vn->container))) return NULL;
-		vn->visual = flux_compose_as_visual(vn->container);
-		if (!vn->visual) {
-			(( IUnknown * ) vn->container)->lpVtbl->Release(( IUnknown * ) vn->container);
-			vn->container = NULL;
-			return NULL;
-		}
-		vn->in_use = true;
-		tree_insert_child(parent_container, vn->visual);
-	}
+	if (!tree_ensure_container(vt, vn, parent_container)) return NULL;
 	vn->parent       = parent_node;
 
 	/* abs_x/abs_y stay in DIPs so child-relative math is unaffected; only the
@@ -183,7 +187,7 @@ tree_sync_node(FluxVisualTree *vt, XentNodeId node, XentNodeId parent_node, Xent
 	}
 	float sx, sy;
 	tree_node_scroll(vt, node, &sx, &sy);
-	if (vn->tracker_bound) sx = sy = 0.0f; /* tracker owns the offset now */
+	if (vn->tracker_bound) sx = sy = 0.0f; /* tracker owns the offset */
 
 	vn->abs_x = rect->x + sx;
 	vn->abs_y = rect->y + sy;
@@ -291,26 +295,26 @@ void flux_visual_tree_set_tracker_bound(FluxVisualTree *vt, XentNodeId node, boo
 	vt->nodes [node].tracker_bound = bound;
 }
 
+static void tree_release_node(VisNode const *n) {
+	if (n->holder_visual) (( IUnknown * ) n->holder_visual)->lpVtbl->Release(( IUnknown * ) n->holder_visual);
+	if (n->holder) (( IUnknown * ) n->holder)->lpVtbl->Release(( IUnknown * ) n->holder);
+	if (n->visual) (( IUnknown * ) n->visual)->lpVtbl->Release(( IUnknown * ) n->visual);
+	if (n->in_use && n->container) (( IUnknown * ) n->container)->lpVtbl->Release(( IUnknown * ) n->container);
+}
+
+static void tree_release_root(WUC_Container *root) {
+	WUC_VisualCollection *children = NULL;
+	if (SUCCEEDED(wuc_container_get__children(root, &children))) {
+		( void ) wuc_visual_collection_remove_all(children);
+		(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
+	}
+	(( IUnknown * ) root)->lpVtbl->Release(( IUnknown * ) root);
+}
+
 void flux_visual_tree_destroy(FluxVisualTree *vt) {
 	if (!vt) return;
-	for (uint32_t id = 0; id < vt->cap; id++) {
-		if (vt->nodes [id].holder_visual)
-			(( IUnknown * ) vt->nodes [id].holder_visual)->lpVtbl->Release(( IUnknown * ) vt->nodes [id].holder_visual);
-		if (vt->nodes [id].holder)
-			(( IUnknown * ) vt->nodes [id].holder)->lpVtbl->Release(( IUnknown * ) vt->nodes [id].holder);
-		if (vt->nodes [id].visual)
-			(( IUnknown * ) vt->nodes [id].visual)->lpVtbl->Release(( IUnknown * ) vt->nodes [id].visual);
-		if (vt->nodes [id].in_use && vt->nodes [id].container)
-			(( IUnknown * ) vt->nodes [id].container)->lpVtbl->Release(( IUnknown * ) vt->nodes [id].container);
-	}
-	if (vt->root) {
-		WUC_VisualCollection *children = NULL;
-		if (SUCCEEDED(wuc_container_get__children(vt->root, &children))) {
-			( void ) wuc_visual_collection_remove_all(children);
-			(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
-		}
-		(( IUnknown * ) vt->root)->lpVtbl->Release(( IUnknown * ) vt->root);
-	}
+	for (uint32_t id = 0; id < vt->cap; id++) tree_release_node(&vt->nodes [id]);
+	if (vt->root) tree_release_root(vt->root);
 	free(vt->nodes);
 	free(vt);
 }

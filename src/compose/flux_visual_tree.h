@@ -2,8 +2,8 @@
  * @file flux_visual_tree.h
  * @brief Identity-stable reconciler: layout tree -> WUC visual tree.
  *
- * The reconciler is the heart of the retained-composition architecture (ADR
- * 0001 §3.2). It maintains a persistent tree of `ContainerVisual`s mirroring the
+ * The reconciler is the heart of the retained-composition architecture. It
+ * maintains a persistent tree of `ContainerVisual`s mirroring the
  * Xent layout nodes, keyed by `XentNodeId` so a node keeps the *same* visual
  * across frames — which is mandatory, because the compositor's running
  * animations live on those visuals and must not be reset.
@@ -17,12 +17,7 @@
  *
  * It owns *topology only* (container visuals + parent/child + offset/size/clip).
  * Per-control payload (shapes, text surfaces, brushes) is attached by control
- * builders in a later phase — keeping topology and payload separate per
- * Doctrine #2.
- *
- * NOTE: this module is built and compile-verified but not yet wired into the
- * live frame loop; that swap (and the per-control payload builders) lands with
- * GPU runtime validation per the ADR's phased migration.
+ * builders in a later phase — keeping topology and payload separate.
  */
 #ifndef FLUX_COMPOSE_VISUAL_TREE_H
 #define FLUX_COMPOSE_VISUAL_TREE_H

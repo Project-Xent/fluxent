@@ -20,19 +20,12 @@ typedef struct PbRevealState {
 	bool     pressed;
 } PbRevealState;
 
-static FluxColor pb_fill_color(FluxControlState const *state, FluxThemeColors const *t) {
-	if (!state->enabled) return t ? t->ctrl_fill_disabled : flux_color_rgba(249, 249, 249, 0x4d);
-	if (state->focused) return t ? t->ctrl_fill_input_active : flux_color_rgba(255, 255, 255, 0xff);
-	if (state->hovered) return t ? t->ctrl_fill_secondary : flux_color_rgba(249, 249, 249, 0x80);
-	return t ? t->ctrl_fill_default : flux_color_rgba(255, 255, 255, 0xb3);
-}
-
 static void pb_draw_chrome(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state,
   float radius
 ) {
 	FluxThemeColors const *t    = rc->theme;
-	FluxColor              fill = pb_fill_color(state, t);
+	FluxColor              fill = flux_input_fill_color(t, state->enabled, state->focused, state->hovered);
 	FluxCacheEntry        *ce   = rc->cache ? flux_render_cache_get_or_create(rc->cache, snap->id) : NULL;
 	if (ce) {
 		FluxColor tweened;
@@ -64,10 +57,10 @@ pb_masked_snapshot(FluxRenderSnapshot const *snap, bool has_text, bool revealed,
 
 	uint32_t text_len = ( uint32_t ) strlen(snap->text_content);
 	pb_build_mask(snap->text_content, text_len, mask_buf, ( uint32_t ) mask_cap);
-	masked.text_content    = mask_buf;
-	masked.cursor_position = pb_original_offset_to_mask(snap->text_content, text_len, snap->cursor_position);
-	masked.selection_start = pb_original_offset_to_mask(snap->text_content, text_len, snap->selection_start);
-	masked.selection_end   = pb_original_offset_to_mask(snap->text_content, text_len, snap->selection_end);
+	masked.text_content         = mask_buf;
+	masked.edit.cursor_position = pb_original_offset_to_mask(snap->text_content, text_len, snap->edit.cursor_position);
+	masked.edit.selection_start = pb_original_offset_to_mask(snap->text_content, text_len, snap->edit.selection_start);
+	masked.edit.selection_end   = pb_original_offset_to_mask(snap->text_content, text_len, snap->edit.selection_end);
 	return masked;
 }
 

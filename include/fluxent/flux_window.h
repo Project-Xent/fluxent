@@ -68,6 +68,14 @@ FluxGraphics   *flux_window_get_graphics(FluxWindow *win);
 void            flux_window_set_render_callback(FluxWindow *win, FluxRenderCallback cb, void *ctx);
 /** @brief Set the resize callback. */
 void            flux_window_set_resize_callback(FluxWindow *win, FluxResizeCallback cb, void *ctx);
+/**
+ * @brief Register an additional resize observer, invoked after the primary callback.
+ * Additive (does not replace the primary callback); lets self-contained controls such
+ * as NavigationView react to client-size changes. Remove before the @p ctx is freed.
+ */
+void            flux_window_add_resize_observer(FluxWindow *win, FluxResizeCallback cb, void *ctx);
+/** @brief Remove a previously added resize observer (matched by cb + ctx). */
+void            flux_window_remove_resize_observer(FluxWindow *win, FluxResizeCallback cb, void *ctx);
 /** @brief Set the DPI changed callback. */
 void            flux_window_set_dpi_changed_callback(FluxWindow *win, FluxDpiChangedCallback cb, void *ctx);
 /** @brief Set the unified pointer callback. */

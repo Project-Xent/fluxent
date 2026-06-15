@@ -28,6 +28,8 @@ void flux_draw_combo_box(
 	if (text && text [0] && rc->text) {
 		FluxRect tr = {chrome.sb.x + CB_PAD_LEFT, chrome.sb.y, chrome.sb.w - CB_PAD_LEFT - CB_CHEVRON_W, chrome.sb.h};
 		if (tr.w > 0.0f) {
+			D2D1_RECT_F clip = {tr.x, tr.y, tr.x + tr.w, tr.y + tr.h};
+			ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(rc), &clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 			FluxTextStyle ts;
 			memset(&ts, 0, sizeof(ts));
 			ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
@@ -36,6 +38,7 @@ void flux_draw_combo_box(
 			ts.vert_align  = FLUX_TEXT_VCENTER;
 			ts.color       = color;
 			flux_text_draw(rc->text, FLUX_RT(rc), text, &tr, &ts);
+			ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
 		}
 	}
 

@@ -149,3 +149,13 @@ void flux_dmanip_cleanup_tree(XentContext *ctx, FluxNodeStore *store, XentNodeId
 	if (!ctx || !store || root == XENT_NODE_INVALID) return;
 	cleanup_node(ctx, store, root);
 }
+
+void flux_dmanip_release_node_viewport(FluxNodeStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_node_store_get(store, node);
+	if (!nd || nd->component_type != FLUX_CONTROL_SCROLL || !nd->component_data) return;
+
+	FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
+	if (!sd->dmanip_viewport) return;
+	flux_dmanip_viewport_destroy(( FluxDManipViewport * ) sd->dmanip_viewport);
+	sd->dmanip_viewport = NULL;
+}

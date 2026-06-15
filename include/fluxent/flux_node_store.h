@@ -117,6 +117,15 @@ typedef struct FluxNodeBehavior {
 	 */
 	void  (*on_cancel)(void *ctx); /**< Pointer cancellation callback. */
 	void *on_cancel_ctx;
+
+	/** @brief Middle-button release on the node (e.g. TabViewItem close). */
+	void  (*on_middle_click)(void *ctx);
+	void *on_middle_click_ctx;
+
+	/** @brief Pointer entered (true) / left (false) the node — for visibility
+	 * toggles that must outlive the paint pass (e.g. TabViewItem's close button). */
+	void  (*on_hover_changed)(void *ctx, bool hovered);
+	void *on_hover_changed_ctx;
 } FluxNodeBehavior;
 
 /**
@@ -137,7 +146,7 @@ typedef struct FluxNodeData {
 	float            hover_local_x; /**< Sub-element hover X in node-local coordinates. */
 	float            hover_local_y; /**< Sub-element hover Y in node-local coordinates. */
 
-	char const      *tooltip_text;  /**< Tooltip text, or NULL when unset. */
+	char const      *tooltip_text;  /**< Owned tooltip text copy, or NULL when unset. */
 
 	/**
 	 * Transient render transform applied to this node's subtree (entrance/exit
@@ -148,29 +157,21 @@ typedef struct FluxNodeData {
 	 */
 	float            render_scale;
 	float            render_opacity;
+	float            render_translate_x;  /**< Subtree X translate in px (0 = none); for drag visuals. */
 	float            render_translate_y;  /**< Subtree Y translate in px (0 = none); for slide animations. */
 	bool             render_clip_subtree; /**< Clip the subtree to this node's layout rect while transformed. */
+	bool             clips_children;      /**< Clip children to this node's rect (e.g. NavView's off-screen
+	                                       * Minimal pane), independent of any render transform. */
 } FluxNodeData;
 
-typedef struct FluxNodeStore      FluxNodeStore;
-typedef struct FluxRenderContext  FluxRenderContext;
-typedef struct FluxRenderSnapshot FluxRenderSnapshot;
-typedef struct FluxControlState   FluxControlState;
-
-/** @brief Renderer callbacks for a control type, scoped to a node store. */
-typedef struct FluxControlRenderer {
-	void (*draw)(
-	  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
-	);
-	void (*draw_overlay)(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
-} FluxControlRenderer;
+typedef struct FluxNodeStore FluxNodeStore;
 
 /**
  * @brief Create a new node store with the specified initial capacity.
  * @param initial_capacity Initial hash table capacity (will grow as needed).
  * @return New store, or NULL on allocation failure.
  */
-FluxNodeStore *flux_node_store_create(uint32_t initial_capacity);
+FluxNodeStore               *flux_node_store_create(uint32_t initial_capacity);
 
 /**
  * @brief Bind the XentContext this store's nodes live in.
@@ -179,16 +180,16 @@ FluxNodeStore *flux_node_store_create(uint32_t initial_capacity);
  * properties such as semantic enabled. Set once, at scene creation, before the
  * tree is built. Safe to call again (idempotent).
  */
-void           flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx);
+void                         flux_node_store_bind_context(FluxNodeStore *store, XentContext *ctx);
 
 /** @brief The XentContext bound via flux_node_store_bind_context (NULL if unbound). */
-XentContext   *flux_node_store_context(FluxNodeStore const *store);
+XentContext                 *flux_node_store_context(FluxNodeStore const *store);
 
 /**
  * @brief Destroy a node store and free all associated memory.
  * @param store Store to destroy (NULL is safe).
  */
-void           flux_node_store_destroy(FluxNodeStore *store);
+void                         flux_node_store_destroy(FluxNodeStore *store);
 
 /**
  * @brief Look up node data by ID.
@@ -196,7 +197,7 @@ void           flux_node_store_destroy(FluxNodeStore *store);
  * @param id Node ID to find.
  * @return Pointer to FluxNodeData, or NULL if not found.
  */
-FluxNodeData  *flux_node_store_get(FluxNodeStore *store, XentNodeId id);
+FluxNodeData                *flux_node_store_get(FluxNodeStore *store, XentNodeId id);
 
 /**
  * @brief Get or create node data for the given ID.
@@ -204,21 +205,45 @@ FluxNodeData  *flux_node_store_get(FluxNodeStore *store, XentNodeId id);
  * @param id Node ID.
  * @return Pointer to existing or newly-created FluxNodeData.
  */
-FluxNodeData  *flux_node_store_get_or_create(FluxNodeStore *store, XentNodeId id);
+FluxNodeData                *flux_node_store_get_or_create(FluxNodeStore *store, XentNodeId id);
 
 /**
  * @brief Remove a node from the store.
  * @param store Store to modify.
  * @param id Node ID to remove.
  */
-void           flux_node_store_remove(FluxNodeStore *store, XentNodeId id);
+void                         flux_node_store_remove(FluxNodeStore *store, XentNodeId id);
+
+/** @brief Notified for each destroyed node before its store data is freed. */
+typedef void                 (*FluxNodeRemovedFn)(void *userdata, XentNodeId id);
+
+/**
+ * @brief Register the single node-removed listener (NULL clears it).
+ *
+ * Fires once per node freed via xent_destroy_node / flux_subtree_destroy,
+ * before the store entry (and component data) is released, so the listener
+ * can drop its references and free node-owned platform resources. The node
+ * is already invalid in xent when this fires; read identity from the store.
+ */
+void     flux_node_store_set_remove_listener(FluxNodeStore *store, FluxNodeRemovedFn fn, void *userdata);
+
+/**
+ * @brief Destroy a node and its entire subtree in one call.
+ *
+ * Detaches the node from its parent, then frees every node in the subtree:
+ * each one's component data is destroyed through the store and the removed
+ * listener (input/popup reference invalidation) fires per node. This is the
+ * teardown path for page swaps and the declarative reconciler's unmount.
+ * Requires flux_node_store_bind_context (FluxApp scenes do this).
+ */
+void     flux_subtree_destroy(FluxNodeStore *store, XentNodeId node);
 
 /**
  * @brief Get the number of nodes in the store.
  * @param store Store to query.
  * @return Number of stored nodes.
  */
-uint32_t       flux_node_store_count(FluxNodeStore const *store);
+uint32_t flux_node_store_count(FluxNodeStore const *store);
 
 /**
  * @brief Attach FluxNodeData pointers as userdata to all nodes in a context.
@@ -229,21 +254,7 @@ uint32_t       flux_node_store_count(FluxNodeStore const *store);
  * @param store Store containing the node data.
  * @param ctx XentContext to attach userdata to.
  */
-void           flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx);
-
-/**
- * @brief Register a renderer in this store's isolated renderer table.
- */
-void           flux_node_store_register_renderer(
-  FluxNodeStore *store, FluxControlType type,
-  void (*draw)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *, FluxControlState const *),
-  void (*draw_overlay)(FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *)
-);
-
-/**
- * @brief Look up a renderer from this store's isolated renderer table.
- */
-FluxControlRenderer const *flux_node_store_get_renderer(FluxNodeStore const *store, FluxControlType type);
+void     flux_node_store_attach_userdata(FluxNodeStore *store, XentContext *ctx);
 
 #ifdef __cplusplus
 }

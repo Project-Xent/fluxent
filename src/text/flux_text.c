@@ -291,12 +291,14 @@ static IDWriteTextLayout *get_or_create_layout(FluxTextRenderer *tr, TextLayoutC
 	return layout;
 }
 
-static IDWriteTextFormat *
-dwrite_create_measure_format(FluxTextRenderer *tr, float font_size, XentLineBreakPolicy policy, XentMeasureMode mode) {
-	IDWriteTextFormat *fmt = NULL;
-	HRESULT            hr  = IDWriteFactory_CreateTextFormat(
-	  tr->factory, tr->default_font ? tr->default_font : L"Segoe UI", NULL, DWRITE_FONT_WEIGHT_REGULAR,
-	  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"", &fmt
+static IDWriteTextFormat *dwrite_create_measure_format(
+  FluxTextRenderer *tr, float font_size, uint16_t font_weight, XentLineBreakPolicy policy, XentMeasureMode mode
+) {
+	DWRITE_FONT_WEIGHT weight = ( DWRITE_FONT_WEIGHT ) (font_weight ? font_weight : 400);
+	IDWriteTextFormat *fmt    = NULL;
+	HRESULT            hr     = IDWriteFactory_CreateTextFormat(
+	  tr->factory, tr->default_font ? tr->default_font : L"Segoe UI", NULL, weight, DWRITE_FONT_STYLE_NORMAL,
+	  DWRITE_FONT_STRETCH_NORMAL, font_size, L"", &fmt
 	);
 	if (FAILED(hr)) return NULL;
 
@@ -334,8 +336,9 @@ dwrite_measure(XentTextBackend const *backend, XentTextMeasureRequest const *req
 	TextWideBuffer wide;
 	if (!text_wide_buffer_from_utf8(&wide, request->text)) return false;
 
-	IDWriteTextFormat *fmt
-	  = dwrite_create_measure_format(tr, request->font_size, request->line_break_policy, request->width_mode);
+	IDWriteTextFormat *fmt = dwrite_create_measure_format(
+	  tr, request->font_size, request->font_weight, request->line_break_policy, request->width_mode
+	);
 	if (!fmt) {
 		text_wide_buffer_free(&wide);
 		return false;
@@ -360,6 +363,7 @@ dwrite_shape(XentTextBackend const *backend, XentTextShapeRequest const *request
 	XentTextMeasureRequest measure_request = {
 	  .text              = request->text,
 	  .font_size         = request->font_size,
+	  .font_weight       = request->font_weight,
 	  .width_constraint  = request->width_constraint,
 	  .line_break_policy = request->line_break_policy,
 	  .width_mode        = request->width_mode,

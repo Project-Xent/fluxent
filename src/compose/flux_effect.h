@@ -7,11 +7,7 @@
  * projects the effect *factory* but not the Win2D-style effect *description*, so
  * the description is a hand-rolled COM object (see flux_effect.c) implementing
  * `IGraphicsEffectD2D1Interop` + the WinRT `IGraphicsEffect`/`IGraphicsEffectSource`
- * facets. This is ADR 0001 risk #1 — the one piece whose pure-C feasibility was
- * uncertain.
- *
- * NOTE: compile-verified; runtime rendering (does the compositor accept the
- * graph and blur app content) requires a GPU desktop session.
+ * facets.
  */
 #ifndef FLUX_COMPOSE_EFFECT_H
 #define FLUX_COMPOSE_EFFECT_H

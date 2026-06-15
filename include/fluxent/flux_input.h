@@ -90,8 +90,24 @@ void            flux_input_activate(FluxInput *input);
 /** @brief Blur the current focus. */
 void            flux_input_escape(FluxInput *input);
 
-/** @brief Set focus to a specific node programmatically. */
+/**
+ * @brief Set focus to a specific node programmatically (WinUI FocusState_Programmatic).
+ *
+ * Sets logical focus and raises GotFocus but does not engage the keyboard focus
+ * visual: the focus rectangle appears only once the user navigates by keyboard
+ * (Tab/arrows), the same rule as pointer focus (where only a text input shows a
+ * visual, its caret). This is why a ContentDialog's default button is focused on
+ * open without a focus ring drawn around it.
+ */
 void            flux_input_set_focus(FluxInput *input, XentNodeId node);
+
+/**
+ * @brief Drop every reference to a destroyed node (focus, hover, capture,
+ * scroll sessions, modal trap) and release its DManip viewport. No blur or
+ * hover callbacks fire — the node's userdata is already being freed. Wired
+ * to the node store's remove listener by FluxApp.
+ */
+void            flux_input_node_destroyed(FluxInput *input, XentNodeId node);
 
 /**
  * @brief Install or clear a modal focus trap (used by ContentDialog).

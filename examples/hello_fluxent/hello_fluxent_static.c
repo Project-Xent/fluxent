@@ -147,28 +147,28 @@ XentNodeId make_row(XentContext *ctx, XentNodeId parent, float gap, float h) {
 	xent_set_flex_direction(ctx, row, XENT_FLEX_ROW);
 	xent_set_flex_align_items(ctx, row, XENT_FLEX_ALIGN_CENTER);
 	xent_set_gap(ctx, row, gap);
-	xent_set_size(ctx, row, (XentSize) {454, h});
+	if (h > 0) xent_set_size(ctx, row, (XentSize) {NAN, h});
 	xent_append_child(ctx, parent, row);
 	return row;
 }
 
 XentNodeId make_section(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, char const *text) {
 	XentNodeId t = demo_create_text(ctx, store, parent, text, 16.0f);
-	xent_set_size(ctx, t, (XentSize) {454, 24});
+	xent_set_size(ctx, t, (XentSize) {NAN, 24});
 	flux_text_set_weight(store, t, FLUX_FONT_SEMI_BOLD);
 	return t;
 }
 
 void add_divider(Demo *d) {
 	XentNodeId div = demo_create_divider(d->ctx, d->store, d->root);
-	xent_set_size(d->ctx, div, (XentSize) {454, 1});
+	xent_set_size(d->ctx, div, (XentSize) {NAN, 1});
 }
 
 XentNodeId make_dashboard_grid(Demo *d) {
 	XentNodeId grid = xent_create_node(d->ctx);
 	xent_set_protocol(d->ctx, grid, XENT_PROTOCOL_GRID);
-	xent_set_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 2020});
-	xent_set_min_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 2020});
+	xent_set_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 2980});
+	xent_set_min_size(d->ctx, grid, (XentSize) {HELLO_FLUXENT_DEMO_STAGE_W, 2980});
 	xent_set_grid_column_gap(d->ctx, grid, 20);
 	xent_set_grid_row_gap(d->ctx, grid, 20);
 
@@ -176,13 +176,12 @@ XentNodeId make_dashboard_grid(Demo *d) {
 	float            cvals [] = {1.0f, 1.0f};
 	xent_set_grid_columns(d->ctx, grid, cols, cvals, 2);
 
-	/* Rows 0-2: core controls; 3-4: editable + popups; 5: dropdown/split/combo; 6: expander;
-	 * 7: info bars; 8: image + dialog. */
 	XentGridSizeMode rows [] = {
 	  XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL,
-	  XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL};
-	float rvals [] = {260.0f, 300.0f, 260.0f, 112.0f, 96.0f, 130.0f, 220.0f, 300.0f, 180.0f};
-	xent_set_grid_rows(d->ctx, grid, rows, rvals, 9);
+	  XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL, XENT_GRID_PIXEL};
+	float rvals [] = {260.0f, 300.0f, 260.0f, 112.0f, 96.0f,  130.0f,
+	                  220.0f, 300.0f, 180.0f, 100.0f, 330.0f, 470.0f};
+	xent_set_grid_rows(d->ctx, grid, rows, rvals, 12);
 	xent_append_child(d->ctx, d->root, grid);
 	return grid;
 }
@@ -194,7 +193,7 @@ XentNodeId demo_panel(Demo *d, XentNodeId grid, uint32_t row, uint32_t col, uint
 	if (row_span > 1) xent_set_grid_row_span(d->ctx, panel, row_span);
 	xent_set_protocol(d->ctx, panel, XENT_PROTOCOL_FLEX);
 	xent_set_flex_direction(d->ctx, panel, XENT_FLEX_COLUMN);
-	xent_set_flex_align_items(d->ctx, panel, XENT_FLEX_ALIGN_START);
+	xent_set_flex_align_items(d->ctx, panel, XENT_FLEX_ALIGN_STRETCH);
 	xent_set_padding(d->ctx, panel, (XentInsets) {16, 16, 16, 16});
 	xent_set_gap(d->ctx, panel, 12);
 	return panel;
@@ -208,31 +207,12 @@ void demo_fill_panel(Demo *d, XentNodeId panel, void (*fill)(Demo *)) {
 }
 
 void demo_make_scroll_root(Demo *d) {
-	/* The app root is an absolute container so modal overlays (ContentDialog) can be
-	 * stacked on top of the scrolling page instead of pushing it out of flex flow. */
 	xent_set_protocol(d->ctx, d->scene_root, XENT_PROTOCOL_ABSOLUTE);
 
-	d->scroll_root = xent_create_node(d->ctx);
-	xent_append_child(d->ctx, d->scene_root, d->scroll_root);
+	FluxContainerCreateInfo scroll_info = {d->ctx, d->store, d->scene_root};
+	d->scroll_root                      = flux_create_scroll(&scroll_info);
 	xent_set_absolute_position(d->ctx, d->scroll_root, (XentPoint) {0.0f, 0.0f});
 	xent_set_size_percent(d->ctx, d->scroll_root, (XentSize) {1.0f, 1.0f});
-
-	flux_set_control_type(d->ctx, d->scroll_root, FLUX_CONTROL_SCROLL);
-	xent_set_protocol(d->ctx, d->scroll_root, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(d->ctx, d->scroll_root, XENT_FLEX_COLUMN);
-
-	d->scroll_nd = flux_node_store_get_or_create(d->store, d->scroll_root);
-	xent_set_userdata(d->ctx, d->scroll_root, d->scroll_nd);
-	if (!d->scroll_nd) return;
-	d->scroll_nd->component_type = FLUX_CONTROL_SCROLL;
-
-	FluxScrollData *sd           = ( FluxScrollData * ) calloc(1, sizeof(*sd));
-	if (!sd) return;
-	sd->v_vis                    = FLUX_SCROLL_AUTO;
-	sd->h_vis                    = FLUX_SCROLL_AUTO;
-	sd->content_h                = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H;
-	sd->content_w                = ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_W;
-	d->scroll_nd->component_data = sd;
 }
 
 void demo_make_root(Demo *d) {
@@ -242,7 +222,12 @@ void demo_make_root(Demo *d) {
 	xent_set_flex_align_items(d->ctx, d->root, XENT_FLEX_ALIGN_CENTER);
 	xent_set_padding(d->ctx, d->root, (XentInsets) {32, 32, 32, 32});
 	xent_set_gap(d->ctx, d->root, 20);
-	xent_set_size(d->ctx, d->root, (XentSize) {( float ) NAN, ( float ) HELLO_FLUXENT_DEMO_SCROLL_CONTENT_H});
+	/* Hug the children's stacked height so the page is exactly as tall as its
+	 * content, and pin flex-shrink to 0 so the scroll viewport never compresses
+	 * the page down to its own height (which collapses the footer and kills the
+	 * scroll extent — the content must overflow for FLUX_CONTROL_SCROLL to scroll). */
+	xent_set_wrap_content(d->ctx, d->root, false, true);
+	xent_set_flex_shrink(d->ctx, d->root, 0.0f);
 	xent_append_child(d->ctx, d->scroll_root, d->root);
 }
 

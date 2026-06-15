@@ -1,10 +1,12 @@
 #include "controls/factory/flux_factory.h"
 #include "controls/draw/flux_control_draw.h"
+#include "runtime/flux_str.h"
 
 #include "fluxent/flux_engine.h"
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_window.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <windows.h>
 
@@ -144,13 +146,15 @@ static bool repeat_on_key(void *ctx, unsigned int vk, bool down) {
 
 static void repeat_destroy(void *component_data) {
 	FluxRepeatButtonInputData *rb = ( FluxRepeatButtonInputData * ) component_data;
+	if (!rb) return;
 	repeat_stop_timer(rb);
+	flux_str_free(rb->base.label);
+	flux_str_free(rb->base.icon_name);
 	free(rb);
 }
 
 XentNodeId flux_create_repeat_button(FluxButtonCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_REPEAT_BUTTON, flux_draw_button, NULL);
 
 	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_REPEAT_BUTTON);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -162,7 +166,7 @@ XentNodeId flux_create_repeat_button(FluxButtonCreateInfo const *info) {
 		return node;
 	}
 
-	rb->base.label                   = info->label;
+	rb->base.label                   = flux_str_dup(info->label);
 	rb->base.font_size               = 14.0f;
 	rb->base.style                   = FLUX_BUTTON_STANDARD;
 	rb->base.repeat_delay_ms         = 400;
@@ -190,6 +194,12 @@ XentNodeId flux_create_repeat_button(FluxButtonCreateInfo const *info) {
 	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
 	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
 	xent_set_focusable(info->ctx, node, true);
+
+	flux_leaf_default_metrics(&(FluxLeafMetrics) {
+	  info->ctx, node, info->label, {11.0f, 5.0f, 11.0f, 6.0f},
+         {0.0f, 32.0f},
+         {NAN, 32.0f}
+    });
 
 	return node;
 }

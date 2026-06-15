@@ -1,4 +1,5 @@
 #include "fluxent/flux_engine.h"
+#include "flux_fluent.h"
 #include "flux_render_internal.h"
 
 #include <assert.h>
@@ -13,10 +14,11 @@ typedef struct FluxCommandBuffer {
 } FluxCommandBuffer;
 
 struct FluxEngine {
-	FluxNodeStore    *store;
-	FluxCommandBuffer commands;
-	uint32_t          transform_overflow_count;  /**< Bumped each time a clip/transform push is clamped. */
-	uint32_t          transform_overflow_logged; /**< Non-zero after first OutputDebugStringA notice. */
+	FluxNodeStore             *store;
+	FluxControlRegistry const *registry;
+	FluxCommandBuffer          commands;
+	uint32_t                   transform_overflow_count;  /**< Bumped each time a clip/transform push is clamped. */
+	uint32_t                   transform_overflow_logged; /**< Non-zero after first OutputDebugStringA notice. */
 };
 
 static bool flux_command_buffer_push(FluxCommandBuffer *buf, FluxRenderCommand const *cmd) {
@@ -48,6 +50,7 @@ typedef struct CollectFrame {
 	float              abs_y;
 	bool               main_emitted;
 	bool               is_scroll;
+	bool               clips_children;
 	float              scroll_off_x;
 	float              scroll_off_y;
 	float              viewport_w;
@@ -90,12 +93,24 @@ static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentR
 	cmd.bounds.h        = rect->h;
 	cmd.phase           = FLUX_PHASE_MAIN;
 	cmd.clip_action     = FLUX_CLIP_PUSH;
-	cmd.scroll_x        = frame->snapshot.scroll_x;
-	cmd.scroll_y        = frame->snapshot.scroll_y;
-	frame->scroll_off_x = frame->snapshot.scroll_x;
-	frame->scroll_off_y = frame->snapshot.scroll_y;
+	cmd.scroll_x        = frame->snapshot.scroll.x;
+	cmd.scroll_y        = frame->snapshot.scroll.y;
+	frame->scroll_off_x = frame->snapshot.scroll.x;
+	frame->scroll_off_y = frame->snapshot.scroll.y;
 	frame->viewport_w   = rect->w;
 	frame->viewport_h   = rect->h;
+	flux_command_buffer_push(&eng->commands, &cmd);
+}
+
+/* Plain axis-aligned clip of a node's children to its rect (no scroll translate,
+ * no viewport culling) — used to contain off-bounds children like NavView's
+ * slid-away Minimal pane so it never bleeds outside the control. */
+static void collect_emit_clip(FluxEngine *eng, CollectFrame const *frame, XentRect const *rect) {
+	FluxRenderCommand cmd;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.phase       = FLUX_PHASE_MAIN;
+	cmd.clip_action = FLUX_CLIP_PUSH;
+	cmd.bounds      = (FluxRect) {frame->abs_x, frame->abs_y, rect->w, rect->h};
 	flux_command_buffer_push(&eng->commands, &cmd);
 }
 
@@ -107,12 +122,38 @@ collect_emit_transform_push(FluxEngine *eng, CollectFrame const *frame, XentRect
 	cmd.clip_action  = FLUX_CLIP_PUSH_TRANSFORM;
 	cmd.scale        = nd->render_scale;
 	cmd.opacity      = nd->render_opacity;
+	cmd.translate_x  = nd->render_translate_x;
 	cmd.translate_y  = nd->render_translate_y;
 	cmd.pivot_x      = frame->abs_x + rect->w * 0.5f;
 	cmd.pivot_y      = frame->abs_y + rect->h * 0.5f;
 	cmd.clip_subtree = nd->render_clip_subtree;
 	cmd.bounds       = (FluxRect) {frame->abs_x, frame->abs_y, rect->w, rect->h};
 	flux_command_buffer_push(&eng->commands, &cmd);
+}
+
+/* Auto-derived scroll extent: the content size is the children's laid-out
+ * bounding box plus the node's trailing padding, refreshed each frame before
+ * the snapshot copies it, so pages never hand-compute their own height.
+ * Owners that manage the extent themselves set FluxScrollData.content_manual. */
+static void collect_update_scroll_extent(XentContext *ctx, XentNodeId node, FluxNodeData *nd, XentRect const *rect) {
+	if (!nd || nd->component_type != FLUX_CONTROL_SCROLL || !nd->component_data) return;
+	FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
+	if (sd->content_manual) return;
+
+	float max_r = 0.0f, max_b = 0.0f;
+	for (XentNodeId child = xent_get_first_child(ctx, node); child != XENT_NODE_INVALID;
+	  child               = xent_get_next_sibling(ctx, child))
+	{
+		XentRect cr = {0};
+		if (!xent_get_layout_rect(ctx, child, &cr)) continue;
+		max_r = flux_maxf(max_r, cr.x + cr.w - rect->x);
+		max_b = flux_maxf(max_b, cr.y + cr.h - rect->y);
+	}
+
+	XentResolvedInsets pad = {0};
+	xent_get_resolved_padding(ctx, node, XENT_AXIS_VERTICAL, &pad);
+	sd->content_w = max_r + pad.cross_end;
+	sd->content_h = max_b + pad.main_end;
 }
 
 static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *frame) {
@@ -123,17 +164,21 @@ static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *f
 	frame->abs_y     = rect.y;
 
 	FluxNodeData *nd = ( FluxNodeData * ) xent_get_userdata(ctx, frame->node);
+	collect_update_scroll_extent(ctx, frame->node, nd, &rect);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
-	frame->state     = flux_compute_control_state(ctx, frame->node, nd);
-	frame->is_scroll = frame->snapshot.type == FLUX_CONTROL_SCROLL;
+	frame->state          = flux_compute_control_state(ctx, frame->node, nd);
+	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;
+	frame->clips_children = nd && nd->clips_children;
 
 	frame->has_transform
-	  = nd && (nd->render_scale != 1.0f || nd->render_opacity < 1.0f || nd->render_translate_y != 0.0f);
+	  = nd
+	 && (nd->render_scale != 1.0f || nd->render_opacity < 1.0f || nd->render_translate_y != 0.0f || nd->render_translate_x != 0.0f);
 	if (frame->has_transform) collect_emit_transform_push(eng, frame, &rect, nd);
 
 	FluxRenderCommand cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_MAIN);
 	flux_command_buffer_push(&eng->commands, &cmd);
 	if (frame->is_scroll) collect_emit_scroll_clip(eng, frame, &rect);
+	else if (frame->clips_children) collect_emit_clip(eng, frame, &rect);
 
 	frame->current_child = xent_get_first_child(ctx, frame->node);
 	frame->main_emitted  = true;
@@ -184,7 +229,7 @@ static bool collect_visit_child(CollectFrame **stack, uint32_t *stack_top, uint3
 }
 
 static void collect_emit_finish(FluxEngine *eng, XentContext *ctx, CollectFrame const *frame) {
-	if (frame->is_scroll) {
+	if (frame->is_scroll || frame->clips_children) {
 		FluxRenderCommand pop_cmd;
 		memset(&pop_cmd, 0, sizeof(pop_cmd));
 		pop_cmd.phase       = FLUX_PHASE_MAIN;
@@ -227,11 +272,12 @@ static void collect_commands(FluxEngine *eng, XentContext *ctx, XentNodeId root)
 	free(stack);
 }
 
-FluxEngine *flux_engine_create(FluxNodeStore *store) {
+FluxEngine *flux_engine_create(FluxNodeStore *store, FluxControlRegistry const *registry) {
 	if (!store) return NULL;
 	FluxEngine *eng = ( FluxEngine * ) calloc(1, sizeof(*eng));
 	if (!eng) return NULL;
-	eng->store = store;
+	eng->store    = store;
+	eng->registry = registry;
 	return eng;
 }
 
@@ -374,7 +420,7 @@ static void execute_transform_push(
 	scale._12                  = 0.0f;
 	scale._21                  = 0.0f;
 	scale._22                  = s;
-	scale._31                  = cmd->pivot_x * (1.0f - s);
+	scale._31                  = cmd->pivot_x * (1.0f - s) + cmd->translate_x;
 	scale._32                  = cmd->pivot_y * (1.0f - s) + cmd->translate_y;
 	D2D1_MATRIX_3X2_F combined = flux_matrix_multiply(&scale, &current);
 	ID2D1RenderTarget_SetTransform(FLUX_RT(rc), &combined);
@@ -394,8 +440,8 @@ static void execute_transform_pop(FluxRenderContext const *rc, FluxTransformStac
 
 static void execute_draw(FluxEngine const *eng, FluxRenderContext const *rc, FluxRenderCommand const *cmd) {
 	if (cmd->phase == FLUX_PHASE_MAIN)
-		flux_engine_dispatch_render(eng->store, rc, &cmd->snapshot, &cmd->bounds, &cmd->state);
-	else flux_engine_dispatch_render_overlay(eng->store, rc, &cmd->snapshot, &cmd->bounds);
+		flux_engine_dispatch_render(eng->registry, rc, &cmd->snapshot, &cmd->bounds, &cmd->state);
+	else flux_engine_dispatch_render_overlay(eng->registry, rc, &cmd->snapshot, &cmd->bounds);
 }
 
 void flux_engine_execute(FluxEngine const *eng, FluxRenderContext const *rc) {

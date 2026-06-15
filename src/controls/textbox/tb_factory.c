@@ -1,8 +1,10 @@
 #include "tb_internal.h"
 #include "tb_metrics.h"
 #include "controls/draw/flux_control_draw.h"
+#include "runtime/flux_str.h"
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_engine.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -62,6 +64,8 @@ tb_create_node_with_parent(XentContext *ctx, FluxNodeStore *store, XentNodeId pa
 	if (nd) nd->component_type = type;
 	xent_set_userdata(ctx, node, nd);
 	xent_set_focusable(ctx, node, true);
+	xent_set_size(ctx, node, (XentSize) {NAN, 32.0f});
+	xent_set_min_size(ctx, node, (XentSize) {64.0f, 32.0f});
 	return node;
 }
 
@@ -100,6 +104,8 @@ void tb_destroy(void *component_data) {
 	if (!tb) return;
 
 	tb_free_undo_redo(tb);
+	flux_str_free(tb->base.placeholder);
+	flux_str_free(tb->base.font_family);
 	free(tb->buffer);
 	free(tb->flat_buffer);
 	free(tb->ime_buf);
@@ -129,7 +135,7 @@ static FluxTextBoxInputData *tb_alloc_base(TbBaseSpec const *spec) {
 	tb->buffer [0]         = '\0';
 	tb->flat_buffer [0]    = '\0';
 	tb->base.content       = tb->flat_buffer;
-	tb->base.placeholder   = spec->placeholder;
+	tb->base.placeholder   = flux_str_dup(spec->placeholder);
 	tb->base.font_size     = 14.0f;
 	tb->base.enabled       = true;
 	tb->base.on_change     = spec->on_change;
@@ -143,7 +149,6 @@ static FluxTextBoxInputData *tb_alloc_base(TbBaseSpec const *spec) {
 
 static XentNodeId tb_create_text_control(TbTextControlSpec const *spec) {
 	if (!spec->ctx || !spec->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(spec->store, spec->type, spec->draw, NULL);
 
 	XentNodeId node = tb_create_node_with_parent(spec->ctx, spec->store, spec->parent, spec->type);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -247,7 +252,6 @@ static void tb_configure_number_grid(XentContext *ctx, XentNodeId node) {
 
 XentNodeId flux_create_number_box(FluxNumberBoxCreateInfo const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	flux_node_store_register_renderer(info->store, FLUX_CONTROL_NUMBER_BOX, flux_draw_number_box, NULL);
 
 	XentNodeId node = tb_create_node_with_parent(info->ctx, info->store, info->parent, FLUX_CONTROL_NUMBER_BOX);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -275,6 +279,7 @@ XentNodeId flux_create_number_box(FluxNumberBoxCreateInfo const *info) {
 	xent_set_focusable(info->ctx, node, true);
 
 	tb_configure_number_grid(info->ctx, node);
+	xent_set_min_size(info->ctx, node, (XentSize) {64.0f + FLUX_NUMBER_BOX_DELETE_BTN_W + FLUX_NUMBER_BOX_SPIN_W, 32.0f});
 
 	return node;
 }

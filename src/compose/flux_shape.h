@@ -2,14 +2,11 @@
  * @file flux_shape.h
  * @brief Vector chrome primitive: an animatable rounded-rectangle ShapeVisual.
  *
- * The building block for control chrome in the retained tree (ADR 0001 §4 #3).
+ * The building block for control chrome in the retained tree.
  * Unlike a rasterized surface, a `CompositionShape` is vector — the compositor
  * re-rasterizes it at the final scale, so it stays crisp under scale animation,
  * and its fill color animates off-thread (pair with flux_compose_anim on the
  * fill brush's `L"Color"`).
- *
- * NOTE: compile-verified; visual fidelity (corner radii, stroke alignment) is a
- * runtime judgment on a GPU session.
  */
 #ifndef FLUX_COMPOSE_SHAPE_H
 #define FLUX_COMPOSE_SHAPE_H

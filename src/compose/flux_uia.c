@@ -341,24 +341,27 @@ static IRawElementProviderFragment *uia_wrap(FluxUia *self, XentNodeId node) {
 	return p ? ( IRawElementProviderFragment * ) &p->lpVtblFragment : NULL;
 }
 
-static XentNodeId uia_navigate_target(FluxUia *self, enum NavigateDirection dir) {
-	XentContext *ctx = self->info.ctx;
-	switch (dir) {
-	case NavigateDirection_Parent :
-		return self->node == self->info.root ? XENT_NODE_INVALID : xent_get_parent(ctx, self->node);
-	case NavigateDirection_NextSibling :
-		return self->node == self->info.root ? XENT_NODE_INVALID : xent_get_next_sibling(ctx, self->node);
-	case NavigateDirection_PreviousSibling :
-		return self->node == self->info.root ? XENT_NODE_INVALID : xent_get_prev_sibling(ctx, self->node);
-	case NavigateDirection_FirstChild : return xent_get_first_child(ctx, self->node);
-	case NavigateDirection_LastChild  : break;
-	}
+static XentNodeId uia_nav_if_not_root(FluxUia *self, XentNodeId (*fn)(XentContext const *, XentNodeId)) {
+	return self->node == self->info.root ? XENT_NODE_INVALID : fn(self->info.ctx, self->node);
+}
 
+static XentNodeId uia_last_child(XentContext const *ctx, XentNodeId parent) {
 	XentNodeId target = XENT_NODE_INVALID;
-	for (XentNodeId c = xent_get_first_child(ctx, self->node); c != XENT_NODE_INVALID;
+	for (XentNodeId c = xent_get_first_child(ctx, parent); c != XENT_NODE_INVALID;
 	  c               = xent_get_next_sibling(ctx, c))
 		target = c;
 	return target;
+}
+
+static XentNodeId uia_navigate_target(FluxUia *self, enum NavigateDirection dir) {
+	switch (dir) {
+	case NavigateDirection_Parent          : return uia_nav_if_not_root(self, xent_get_parent);
+	case NavigateDirection_NextSibling     : return uia_nav_if_not_root(self, xent_get_next_sibling);
+	case NavigateDirection_PreviousSibling : return uia_nav_if_not_root(self, xent_get_prev_sibling);
+	case NavigateDirection_FirstChild      : return xent_get_first_child(self->info.ctx, self->node);
+	case NavigateDirection_LastChild       : return uia_last_child(self->info.ctx, self->node);
+	}
+	return XENT_NODE_INVALID;
 }
 
 static HRESULT STDMETHODCALLTYPE f_navigate(

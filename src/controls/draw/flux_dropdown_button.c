@@ -19,7 +19,10 @@ void flux_draw_dropdown_button(
 	FluxButtonChrome       chrome  = flux_button_paint_chrome(rc, snap, bounds, state, snap->is_checked);
 	FluxThemeColors const *theme   = rc->theme ? rc->theme : flux_theme_default_colors();
 
-	float                  reserve = FLUX_BTN_PAD_RIGHT + FLUX_CHEVRON_BOX + FLUX_DDB_CHEVRON_GAP;
+	/* flux_button_draw_content insets the box by the standard symmetric button
+	 * padding itself, so only the chevron box + gap are trimmed here; including
+	 * FLUX_BTN_PAD_RIGHT again would shift the centered label off to the left. */
+	float                  reserve = FLUX_CHEVRON_BOX + FLUX_DDB_CHEVRON_GAP;
 	FluxRect content_box           = {chrome.sb.x, chrome.sb.y, flux_maxf(0.0f, chrome.sb.w - reserve), chrome.sb.h};
 	flux_button_draw_content(rc, snap, &content_box, chrome.text_color);
 

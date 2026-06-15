@@ -1,4 +1,5 @@
 #include "flux_input_internal.h"
+#include "flux_dmanip_sync.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -124,9 +125,11 @@ input_scroll_event_from_pointer(FluxInput *input, XentNodeId root, FluxPointerEv
 
 void input_clear_node_hover(FluxNodeData *nd) {
 	if (!nd) return;
+	bool was          = nd->state.hovered;
 	nd->state.hovered = 0;
 	nd->hover_local_x = -1.0f;
 	nd->hover_local_y = -1.0f;
+	if (was && nd->behavior.on_hover_changed) nd->behavior.on_hover_changed(nd->behavior.on_hover_changed_ctx, false);
 }
 
 void input_clear_hovered(FluxInput *input) {
@@ -144,6 +147,7 @@ static void input_set_hovered_node(FluxInput *input, XentNodeId node, FluxNodeDa
 	if (node != XENT_NODE_INVALID && nd) {
 		nd->state.hovered      = 1;
 		nd->state.pointer_type = ( uint8_t ) input->pointer_type;
+		if (nd->behavior.on_hover_changed) nd->behavior.on_hover_changed(nd->behavior.on_hover_changed_ctx, true);
 	}
 	input->hovered = node;
 }
@@ -361,9 +365,9 @@ FluxInput *flux_input_create(XentContext *ctx, FluxNodeStore *store) {
 	input->focused             = XENT_NODE_INVALID;
 	input->click_count         = 0;
 	input->last_click_node     = XENT_NODE_INVALID;
-	input->touch_pan_target    = XENT_NODE_INVALID;
-	input->scroll_drag_node    = XENT_NODE_INVALID;
-	input->scroll_drag_axis    = 0;
+	input->touch.target        = XENT_NODE_INVALID;
+	input->scroll_drag.node    = XENT_NODE_INVALID;
+	input->scroll_drag.axis    = 0;
 	input->scroll_hover_target = XENT_NODE_INVALID;
 	return input;
 }
@@ -385,12 +389,27 @@ static void fi_cancel(FluxInput *input) {
 	if (!input) return;
 
 	input_finish_scroll_drag(input);
-	input->touch_pan_active = false;
-	input->touch_pan_target = XENT_NODE_INVALID;
+	input->touch.active = false;
+	input->touch.target = XENT_NODE_INVALID;
 	input_cancel_pressed(input);
 }
 
-static void input_dispatch_left_button(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev) {
+/* Middle-button release fires on_middle_click on the node under the pointer
+ * (WinUI: TabViewItem closes on MiddleButtonReleased). No press tracking: the
+ * release must simply land on a node that opted in. */
+static void input_dispatch_middle_button(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev) {
+	if (ev->kind != FLUX_POINTER_UP) return;
+	FluxHitResult hit = input_hit_test_root(input, root, ev->x, ev->y);
+	if (!hit.data || !hit.data->behavior.on_middle_click) return;
+	if (!xent_get_semantic_enabled(input->ctx, hit.node)) return;
+	hit.data->behavior.on_middle_click(hit.data->behavior.on_middle_click_ctx);
+}
+
+static void input_dispatch_button(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev) {
+	if (ev->changed_button == FLUX_POINTER_BUTTON_MIDDLE) {
+		input_dispatch_middle_button(input, root, ev);
+		return;
+	}
 	if (ev->changed_button != FLUX_POINTER_BUTTON_LEFT) return;
 	if (ev->kind == FLUX_POINTER_DOWN) fi_pointer_down(input, root, ev->x, ev->y);
 	if (ev->kind == FLUX_POINTER_UP) fi_pointer_up(input, root, ev->x, ev->y);
@@ -408,8 +427,8 @@ void flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent con
 	input->pointer_id   = ev->pointer_id;
 
 	switch (ev->kind) {
-	case FLUX_POINTER_DOWN         : input_dispatch_left_button(input, root, ev); break;
-	case FLUX_POINTER_UP           : input_dispatch_left_button(input, root, ev); break;
+	case FLUX_POINTER_DOWN         : input_dispatch_button(input, root, ev); break;
+	case FLUX_POINTER_UP           : input_dispatch_button(input, root, ev); break;
 	case FLUX_POINTER_MOVE         : fi_pointer_move(input, root, ev->x, ev->y); break;
 	case FLUX_POINTER_WHEEL        : input_dispatch_wheel(input, root, ev); break;
 	case FLUX_POINTER_CONTEXT_MENU : fi_context_menu(input, root, ev->x, ev->y); break;
@@ -452,9 +471,31 @@ static void fi_pointer_up(FluxInput *input, XentNodeId root, float px, float py)
 	if (input_release_scroll_buttons(input)) return;
 	if (input_finish_touch_pan(input)) return;
 
-	input->touch_pan_target = XENT_NODE_INVALID;
+	input->touch.target = XENT_NODE_INVALID;
 	input_release_pressed(input, root, px, py);
 	input_clear_touch_hover(input);
+}
+
+/* The node is already dead in xent and its callbacks/userdata are about to be
+ * freed, so references are dropped without firing blur/hover-changed. The
+ * DManip viewport is released here because the input boundary owns it. */
+void flux_input_node_destroyed(FluxInput *input, XentNodeId node) {
+	if (!input || node == XENT_NODE_INVALID) return;
+
+	flux_dmanip_release_node_viewport(input->store, node);
+
+	if (input->hovered == node) input->hovered = XENT_NODE_INVALID;
+	if (input->pressed == node) input->pressed = XENT_NODE_INVALID;
+	if (input->focused == node) input->focused = XENT_NODE_INVALID;
+	if (input->last_click_node == node) input->last_click_node = XENT_NODE_INVALID;
+	if (input->scroll_hover_target == node) input->scroll_hover_target = XENT_NODE_INVALID;
+	if (input->scroll_drag.node == node) input->scroll_drag = (FluxScrollDrag) {.node = XENT_NODE_INVALID};
+	if (input->touch.target == node) flux_input_clear_touch_pan(input);
+	if (input->modal_root == node) {
+		input->modal_root       = XENT_NODE_INVALID;
+		input->modal_escape     = NULL;
+		input->modal_escape_ctx = NULL;
+	}
 }
 
 FluxPointerType flux_input_get_pointer_type(FluxInput const *input) {
@@ -470,19 +511,19 @@ XentNodeId flux_input_get_hovered(FluxInput const *input) { return input ? input
 XentNodeId flux_input_get_pressed(FluxInput const *input) { return input ? input->pressed : XENT_NODE_INVALID; }
 
 XentNodeId flux_input_get_touch_pan_target(FluxInput const *input) {
-	return input ? input->touch_pan_target : XENT_NODE_INVALID;
+	return input ? input->touch.target : XENT_NODE_INVALID;
 }
 
 void flux_input_clear_touch_pan(FluxInput *input) {
 	if (!input) return;
-	input->touch_pan_target = XENT_NODE_INVALID;
-	input->touch_pan_active = false;
+	input->touch.target = XENT_NODE_INVALID;
+	input->touch.active = false;
 }
 
 bool flux_input_take_pan_promoted(FluxInput *input) {
 	if (!input) return false;
-	bool v                   = input->pan_just_promoted;
-	input->pan_just_promoted = false;
+	bool v                     = input->touch.just_promoted;
+	input->touch.just_promoted = false;
 	return v;
 }
 

@@ -3,80 +3,80 @@
 
 #include "fluxent/flux_engine.h"
 
-/** @brief Draw a generic container control. */
+/** @brief Draw a container surface (background fill + border). */
 void flux_draw_container(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a text control. */
+/** @brief Draw a text block (snapshot text in the control's foreground). */
 void flux_draw_text(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a button control. */
+/** @brief Draw a button (state-driven fill chrome + centered label). */
 void flux_draw_button(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a toggle button control. */
+/** @brief Draw a toggle button (checked/unchecked fill chrome + label). */
 void flux_draw_toggle(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a checkbox control. */
+/** @brief Draw a checkbox (box + check/indeterminate glyph + label). */
 void flux_draw_checkbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a radio button control. */
+/** @brief Draw a radio button (ring + selected dot + label). */
 void flux_draw_radio(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a switch control. */
+/** @brief Draw a toggle switch (track + knob + label). */
 void flux_draw_switch(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a slider control. */
+/** @brief Draw a slider (track + filled portion + thumb). */
 void flux_draw_slider(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a scroll view. */
+/** @brief Draw a scroll viewport (background + clipped content area). */
 void flux_draw_scroll(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a scroll view overlay. */
+/** @brief Draw scroll bar overlays (thumbs over the content, overlay pass). */
 void flux_draw_scroll_overlay(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
 
-/** @brief Draw a progress bar. */
+/** @brief Draw a progress bar (track + determinate/indeterminate fill). */
 void flux_draw_progress(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a card control. */
+/** @brief Draw a card (layer fill + rounded border). */
 void flux_draw_card(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a divider control. */
+/** @brief Draw a divider (1px rule). */
 void flux_draw_divider(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a hyperlink control. */
+/** @brief Draw a hyperlink (accent-colored label by state). */
 void flux_draw_hyperlink(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a progress ring. */
+/** @brief Draw a progress ring (determinate/indeterminate arc). */
 void flux_draw_progress_ring(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw an info badge. */
+/** @brief Draw an info badge (dot, or numeric/icon pill). */
 void flux_draw_info_badge(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
@@ -143,7 +143,112 @@ void flux_draw_image(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
-/** @brief Draw a text box. */
+/* MenuBar metrics (MenuBar_themeresources.xaml): bar height 40, item button
+ * padding 10,4,10,4, item margin 4 (so item box is bar height - 8 = 32 tall and
+ * adjacent items sit 8px apart), ControlCornerRadius 4, BodyText font 14. */
+#define FLUX_MENU_BAR_HEIGHT      40.0f
+#define FLUX_MENU_BAR_ITEM_PAD_H  10.0f
+#define FLUX_MENU_BAR_ITEM_MARGIN 4.0f
+#define FLUX_MENU_BAR_ITEM_H      (FLUX_MENU_BAR_HEIGHT - 2.0f * FLUX_MENU_BAR_ITEM_MARGIN)
+#define FLUX_MENU_BAR_ITEM_FONT   14.0f
+
+/** @brief Draw a menu bar item (subtle-fill background by state + centered title). */
+void flux_draw_menu_bar_item(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/* NavigationView metrics (NavigationView_themeresources.xaml). Pane lengths
+ * 320/48; item box 36 tall with a 40px icon column and 16px glyph; 4px side
+ * margins; pane-toggle 40x36 (GlobalNavButton); selection indicator 3x16 r2. */
+#define FLUX_NAV_PANE_EXPANDED  320.0f
+#define FLUX_NAV_PANE_COMPACT   48.0f
+#define FLUX_NAV_ICON_BOX       40.0f
+#define FLUX_NAV_ICON_GLYPH     16.0f
+#define FLUX_NAV_ITEM_HEIGHT    36.0f
+#define FLUX_NAV_ITEM_GAP       4.0f
+#define FLUX_NAV_ITEM_MARGIN_H  4.0f
+#define FLUX_NAV_TOGGLE_W       40.0f
+#define FLUX_NAV_TOGGLE_H       36.0f
+#define FLUX_NAV_INDICATOR_W    3.0f
+#define FLUX_NAV_INDICATOR_H    16.0f
+#define FLUX_NAV_INDICATOR_R    1.5f
+#define FLUX_NAV_LABEL_FONT     14.0f
+#define FLUX_NAV_PANE_TOP_PAD   4.0f
+#define FLUX_NAV_TOP_H          48.0f /* NavigationViewTopPaneHeight */
+#define FLUX_NAV_TOP_ITEM_H     36.0f
+#define FLUX_NAV_TOP_ITEM_PAD_H 12.0f
+#define FLUX_NAV_TOP_ICON_GAP   8.0f
+#define FLUX_NAV_TOP_IND_W      16.0f /* horizontal pill: 16x3, bottom-centered */
+#define FLUX_NAV_TOP_IND_H      3.0f
+#define FLUX_NAV_SEP_H          8.0f  /* 1px rule, margins 0,3,0,4 */
+#define FLUX_NAV_SEP_TOP_W      8.0f  /* Top: vertical rule, margins 3,0,4,0 */
+#define FLUX_NAV_SEP_TOP_LINE_H 24.0f
+#define FLUX_NAV_HEADER_H       40.0f /* InnerHeaderGrid height */
+#define FLUX_NAV_HEADER_PAD     16.0f /* NavigationViewItemInnerHeaderMargin */
+#define FLUX_NAV_HEADER_FONT    12.0f
+
+/** @brief Draw the NavigationView pane background + right-edge separator. */
+void flux_draw_nav_view(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw the NavigationView selection indicator (pane overlay pass). */
+void flux_draw_nav_view_overlay(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
+
+/** @brief Draw a NavigationView item (subtle-fill chrome + icon glyph + optional label). */
+void flux_draw_nav_view_item(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/* TabView metrics (TabView_themeresources.xaml). Strip = 8px top pad + 32px tab;
+ * tab MinWidth 100 / MaxWidth 240, top corners 8 (OverlayCornerRadius) with 4px
+ * curving-out bottom flares on the selected tab (TabViewItem::UpdateTabGeometry);
+ * header padding 8,3,4,3 (right 8 without close button), font 12, icon 16 (10px
+ * trailing margin); close button 32x24 glyph E711 @12 (4px leading margin);
+ * add 32x24 glyph E710 @12 (container pad 3,0,0,3); scroll buttons 32x24
+ * glyphs EDD9/EDDA @8 (containers 8,0,3,3 / 3,0,8,3), 50px per click. */
+#define FLUX_TAB_STRIP_TOP_PAD  8.0f
+#define FLUX_TAB_MIN_H          32.0f
+#define FLUX_TAB_STRIP_H        (FLUX_TAB_STRIP_TOP_PAD + FLUX_TAB_MIN_H)
+#define FLUX_TAB_MIN_W          100.0f
+#define FLUX_TAB_MAX_W          240.0f
+#define FLUX_TAB_CORNER         8.0f
+#define FLUX_TAB_FLARE          4.0f
+#define FLUX_TAB_PAD_L          8.0f
+#define FLUX_TAB_PAD_R          4.0f
+#define FLUX_TAB_PAD_R_NOCLOSE  8.0f
+#define FLUX_TAB_ICON           16.0f
+#define FLUX_TAB_ICON_GAP       10.0f
+#define FLUX_TAB_FONT           12.0f
+#define FLUX_TAB_CLOSE_W        32.0f
+#define FLUX_TAB_CLOSE_H        24.0f
+#define FLUX_TAB_CLOSE_MARGIN_L 4.0f
+#define FLUX_TAB_CLOSE_FONT     12.0f
+#define FLUX_TAB_ADD_W          32.0f
+#define FLUX_TAB_ADD_H          24.0f
+#define FLUX_TAB_ADD_PAD_L      3.0f
+#define FLUX_TAB_ADD_PAD_B      3.0f
+#define FLUX_TAB_SCROLL_W       32.0f
+#define FLUX_TAB_SCROLL_H       24.0f
+#define FLUX_TAB_SCROLL_FONT    8.0f
+#define FLUX_TAB_SCROLL_PAD_OUT 8.0f
+#define FLUX_TAB_SCROLL_PAD_IN  3.0f
+#define FLUX_TAB_SCROLL_PAD_B   3.0f
+#define FLUX_TAB_SCROLL_AMOUNT  50.0f
+#define FLUX_TAB_SEP_MARGIN_V   8.0f
+#define FLUX_TAB_COMPACT_W      (FLUX_TAB_PAD_L + FLUX_TAB_ICON + FLUX_TAB_PAD_R_NOCLOSE)
+
+/** @brief Draw the TabView root (content fill + strip bottom border). */
+void flux_draw_tab_view(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw a tab strip item (tab chrome + icon + label + close, or the add button). */
+void flux_draw_tab_view_item(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw a text box (chrome + content + elevation border). */
 void flux_draw_textbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );

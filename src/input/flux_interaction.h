@@ -1,6 +1,6 @@
 /**
  * @file flux_interaction.h
- * @brief Composition InteractionTracker scroll engine (ADR 0001 §4; WUC successor to DManip).
+ * @brief Composition InteractionTracker scroll engine (WUC successor to DManip).
  *
  * The modern, compositor-thread equivalent of `flux_dmanip`: an InteractionTracker
  * plus a VisualInteractionSource bound to a scroll viewport's composition visual.
@@ -10,9 +10,6 @@
  * Only meaningful in the composition render path (FLUX_USE_COMPOSITION); the
  * gesture handoff needs a Windows.UI.Input.PointerPoint produced from the host's
  * WM_POINTER stream via pointer-interop, supplied by the caller.
- *
- * NOTE: compile/link-verified. Tracking feel, inertia, and the pointer handoff are
- * runtime judgments requiring a GPU session.
  */
 #ifndef FLUX_INPUT_INTERACTION_H
 #define FLUX_INPUT_INTERACTION_H

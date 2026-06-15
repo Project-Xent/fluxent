@@ -3,6 +3,8 @@
 
 #include "fluxent/flux_window.h"
 
+#define FLUX_WINDOW_MAX_RESIZE_OBSERVERS 8
+
 struct FluxWindow {
 	HWND                       hwnd;
 	FluxDpiInfo                dpi;
@@ -18,11 +20,16 @@ struct FluxWindow {
 
 	uint32_t                   primary_touch_pid;
 	uint32_t                   mouse_buttons;
+	float                      touch_hold_x; /**< Press-and-hold anchor (logical client px). */
+	float                      touch_hold_y;
 
 	FluxRenderCallback         on_render;
 	void                      *render_ctx;
 	FluxResizeCallback         on_resize;
 	void                      *resize_ctx;
+	FluxResizeCallback         resize_observers [FLUX_WINDOW_MAX_RESIZE_OBSERVERS];
+	void                      *resize_observer_ctx [FLUX_WINDOW_MAX_RESIZE_OBSERVERS];
+	int                        resize_observer_count;
 	FluxDpiChangedCallback     on_dpi_changed;
 	void                      *dpi_changed_ctx;
 	FluxPointerCallback        on_pointer;

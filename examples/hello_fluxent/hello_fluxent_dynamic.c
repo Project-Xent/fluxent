@@ -30,11 +30,10 @@ static void demo_add_text_inputs(Demo *d) {
 	XentNodeId panel = demo_wide_panel(d, 3);
 
 	XentNodeId title = demo_create_text(d->ctx, d->store, panel, "Editable controls", 16.0f);
-	xent_set_size(d->ctx, title, (XentSize) {950, 24});
+	xent_set_size(d->ctx, title, (XentSize) {NAN, 24});
 	flux_text_set_weight(d->store, title, FLUX_FONT_SEMI_BOLD);
 
 	XentNodeId row = make_row(d->ctx, panel, 16, 36);
-	xent_set_size(d->ctx, row, (XentSize) {950, 36});
 
 	FluxAppTextBoxCreateInfo text_info = {d->app, row, "Type something here...", on_textbox_change, NULL};
 	XentNodeId               textbox   = flux_app_create_textbox(&text_info);
@@ -135,11 +134,10 @@ static void demo_add_flyout_menu(Demo *d) {
 static void demo_add_popup_buttons(Demo *d) {
 	XentNodeId panel = demo_wide_panel(d, 4);
 	XentNodeId title = demo_create_text(d->ctx, d->store, panel, "Flyout & MenuFlyout", 16.0f);
-	xent_set_size(d->ctx, title, (XentSize) {950, 24});
+	xent_set_size(d->ctx, title, (XentSize) {NAN, 24});
 	flux_text_set_weight(d->store, title, FLUX_FONT_SEMI_BOLD);
 
 	XentNodeId row = make_row(d->ctx, panel, 12, 32);
-	xent_set_size(d->ctx, row, (XentSize) {950, 32});
 	XentNodeId fly = demo_button(d, row, "Click me (Flyout)", NULL, NULL);
 	xent_set_size(d->ctx, fly, (XentSize) {200, 32});
 	flux_button_set_style(d->store, fly, FLUX_BUTTON_ACCENT);
@@ -160,4 +158,5 @@ void demo_add_dynamic_content(Demo *d) {
 	demo_add_flyout_menu(d);
 	demo_add_popup_buttons(d);
 	demo_add_phase2_content(d);
+	demo_add_phase3_content(d);
 }

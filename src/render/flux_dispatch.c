@@ -1,16 +1,17 @@
 #include "fluxent/flux_engine.h"
 
 void flux_engine_dispatch_render(
-  FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds,
-  FluxControlState const *state
+  FluxControlRegistry const *registry, FluxRenderContext const *rc, FluxRenderSnapshot const *snap,
+  FluxRect const *bounds, FluxControlState const *state
 ) {
-	FluxControlRenderer const *renderer = flux_node_store_get_renderer(store, snap->type);
+	FluxControlRenderer const *renderer = flux_control_registry_get(registry, snap->type);
 	if (renderer && renderer->draw) renderer->draw(rc, snap, bounds, state);
 }
 
 void flux_engine_dispatch_render_overlay(
-  FluxNodeStore const *store, FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds
+  FluxControlRegistry const *registry, FluxRenderContext const *rc, FluxRenderSnapshot const *snap,
+  FluxRect const *bounds
 ) {
-	FluxControlRenderer const *renderer = flux_node_store_get_renderer(store, snap->type);
+	FluxControlRenderer const *renderer = flux_control_registry_get(registry, snap->type);
 	if (renderer && renderer->draw_overlay) renderer->draw_overlay(rc, snap, bounds);
 }

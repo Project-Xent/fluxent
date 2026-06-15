@@ -61,7 +61,7 @@ static uint8_t inline flux_quantize_unit_to_byte(float v) {
  * `ctrl_fill_default` -> opaque-dark `ctrl_fill_input_active`) from passing through
  * a bright intermediate -- straight-alpha lerp ramps RGB and alpha independently,
  * so mid-transition you briefly get near-white at rising opacity (a white flash).
- * For equal-alpha or opaque endpoints this reduces to the former straight lerp. */
+ * For equal-alpha or opaque endpoints this reduces to a straight lerp. */
 static FluxColor inline flux_anim_lerp_color(FluxColor c0, FluxColor c1, float t) {
 	if (t <= 0.0f) return c0;
 	if (t >= 1.0f) return c1;
@@ -80,6 +80,16 @@ static FluxColor inline flux_anim_lerp_color(FluxColor c0, FluxColor c1, float t
 	  flux_quantize_unit_to_byte(flux_linear_to_srgb(pb * inv)), flux_quantize_unit_to_byte(la)
 	);
 }
+
+/**
+ * @brief Unit cubic-bezier easing (P0=0, P3=1), Newton-solved.
+ *
+ * Out-of-line (see flux_anim.c) so the iteration loop is emitted once and shared
+ * by all callers rather than inlined per translation unit. Pass the two control
+ * points (x1,y1,x2,y2) of a CSS-style cubic-bezier timing curve; `x` is the
+ * normalized progress in [0,1] and the return is the eased value.
+ */
+float flux_cubic_bezier(float x, float x1, float y1, float x2, float y2);
 
 /** @brief Linear easing (identity). */
 static float inline flux_ease_linear(float t) { return t; }

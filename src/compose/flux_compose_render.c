@@ -26,16 +26,13 @@
 
 /* In-content acrylic tuning. Standard deviation of the backdrop Gaussian, and
  * the fraction of the control's own fill alpha kept as the tint over it. WinUI
- * acrylic is a translucent tint above a blurred sample of the content behind;
- * these match that look closely enough to validate on a GPU session (final
- * values are a runtime judgment). */
+ * acrylic is a translucent tint above a blurred sample of the content behind. */
 #define FLUX_ACRYLIC_BLUR_RADIUS    30.0f
 #define FLUX_ACRYLIC_TINT_OPACITY   0.72f
 
 /* Inline (in-window) acrylic for cards: a blurred backdrop behind the content.
  * Disabled: the backdrop-blur brush samples nothing usable in this windowed
- * composition target, so it renders opaque black over the card's fill (verified
- * on a local GPU session). Until the backdrop source is wired correctly, cards
+ * composition target, so it renders opaque black over the card's fill. Cards
  * fall back to the solid fill_sink path, which matches the classic D2D look. */
 #define FLUX_COMPOSE_INLINE_ACRYLIC 0
 
@@ -60,22 +57,25 @@ struct FluxComposeRender {
 	FluxCompositor                *c;
 	WUC_Comp                      *comp;
 	WUC_CompositionGraphicsDevice *gdev;
+	FluxControlRegistry const     *registry; /**< Renderer table for per-node surface paint. */
 	FluxVisualTree                *vt;
-	FluxAnimKit                   *anim;  /**< Off-thread keyframe/easing animations for control fills. */
-	ContentNode                   *nodes; /**< Indexed by XentNodeId. */
+	FluxAnimKit                   *anim;     /**< Off-thread keyframe/easing animations for control fills. */
+	ContentNode                   *nodes;    /**< Indexed by XentNodeId. */
 	uint32_t                       cap;
 	uint32_t                       generation;
 };
 
-FluxComposeRender *
-flux_compose_render_create(FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root) {
+FluxComposeRender *flux_compose_render_create(
+  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, FluxControlRegistry const *registry
+) {
 	if (!c || !gdev || !root) return NULL;
 	FluxComposeRender *r = ( FluxComposeRender * ) calloc(1, sizeof(*r));
 	if (!r) return NULL;
-	r->c    = c;
-	r->comp = flux_compositor_comp(c);
-	r->gdev = gdev;
-	r->vt   = flux_visual_tree_create(c, root);
+	r->c        = c;
+	r->comp     = flux_compositor_comp(c);
+	r->gdev     = gdev;
+	r->registry = registry;
+	r->vt       = flux_visual_tree_create(c, root);
 	if (!r->vt) {
 		free(r);
 		return NULL;
@@ -274,7 +274,7 @@ static void content_paint(
 	FluxControlState state  = content_state(flux_node_store_context(store), node, nd);
 	FluxRect         bounds = {offset.x / scale, offset.y / scale, rect->w, rect->h};
 
-	flux_engine_dispatch_render(store, &rc, snap, &bounds, &state);
+	flux_engine_dispatch_render(r->registry, &rc, snap, &bounds, &state);
 
 	if (brush) ID2D1SolidColorBrush_Release(brush);
 	flux_surface_end(cn->surface);
@@ -408,12 +408,9 @@ static void compose_render_node(
 	memset(&snap, 0, sizeof(snap));
 	flux_snapshot_build(&snap, ctx, node, nd);
 
-	/* Inline acrylic builds a blurred-backdrop CompositionShape; gated off (see
-	 * FLUX_COMPOSE_INLINE_ACRYLIC) because the backdrop renders black in this target.
-	 * With it off, the node paints its normal fill. */
 	if (FLUX_COMPOSE_INLINE_ACRYLIC && node_is_acrylic(ctx, node)) {
 		acrylic_ensure(r, node, container, w, h, snap.corner_radius * scale);
-		snap.background = acrylic_tint(snap.background); /* tint over the blurred backdrop */
+		snap.background = acrylic_tint(snap.background);
 	}
 	else { acrylic_release(r, node); }
 

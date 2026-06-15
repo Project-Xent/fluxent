@@ -13,18 +13,18 @@ void flux_draw_scroll(
 }
 
 static bool scroll_is_active(FluxRenderSnapshot const *snap) {
-	return snap->scroll_drag_axis != 0
-	    || snap->scroll_v_up_pressed
-	    || snap->scroll_v_dn_pressed
-	    || snap->scroll_h_lf_pressed
-	    || snap->scroll_h_rg_pressed;
+	return snap->scroll.drag_axis != 0
+	    || snap->scroll.v_up_pressed
+	    || snap->scroll.v_dn_pressed
+	    || snap->scroll.h_lf_pressed
+	    || snap->scroll.h_rg_pressed;
 }
 
 static float scroll_activity_expansion(FluxRenderSnapshot const *snap, double now) {
 	double const HOLD = 0.6, FADE = 0.4;
-	if (snap->scroll_last_activity_time <= 0.0) return 0.0f;
+	if (snap->scroll.last_activity_time <= 0.0) return 0.0f;
 
-	double dt = now - snap->scroll_last_activity_time;
+	double dt = now - snap->scroll.last_activity_time;
 	if (dt < HOLD) return 1.0f;
 	if (dt < HOLD + FADE) return 1.0f - ( float ) ((dt - HOLD) / FADE);
 	return 0.0f;
@@ -36,11 +36,11 @@ static float scroll_edge_hover(float distance, float edge) {
 }
 
 static float scroll_hover_expansion(FluxRenderSnapshot const *snap, FluxRect const *bounds) {
-	if (!snap->scroll_mouse_over) return 0.0f;
+	if (!snap->scroll.mouse_over) return 0.0f;
 
 	float const EDGE = 24.0f;
-	float       dx   = bounds->w - snap->scroll_mouse_local_x;
-	float       dy   = bounds->h - snap->scroll_mouse_local_y;
+	float       dx   = bounds->w - snap->scroll.mouse_local_x;
+	float       dy   = bounds->h - snap->scroll.mouse_local_y;
 	float       hx   = scroll_edge_hover(dx, EDGE);
 	float       hy   = scroll_edge_hover(dy, EDGE);
 	return hx > hy ? hx : hy;
@@ -160,7 +160,7 @@ static void draw_scroll_button(ScrollDrawContext const *dc, ScrollButton const *
 
 static FluxColor scroll_thumb_color(ScrollDrawContext const *dc, FluxRect const *thumb, int axis) {
 	bool      hovered = dc->mouse.valid && flux_rect_contains(thumb, dc->mouse.mx, dc->mouse.my);
-	bool      dragged = dc->snap->scroll_drag_axis == axis;
+	bool      dragged = dc->snap->scroll.drag_axis == axis;
 	FluxColor color   = dc->colors.thumb;
 	if (dragged) color = dc->colors.thumb_press;
 	else if (hovered && dc->expanded > 0.5f) color = dc->colors.thumb_hover;
@@ -188,7 +188,7 @@ static void draw_scroll_thumb(ScrollDrawContext const *dc, FluxRect const *bar, 
 	bool      vertical = axis == 1;
 	FluxRect  thumb    = *base_thumb;
 	bool      hover    = dc->mouse.valid && flux_rect_contains(base_thumb, dc->mouse.mx, dc->mouse.my);
-	bool      drag     = dc->snap->scroll_drag_axis == axis;
+	bool      drag     = dc->snap->scroll.drag_axis == axis;
 	FluxColor tc       = scroll_thumb_color(dc, base_thumb, axis);
 
 	float     visual   = FLUX_SCROLLBAR_MINI_SIZE + (8.0f - FLUX_SCROLLBAR_MINI_SIZE) * dc->expanded;
@@ -223,8 +223,8 @@ static void draw_scroll_vertical(ScrollDrawContext const *dc) {
 
 	bool         up_hover = dc->mouse.valid && flux_rect_contains(&g->v_up_btn, dc->mouse.mx, dc->mouse.my);
 	bool         dn_hover = dc->mouse.valid && flux_rect_contains(&g->v_dn_btn, dc->mouse.mx, dc->mouse.my);
-	ScrollButton up       = scroll_button(&g->v_up_btn, GLYPH_UP, up_hover, dc->snap->scroll_v_up_pressed);
-	ScrollButton dn       = scroll_button(&g->v_dn_btn, GLYPH_DOWN, dn_hover, dc->snap->scroll_v_dn_pressed);
+	ScrollButton up       = scroll_button(&g->v_up_btn, GLYPH_UP, up_hover, dc->snap->scroll.v_up_pressed);
+	ScrollButton dn       = scroll_button(&g->v_dn_btn, GLYPH_DOWN, dn_hover, dc->snap->scroll.v_dn_pressed);
 	draw_scroll_button(dc, &up);
 	draw_scroll_button(dc, &dn);
 	draw_scroll_thumb(dc, &g->v_bar, &g->v_thumb, 1);
@@ -237,8 +237,8 @@ static void draw_scroll_horizontal(ScrollDrawContext const *dc) {
 
 	bool         lf_hover = dc->mouse.valid && flux_rect_contains(&g->h_lf_btn, dc->mouse.mx, dc->mouse.my);
 	bool         rg_hover = dc->mouse.valid && flux_rect_contains(&g->h_rg_btn, dc->mouse.mx, dc->mouse.my);
-	ScrollButton lf       = scroll_button(&g->h_lf_btn, GLYPH_LEFT, lf_hover, dc->snap->scroll_h_lf_pressed);
-	ScrollButton rg       = scroll_button(&g->h_rg_btn, GLYPH_RIGHT, rg_hover, dc->snap->scroll_h_rg_pressed);
+	ScrollButton lf       = scroll_button(&g->h_lf_btn, GLYPH_LEFT, lf_hover, dc->snap->scroll.h_lf_pressed);
+	ScrollButton rg       = scroll_button(&g->h_rg_btn, GLYPH_RIGHT, rg_hover, dc->snap->scroll.h_rg_pressed);
 	draw_scroll_button(dc, &lf);
 	draw_scroll_button(dc, &rg);
 	draw_scroll_thumb(dc, &g->h_bar, &g->h_thumb, 2);
@@ -248,15 +248,15 @@ void flux_draw_scroll_overlay(FluxRenderContext const *rc, FluxRenderSnapshot co
 	float               expanded = scroll_animated_expansion(rc, snap, bounds);
 	FluxScrollBarGeom   g;
 	FluxScrollGeomInput input
-	  = {bounds, snap->scroll_content_w, snap->scroll_content_h, snap->scroll_x, snap->scroll_y, expanded};
+	  = {bounds, snap->scroll.content_w, snap->scroll.content_h, snap->scroll.x, snap->scroll.y, expanded};
 	flux_scroll_geom_compute(&g, &input);
 
-	bool show_v = g.has_v && snap->scroll_v_vis != FLUX_SCROLL_NEVER;
-	bool show_h = g.has_h && snap->scroll_h_vis != FLUX_SCROLL_NEVER;
+	bool show_v = g.has_v && snap->scroll.v_vis != FLUX_SCROLL_NEVER;
+	bool show_h = g.has_h && snap->scroll.h_vis != FLUX_SCROLL_NEVER;
 	if (!show_v && !show_h) return;
 
 	ScrollMouse mouse
-	  = {snap->scroll_mouse_local_x + bounds->x, snap->scroll_mouse_local_y + bounds->y, snap->scroll_mouse_over != 0};
+	  = {snap->scroll.mouse_local_x + bounds->x, snap->scroll.mouse_local_y + bounds->y, snap->scroll.mouse_over != 0};
 	ScrollOverlayColors colors = scroll_overlay_colors(rc->theme);
 	ScrollDrawContext dc = {.rc = rc, .snap = snap, .geom = &g, .mouse = mouse, .expanded = expanded, .colors = colors};
 	if (show_v) draw_scroll_vertical(&dc);

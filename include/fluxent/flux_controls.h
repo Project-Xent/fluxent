@@ -71,6 +71,24 @@ void flux_slider_set_value(FluxNodeStore *store, XentNodeId id, float value);
 /** @brief Set the slider's minimum and maximum values. */
 void flux_slider_set_range(FluxNodeStore *store, XentNodeId id, float min_val, float max_val);
 
+/** @brief Set the slider's snap grid (WinUI StepFrequency; default 1, <=0 disables snapping). */
+void flux_slider_set_step(FluxNodeStore *store, XentNodeId id, float step);
+
+/** @brief Set the tick mark interval (WinUI TickFrequency; 0 = no ticks). */
+void flux_slider_set_tick_frequency(FluxNodeStore *store, XentNodeId id, float frequency);
+
+/** @brief Set where tick marks render (WinUI TickPlacement). */
+void flux_slider_set_tick_placement(FluxNodeStore *store, XentNodeId id, FluxTickPlacement placement);
+
+/** @brief Choose the drag snap grid: step multiples or tick multiples (WinUI SnapsTo). */
+void flux_slider_set_snaps_to(FluxNodeStore *store, XentNodeId id, FluxSliderSnapsTo snaps_to);
+
+/** @brief Set the arrow-key delta (WinUI SmallChange; default 1). */
+void flux_slider_set_small_change(FluxNodeStore *store, XentNodeId id, float small_change);
+
+/** @brief Set the PageUp/PageDown delta (WinUI LargeChange; default 10). */
+void flux_slider_set_large_change(FluxNodeStore *store, XentNodeId id, float large_change);
+
 /** @brief Enable or disable the slider. */
 void flux_slider_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
 
@@ -194,6 +212,12 @@ void flux_info_badge_set_value(FluxNodeStore *store, XentNodeId id, int32_t valu
 
 /** @brief Set the icon name (for icon mode). */
 void flux_info_badge_set_icon(FluxNodeStore *store, XentNodeId id, char const *icon_name);
+
+/** @brief Set the combo box selection (-1 clears). Does not fire on_select. */
+void flux_combo_box_set_selected(FluxNodeStore *store, XentNodeId id, int index);
+
+/** @brief Replace the combo box item list (deep-copied). Selection is clamped. */
+void flux_combo_box_set_items(FluxNodeStore *store, XentNodeId id, char const *const *items, int count);
 
 /** @brief Set the info bar severity (icon glyph + color scheme). */
 void flux_info_bar_set_severity(FluxNodeStore *store, XentNodeId id, FluxInfoBarSeverity severity);

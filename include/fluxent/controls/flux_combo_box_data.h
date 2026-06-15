@@ -16,13 +16,14 @@ extern "C"
  * @brief Model for a combo box: a closed box showing the selected item plus a
  * drop-down list of selectable string items.
  *
- * The @ref items array is borrowed (not copied) and must outlive the control.
+ * The control owns @ref items and @ref placeholder: creation deep-copies the
+ * caller's strings and the destructor frees them.
  */
 typedef struct FluxComboBoxData {
-	char const *const *items;                              /**< Borrowed array of UTF-8 item strings. */
+	char const *const *items;                              /**< Owned array of owned UTF-8 item strings. */
 	int                item_count;                         /**< Number of items. */
 	int                selected_index;                     /**< Selected item, or -1 for none. */
-	char const        *placeholder;                        /**< Shown when nothing is selected. */
+	char const        *placeholder;                        /**< Owned copy; shown when nothing is selected. */
 	bool               open;                               /**< Whether the drop-down is showing. */
 	void               (*on_select)(void *ctx, int index); /**< Selection-changed callback. */
 	void              *on_select_ctx;

@@ -25,7 +25,7 @@ extern "C"
 {
 #endif
 
-/* ---- ICompositorInterop {25297D5C-3AD4-4C9C-B5CF-E36A38512330} ---- */
+/* ICompositorInterop {25297D5C-3AD4-4C9C-B5CF-E36A38512330} */
 typedef struct FluxICompositorInterop FluxICompositorInterop;
 
 typedef struct FluxICompositorInteropVtbl {
@@ -45,7 +45,7 @@ static const GUID FluxIID_ICompositorInterop = {
   0x25297d5c, 0x3ad4, 0x4c9c, {0xb5, 0xcf, 0xe3, 0x6a, 0x38, 0x51, 0x23, 0x30}
 };
 
-/* ---- ICompositionGraphicsDeviceInterop {A116FF71-F8BF-4C8A-9C98-70779A32A9C8} ---- */
+/* ICompositionGraphicsDeviceInterop {A116FF71-F8BF-4C8A-9C98-70779A32A9C8} */
 typedef struct FluxICompositionGraphicsDeviceInterop FluxICompositionGraphicsDeviceInterop;
 
 typedef struct FluxICompositionGraphicsDeviceInteropVtbl {
@@ -64,7 +64,7 @@ static const GUID FluxIID_ICompositionGraphicsDeviceInterop = {
   0xa116ff71, 0xf8bf, 0x4c8a, {0x9c, 0x98, 0x70, 0x77, 0x9a, 0x32, 0xa9, 0xc8}
 };
 
-/* ---- ICompositionDrawingSurfaceInterop {FD04E6E3-FE0C-4C3C-AB19-A07601A576EE} ----
+/* ICompositionDrawingSurfaceInterop {FD04E6E3-FE0C-4C3C-AB19-A07601A576EE}
  * Method order per SDK: BeginDraw, EndDraw, Resize, Scroll, ResumeDraw, SuspendDraw. */
 typedef struct FluxICompositionDrawingSurfaceInterop FluxICompositionDrawingSurfaceInterop;
 
@@ -90,7 +90,7 @@ static const GUID FluxIID_ICompositionDrawingSurfaceInterop = {
   0xfd04e6e3, 0xfe0c, 0x4c3c, {0xab, 0x19, 0xa0, 0x76, 0x01, 0xa5, 0x76, 0xee}
 };
 
-/* ---- ICompositorDesktopInterop {29E691FA-4567-4DCA-B319-D0F207EB6807} ---- */
+/* ICompositorDesktopInterop {29E691FA-4567-4DCA-B319-D0F207EB6807} */
 typedef struct FluxICompositorDesktopInterop FluxICompositorDesktopInterop;
 
 typedef struct FluxICompositorDesktopInteropVtbl {
@@ -109,7 +109,7 @@ static const GUID FluxIID_ICompositorDesktopInterop = {
   0x29e691fa, 0x4567, 0x4dca, {0xb3, 0x19, 0xd0, 0xf2, 0x07, 0xeb, 0x68, 0x07}
 };
 
-/* ---- IGraphicsEffectD2D1Interop {2FC57384-A068-44D7-A331-30982FCF7177} ----
+/* IGraphicsEffectD2D1Interop {2FC57384-A068-44D7-A331-30982FCF7177}
  * Implemented (not consumed) by Fluxent's effect-description objects so the WUC
  * effect factory can read the D2D effect id, properties, and sources. */
 typedef enum FluxGraphicsEffectPropertyMapping
@@ -151,8 +151,8 @@ static const GUID FluxIID_IGraphicsEffectD2D1Interop = {
   0x2fc57384, 0xa068, 0x44d7, {0xa3, 0x31, 0x30, 0x98, 0x2f, 0xcf, 0x71, 0x77}
 };
 
-/* ---- IVisualInteractionSourceInterop {11F62CD1-2F9D-42D3-B05F-D6790D9E9F8E} ----
- * Used in Phase D for off-thread scrolling: redirects pointer input to the tracker. */
+/* IVisualInteractionSourceInterop {11F62CD1-2F9D-42D3-B05F-D6790D9E9F8E}
+ * Redirects pointer input to the tracker for off-thread scrolling. */
 typedef struct FluxIVisualInteractionSourceInterop FluxIVisualInteractionSourceInterop;
 
 typedef struct FluxIVisualInteractionSourceInteropVtbl {

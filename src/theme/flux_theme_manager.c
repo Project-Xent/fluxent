@@ -76,7 +76,10 @@ static void init_light_palette(FluxThemeColors *c) {
 
 	c->layer_default                   = flux_color_rgba(255, 255, 255, 0x80);
 	c->layer_alt                       = flux_color_rgb(255, 255, 255);
+	c->layer_on_mica_alt_default       = flux_color_rgba(255, 255, 255, 0xb3);
+	c->layer_on_mica_alt_secondary     = flux_color_rgba(0, 0, 0, 0x0a);
 	c->solid_background                = flux_color_rgb(243, 243, 243);
+	c->solid_background_tertiary       = flux_color_rgb(249, 249, 249);
 }
 
 static void init_dark_palette(FluxThemeColors *c) {
@@ -128,7 +131,10 @@ static void init_dark_palette(FluxThemeColors *c) {
 
 	c->layer_default                   = flux_color_rgba(58, 58, 58, 0x80);
 	c->layer_alt                       = flux_color_rgba(255, 255, 255, 0x06);
+	c->layer_on_mica_alt_default       = flux_color_rgba(58, 58, 58, 0x73);
+	c->layer_on_mica_alt_secondary     = flux_color_rgba(255, 255, 255, 0x0f);
 	c->solid_background                = flux_color_rgb(32, 32, 32);
+	c->solid_background_tertiary       = flux_color_rgb(40, 40, 40);
 }
 
 static void theme_apply_accent(FluxThemeColors *c, WUI_Color a) {

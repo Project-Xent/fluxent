@@ -36,7 +36,7 @@ typedef struct FluxExpanderData {
 	FluxNodeStore *store;
 	FluxWindow    *window;                                 /**< For repaint requests while animating. */
 
-	float          width;                                  /**< Pinned control width (xent has no wrap-content). */
+	float          width;                                  /**< Pinned control width in DIPs. */
 	float          content_height;                         /**< Reserved content-region height when expanded. */
 
 	bool           expanded;                               /**< Logical expanded state (chevron/corner). */

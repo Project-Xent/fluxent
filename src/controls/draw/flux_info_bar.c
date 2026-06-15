@@ -80,11 +80,12 @@ static float ib_draw_text(
 	ts.text_align  = FLUX_TEXT_LEFT;
 	ts.vert_align  = FLUX_TEXT_TOP;
 	ts.color       = color;
+	ts.word_wrap   = true;
 
-	FluxSize sz    = flux_text_measure(rc->text, text, &ts, 0);
 	float    avail = right - x;
+	FluxSize sz    = flux_text_measure(rc->text, text, &ts, avail);
 	float    w     = flux_minf(sz.w, avail);
-	FluxRect r     = {x, top, w, sz.h};
+	FluxRect r     = {x, top, avail, sz.h};
 	flux_text_draw(rc->text, FLUX_RT(rc), text, &r, &ts);
 	return x + w;
 }

@@ -30,12 +30,20 @@ typedef enum FluxScrollBarVis
  * rendering scrollbar visuals that match WinUI's ScrollBar template.
  */
 typedef struct FluxScrollData {
-	float            scroll_x;           /**< Current horizontal scroll offset */
-	float            scroll_y;           /**< Current vertical scroll offset */
-	float            content_w;          /**< Total content width */
-	float            content_h;          /**< Total content height */
-	FluxScrollBarVis h_vis;              /**< Horizontal scrollbar visibility */
-	FluxScrollBarVis v_vis;              /**< Vertical scrollbar visibility */
+	float            scroll_x;  /**< Current horizontal scroll offset */
+	float            scroll_y;  /**< Current vertical scroll offset */
+	float            content_w; /**< Total content width */
+	float            content_h; /**< Total content height */
+	FluxScrollBarVis h_vis;     /**< Horizontal scrollbar visibility */
+	FluxScrollBarVis v_vis;     /**< Vertical scrollbar visibility */
+
+	/**
+	 * Content extent ownership. 0 (default): the engine derives content_w/h
+	 * from the laid-out children each frame, so pages never hand-compute
+	 * their own height. 1: the owner writes content_w/h itself (e.g. the
+	 * TabView strip); the engine leaves them alone.
+	 */
+	uint8_t          content_manual;
 
 	uint8_t          mouse_over;         /**< 1 if cursor inside viewport */
 	float            mouse_local_x;      /**< Cursor X in viewport-local coords */

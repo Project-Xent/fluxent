@@ -160,6 +160,13 @@ FluxGraphics *flux_popup_get_graphics(FluxPopup *popup);
 HWND          flux_popup_get_hwnd(FluxPopup *popup);
 
 /**
+ * @brief Whether the most recent mouse event delivered to the popup was
+ * promoted from touch or pen input (MOUSEEVENTF_FROMTOUCH signature). Valid
+ * inside the mouse callback; consumers pick touch behaviors with it.
+ */
+bool          flux_popup_last_input_is_touch(FluxPopup const *popup);
+
+/**
  * @brief Whether the popup window currently has a host-backdrop acrylic
  * backplate behind its content (composition mode only).
  *

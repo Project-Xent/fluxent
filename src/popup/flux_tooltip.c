@@ -1,6 +1,7 @@
 #include "fluxent/flux_tooltip.h"
 #include "fluxent/flux_graphics.h"
 #include "render/flux_render_internal.h"
+#include "runtime/flux_str.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +64,7 @@ void flux_tooltip_destroy(FluxTooltip *tt) {
 	}
 	if (tt->popup) flux_popup_destroy(tt->popup);
 
+	flux_str_free(tt->tooltip_text);
 	free(tt);
 }
 
@@ -80,7 +82,7 @@ static void tooltip_clear_hover(FluxTooltip *tt) {
 	tooltip_kill_timer(tt);
 	if (tt->is_visible) tooltip_hide(tt);
 	tt->hovered_node = XENT_NODE_INVALID;
-	tt->tooltip_text = NULL;
+	flux_str_replace(&tt->tooltip_text, NULL);
 }
 
 static bool tooltip_should_reshow(FluxTooltip const *tt, ULONGLONG now_ms) {
@@ -116,7 +118,9 @@ void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData con
 	}
 
 	tt->hovered_node = hovered;
-	tt->tooltip_text = new_text;
+	/* Own a copy: the node (and its tooltip string) can be destroyed while the
+	 * show timer is pending or the popup is up. */
+	flux_str_replace(&tt->tooltip_text, new_text);
 	if (screen_bounds) tt->anchor_screen = *screen_bounds;
 
 	ULONGLONG now_ms = GetTickCount64();

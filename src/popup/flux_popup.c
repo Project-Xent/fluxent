@@ -1,5 +1,6 @@
 #include "fluxent/flux_popup.h"
 #include "graphics/flux_graphics_compose.h"
+#include "render/flux_anim.h"
 #include "render/flux_scroll_geom.h"
 
 #ifndef COBJMACROS
@@ -50,6 +51,7 @@ struct FluxPopup {
 	FluxPopupMouseCallback   mouse_cb;
 	void                    *mouse_ctx;
 	bool                     mouse_tracking;
+	bool                     last_input_touch; /* current mouse message was promoted from touch/pen */
 
 	float                    max_content_h;  /* 0 = no clamp */
 
@@ -382,26 +384,10 @@ static float popup_clampf(float v, float lo, float hi) {
 	return v;
 }
 
-static float popup_cubic_bezier(float t, float x1, float y1, float x2, float y2) {
-	t       = popup_clampf(t, 0.0f, 1.0f);
-	float u = t;
+/* Solver shared via flux_cubic_bezier (render/flux_anim.h). */
+static float popup_menu_ease(float t) { return flux_cubic_bezier(t, 0.0f, 0.0f, 0.0f, 1.0f); }
 
-	for (int i = 0; i < 6; i++) {
-		float inv = 1.0f - u;
-		float x   = 3.0f * inv * inv * u * x1 + 3.0f * inv * u * u * x2 + u * u * u;
-		float dx  = 3.0f * inv * inv * x1 + 6.0f * inv * u * (x2 - x1) + 3.0f * u * u * (1.0f - x2);
-		if (fabsf(dx) < 0.0001f) break;
-		u -= (x - t) / dx;
-		u  = popup_clampf(u, 0.0f, 1.0f);
-	}
-
-	float inv = 1.0f - u;
-	return 3.0f * inv * inv * u * y1 + 3.0f * inv * u * u * y2 + u * u * u;
-}
-
-static float popup_menu_ease(float t) { return popup_cubic_bezier(t, 0.0f, 0.0f, 0.0f, 1.0f); }
-
-static float popup_flyout_ease(float t) { return popup_cubic_bezier(t, 0.0f, 0.0f, 0.0f, 1.0f); }
+static float popup_flyout_ease(float t) { return flux_cubic_bezier(t, 0.0f, 0.0f, 0.0f, 1.0f); }
 
 static void  popup_apply_menu_frame(FluxPopup *popup, float t) {
 	if (!popup || !popup->popup_hwnd) return;
@@ -559,10 +545,12 @@ FluxGraphics *flux_popup_get_graphics(FluxPopup *popup) { return popup ? popup->
 
 HWND          flux_popup_get_hwnd(FluxPopup *popup) { return popup ? popup->popup_hwnd : NULL; }
 
+bool          flux_popup_last_input_is_touch(FluxPopup const *popup) { return popup && popup->last_input_touch; }
+
 bool          flux_popup_acrylic_active(FluxPopup const *popup) { return popup && popup->acrylic_active; }
 
 /* WinUI flyout/menu acrylic keeps the surface fairly opaque for legibility while
- * still revealing the blurred backdrop. Tuning value (GPU-validated). */
+ * still revealing the blurred backdrop. */
 #define POPUP_ACRYLIC_TINT_OPACITY 0.80f
 
 FluxColor flux_popup_acrylic_tint(FluxPopup const *popup, FluxColor fill) {
@@ -640,6 +628,11 @@ static void popup_begin_mouse_tracking(HWND hwnd, FluxPopup *popup) {
 static LRESULT popup_on_mouse_event(PopupWindowMessage const *m, FluxPopupMouseEvent ev) {
 	FluxPopup *popup = m->popup;
 	if (!popup || !popup->mouse_cb) return 0;
+
+	/* Touch/pen taps arrive as promoted mouse messages tagged with the
+	 * MOUSEEVENTF_FROMTOUCH signature; consumers use this to pick touch
+	 * behaviors (pan-to-scroll, larger slop) per message. */
+	popup->last_input_touch = (GetMessageExtraInfo() & 0xFFFFFF00) == 0xFF515700;
 
 	if (ev == FLUX_POPUP_MOUSE_MOVE) popup_begin_mouse_tracking(m->hwnd, popup);
 

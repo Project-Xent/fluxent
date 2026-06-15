@@ -55,7 +55,7 @@ static XentNodeId demo_wide_panel(Demo *d, uint32_t row) {
 
 static XentNodeId demo_panel_title(Demo *d, XentNodeId panel, char const *text) {
 	XentNodeId t = demo_create_text(d->ctx, d->store, panel, text, 16.0f);
-	xent_set_size(d->ctx, t, (XentSize) {950, 24});
+	xent_set_size(d->ctx, t, (XentSize) {NAN, 24});
 	flux_text_set_weight(d->store, t, FLUX_FONT_SEMI_BOLD);
 	return t;
 }
@@ -66,8 +66,7 @@ static void demo_add_phase2_buttons(Demo *d) {
 
 	/* Width is fixed; height sizes to the row's controls via xent-core wrap-content
 	 * (fit-content) instead of a hand-matched literal. */
-	XentNodeId row = make_row(d->ctx, panel, 16, 32);
-	xent_set_size(d->ctx, row, (XentSize) {950, NAN});
+	XentNodeId row = make_row(d->ctx, panel, 16, 0);
 	xent_set_wrap_content(d->ctx, row, false, true);
 	FluxWindow                  *win = flux_app_get_window(d->app);
 
@@ -131,7 +130,7 @@ static void demo_add_phase2_expander(Demo *d) {
 		xent_set_gap(d->ctx, content, 8);
 		XentNodeId line
 		  = demo_create_text(d->ctx, d->store, content, "Expanders reveal secondary content on demand.", 13.0f);
-		xent_set_size(d->ctx, line, (XentSize) {900, 20});
+		xent_set_size(d->ctx, line, (XentSize) {NAN, 20});
 		FluxToggleCreateInfo chk = {d->ctx, d->store, content, "Enable telemetry", false, NULL, NULL};
 		XentNodeId           cn  = flux_create_checkbox(&chk);
 		xent_set_size(d->ctx, cn, (XentSize) {200, 32});
@@ -141,7 +140,7 @@ static void demo_add_phase2_expander(Demo *d) {
 static void demo_add_infobar(Demo *d, XentNodeId panel, FluxInfoBarSeverity sev, char const *title, char const *msg) {
 	FluxInfoBarCreateInfo ib = {d->ctx, d->store, panel, sev, title, msg, true, on_infobar_close, NULL};
 	XentNodeId            n  = flux_create_info_bar(&ib);
-	xent_set_size(d->ctx, n, (XentSize) {950, 48});
+	xent_set_size(d->ctx, n, (XentSize) {NAN, 48});
 }
 
 static void demo_add_phase2_infobars(Demo *d) {
@@ -196,7 +195,6 @@ static void demo_add_phase2_image_dialog(Demo *d) {
 	demo_panel_title(d, panel, "Image & ContentDialog");
 
 	XentNodeId row = make_row(d->ctx, panel, 20, 96);
-	xent_set_size(d->ctx, row, (XentSize) {950, 96});
 
 	FluxImageCreateInfo img = {d->ctx, d->store, row, "C:/Windows/Web/Wallpaper/Windows/img0.jpg", FLUX_IMAGE_UNIFORM};
 	XentNodeId          im  = flux_create_image(&img);

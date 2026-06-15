@@ -33,6 +33,8 @@ typedef struct FluxInfoBarData {
 	bool                is_closable;            /**< Show the trailing close button. */
 	void                (*on_close)(void *ctx); /**< Invoked when closed by the user. */
 	void               *on_close_ctx;
+	void               *layout_ctx;             /**< XentContext for layout text updates. */
+	unsigned int        layout_node;            /**< XentNodeId for layout text updates. */
 } FluxInfoBarData;
 
 #ifdef __cplusplus

@@ -54,12 +54,16 @@ static void slider_update_animation(
 	anim->press_t = press_t;
 }
 
-static SliderGeom slider_geom(FluxRenderSnapshot const *snap, FluxRect const *bounds) {
+/* While the thumb is held it tracks IntermediateValue (the raw pointer
+ * position); Value stays on the snap grid and the thumb glides back to it on
+ * release (WinUI Slider's IntermediateValue contract). */
+static SliderGeom slider_geom(FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state) {
+	float      value = state->pressed ? snap->slider_intermediate : snap->current_value;
 	SliderGeom g;
 	g.track_h     = 4.0f;
 	g.thumb_outer = 10.0f;
 	g.range       = snap->max_value - snap->min_value;
-	g.pct         = g.range > 0.0f ? (snap->current_value - snap->min_value) / g.range : 0.0f;
+	g.pct         = g.range > 0.0f ? (value - snap->min_value) / g.range : 0.0f;
 	g.pct         = slider_clampf(g.pct, 0.0f, 1.0f);
 	g.cy          = bounds->y + bounds->h * 0.5f;
 	g.track_left  = bounds->x + g.thumb_outer;
@@ -68,34 +72,51 @@ static SliderGeom slider_geom(FluxRenderSnapshot const *snap, FluxRect const *bo
 	return g;
 }
 
-static FluxColor slider_tick_color(FluxColor track_bg) {
-	uint8_t old_alpha = ( uint8_t ) (track_bg.rgba & 0xff);
-	uint8_t new_alpha = old_alpha < 0xd0 ? ( uint8_t ) (old_alpha + 0x30) : 0xff;
-	return flux_color_rgba(
-	  ( uint8_t ) ((track_bg.rgba >> 24) & 0xff), ( uint8_t ) ((track_bg.rgba >> 16) & 0xff),
-	  ( uint8_t ) ((track_bg.rgba >> 8) & 0xff), new_alpha
-	);
+/* One TickBar run: 1px-wide marks every interval_px starting at the thumb
+ * midpoint rest position (TickBar_Partial.cpp ArrangeOverride). */
+static void slider_draw_tick_run(
+  FluxRenderContext const *rc, SliderGeom const *g, float y, float h, int count, float interval_px, FluxColor color
+) {
+	for (int j = 0; j < count; j++)
+		flux_fill_rect(rc, &(FluxRect) {g->track_left + ( float ) j * interval_px, y, 1.0f, h}, color);
 }
 
+/* WinUI TickBar: marks every TickFrequency across the thumb travel range, one
+ * per full interval plus the start; intervals closer than MIN_TICKMARK_GAP
+ * (20px) are thinned to the smallest multiple that clears it. Outside bars are
+ * 4px tall with a 4px gap from the track; Inline draws over the track at track
+ * height with the input-active fill (Slider_themeresources.xaml). */
 static void slider_draw_ticks(
-  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, SliderGeom const *g, FluxColor track_bg
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, SliderGeom const *g, FluxControlState const *state
 ) {
-	if (snap->step <= 0.0f || g->range <= 0.0f) return;
+	float frequency = snap->slider_tick_frequency;
+	if (frequency <= 0.0f || g->range <= 0.0f || g->track_w <= 0.0f) return;
+	FluxTickPlacement placement = ( FluxTickPlacement ) snap->slider_tick_placement;
+	if (placement == FLUX_TICK_NONE) return;
 
-	int num_steps = ( int ) (g->range / snap->step);
-	if (num_steps <= 0 || num_steps > 100) return;
-
-	FluxColor tick_color  = slider_tick_color(track_bg);
-
-	float     tick_half_h = 4.0f;
-	for (int i = 0; i <= num_steps; i++) {
-		float tick_pct = ( float ) i / ( float ) num_steps;
-		float tick_x   = g->track_left + g->track_w * tick_pct;
-		if (fabsf(tick_x - g->thumb_x) >= 2.0f)
-			flux_draw_line(
-			  rc, &(FluxLineSpec) {tick_x, g->cy - tick_half_h, tick_x, g->cy + tick_half_h}, tick_color, 1.0f
-			);
+	float num_intervals = fmaxf(1.0f, g->range / frequency);
+	int   count         = ( int ) floorf(num_intervals);
+	float interval_px   = fmaxf(1.0f, g->track_w / num_intervals);
+	float min_gap       = 20.0f;
+	if (interval_px < min_gap) {
+		int ratio    = ( int ) ceilf(min_gap / interval_px);
+		interval_px *= ( float ) ratio;
+		count       /= ratio;
 	}
+	count                            += 1; /* one mark at the start of the run */
+
+	FluxThemeColors const *t          = rc->theme ? rc->theme : flux_theme_default_colors();
+	FluxColor              outside    = state->enabled ? t->ctrl_strong_fill_default : t->ctrl_strong_fill_disabled;
+
+	float                  track_top  = g->cy - g->track_h * 0.5f;
+	float                  bar_h      = 4.0f;
+	float                  gap        = 4.0f;
+	if (placement == FLUX_TICK_INLINE)
+		slider_draw_tick_run(rc, g, track_top, g->track_h, count, interval_px, t->ctrl_fill_input_active);
+	if (placement == FLUX_TICK_TOP_LEFT || placement == FLUX_TICK_OUTSIDE)
+		slider_draw_tick_run(rc, g, track_top - gap - bar_h, bar_h, count, interval_px, outside);
+	if (placement == FLUX_TICK_BOTTOM_RIGHT || placement == FLUX_TICK_OUTSIDE)
+		slider_draw_tick_run(rc, g, track_top + g->track_h + gap, bar_h, count, interval_px, outside);
 }
 
 static SliderColors slider_base_colors(FluxThemeColors const *t) {
@@ -132,12 +153,11 @@ slider_colors(FluxThemeColors const *t, FluxControlState const *state, SliderAni
 	return c;
 }
 
-static void slider_draw_track(
-  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, SliderGeom const *g, SliderColors const *c
-) {
+/* Template z-order: track rect, then the value fill, then the tick bars, then
+ * the thumb (Slider_themeresources.xaml HorizontalTemplate). */
+static void slider_draw_track(FluxRenderContext const *rc, SliderGeom const *g, SliderColors const *c) {
 	FluxRect track = {g->track_left, g->cy - g->track_h * 0.5f, g->track_w, g->track_h};
 	flux_fill_rounded_rect(rc, &track, g->track_h * 0.5f, c->track_bg);
-	slider_draw_ticks(rc, snap, g, c->track_bg);
 
 	float val_w = g->track_w * g->pct;
 	if (val_w <= 0.0f) return;
@@ -178,9 +198,10 @@ void flux_draw_slider(
 	SliderAnimState anim = {0};
 	slider_update_animation(rc, snap, state, &anim);
 
-	SliderGeom   geom   = slider_geom(snap, bounds);
+	SliderGeom   geom   = slider_geom(snap, bounds, state);
 	SliderColors colors = slider_colors(rc->theme, state, &anim);
-	slider_draw_track(rc, snap, &geom, &colors);
+	slider_draw_track(rc, &geom, &colors);
+	slider_draw_ticks(rc, snap, &geom, state);
 	slider_draw_thumb(rc, state, &geom, &colors, &anim);
 
 	if (state->focused && state->enabled) {

@@ -2,6 +2,7 @@
 #include "fluxent/flux_graphics.h"
 #include "fluxent/flux_popup.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <objbase.h>
@@ -146,6 +147,8 @@ static LRESULT window_on_size(FluxWindow *win, LPARAM lp) {
 
 	if (win->gfx) flux_graphics_resize(win->gfx, w, h);
 	if (win->on_resize) win->on_resize(win->resize_ctx, w, h);
+	for (int i = 0; i < win->resize_observer_count; i++)
+		win->resize_observers [i](win->resize_observer_ctx [i], w, h);
 	if (win->on_render) win->on_render(win->render_ctx);
 	win->render_requested = false;
 	return 0;
@@ -268,6 +271,48 @@ static void window_emit_contact_pointer(WindowContactPointer const *contact) {
 	window_emit_pointer(contact->win, contact->ev);
 }
 
+/* Touch contacts are fully consumed here: handing them to DefWindowProc would
+ * make the system promote the tap into legacy mouse messages delivered to
+ * whichever window sits under the contact by then — a popup opened by that
+ * very tap immediately eats a ghost press (a ComboBox would auto-select its
+ * first item, then flicker open/closed on later taps). The press-and-hold
+ * context-menu gesture that promotion would otherwise provide is synthesized below. */
+#define WINDOW_TOUCH_HOLD_TIMER 0xF1
+#define WINDOW_TOUCH_HOLD_MS    500
+#define WINDOW_TOUCH_HOLD_SLOP  10.0f
+
+static void window_track_touch_hold(FluxWindow *win, HWND hwnd, UINT msg, FluxPointerEvent const *ev) {
+	if (msg == WM_POINTERDOWN) {
+		win->touch_hold_x = ev->x;
+		win->touch_hold_y = ev->y;
+		SetTimer(hwnd, WINDOW_TOUCH_HOLD_TIMER, WINDOW_TOUCH_HOLD_MS, NULL);
+		return;
+	}
+	if (msg == WM_POINTERUP
+		|| fabsf(ev->x - win->touch_hold_x) > WINDOW_TOUCH_HOLD_SLOP
+		|| fabsf(ev->y - win->touch_hold_y) > WINDOW_TOUCH_HOLD_SLOP)
+		KillTimer(hwnd, WINDOW_TOUCH_HOLD_TIMER);
+}
+
+/* Press-and-hold fired: the contact stops being a tap (cancel the press) and
+ * surfaces a context menu at the hold position, matching the system gesture. */
+static LRESULT window_on_touch_hold_timer(FluxWindow *win, HWND hwnd) {
+	KillTimer(hwnd, WINDOW_TOUCH_HOLD_TIMER);
+	if (win->primary_touch_pid == 0) return 0;
+	win->primary_touch_pid = 0;
+	ReleaseCapture();
+
+	FluxPointerEvent ev = {0};
+	ev.device           = FLUX_POINTER_TOUCH;
+	ev.x                = win->touch_hold_x;
+	ev.y                = win->touch_hold_y;
+	ev.kind             = FLUX_POINTER_CANCEL;
+	window_emit_pointer(win, &ev);
+	ev.kind = FLUX_POINTER_CONTEXT_MENU;
+	window_emit_pointer(win, &ev);
+	return 0;
+}
+
 static LRESULT window_on_pointer_contact(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 	UINT32             pid   = GET_POINTERID_WPARAM(wp);
 	POINTER_INPUT_TYPE ptype = PT_POINTER;
@@ -291,7 +336,7 @@ static LRESULT window_on_pointer_contact(FluxWindow *win, HWND hwnd, UINT msg, W
 
 	WindowContactPointer contact = {win, hwnd, msg, flags, pid, &ev};
 	window_emit_contact_pointer(&contact);
-	if (is_touch) return DefWindowProcW(hwnd, msg, wp, lp);
+	if (is_touch) window_track_touch_hold(win, hwnd, msg, &ev);
 	return 0;
 }
 
@@ -648,6 +693,10 @@ static bool window_handle_pointer(WindowMessage const *m, LRESULT *result) {
 	}
 	if (m->msg == WM_CONTEXTMENU) {
 		*result = window_on_context_menu(m->win, m->hwnd, m->lp);
+		return true;
+	}
+	if (m->msg == WM_TIMER && m->wp == WINDOW_TOUCH_HOLD_TIMER) {
+		*result = window_on_touch_hold_timer(m->win, m->hwnd);
 		return true;
 	}
 	if (window_is_mouse_wheel(m->msg)) {

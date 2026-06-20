@@ -320,7 +320,7 @@ void              flux_app_request_render(FluxApp *app);
 
 /**
  * @brief Install a per-frame callback that runs at frame start, after input
- * dispatch and before layout/paint. The FX runtime uses this to drain its
+ * dispatch and before layout/paint. The xtk runtime uses this to drain its
  * message queue and reconcile the view. NULL clears it.
  */
 void              flux_app_set_frame_callback(FluxApp *app, void (*cb)(void *ctx), void *ctx);

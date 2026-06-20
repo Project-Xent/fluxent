@@ -14,13 +14,11 @@ extern "C"
 {
 #endif
 
-/** @brief Display modes for an info badge. */
-typedef enum FluxInfoBadgeMode
-{
-	FLUX_BADGE_DOT,    /**< Simple colored dot (no content) */
-	FLUX_BADGE_NUMBER, /**< Displays a numeric value */
-	FLUX_BADGE_ICON,   /**< Displays an icon */
-} FluxInfoBadgeMode;
+typedef XtkBadgeMode FluxInfoBadgeMode;
+
+#define FLUX_BADGE_DOT    XTK_BADGE_DOT
+#define FLUX_BADGE_NUMBER XTK_BADGE_NUMBER
+#define FLUX_BADGE_ICON   XTK_BADGE_ICON
 
 /**
  * @brief Configuration for an info badge (notification indicator).

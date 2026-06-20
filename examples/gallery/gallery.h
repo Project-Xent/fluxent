@@ -7,7 +7,7 @@
 #define GALLERY_H
 
 #include <fluxent/fluxent.h>
-#include <fluxent/fx.h>
+#include <fluxent/flux_app.h>
 #include <math.h>
 
 /* -------------------------------------------------------------------------
@@ -47,7 +47,7 @@ enum
 	PAGE_COUNT,
 };
 
-extern FxNavItemDesc const kNavItems [PAGE_COUNT];
+extern XtkNavItemDesc const kNavItems [PAGE_COUNT];
 
 /* -------------------------------------------------------------------------
  * Model + messages
@@ -105,7 +105,7 @@ typedef struct Model {
 	float  slider_step;
 	float  slider_tick;
 	bool   light_on;
-	char   name [256];
+	char  *name;
 	int    pass_chars;
 	double quantity;
 	bool   bar_open [BAR_COUNT];
@@ -129,36 +129,36 @@ typedef struct Model {
  * Helpers (gallery_helpers.c)
  * ---------------------------------------------------------------------- */
 
-FluxEl *page_header(FxUi *ui, char const *title, char const *blurb);
-FluxEl *example(FxUi *ui, char const *caption, FluxEl *content);
-FluxEl *output_col(FxUi *ui, char const *value);
-FluxEl *demo_card(FxUi *ui, FluxEl *control, char const *output, FluxEl *extra);
-FluxEl *page_category(FxUi *ui, char const *title, char const *blurb);
+XtkEl *page_header(XtkUi *ui, char const *title, char const *blurb);
+XtkEl *example(XtkUi *ui, char const *caption, XtkEl *content);
+XtkEl *output_col(XtkUi *ui, char const *value);
+XtkEl *demo_card(XtkUi *ui, XtkEl *control, char const *output, XtkEl *extra);
+XtkEl *page_category(XtkUi *ui, char const *title, char const *blurb);
 
 /* -------------------------------------------------------------------------
  * Pages
  * ---------------------------------------------------------------------- */
 
-FluxEl *page_home(FxUi *ui, Model const *m);
-FluxEl *page_button(FxUi *ui, Model const *m);
-FluxEl *page_split(FxUi *ui, Model const *m);
-FluxEl *page_checkbox(FxUi *ui, Model const *m);
-FluxEl *page_radio(FxUi *ui, Model const *m);
-FluxEl *page_combo(FxUi *ui, Model const *m);
-FluxEl *page_slider(FxUi *ui, Model const *m);
-FluxEl *page_toggle(FxUi *ui, Model const *m);
-FluxEl *page_textbox(FxUi *ui, Model const *m);
-FluxEl *page_numberbox(FxUi *ui, Model const *m);
-FluxEl *page_typography(FxUi *ui, Model const *m);
-FluxEl *page_infobar(FxUi *ui, Model const *m);
-FluxEl *page_badge(FxUi *ui, Model const *m);
-FluxEl *page_progress(FxUi *ui, Model const *m);
-FluxEl *page_tooltip(FxUi *ui, Model const *m);
-FluxEl *page_image(FxUi *ui, Model const *m);
-FluxEl *page_menus(FxUi *ui, Model const *m);
-FluxEl *page_tabview(FxUi *ui, Model const *m);
-FluxEl *page_expander(FxUi *ui, Model const *m);
-FluxEl *page_dialog(FxUi *ui, Model const *m);
-FluxEl *page_settings(FxUi *ui, Model const *m);
+XtkEl *page_home(XtkUi *ui, Model const *m);
+XtkEl *page_button(XtkUi *ui, Model const *m);
+XtkEl *page_split(XtkUi *ui, Model const *m);
+XtkEl *page_checkbox(XtkUi *ui, Model const *m);
+XtkEl *page_radio(XtkUi *ui, Model const *m);
+XtkEl *page_combo(XtkUi *ui, Model const *m);
+XtkEl *page_slider(XtkUi *ui, Model const *m);
+XtkEl *page_toggle(XtkUi *ui, Model const *m);
+XtkEl *page_textbox(XtkUi *ui, Model const *m);
+XtkEl *page_numberbox(XtkUi *ui, Model const *m);
+XtkEl *page_typography(XtkUi *ui, Model const *m);
+XtkEl *page_infobar(XtkUi *ui, Model const *m);
+XtkEl *page_badge(XtkUi *ui, Model const *m);
+XtkEl *page_progress(XtkUi *ui, Model const *m);
+XtkEl *page_tooltip(XtkUi *ui, Model const *m);
+XtkEl *page_image(XtkUi *ui, Model const *m);
+XtkEl *page_menus(XtkUi *ui, Model const *m);
+XtkEl *page_tabview(XtkUi *ui, Model const *m);
+XtkEl *page_expander(XtkUi *ui, Model const *m);
+XtkEl *page_dialog(XtkUi *ui, Model const *m);
+XtkEl *page_settings(XtkUi *ui, Model const *m);
 
 #endif

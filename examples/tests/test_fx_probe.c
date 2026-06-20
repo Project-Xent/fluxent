@@ -7,47 +7,47 @@
  * inflating the line), set_icon reserves glyph+gap padding, and icon-only
  * buttons get an explicit 40x32 footprint instead of a width-0 auto node.
  */
-#include "fx_internal.h"
+#include "flux_internal.h"
 
 #include <math.h>
 #include <stdio.h>
 
-static void update(void *model, FxMsg msg) {
+static void update(void *model, XtkMsg msg) {
 	( void ) model;
 	( void ) msg;
 }
 
-static FluxEl *view(FxUi *ui, void *model) {
+static XtkEl *view(XtkUi *ui, void *model) {
 	( void ) model;
-	return fx_column(
+	return xtk_column(
 	  ui,
-	  (FxStackDesc) {
+	  (XtkStackDesc) {
 		.gap = 20, .padding = {36, 28, 36, 28},
              .align = XENT_FLEX_ALIGN_STRETCH
     },
-	  (FluxEl *[]) {
-		fx_row(ui, (FxStackDesc) {.gap = 8}, (FluxEl *[]) {fx_button(ui, "solo-plain", (FxButtonDesc) {0}), FX_END}),
-		fx_row(
-		  ui, (FxStackDesc) {.gap = 8},
-		  (FluxEl *[]) {fx_button(ui, "solo-plain", (FxButtonDesc) {.icon = "Save"}), FX_END}
+	  (XtkEl *[]) {
+		xtk_row(ui, (XtkStackDesc) {.gap = 8}, (XtkEl *[]) {xtk_button(ui, "solo-plain", (XtkButtonDesc) {0}), XTK_END}),
+		xtk_row(
+		  ui, (XtkStackDesc) {.gap = 8},
+		  (XtkEl *[]) {xtk_button(ui, "solo-plain", (XtkButtonDesc) {.icon = "Save"}), XTK_END}
 		),
-		fx_row(
-		  ui, (FxStackDesc) {.gap = 8}, (FluxEl *[]) {fx_button(ui, NULL, (FxButtonDesc) {.icon = "Mail"}), FX_END}
+		xtk_row(
+		  ui, (XtkStackDesc) {.gap = 8}, (XtkEl *[]) {xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Mail"}), XTK_END}
 		),
-		fx_row(
-		  ui, (FxStackDesc) {.gap = 8},
-		  (FluxEl *[]) {
-			fx_button(ui, "trio-one", (FxButtonDesc) {.icon = "Save"}),
-			fx_button(ui, "trio-two", (FxButtonDesc) {.icon = "Share"}),
-			fx_button(ui, NULL, (FxButtonDesc) {.icon = "Mail"}), FX_END}
+		xtk_row(
+		  ui, (XtkStackDesc) {.gap = 8},
+		  (XtkEl *[]) {
+			xtk_button(ui, "trio-one", (XtkButtonDesc) {.icon = "Save"}),
+			xtk_button(ui, "trio-two", (XtkButtonDesc) {.icon = "Share"}),
+			xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Mail"}), XTK_END}
 		),
-		fx_row(
-		  ui, (FxStackDesc) {.gap = 8, .fill = true},
-		  (FluxEl *[]) {
-			fx_button(ui, "pushed-left", (FxButtonDesc) {0}), fx_spacer(ui),
-			fx_button(ui, "pushed-right", (FxButtonDesc) {0}), FX_END}
+		xtk_row(
+		  ui, (XtkStackDesc) {.gap = 8, .fill = true},
+		  (XtkEl *[]) {
+			xtk_button(ui, "pushed-left", (XtkButtonDesc) {0}), xtk_spacer(ui),
+			xtk_button(ui, "pushed-right", (XtkButtonDesc) {0}), XTK_END}
 		),
-		FX_END}
+		XTK_END}
 	);
 }
 
@@ -60,7 +60,7 @@ static FluxEl *view(FxUi *ui, void *model) {
 	}                                  \
 	while (0)
 
-static XentRect node_rect(XentContext *ctx, FxNode *n) {
+static XentRect node_rect(XentContext *ctx, XtkNode *n) {
 	XentRect r = {0};
 	xent_get_layout_rect(ctx, n->node, &r);
 	return r;
@@ -76,10 +76,13 @@ int main(void) {
 	xent_set_protocol(ctx, host, XENT_PROTOCOL_FLEX);
 
 	int        m  = 0;
-	FxRuntime *rt = fx_runtime_create(ctx, store, host, NULL, &m, update, view);
+	FluxBackendCtx bctx = {.ctx = ctx, .store = store, .app = NULL, .runtime = NULL};
+	XtkBackend be = flux_xtk_backend(&bctx);
+	XtkRuntime *rt = xtk_runtime_create(ctx, &be, host, &m, update, view);
+	if (rt) bctx.runtime = rt;
 	EXPECT(rt, "runtime");
 
-	fx_runtime_frame(rt);
+	xtk_runtime_frame(rt);
 	xent_layout(ctx, host, 1100.0f, 760.0f);
 
 	XentRect plain     = node_rect(ctx, rt->root->children [0]->children [0]);
@@ -91,7 +94,7 @@ int main(void) {
 	EXPECT(iconlabel.w > plain.w, "icon reserves extra width over the same label");
 	EXPECT(icononly.w == 40.0f && icononly.h == 32.0f, "icon-only button has the 40x32 footprint");
 
-	FxNode *trio       = rt->root->children [3];
+	XtkNode *trio       = rt->root->children [3];
 	float   prev_right = -1.0f;
 	for (int i = 0; i < trio->child_count; i++) {
 		XentRect r = node_rect(ctx, trio->children [i]);
@@ -100,7 +103,7 @@ int main(void) {
 		prev_right = r.x + r.w;
 	}
 
-	FxNode  *fill  = rt->root->children [4];
+	XtkNode *fill  = rt->root->children [4];
 	XentRect left  = node_rect(ctx, fill->children [0]);
 	XentRect right = node_rect(ctx, fill->children [2]);
 	XentRect row   = {0};
@@ -108,9 +111,9 @@ int main(void) {
 	EXPECT(left.h == 32.0f && right.h == 32.0f, "fill-row buttons stay one line tall");
 	EXPECT(right.x + right.w >= row.x + row.w - 1.0f, "spacer pushes the trailing button to the row edge");
 
-	fx_runtime_destroy(rt);
+	xtk_runtime_destroy(rt);
 	flux_node_store_destroy(store);
 	xent_destroy_context(ctx);
-	printf("PASS: fx button geometry\n");
+	printf("PASS: xtk button geometry\n");
 	return 0;
 }

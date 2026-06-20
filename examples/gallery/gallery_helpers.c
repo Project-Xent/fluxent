@@ -1,81 +1,81 @@
 #include "gallery.h"
 
-FxNavItemDesc const kNavItems [PAGE_COUNT] = {
-  [PAGE_HOME]        = {FX_NAV_ITEM,      "Home",     "Home"             },
-  [PAGE_SEP_1]       = {FX_NAV_SEPARATOR, NULL,       NULL               },
-  [PAGE_CAT_BASIC]   = {FX_NAV_ITEM,      "Keyboard", "Basic input"      },
-  [PAGE_BUTTON]      = {FX_NAV_CHILD,     NULL,       "Button"           },
-  [PAGE_SPLIT]       = {FX_NAV_CHILD,     NULL,       "SplitButton"      },
-  [PAGE_CHECKBOX]    = {FX_NAV_CHILD,     NULL,       "CheckBox"         },
-  [PAGE_RADIO]       = {FX_NAV_CHILD,     NULL,       "RadioButton"      },
-  [PAGE_COMBO]       = {FX_NAV_CHILD,     NULL,       "ComboBox"         },
-  [PAGE_SLIDER]      = {FX_NAV_CHILD,     NULL,       "Slider"           },
-  [PAGE_TOGGLE]      = {FX_NAV_CHILD,     NULL,       "ToggleSwitch"     },
-  [PAGE_CAT_TEXT]    = {FX_NAV_ITEM,      "Font",     "Text"             },
-  [PAGE_TEXTBOX]     = {FX_NAV_CHILD,     NULL,       "TextBox"          },
-  [PAGE_NUMBERBOX]   = {FX_NAV_CHILD,     NULL,       "NumberBox"        },
-  [PAGE_TYPOGRAPHY]  = {FX_NAV_CHILD,     NULL,       "Typography"       },
-  [PAGE_CAT_STATUS]  = {FX_NAV_ITEM,      "View",     "Status & info"    },
-  [PAGE_INFOBAR]     = {FX_NAV_CHILD,     NULL,       "InfoBar"          },
-  [PAGE_BADGE]       = {FX_NAV_CHILD,     NULL,       "InfoBadge"        },
-  [PAGE_PROGRESS]    = {FX_NAV_CHILD,     NULL,       "Progress"         },
-  [PAGE_TOOLTIP]     = {FX_NAV_CHILD,     NULL,       "ToolTip"          },
-  [PAGE_CAT_MEDIA]   = {FX_NAV_ITEM,      "Camera",   "Media"            },
-  [PAGE_IMAGE]       = {FX_NAV_CHILD,     NULL,       "Image"            },
-  [PAGE_CAT_MENUS]   = {FX_NAV_ITEM,      "More",     "Menus & layout"   },
-  [PAGE_MENUS]       = {FX_NAV_CHILD,     NULL,       "Menus & links"    },
-  [PAGE_TABVIEW]     = {FX_NAV_CHILD,     NULL,       "TabView"          },
-  [PAGE_EXPANDER]    = {FX_NAV_CHILD,     NULL,       "Expander"         },
-  [PAGE_CAT_DIALOGS] = {FX_NAV_ITEM,      "Flag",     "Dialogs & flyouts"},
-  [PAGE_DIALOG]      = {FX_NAV_CHILD,     NULL,       "ContentDialog"    },
-  [PAGE_SETTINGS]    = {FX_NAV_FOOTER,    "Settings", "Settings"         },
+XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
+  [PAGE_HOME]        = {XTK_NAV_ITEM,      "Home",     "Home"             },
+  [PAGE_SEP_1]       = {XTK_NAV_SEPARATOR, NULL,       NULL               },
+  [PAGE_CAT_BASIC]   = {XTK_NAV_ITEM,      "Keyboard", "Basic input"      },
+  [PAGE_BUTTON]      = {XTK_NAV_CHILD,     NULL,       "Button"           },
+  [PAGE_SPLIT]       = {XTK_NAV_CHILD,     NULL,       "SplitButton"      },
+  [PAGE_CHECKBOX]    = {XTK_NAV_CHILD,     NULL,       "CheckBox"         },
+  [PAGE_RADIO]       = {XTK_NAV_CHILD,     NULL,       "RadioButton"      },
+  [PAGE_COMBO]       = {XTK_NAV_CHILD,     NULL,       "ComboBox"         },
+  [PAGE_SLIDER]      = {XTK_NAV_CHILD,     NULL,       "Slider"           },
+  [PAGE_TOGGLE]      = {XTK_NAV_CHILD,     NULL,       "ToggleSwitch"     },
+  [PAGE_CAT_TEXT]    = {XTK_NAV_ITEM,      "Font",     "Text"             },
+  [PAGE_TEXTBOX]     = {XTK_NAV_CHILD,     NULL,       "TextBox"          },
+  [PAGE_NUMBERBOX]   = {XTK_NAV_CHILD,     NULL,       "NumberBox"        },
+  [PAGE_TYPOGRAPHY]  = {XTK_NAV_CHILD,     NULL,       "Typography"       },
+  [PAGE_CAT_STATUS]  = {XTK_NAV_ITEM,      "View",     "Status & info"    },
+  [PAGE_INFOBAR]     = {XTK_NAV_CHILD,     NULL,       "InfoBar"          },
+  [PAGE_BADGE]       = {XTK_NAV_CHILD,     NULL,       "InfoBadge"        },
+  [PAGE_PROGRESS]    = {XTK_NAV_CHILD,     NULL,       "Progress"         },
+  [PAGE_TOOLTIP]     = {XTK_NAV_CHILD,     NULL,       "ToolTip"          },
+  [PAGE_CAT_MEDIA]   = {XTK_NAV_ITEM,      "Camera",   "Media"            },
+  [PAGE_IMAGE]       = {XTK_NAV_CHILD,     NULL,       "Image"            },
+  [PAGE_CAT_MENUS]   = {XTK_NAV_ITEM,      "More",     "Menus & layout"   },
+  [PAGE_MENUS]       = {XTK_NAV_CHILD,     NULL,       "Menus & links"    },
+  [PAGE_TABVIEW]     = {XTK_NAV_CHILD,     NULL,       "TabView"          },
+  [PAGE_EXPANDER]    = {XTK_NAV_CHILD,     NULL,       "Expander"         },
+  [PAGE_CAT_DIALOGS] = {XTK_NAV_ITEM,      "Flag",     "Dialogs & flyouts"},
+  [PAGE_DIALOG]      = {XTK_NAV_CHILD,     NULL,       "ContentDialog"    },
+  [PAGE_SETTINGS]    = {XTK_NAV_FOOTER,    "Settings", "Settings"         },
 };
 
-FluxEl *page_header(FxUi *ui, char const *title, char const *blurb) {
-	return fx_column(
-	  ui, (FxStackDesc) {.gap = 8},
-	  (FluxEl *[]) {
-		fx_text(ui, title, (FxTextDesc) {.size = 28, .weight = FLUX_FONT_SEMI_BOLD}),
-		fx_text(ui, blurb, (FxTextDesc) {.size = 13}), FX_END}
+XtkEl *page_header(XtkUi *ui, char const *title, char const *blurb) {
+	return xtk_column(
+	  ui, (XtkStackDesc) {.gap = 8},
+	  (XtkEl *[]) {
+		xtk_text(ui, title, (XtkTextDesc) {.size = 28, .weight = FLUX_FONT_SEMI_BOLD}),
+		xtk_text(ui, blurb, (XtkTextDesc) {.size = 13}), XTK_END}
 	);
 }
 
-FluxEl *example(FxUi *ui, char const *caption, FluxEl *content) {
-	return fx_column(
-	  ui, (FxStackDesc) {.gap = 8, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (FluxEl *[]) {fx_text(ui, caption, (FxTextDesc) {.size = 14}), content, FX_END}
+XtkEl *example(XtkUi *ui, char const *caption, XtkEl *content) {
+	return xtk_column(
+	  ui, (XtkStackDesc) {.gap = 8, .align = XENT_FLEX_ALIGN_STRETCH},
+	  (XtkEl *[]) {xtk_text(ui, caption, (XtkTextDesc) {.size = 14}), content, XTK_END}
 	);
 }
 
-FluxEl *output_col(FxUi *ui, char const *value) {
-	return fx_sized(
-	  fx_column(
-		ui, (FxStackDesc) {.gap = 4},
-		(FluxEl *[]) {
-		  fx_text(ui, "Output:", (FxTextDesc) {.size = 12, .weight = FLUX_FONT_SEMI_BOLD}),
-		  fx_text(ui, value, (FxTextDesc) {.size = 14}), FX_END}
+XtkEl *output_col(XtkUi *ui, char const *value) {
+	return xtk_sized(
+	  xtk_column(
+		ui, (XtkStackDesc) {.gap = 4},
+		(XtkEl *[]) {
+		  xtk_text(ui, "Output:", (XtkTextDesc) {.size = 12, .weight = FLUX_FONT_SEMI_BOLD}),
+		  xtk_text(ui, value, (XtkTextDesc) {.size = 14}), XTK_END}
 	  ),
 	  260, NAN
 	);
 }
 
-FluxEl *demo_card(FxUi *ui, FluxEl *control, char const *output, FluxEl *extra) {
-	return fx_card(
-	  ui, (FxStackDesc) {.align = XENT_FLEX_ALIGN_STRETCH},
-	  (FluxEl *[]) {
-		fx_row(
-		  ui, (FxStackDesc) {.gap = 16, .align = XENT_FLEX_ALIGN_CENTER, .fill = true},
-		  (FluxEl *[]) {control, fx_spacer(ui), output ? output_col(ui, output) : NULL, extra, FX_END}
+XtkEl *demo_card(XtkUi *ui, XtkEl *control, char const *output, XtkEl *extra) {
+	return xtk_card(
+	  ui, (XtkStackDesc) {.align = XENT_FLEX_ALIGN_STRETCH},
+	  (XtkEl *[]) {
+		xtk_row(
+		  ui, (XtkStackDesc) {.gap = 16, .align = XENT_FLEX_ALIGN_CENTER, .fill = true},
+		  (XtkEl *[]) {control, xtk_spacer(ui), output ? output_col(ui, output) : NULL, extra, XTK_END}
 		),
-		FX_END}
+		XTK_END}
 	);
 }
 
-FluxEl *page_category(FxUi *ui, char const *title, char const *blurb) {
-	return fx_column(
-	  ui, (FxStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (FluxEl *[]) {
+XtkEl *page_category(XtkUi *ui, char const *title, char const *blurb) {
+	return xtk_column(
+	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
+	  (XtkEl *[]) {
 		page_header(ui, title, blurb),
-		fx_text(ui, "Expand this group in the navigation pane to pick a control.", (FxTextDesc) {.size = 13}), FX_END}
+		xtk_text(ui, "Expand this group in the navigation pane to pick a control.", (XtkTextDesc) {.size = 13}), XTK_END}
 	);
 }

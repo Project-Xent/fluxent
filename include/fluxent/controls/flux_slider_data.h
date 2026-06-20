@@ -21,15 +21,13 @@ typedef enum FluxSliderSnapsTo
 	FLUX_SLIDER_SNAPS_TO_TICKS,           /**< Snap to multiples of tick_frequency. */
 } FluxSliderSnapsTo;
 
-/** @brief Where tick marks render (WinUI TickPlacement; zero = the WinUI default). */
-typedef enum FluxTickPlacement
-{
-	FLUX_TICK_INLINE = 0,   /**< On the track itself (WinUI default). */
-	FLUX_TICK_TOP_LEFT,     /**< Above a horizontal slider / left of a vertical one. */
-	FLUX_TICK_BOTTOM_RIGHT, /**< Below a horizontal slider / right of a vertical one. */
-	FLUX_TICK_OUTSIDE,      /**< Both sides. */
-	FLUX_TICK_NONE,         /**< Never draw ticks. */
-} FluxTickPlacement;
+typedef XtkTickPlacement FluxTickPlacement;
+
+#define FLUX_TICK_INLINE       XTK_TICK_INLINE
+#define FLUX_TICK_TOP_LEFT     XTK_TICK_TOP_LEFT
+#define FLUX_TICK_BOTTOM_RIGHT XTK_TICK_BOTTOM_RIGHT
+#define FLUX_TICK_OUTSIDE      XTK_TICK_OUTSIDE
+#define FLUX_TICK_NONE         XTK_TICK_NONE
 
 /**
  * @brief Configuration for a horizontal slider, mirroring WinUI Slider.

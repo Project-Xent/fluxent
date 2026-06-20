@@ -55,7 +55,7 @@ struct FluxApp {
 	FluxComposeRender       *compose; /**< Retained-composition path (FLUX_USE_COMPOSITION). */
 	FluxRenderBackend const *backend; /**< Chosen render strategy (d2d or composition); set on first frame. */
 
-	void                     (*frame_cb)(void *ctx); /**< Runs at frame start, before layout (FX message pump). */
+	void                     (*frame_cb)(void *ctx); /**< Runs at frame start, before layout (xtk message pump). */
 	void                    *frame_cb_ctx;
 };
 

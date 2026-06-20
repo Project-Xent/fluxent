@@ -9,41 +9,41 @@
  * max-content width), then text wrapped taller at its narrow used width and
  * spilled out the bottom — the FluXent Gallery home cards.
  */
-#include "fx_internal.h"
+#include "flux_internal.h"
 #include <stdio.h>
 
-static void update(void *m, FxMsg msg) { ( void ) m; ( void ) msg; }
+static void update(void *m, XtkMsg msg) { ( void ) m; ( void ) msg; }
 
-static FluxEl *card(FxUi *ui, char const *title, char const *body) {
-	return fx_grow(
-	  fx_card(
-		ui, (FxStackDesc) {.gap = 8},
-		(FluxEl *[]) {
-		  fx_text(ui, title, (FxTextDesc) {.size = 16, .weight = FLUX_FONT_SEMI_BOLD}),
-		  fx_text(ui, body, (FxTextDesc) {.size = 13}), FX_END}
+static XtkEl *card(XtkUi *ui, char const *title, char const *body) {
+	return xtk_grow(
+	  xtk_card(
+		ui, (XtkStackDesc) {.gap = 8},
+		(XtkEl *[]) {
+		  xtk_text(ui, title, (XtkTextDesc) {.size = 16, .weight = FLUX_FONT_SEMI_BOLD}),
+		  xtk_text(ui, body, (XtkTextDesc) {.size = 13}), XTK_END}
 	  ),
 	  1.0f
 	);
 }
 
-static FluxEl *view(FxUi *ui, void *m) {
+static XtkEl *view(XtkUi *ui, void *m) {
 	( void ) m;
-	return fx_column(
-	  ui, (FxStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (FluxEl *[]) {
-		fx_row(
-		  ui, (FxStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH, .fill = true},
-		  (FluxEl *[]) {
+	return xtk_column(
+	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
+	  (XtkEl *[]) {
+		xtk_row(
+		  ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH, .fill = true},
+		  (XtkEl *[]) {
 			card(ui, "Elm loop", "Controls post messages and the update function evolves the model while the view rebuilds the tree."),
 			card(ui, "Keyed diff", "The reconciler diffs the element tree and patches retained controls keyed by identity across frames."),
 			card(ui, "Plain C17", "Designated initializers and compound literals everywhere and zero is always the default for fields."),
-			FX_END}
+			XTK_END}
 		),
-		FX_END}
+		XTK_END}
 	);
 }
 
-static XentRect rr(XentContext *ctx, FxNode *n) {
+static XentRect rr(XentContext *ctx, XtkNode *n) {
 	XentRect r = {0};
 	xent_get_layout_rect(ctx, n->node, &r);
 	return r;
@@ -59,16 +59,19 @@ int main(void) {
 	xent_set_flex_direction(ctx, host, XENT_FLEX_COLUMN);
 	xent_set_flex_align_items(ctx, host, XENT_FLEX_ALIGN_STRETCH);
 	int        mm = 0;
-	FxRuntime *rt = fx_runtime_create(ctx, store, host, NULL, &mm, update, view);
-	fx_runtime_frame(rt);
+	FluxBackendCtx bctx = {.ctx = ctx, .store = store, .app = NULL, .runtime = NULL};
+	XtkBackend be = flux_xtk_backend(&bctx);
+	XtkRuntime *rt = xtk_runtime_create(ctx, &be, host, &mm, update, view);
+	if (rt) bctx.runtime = rt;
+	xtk_runtime_frame(rt);
 	xent_layout(ctx, host, 380.0f, 760.0f); /* narrow → cards ~112px → text wraps */
 
-	FxNode *row = rt->root->children [0];
+	XtkNode *row = rt->root->children [0];
 	int     bad = 0;
 	for (int i = 0; i < row->child_count; i++) {
-		FxNode  *c  = row->children [i];
+		XtkNode  *c  = row->children [i];
 		XentRect cr = rr(ctx, c);
-		FxNode  *tx = c->children [c->child_count - 1];
+		XtkNode  *tx = c->children [c->child_count - 1];
 		XentRect tr = rr(ctx, tx);
 		int      overflow = (tr.y + tr.h > cr.y + cr.h + 0.5f);
 		if (overflow) bad++;
@@ -79,7 +82,7 @@ int main(void) {
 	}
 	printf("%s\n", bad ? "FAIL: text overflows card" : "PASS: text contained in card");
 
-	fx_runtime_destroy(rt);
+	xtk_runtime_destroy(rt);
 	flux_node_store_destroy(store);
 	xent_destroy_context(ctx);
 	return bad ? 1 : 0;

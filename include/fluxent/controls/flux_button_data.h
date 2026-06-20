@@ -15,14 +15,12 @@ extern "C"
 {
 #endif
 
-/** @brief Visual style variants for button-like controls. */
-typedef enum FluxButtonStyle
-{
-	FLUX_BUTTON_STANDARD, /**< Default elevated style with background */
-	FLUX_BUTTON_SUBTLE,   /**< Transparent until hovered */
-	FLUX_BUTTON_TEXT,     /**< Text-only, minimal chrome */
-	FLUX_BUTTON_ACCENT,   /**< Accent-colored background */
-} FluxButtonStyle;
+typedef XtkButtonStyle FluxButtonStyle;
+
+#define FLUX_BUTTON_STANDARD XTK_BUTTON_STANDARD
+#define FLUX_BUTTON_SUBTLE   XTK_BUTTON_SUBTLE
+#define FLUX_BUTTON_TEXT     XTK_BUTTON_TEXT
+#define FLUX_BUTTON_ACCENT   XTK_BUTTON_ACCENT
 
 /**
  * @brief Configuration for a standard push button.

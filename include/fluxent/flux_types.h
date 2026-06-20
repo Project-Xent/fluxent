@@ -11,15 +11,14 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <xtk/xtk_types.h>
 
 #if defined(_MSC_VER) && !defined(__attribute__)
   #define __attribute__(x)
 #endif
 
-/** @brief RGBA color packed as uint32_t (0xRRGGBBAA). */
-typedef struct FluxColor {
-	uint32_t rgba;
-} FluxColor;
+/** @brief RGBA color — alias of XtkColor for API compatibility. */
+typedef XtkColor FluxColor;
 
 /** @brief Axis-aligned rectangle (position + size). */
 typedef struct FluxRect {

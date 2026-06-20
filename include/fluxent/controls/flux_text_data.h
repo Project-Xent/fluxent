@@ -6,6 +6,7 @@
 #define FLUX_TEXT_DATA_H
 
 #include "../flux_types.h"
+#include <xtk/xtk_types.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,13 +16,11 @@ extern "C"
 {
 #endif
 
-typedef enum FluxTextAlign
-{
-	FLUX_TEXT_LEFT,
-	FLUX_TEXT_CENTER,
-	FLUX_TEXT_RIGHT,
-	FLUX_TEXT_JUSTIFY,
-} FluxTextAlign;
+typedef XtkTextAlign FluxTextAlign;
+#define FLUX_TEXT_LEFT    XTK_TEXT_LEFT
+#define FLUX_TEXT_CENTER  XTK_TEXT_CENTER
+#define FLUX_TEXT_RIGHT   XTK_TEXT_RIGHT
+#define FLUX_TEXT_JUSTIFY XTK_TEXT_JUSTIFY
 
 typedef enum FluxTextVAlign
 {
@@ -30,18 +29,16 @@ typedef enum FluxTextVAlign
 	FLUX_TEXT_BOTTOM,
 } FluxTextVAlign;
 
-typedef enum FluxFontWeight
-{
-	FLUX_FONT_THIN        = 100,
-	FLUX_FONT_EXTRA_LIGHT = 200,
-	FLUX_FONT_LIGHT       = 300,
-	FLUX_FONT_REGULAR     = 400,
-	FLUX_FONT_MEDIUM      = 500,
-	FLUX_FONT_SEMI_BOLD   = 600,
-	FLUX_FONT_BOLD        = 700,
-	FLUX_FONT_EXTRA_BOLD  = 800,
-	FLUX_FONT_BLACK       = 900,
-} FluxFontWeight;
+typedef XtkFontWeight FluxFontWeight;
+#define FLUX_FONT_THIN        XTK_FONT_THIN
+#define FLUX_FONT_EXTRA_LIGHT XTK_FONT_EXTRA_LIGHT
+#define FLUX_FONT_LIGHT       XTK_FONT_LIGHT
+#define FLUX_FONT_REGULAR     XTK_FONT_REGULAR
+#define FLUX_FONT_MEDIUM      XTK_FONT_MEDIUM
+#define FLUX_FONT_SEMI_BOLD   XTK_FONT_SEMI_BOLD
+#define FLUX_FONT_BOLD        XTK_FONT_BOLD
+#define FLUX_FONT_EXTRA_BOLD  XTK_FONT_EXTRA_BOLD
+#define FLUX_FONT_BLACK       XTK_FONT_BLACK
 
 /** FluxFontWeight values are DWrite-style numerics; 0 falls back to regular. */
 static uint16_t inline flux_font_weight_numeric(FluxFontWeight weight) {

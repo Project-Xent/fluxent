@@ -2,7 +2,7 @@
  * @file test_fx_crossaxis.c
  * @brief Cross-axis hug + definite-size honoring regressions.
  *
- * Guards the layout contract that lets fx stacks size correctly in both
+ * Guards the layout contract that lets xtk stacks size correctly in both
  * orientations:
  *  - A column hugs its width to content (like a row hugs its height), so the
  *    Image gallery's stretch-mode columns sit side by side in a row instead of
@@ -13,24 +13,24 @@
  *  - A SplitButton reserves icon glyph+gap padding on mount without clobbering
  *    its trailing divider+secondary chevron zone.
  */
-#include "fx_internal.h"
+#include "flux_internal.h"
 
 #include <math.h>
 #include <stdio.h>
 
-static void update(void *model, FxMsg msg) {
+static void update(void *model, XtkMsg msg) {
 	( void ) model;
 	( void ) msg;
 }
 
-static FluxEl *stretch_col(FxUi *ui, FluxImageStretch stretch, char const *label) {
-	return fx_column(
-	  ui, (FxStackDesc) {.gap = 6},
-	  (FluxEl *[]) {
-		fx_sized(
-		  fx_image(ui, "C:/Windows/Web/Wallpaper/Windows/img0.jpg", (FxImageDesc) {.stretch = stretch}), 180, 110
+static XtkEl *stretch_col(XtkUi *ui, FluxImageStretch stretch, char const *label) {
+	return xtk_column(
+	  ui, (XtkStackDesc) {.gap = 6},
+	  (XtkEl *[]) {
+		xtk_sized(
+		  xtk_image(ui, "C:/Windows/Web/Wallpaper/Windows/img0.jpg", (XtkImageDesc) {.stretch = stretch}), 180, 110
 		),
-		fx_text(ui, label, (FxTextDesc) {.size = 12}), FX_END}
+		xtk_text(ui, label, (XtkTextDesc) {.size = 12}), XTK_END}
 	);
 }
 
@@ -38,40 +38,40 @@ static char const *const kLongText
   = "This is a deliberately long paragraph that must wrap to the width its card is "
     "stretched to, rather than inflating the card to its single-line max-content width.";
 
-static FluxEl *view(FxUi *ui, void *model) {
+static XtkEl *view(XtkUi *ui, void *model) {
 	( void ) model;
-	return fx_column(
-	  ui, (FxStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (FluxEl *[]) {
-		fx_row(
-		  ui, (FxStackDesc) {.gap = 24},
-		  (FluxEl *[]) {
+	return xtk_column(
+	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
+	  (XtkEl *[]) {
+		xtk_row(
+		  ui, (XtkStackDesc) {.gap = 24},
+		  (XtkEl *[]) {
 			stretch_col(ui, FLUX_IMAGE_UNIFORM, "Uniform"),
 			stretch_col(ui, FLUX_IMAGE_FILL, "Fill"),
-			stretch_col(ui, FLUX_IMAGE_UNIFORM_TO_FILL, "UniformToFill"), FX_END}
+			stretch_col(ui, FLUX_IMAGE_UNIFORM_TO_FILL, "UniformToFill"), XTK_END}
 		),
-		fx_split_button(
+		xtk_split_button(
 		  ui, "Save",
-		  (FxSplitDesc) {
+		  (XtkSplitDesc) {
 			.icon = "Save",
 			.items =
-			  (FxMenuItemDesc []) {
+			  (XtkMenuItemDesc []) {
 				{.label = "Save as..."},
 				{.label = "Save all"},
 			  },
 			.item_count = 2}
 		),
 		/* A 360px-wide stretch column wrapping a card of long text. */
-		fx_sized(
-		  fx_column(
-			ui, (FxStackDesc) {.align = XENT_FLEX_ALIGN_STRETCH},
-			(FluxEl *[]) {
-			  fx_card(ui, (FxStackDesc) {0}, (FluxEl *[]) {fx_text(ui, kLongText, (FxTextDesc) {.size = 14}), FX_END}),
-			  FX_END}
+		xtk_sized(
+		  xtk_column(
+			ui, (XtkStackDesc) {.align = XENT_FLEX_ALIGN_STRETCH},
+			(XtkEl *[]) {
+			  xtk_card(ui, (XtkStackDesc) {0}, (XtkEl *[]) {xtk_text(ui, kLongText, (XtkTextDesc) {.size = 14}), XTK_END}),
+			  XTK_END}
 		  ),
 		  360, NAN
 		),
-		FX_END}
+		XTK_END}
 	);
 }
 
@@ -84,7 +84,7 @@ static FluxEl *view(FxUi *ui, void *model) {
 	}                                  \
 	while (0)
 
-static XentRect node_rect(XentContext *ctx, FxNode *n) {
+static XentRect node_rect(XentContext *ctx, XtkNode *n) {
 	XentRect r = {0};
 	xent_get_layout_rect(ctx, n->node, &r);
 	return r;
@@ -102,15 +102,18 @@ int main(void) {
 	xent_set_flex_align_items(ctx, host, XENT_FLEX_ALIGN_STRETCH);
 
 	int        m  = 0;
-	FxRuntime *rt = fx_runtime_create(ctx, store, host, NULL, &m, update, view);
+	FluxBackendCtx bctx = {.ctx = ctx, .store = store, .app = NULL, .runtime = NULL};
+	XtkBackend be = flux_xtk_backend(&bctx);
+	XtkRuntime *rt = xtk_runtime_create(ctx, &be, host, &m, update, view);
+	if (rt) bctx.runtime = rt;
 	EXPECT(rt, "runtime");
 
-	fx_runtime_frame(rt);
+	xtk_runtime_frame(rt);
 	xent_layout(ctx, host, 1100.0f, 760.0f);
 
 	/* Image row: three columns hug their 180px image, laid side by side
 	 * (180 + 24 gap = 204 stride) without overlap — no explicit width. */
-	FxNode  *row        = rt->root->children [0];
+	XtkNode  *row        = rt->root->children [0];
 	float    prev_right = -1.0f;
 	EXPECT(row->child_count == 3, "image row has three columns");
 	for (int i = 0; i < row->child_count; i++) {
@@ -128,18 +131,18 @@ int main(void) {
 
 	/* Long text wraps to the 360px-stretched card, not its max-content width.
 	 * The card stretches to 360; its text must stay within the content box. */
-	FxNode  *wrap_col = rt->root->children [2];
+	XtkNode  *wrap_col = rt->root->children [2];
 	XentRect wrap     = node_rect(ctx, wrap_col);
 	EXPECT(wrap.w == 360.0f, "wrap column keeps its pinned 360px width");
-	FxNode  *card     = wrap_col->children [0];
+	XtkNode  *card     = wrap_col->children [0];
 	XentRect card_r   = node_rect(ctx, card);
 	EXPECT(card_r.w == 360.0f, "card stretches to the column width, not its max-content");
 	XentRect text_r = node_rect(ctx, card->children [0]);
 	EXPECT(text_r.w <= card_r.w, "wrapped text stays within the card content box");
 
-	fx_runtime_destroy(rt);
+	xtk_runtime_destroy(rt);
 	flux_node_store_destroy(store);
 	xent_destroy_context(ctx);
-	printf("PASS: fx cross-axis hug + definite-size wrap + split button icon\n");
+	printf("PASS: xtk cross-axis hug + definite-size wrap + split button icon\n");
 	return 0;
 }

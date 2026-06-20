@@ -1,30 +1,28 @@
 #include "gallery.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
 
-static void copy_utf8(char *dst, size_t cap, char const *src) {
-	snprintf(dst, cap, "%s", src ? src : "");
-	size_t len = strlen(dst);
-	size_t i   = len;
-	while (i > 0 && (dst [i - 1] & 0xc0) == 0x80) i--;
-	if (i == 0) return;
-
-	unsigned char lead = ( unsigned char ) dst [i - 1];
-	size_t        need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
-	if (len - (i - 1) < need) dst [i - 1] = '\0';
+static void tab_close(Model *m, int index) {
+	if (index < 0 || index >= m->tab_count || m->tab_count <= 1) return;
+	memmove(&m->tab_ids [index], &m->tab_ids [index + 1], sizeof(int) * ( size_t ) (m->tab_count - index - 1));
+	m->tab_count--;
+	if (m->tab_sel >= m->tab_count) m->tab_sel = m->tab_count - 1;
+	m->tab_gen++;
 }
 
-static int utf8_chars(char const *s) {
-	int n = 0;
-	for (; s && *s; s++)
-		if ((*s & 0xc0) != 0x80) n++;
-	return n;
+static void tab_add(Model *m) {
+	if (m->tab_count >= 8) return;
+	m->tab_ids [m->tab_count] = m->next_tab_id++;
+	m->tab_sel                = m->tab_count;
+	m->tab_count++;
+	m->tab_gen++;
 }
 
-static void update(void *model, FxMsg msg) {
+static void update(void *model, XtkMsg msg) {
 	Model *m = ( Model * ) model;
 	switch (msg.tag) {
 	case MSG_NAV            : m->page = msg.i; break;
@@ -43,8 +41,11 @@ static void update(void *model, FxMsg msg) {
 	case MSG_SLIDER_STEP  : m->slider_step = msg.f; break;
 	case MSG_SLIDER_TICK  : m->slider_tick = msg.f; break;
 	case MSG_LIGHT        : m->light_on = msg.b; break;
-	case MSG_NAME         : copy_utf8(m->name, sizeof(m->name), ( char const * ) msg.ptr); break;
-	case MSG_PASSWORD     : m->pass_chars = utf8_chars(( char const * ) msg.ptr); break;
+	case MSG_NAME :
+		free(m->name);
+		m->name = msg.ptr ? strdup(( char const * ) msg.ptr) : NULL;
+		break;
+	case MSG_PASSWORD : m->pass_chars = msg.i; break;
 	case MSG_QUANTITY     : m->quantity = msg.d; break;
 	case MSG_BAR_CLOSE :
 		if (msg.i >= 0 && msg.i < BAR_COUNT) m->bar_open [msg.i] = false;
@@ -64,24 +65,8 @@ static void update(void *model, FxMsg msg) {
 	case MSG_SPLIT_PRIMARY : m->split_action = 1; break;
 	case MSG_SPLIT_MENU    : m->split_action = msg.i + 2; break;
 	case MSG_TAB_SELECT    : m->tab_sel = msg.i; break;
-	case MSG_TAB_CLOSE :
-		if (msg.i >= 0 && msg.i < m->tab_count && m->tab_count > 1) {
-			memmove(
-			  &m->tab_ids [msg.i], &m->tab_ids [msg.i + 1], sizeof(int) * ( size_t ) (m->tab_count - msg.i - 1)
-			);
-			m->tab_count--;
-			if (m->tab_sel >= m->tab_count) m->tab_sel = m->tab_count - 1;
-			m->tab_gen++;
-		}
-		break;
-	case MSG_TAB_ADD :
-		if (m->tab_count < 8) {
-			m->tab_ids [m->tab_count] = m->next_tab_id++;
-			m->tab_sel                = m->tab_count;
-			m->tab_count++;
-			m->tab_gen++;
-		}
-		break;
+	case MSG_TAB_CLOSE : tab_close(m, msg.i); break;
+	case MSG_TAB_ADD   : tab_add(m); break;
 	case MSG_DIALOG_OPEN   : m->dialog_open = true; break;
 	case MSG_DIALOG_RESULT :
 		m->dialog_open   = false;
@@ -91,7 +76,7 @@ static void update(void *model, FxMsg msg) {
 	}
 }
 
-static FluxEl *page_view(FxUi *ui, Model const *m) {
+static XtkEl *page_view(XtkUi *ui, Model const *m) {
 	switch (m->page) {
 	case PAGE_CAT_BASIC :
 		return page_category(ui, "Basic input", "Buttons, checkboxes, radios, combos, sliders, and switches.");
@@ -124,30 +109,30 @@ static FluxEl *page_view(FxUi *ui, Model const *m) {
 	}
 }
 
-static FluxEl *view(FxUi *ui, void *model) {
+static XtkEl *view(XtkUi *ui, void *model) {
 	Model *m = ( Model * ) model;
-	return fx_nav_view(
+	return xtk_nav_view(
 	  ui,
-	  (FxNavDesc) {
-		.items = kNavItems, .item_count = PAGE_COUNT, .selected = m->page, .on_select = fx_msg(MSG_NAV)
+	  (XtkNavDesc) {
+		.items = kNavItems, .item_count = PAGE_COUNT, .selected = m->page, .on_select = xtk_msg(MSG_NAV)
     },
-	  (FluxEl *[]) {
-		fx_grow(
-		  fx_scroll(
+	  (XtkEl *[]) {
+		xtk_grow(
+		  xtk_scroll(
 			ui,
-			(FluxEl *[]) {
-			  fx_keyed(
-				ui, fx_fmt(ui, "page-%d", m->page),
-				fx_column(
-				  ui, (FxStackDesc) {.padding = {36, 28, 36, 28}, .align = XENT_FLEX_ALIGN_STRETCH},
-				  (FluxEl *[]) {page_view(ui, m), FX_END}
+			(XtkEl *[]) {
+			  xtk_keyed(
+				ui, xtk_fmt(ui, "page-%d", m->page),
+				xtk_column(
+				  ui, (XtkStackDesc) {.padding = {36, 28, 36, 28}, .align = XENT_FLEX_ALIGN_STRETCH},
+				  (XtkEl *[]) {page_view(ui, m), XTK_END}
 				)
 			  ),
-			  FX_END}
+			  XTK_END}
 		  ),
 		  1.0f
 		),
-		FX_END}
+		XTK_END}
 	);
 }
 
@@ -180,5 +165,5 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	  .dark_mode = flux_theme_system_is_dark(),
 	  .backdrop  = FLUX_BACKDROP_MICA,
 	};
-	return fx_app_run(&cfg, &model, update, view);
+	return flux_run(&cfg, &model, update, view);
 }

@@ -30,7 +30,7 @@ local function flux_dep(name, url)
     return vendor
 end
 
-includes(flux_dep("xent-core", "https://github.com/Project-Xent/xent-core.git"))
+includes(flux_dep("xent-kit", "https://github.com/Project-Xent/xent-kit.git"))
 includes(flux_dep("cwinrt", "https://github.com/Project-Xent/cwinrt.git"))
 
 add_defines("COBJMACROS")
@@ -42,7 +42,7 @@ target("fluxent")
     -- Granular cwinrt deps instead of the `cwinrt` umbrella: the umbrella pulls
     -- cwinrt-bindings-all (every generated namespace, 343 TUs). fluxent only uses
     -- Foundation + Composition (+ Interactions), so depend on just those.
-    add_deps("xent_core", "cwinrt-rt",
+    add_deps("xent_core", "xtk", "cwinrt-rt",
              "cwinrt-bindings-foundation",
              "cwinrt-bindings-composition",
              "cwinrt-bindings-interactions",
@@ -65,7 +65,7 @@ target("fluxent")
         "src/controls/draw/*.c",
         "src/controls/factory/*.c",
         "src/controls/textbox/*.c",
-        "src/fx/*.c",
+        "src/bridge/*.c",
         "src/graphics/*.c",
         "src/input/*.c",
         "src/popup/*.c",
@@ -124,35 +124,35 @@ target("test_fx_reconcile")
     set_kind("binary")
     add_deps("fluxent")
     add_files("examples/tests/test_fx_reconcile.c")
-    add_includedirs("include", "src", "src/fx")
+    add_includedirs("include", "src", "src/bridge")
 target_end()
 
 target("test_fx_rows")
     set_kind("binary")
     add_deps("fluxent")
     add_files("examples/tests/test_fx_rows.c")
-    add_includedirs("include", "src", "src/fx")
+    add_includedirs("include", "src", "src/bridge")
 target_end()
 
 target("test_fx_probe")
     set_kind("binary")
     add_deps("fluxent")
     add_files("examples/tests/test_fx_probe.c")
-    add_includedirs("include", "src", "src/fx")
+    add_includedirs("include", "src", "src/bridge")
 target_end()
 
 target("test_fx_crossaxis")
     set_kind("binary")
     add_deps("fluxent")
     add_files("examples/tests/test_fx_crossaxis.c")
-    add_includedirs("include", "src", "src/fx")
+    add_includedirs("include", "src", "src/bridge")
 target_end()
 
 target("test_fx_grow_wrap")
     set_kind("binary")
     add_deps("fluxent")
     add_files("examples/tests/test_fx_grow_wrap.c")
-    add_includedirs("include", "src", "src/fx")
+    add_includedirs("include", "src", "src/bridge")
 target_end()
 
 target("hello_fluxent")

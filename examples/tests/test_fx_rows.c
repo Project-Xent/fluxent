@@ -6,7 +6,7 @@
  * ids 0/1/2/5 (one frame each), lay out, and assert every surviving row has
  * identical geometry (same text width, same button offset, same height).
  */
-#include "fx_internal.h"
+#include "flux_internal.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -25,7 +25,7 @@ typedef struct Model {
 	int next_id;
 } Model;
 
-static void update(void *model, FxMsg msg) {
+static void update(void *model, XtkMsg msg) {
 	Model *m = ( Model * ) model;
 	if (msg.tag == MSG_ADD && m->row_count < 64) m->row_ids [m->row_count++] = m->next_id++;
 	if (msg.tag == MSG_REMOVE) {
@@ -38,24 +38,24 @@ static void update(void *model, FxMsg msg) {
 	}
 }
 
-static FluxEl *view(FxUi *ui, void *model) {
+static XtkEl *view(XtkUi *ui, void *model) {
 	Model   *m    = ( Model * ) model;
-	FluxEl **rows = fx_children_alloc(ui, m->row_count);
+	XtkEl **rows = xtk_children_alloc(ui, m->row_count);
 	for (int i = 0; i < m->row_count; i++) {
 		int id   = m->row_ids [i];
-		rows [i] = fx_keyed(
-		  ui, fx_fmt(ui, "row-%d", id),
-		  fx_row(
-			ui, (FxStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_CENTER},
-			(FluxEl *[]) {
-			  fx_text(ui, fx_fmt(ui, "Row #%d", id), (FxTextDesc) {0}),
-			  fx_button(ui, "Remove", (FxButtonDesc) {.on_click = fx_msg_i(MSG_REMOVE, id)}), FX_END}
+		rows [i] = xtk_keyed(
+		  ui, xtk_fmt(ui, "row-%d", id),
+		  xtk_row(
+			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_CENTER},
+			(XtkEl *[]) {
+			  xtk_text(ui, xtk_fmt(ui, "Row #%d", id), (XtkTextDesc) {0}),
+			  xtk_button(ui, "Remove", (XtkButtonDesc) {.on_click = xtk_msg_i(MSG_REMOVE, id)}), XTK_END}
 		  )
 		);
 	}
-	return fx_column(
+	return xtk_column(
 	  ui,
-	  (FxStackDesc) {
+	  (XtkStackDesc) {
 		.gap = 8, .padding = {32, 32, 32, 32}
     },
 	  rows
@@ -81,29 +81,32 @@ int main(void) {
 	xent_set_protocol(ctx, host, XENT_PROTOCOL_FLEX);
 
 	Model      m  = {0};
-	FxRuntime *rt = fx_runtime_create(ctx, store, host, NULL, &m, update, view);
+	FluxBackendCtx bctx = {.ctx = ctx, .store = store, .app = NULL, .runtime = NULL};
+	XtkBackend be = flux_xtk_backend(&bctx);
+	XtkRuntime *rt = xtk_runtime_create(ctx, &be, host, &m, update, view);
+	if (rt) bctx.runtime = rt;
 	EXPECT(rt, "runtime");
 
 	/* Interleave adds and removals so later rows mount on recycled node ids:
 	 * a recycled id must not inherit its previous occupant's style. */
 	for (int i = 0; i < 6; i++) {
-		fx_runtime_post(rt, fx_msg(MSG_ADD));
-		fx_runtime_frame(rt);
+		xtk_runtime_post(rt, xtk_msg(MSG_ADD));
+		xtk_runtime_frame(rt);
 		xent_layout(ctx, host, 640.0f, 720.0f);
 	}
 	int removals [] = {0, 1, 2};
 	for (int i = 0; i < 3; i++) {
-		fx_runtime_post(rt, fx_msg_i(MSG_REMOVE, removals [i]));
-		fx_runtime_frame(rt);
+		xtk_runtime_post(rt, xtk_msg_i(MSG_REMOVE, removals [i]));
+		xtk_runtime_frame(rt);
 		xent_layout(ctx, host, 640.0f, 720.0f);
 	}
 	for (int i = 0; i < 3; i++) {
-		fx_runtime_post(rt, fx_msg(MSG_ADD));
-		fx_runtime_frame(rt);
+		xtk_runtime_post(rt, xtk_msg(MSG_ADD));
+		xtk_runtime_frame(rt);
 		xent_layout(ctx, host, 640.0f, 720.0f);
 	}
-	fx_runtime_post(rt, fx_msg_i(MSG_REMOVE, 5));
-	fx_runtime_frame(rt);
+	xtk_runtime_post(rt, xtk_msg_i(MSG_REMOVE, 5));
+	xtk_runtime_frame(rt);
 	xent_layout(ctx, host, 640.0f, 720.0f);
 
 	EXPECT(rt->root->child_count == 5, "five rows survive");
@@ -112,7 +115,7 @@ int main(void) {
 	XentRect first_row = {0};
 	bool     ok        = true;
 	for (int i = 0; i < rt->root->child_count; i++) {
-		FxNode  *row = rt->root->children [i];
+		XtkNode *row = rt->root->children [i];
 		XentRect rr = {0}, tr = {0}, br = {0};
 		xent_get_layout_rect(ctx, row->node, &rr);
 		xent_get_layout_rect(ctx, row->children [0]->node, &tr);
@@ -136,9 +139,9 @@ int main(void) {
 	EXPECT(ok, "all rows share identical geometry");
 	( void ) first_row;
 
-	fx_runtime_destroy(rt);
+	xtk_runtime_destroy(rt);
 	flux_node_store_destroy(store);
 	xent_destroy_context(ctx);
-	printf("PASS: fx rows geometry\n");
+	printf("PASS: xtk rows geometry\n");
 	return 0;
 }

@@ -30,11 +30,11 @@ typedef struct FluxTextBoxData {
 	FluxColor      text_color;                                /**< Text foreground color */
 	FluxColor      placeholder_color;                         /**< Placeholder text color */
 	FluxColor      selection_color;                           /**< Selection highlight color */
-	uint32_t       cursor_position;                           /**< Caret position in characters */
-	uint32_t       selection_start;                           /**< Selection anchor position */
-	uint32_t       selection_end;                             /**< Selection active end */
+	uint32_t       cursor_position;                           /**< Caret position (UTF-8 byte offset) */
+	uint32_t       selection_start;                           /**< Selection anchor (UTF-8 byte offset) */
+	uint32_t       selection_end;                             /**< Selection active end (UTF-8 byte offset) */
 	float          scroll_offset_x;                           /**< Horizontal scroll offset */
-	uint32_t       max_length;                                /**< Max characters (0 = unlimited) */
+	uint32_t       max_length;                                /**< Max length in UTF-8 bytes (0 = unlimited) */
 	bool           enabled;                                   /**< Is text box interactive? */
 	bool           readonly;                                  /**< Read-only mode (selectable but not editable) */
 	bool           multiline;                                 /**< Allow newlines */

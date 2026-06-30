@@ -32,6 +32,15 @@ typedef struct FluxFlyout FluxFlyout;
 XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, FluxControlType type);
 
 /**
+ * @brief Roll back a node whose component-data allocation failed.
+ *
+ * Removes the node's store entry, destroys the xent node, and returns
+ * XENT_NODE_INVALID — so a create path never publishes a half-built node on OOM.
+ * free() the (possibly NULL) component-data allocation before calling.
+ */
+XentNodeId flux_factory_fail_node(XentContext *ctx, FluxNodeStore *store, XentNodeId node);
+
+/**
  * @brief WinUI-metric default sizing for leaf controls.
  *
  * Label-driven controls get a text-derived intrinsic size (label + chrome

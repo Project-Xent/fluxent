@@ -751,7 +751,7 @@ XentNodeId flux_create_tab_view(FluxTabViewCreateInfo const *info) {
 	FluxTabViewData *tv = nd ? ( FluxTabViewData * ) calloc(1, sizeof(*tv)) : NULL;
 	if (!nd || !tv) {
 		free(tv);
-		return root;
+		return flux_factory_fail_node(info->ctx, info->store, root);
 	}
 	tv->ctx                    = info->ctx;
 	tv->store                  = info->store;

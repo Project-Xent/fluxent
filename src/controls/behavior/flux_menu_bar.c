@@ -101,7 +101,7 @@ XentNodeId flux_create_menu_bar(FluxMenuBarCreateInfo const *info) {
 	FluxMenuBarData *d  = nd ? ( FluxMenuBarData * ) calloc(1, sizeof(*d)) : NULL;
 	if (!nd || !d) {
 		free(d);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	d->ctx                     = info->ctx;
 	d->store                   = info->store;

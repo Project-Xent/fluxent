@@ -76,10 +76,22 @@ XentNodeId flux_factory_create_node(XentContext *ctx, FluxNodeStore *store, Xent
 	if (parent != XENT_NODE_INVALID) xent_append_child(ctx, parent, node);
 
 	FluxNodeData *nd = flux_node_store_get_or_create(store, node);
-	if (nd) nd->component_type = type;
+	if (!nd) {
+		xent_destroy_node(ctx, node);
+		return XENT_NODE_INVALID;
+	}
+	nd->component_type = type;
 	xent_set_userdata(ctx, node, nd);
 
 	return node;
+}
+
+/* Roll back a node whose component-data allocation failed: drop its store entry,
+ * detach + destroy the xent node, and report failure — never a half-built node. */
+XentNodeId flux_factory_fail_node(XentContext *ctx, FluxNodeStore *store, XentNodeId node) {
+	flux_node_store_remove(store, node);
+	xent_destroy_node(ctx, node);
+	return XENT_NODE_INVALID;
 }
 
 XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
@@ -92,7 +104,7 @@ XentNodeId flux_create_button(FluxButtonCreateInfo const *info) {
 	FluxButtonData *bd = nd ? ( FluxButtonData * ) calloc(1, sizeof(FluxButtonData)) : NULL;
 	if (!nd || !bd) {
 		free(bd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	bd->label                  = flux_str_dup(info->label);
 	bd->font_size              = 14.0f;
@@ -128,7 +140,7 @@ XentNodeId flux_create_dropdown_button(FluxDropDownButtonCreateInfo const *info)
 	FluxButtonData *bd = nd ? ( FluxButtonData * ) calloc(1, sizeof(FluxButtonData)) : NULL;
 	if (!nd || !bd) {
 		free(bd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	bd->label                  = flux_str_dup(info->label);
 	bd->icon_name              = flux_str_dup(info->icon_name);
@@ -167,7 +179,7 @@ XentNodeId flux_create_text(FluxTextCreateInfo const *info) {
 	FluxTextData *td = nd ? ( FluxTextData * ) calloc(1, sizeof(FluxTextData)) : NULL;
 	if (!nd || !td) {
 		free(td);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	td->content                = flux_str_dup(info->content);
 	td->font_size              = info->font_size > 0.0f ? info->font_size : 14.0f;
@@ -294,7 +306,7 @@ XentNodeId flux_create_slider(FluxSliderCreateInfo const *info) {
 	FluxSliderInputData *sid = nd ? ( FluxSliderInputData * ) calloc(1, sizeof(FluxSliderInputData)) : NULL;
 	if (!nd || !sid) {
 		free(sid);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	/* WinUI Slider defaults (Slider_Partial.h / DependencyProperty.cpp):
 	 * StepFrequency 1, SmallChange 1, LargeChange 10, TickFrequency 0,
@@ -364,7 +376,7 @@ static XentNodeId create_toggle_node(FluxToggleCreateInfo const *info, FluxContr
 	FluxCheckboxData *cd = nd ? ( FluxCheckboxData * ) calloc(1, sizeof(FluxCheckboxData)) : NULL;
 	if (!nd || !cd) {
 		free(cd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	cd->label                  = flux_str_dup(info->label);
 	cd->state                  = info->checked ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED;
@@ -409,7 +421,7 @@ XentNodeId flux_create_progress(FluxProgressCreateInfo const *info) {
 	FluxProgressData *pd = nd ? ( FluxProgressData * ) calloc(1, sizeof(FluxProgressData)) : NULL;
 	if (!nd || !pd) {
 		free(pd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	pd->value                  = info->value;
 	pd->max_value              = info->max_value;
@@ -434,7 +446,7 @@ XentNodeId flux_create_progress_ring(FluxProgressCreateInfo const *info) {
 	FluxProgressRingData *pd = nd ? ( FluxProgressRingData * ) calloc(1, sizeof(FluxProgressRingData)) : NULL;
 	if (!nd || !pd) {
 		free(pd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	pd->value                  = info->value;
 	pd->max_value              = info->max_value;
@@ -485,7 +497,7 @@ XentNodeId flux_create_hyperlink(FluxHyperlinkCreateInfo const *info) {
 	FluxHyperlinkData *hd = nd ? ( FluxHyperlinkData * ) calloc(1, sizeof(FluxHyperlinkData)) : NULL;
 	if (!nd || !hd) {
 		free(hd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	hd->label                  = flux_str_dup(info->label);
 	hd->url                    = flux_str_dup(info->url);
@@ -532,7 +544,7 @@ XentNodeId flux_create_image(FluxImageCreateInfo const *info) {
 	FluxImageData *im = nd ? ( FluxImageData * ) calloc(1, sizeof(FluxImageData)) : NULL;
 	if (!nd || !im) {
 		free(im);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	im->source                 = flux_str_dup(info->source);
 	im->stretch                = info->stretch;
@@ -566,7 +578,7 @@ XentNodeId flux_create_scroll(FluxContainerCreateInfo const *info) {
 	FluxScrollData *sd = nd ? ( FluxScrollData * ) calloc(1, sizeof(FluxScrollData)) : NULL;
 	if (!nd || !sd) {
 		free(sd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	sd->h_vis                  = FLUX_SCROLL_AUTO;
 	sd->v_vis                  = FLUX_SCROLL_AUTO;
@@ -595,7 +607,7 @@ XentNodeId flux_create_info_badge(FluxInfoBadgeCreateInfo const *info) {
 	FluxInfoBadgeData *bd = nd ? ( FluxInfoBadgeData * ) calloc(1, sizeof(FluxInfoBadgeData)) : NULL;
 	if (!nd || !bd) {
 		free(bd);
-		return node;
+		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	bd->mode                   = info->mode;
 	bd->value                  = info->value;

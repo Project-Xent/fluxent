@@ -777,7 +777,7 @@ XentNodeId flux_create_nav_view(FluxNavViewCreateInfo const *info) {
 	FluxNavViewData *d  = nd ? ( FluxNavViewData * ) calloc(1, sizeof(*d)) : NULL;
 	if (!nd || !d) {
 		free(d);
-		return root;
+		return flux_factory_fail_node(info->ctx, info->store, root);
 	}
 
 	nav_init_data(d, info, root);

@@ -15,6 +15,16 @@
  * - controls/flux_progress_data.h  — FluxProgressData, FluxProgressRingData
  * - controls/flux_image_data.h     — FluxImageData
  * - controls/flux_info_badge_data.h — FluxInfoBadgeData, FluxInfoBadgeMode
+ * - controls/flux_info_bar_data.h  — FluxInfoBarData, FluxInfoBarSeverity
+ * - controls/flux_expander_data.h  — FluxExpanderData
+ * - controls/flux_combo_box_data.h — FluxComboBoxData
+ * - controls/flux_content_dialog_data.h — FluxDialogResult
+ * - controls/flux_menu_bar_data.h  — FluxMenuBarData, FluxMenuBarItem
+ * - controls/flux_nav_view_data.h  — FluxNavViewData, FluxNavViewItem
+ * - controls/flux_tab_view_data.h  — FluxTabViewData, FluxTabViewItem
+ *
+ * RadioButton and ToggleSwitch deliberately share FluxCheckboxData (the toggle
+ * family — label + FluxCheckState); they are constructed via FluxToggleCreateInfo.
  */
 #ifndef FLUX_COMPONENT_DATA_H
 #define FLUX_COMPONENT_DATA_H
@@ -32,5 +42,8 @@
 #include "controls/flux_expander_data.h"
 #include "controls/flux_combo_box_data.h"
 #include "controls/flux_content_dialog_data.h"
+#include "controls/flux_menu_bar_data.h"
+#include "controls/flux_nav_view_data.h"
+#include "controls/flux_tab_view_data.h"
 
 #endif

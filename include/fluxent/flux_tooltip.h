@@ -23,7 +23,6 @@ extern "C"
 #endif
 
 #define FLUX_TOOLTIP_DELAY_MS        800
-#define FLUX_TOOLTIP_RESHOW_DELAY_MS 0
 #define FLUX_TOOLTIP_MAX_WIDTH       320.0f
 #define FLUX_TOOLTIP_FONT_SIZE       12.0f
 #define FLUX_TOOLTIP_PAD_LEFT        9.0f

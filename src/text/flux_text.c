@@ -70,7 +70,6 @@ typedef struct TextLayoutRequest {
 
 struct FluxTextRenderer {
 	IDWriteFactory       *factory;
-	IDWriteTextFormat    *default_format;
 	wchar_t              *default_font;
 	float                 default_size;
 	FluxFormatCacheEntry  format_cache [FLUX_FORMAT_CACHE_SIZE];

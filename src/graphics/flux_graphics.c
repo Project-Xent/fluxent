@@ -337,8 +337,8 @@ void flux_graphics_end_draw(FluxGraphics *gfx) {
 
 void flux_graphics_present(FluxGraphics *gfx, bool vsync) {
 	if (!gfx || !gfx->swap_chain) return;
-	( void ) vsync;
-	HRESULT hr = IDXGISwapChain_Present(( IDXGISwapChain * ) gfx->swap_chain, 0, 0);
+	/* SyncInterval 1 blocks for vblank (vsync on); 0 presents immediately. */
+	HRESULT hr = IDXGISwapChain_Present(( IDXGISwapChain * ) gfx->swap_chain, vsync ? 1u : 0u, 0);
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 		( void ) flux_graphics_handle_device_change(gfx);
 	else if (FAILED(hr)) gfx->last_hr = hr;

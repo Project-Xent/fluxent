@@ -195,7 +195,9 @@ void flux_dmanip_destroy(FluxDManip *dm) {
 bool flux_dmanip_tick(FluxDManip *dm) {
 	if (!dm || !dm->update_mgr) return false;
 	IDirectManipulationUpdateManager_Update(dm->update_mgr, NULL);
-	return false;
+	/* Honour the documented contract: report whether any viewport is still
+	 * running/inertial so the caller keeps pumping frames. */
+	return dm->live_viewports > 0;
 }
 
 #define FLUX_DM_CONFIG_PAN                                   \

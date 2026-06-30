@@ -12,8 +12,8 @@ typedef struct ProgressRingArc {
 
 static bool
 progress_ring_angles(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, float *start_rad, float *sweep_rad) {
-	if (!snap->indeterminate && snap->max_value > 0.0f) {
-		float pct = snap->current_value / snap->max_value;
+	if (!snap->u.progress.indeterminate && snap->u.progress.max_value > 0.0f) {
+		float pct = snap->u.progress.current_value / snap->u.progress.max_value;
 		if (pct < 0.0f) pct = 0.0f;
 		if (pct > 1.0f) pct = 1.0f;
 		if (pct < 0.001f) return false;

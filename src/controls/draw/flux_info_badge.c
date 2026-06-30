@@ -35,9 +35,9 @@ static void draw_info_badge_icon(
 	float cy         = bounds->y + bounds->h * 0.5f;
 	flux_fill_ellipse(rc, &(FluxEllipseSpec) {cx, cy, badge_r, badge_r}, accent);
 
-	if (!snap->icon_name || !snap->icon_name [0] || !rc->text) return;
+	if (!snap->u.info_badge.icon_name || !snap->u.info_badge.icon_name [0] || !rc->text) return;
 
-	wchar_t const *icon_wc       = flux_icon_lookup(snap->icon_name);
+	wchar_t const *icon_wc       = flux_icon_lookup(snap->u.info_badge.icon_name);
 	char           icon_utf8 [8] = {0};
 	if (icon_wc) flux_icon_to_utf8(icon_wc, icon_utf8, sizeof(icon_utf8));
 	if (!icon_utf8 [0]) return;
@@ -61,7 +61,7 @@ static void draw_info_badge_number(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxColor accent,
   FluxColor text_color
 ) {
-	int  value = ( int ) (snap->current_value + 0.5f);
+	int  value = snap->u.info_badge.value;
 	char num_buf [16];
 	snprintf(num_buf, sizeof(num_buf), "%d", value);
 
@@ -85,13 +85,15 @@ void flux_draw_info_badge(
 	FluxColor              accent     = t ? t->accent_default : ft_accent_default();
 	FluxColor              text_color = t ? t->text_on_accent_primary : ft_text_on_accent_primary();
 
-	if (snap->is_checked) {
+	switch (snap->u.info_badge.mode) {
+	case FLUX_BADGE_DOT:
 		draw_info_badge_dot(rc, bounds, accent);
-		return;
-	}
-	if (snap->indeterminate) {
+		break;
+	case FLUX_BADGE_ICON:
 		draw_info_badge_icon(rc, snap, bounds, accent, text_color);
-		return;
+		break;
+	case FLUX_BADGE_NUMBER:
+		if (snap->u.info_badge.value >= 1) draw_info_badge_number(rc, snap, bounds, accent, text_color);
+		break;
 	}
-	if (snap->current_value >= 1.0f) draw_info_badge_number(rc, snap, bounds, accent, text_color);
 }

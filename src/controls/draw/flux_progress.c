@@ -27,8 +27,8 @@ static void draw_progress_determinate(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, float cy, float track_h,
   float radius
 ) {
-	float max_val = snap->max_value > 0.0f ? snap->max_value : 1.0f;
-	float pct     = snap->current_value / max_val;
+	float max_val = snap->u.progress.max_value > 0.0f ? snap->u.progress.max_value : 1.0f;
+	float pct     = snap->u.progress.current_value / max_val;
 	if (pct < 0.0f) pct = 0.0f;
 	if (pct > 1.0f) pct = 1.0f;
 
@@ -53,7 +53,7 @@ void flux_draw_progress(
 	FluxColor              track_color = t ? t->ctrl_alt_fill_tertiary : flux_color_rgba(0, 0, 0, 30);
 	flux_fill_rounded_rect(rc, &track, radius, track_color);
 
-	if (snap->indeterminate) {
+	if (snap->u.progress.indeterminate) {
 		draw_progress_indeterminate(rc, snap, bounds, cy, track_h, radius);
 		return;
 	}

@@ -93,10 +93,10 @@ static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentR
 	cmd.bounds.h        = rect->h;
 	cmd.phase           = FLUX_PHASE_MAIN;
 	cmd.clip_action     = FLUX_CLIP_PUSH;
-	cmd.scroll_x        = frame->snapshot.scroll.x;
-	cmd.scroll_y        = frame->snapshot.scroll.y;
-	frame->scroll_off_x = frame->snapshot.scroll.x;
-	frame->scroll_off_y = frame->snapshot.scroll.y;
+	cmd.scroll_x        = frame->snapshot.u.scroll.x;
+	cmd.scroll_y        = frame->snapshot.u.scroll.y;
+	frame->scroll_off_x = frame->snapshot.u.scroll.x;
+	frame->scroll_off_y = frame->snapshot.u.scroll.y;
 	frame->viewport_w   = rect->w;
 	frame->viewport_h   = rect->h;
 	flux_command_buffer_push(&eng->commands, &cmd);

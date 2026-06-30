@@ -17,14 +17,14 @@ void flux_draw_image(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	( void ) state;
-	if (!snap->text_content || !rc->d2d) return;
+	if (!snap->u.image.text_content || !rc->d2d) return;
 
 	float nw = 0.0f, nh = 0.0f;
-	void *bmp = flux_image_cache_acquire(rc->d2d, snap->text_content, &nw, &nh);
+	void *bmp = flux_image_cache_acquire(rc->d2d, snap->u.image.text_content, &nw, &nh);
 	if (!bmp) return;
 
 	FluxRect    sb   = flux_snap_bounds(bounds, 1.0f, 1.0f);
-	FluxRect    dest = image_dest(&sb, nw, nh, ( FluxImageStretch ) ( int ) (snap->current_value + 0.5f));
+	FluxRect    dest = image_dest(&sb, nw, nh, snap->u.image.stretch);
 
 	D2D1_RECT_F clip = flux_d2d_rect(&sb);
 	ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(rc), &clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);

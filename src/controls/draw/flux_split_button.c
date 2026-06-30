@@ -88,7 +88,7 @@ void flux_draw_split_button(
 	FluxRect               sb         = flux_snap_bounds(bounds, 1.0f, 1.0f);
 	float                  radius     = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
 	FluxThemeColors const *t          = rc->theme ? rc->theme : flux_theme_default_colors();
-	bool                   checked    = snap->is_checked;
+	bool                   checked    = snap->u.button.is_checked;
 	bool                   enabled    = state->enabled;
 
 	float                  primary_w  = flux_maxf(0.0f, sb.w - FLUX_SB_SECONDARY_W - FLUX_SB_DIVIDER_W);

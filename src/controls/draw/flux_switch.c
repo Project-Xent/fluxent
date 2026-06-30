@@ -118,7 +118,7 @@ void flux_draw_switch(
 	float                  cy         = bounds->y + bounds->h * 0.5f;
 	FluxRect               track      = {bounds->x, cy - track_h * 0.5f, track_w, track_h};
 
-	bool                   on         = (snap->check_state == FLUX_CHECK_CHECKED);
+	bool                   on         = (snap->u.sw.check_state == FLUX_CHECK_CHECKED);
 
 	SwitchAnim             anim       = switch_update_anim(rc, snap, state, on);
 	FluxColor              track_fill = switch_track_fill(switch_track_colors(state, t), anim);

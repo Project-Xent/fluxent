@@ -11,13 +11,13 @@ void flux_draw_text(
 
 	if (!rc->text) return;
 
-	char const *content = snap->text_content;
+	char const *content = snap->u.text.text_content;
 	if (!content || !content [0]) return;
 
 	FluxThemeColors const *t = rc->theme;
 
 	FluxColor              text_color;
-	if (flux_color_af(snap->text_color) > 0.0f) text_color = snap->text_color;
+	if (flux_color_af(snap->u.text.text_color) > 0.0f) text_color = snap->u.text.text_color;
 	else text_color = t ? t->text_primary : flux_color_rgba(0, 0, 0, 0xe4);
 
 	if (!state->enabled) text_color = t ? t->text_disabled : flux_color_rgba(0, 0, 0, 0x5c);
@@ -26,13 +26,13 @@ void flux_draw_text(
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_family = snap->font_family;
+	ts.font_family = snap->u.text.font_family;
 	ts.font_size   = font_size;
-	ts.font_weight = snap->font_weight > 0 ? snap->font_weight : FLUX_FONT_REGULAR;
-	ts.text_align  = snap->text_alignment;
-	ts.vert_align  = snap->text_vert_alignment;
+	ts.font_weight = snap->u.text.font_weight > 0 ? snap->u.text.font_weight : FLUX_FONT_REGULAR;
+	ts.text_align  = snap->u.text.text_alignment;
+	ts.vert_align  = snap->u.text.text_vert_alignment;
 	ts.color       = text_color;
-	ts.word_wrap   = snap->word_wrap;
+	ts.word_wrap   = snap->u.text.word_wrap;
 
 	flux_text_draw(rc->text, ( ID2D1RenderTarget * ) rc->d2d, content, bounds, &ts);
 }

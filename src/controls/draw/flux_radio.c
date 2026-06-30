@@ -86,7 +86,7 @@ static RadioColors radio_colors(bool checked, FluxControlState const *state, Rad
 static void draw_radio_label(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	if (!snap->label || !snap->label [0] || !rc->text) return;
+	if (!snap->u.check.label || !snap->u.check.label [0] || !rc->text) return;
 
 	FluxThemeColors const *t        = rc->theme;
 	float const            gap      = 8.0f;
@@ -104,7 +104,7 @@ static void draw_radio_label(
 	ts.vert_align  = FLUX_TEXT_VCENTER;
 	ts.color       = label_color;
 	ts.word_wrap   = false;
-	flux_text_draw(rc->text, ( ID2D1RenderTarget * ) rc->d2d, snap->label, &text_rect, &ts);
+	flux_text_draw(rc->text, ( ID2D1RenderTarget * ) rc->d2d, snap->u.check.label, &text_rect, &ts);
 }
 
 static void draw_radio_glyph(RadioGlyphDraw const *draw) {
@@ -132,7 +132,7 @@ void flux_draw_radio(
 	float const            cy      = bounds->y + bounds->h * 0.5f;
 	float const            cx      = bounds->x + outer_r;
 
-	bool                   checked = (snap->check_state == FLUX_CHECK_CHECKED);
+	bool                   checked = (snap->u.check.check_state == FLUX_CHECK_CHECKED);
 	RadioAnim              anim    = radio_update_anim(rc, snap, state, checked);
 	RadioColors            colors  = radio_colors(checked, state, anim, t);
 

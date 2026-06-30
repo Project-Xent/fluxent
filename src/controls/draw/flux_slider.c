@@ -58,12 +58,12 @@ static void slider_update_animation(
  * position); Value stays on the snap grid and the thumb glides back to it on
  * release (WinUI Slider's IntermediateValue contract). */
 static SliderGeom slider_geom(FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state) {
-	float      value = state->pressed ? snap->slider_intermediate : snap->current_value;
+	float      value = state->pressed ? snap->u.slider.slider_intermediate : snap->u.slider.current_value;
 	SliderGeom g;
 	g.track_h     = 4.0f;
 	g.thumb_outer = 10.0f;
-	g.range       = snap->max_value - snap->min_value;
-	g.pct         = g.range > 0.0f ? (value - snap->min_value) / g.range : 0.0f;
+	g.range       = snap->u.slider.max_value - snap->u.slider.min_value;
+	g.pct         = g.range > 0.0f ? (value - snap->u.slider.min_value) / g.range : 0.0f;
 	g.pct         = slider_clampf(g.pct, 0.0f, 1.0f);
 	g.cy          = bounds->y + bounds->h * 0.5f;
 	g.track_left  = bounds->x + g.thumb_outer;
@@ -89,9 +89,9 @@ static void slider_draw_tick_run(
 static void slider_draw_ticks(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, SliderGeom const *g, FluxControlState const *state
 ) {
-	float frequency = snap->slider_tick_frequency;
+	float frequency = snap->u.slider.slider_tick_frequency;
 	if (frequency <= 0.0f || g->range <= 0.0f || g->track_w <= 0.0f) return;
-	FluxTickPlacement placement = ( FluxTickPlacement ) snap->slider_tick_placement;
+	FluxTickPlacement placement = ( FluxTickPlacement ) snap->u.slider.slider_tick_placement;
 	if (placement == FLUX_TICK_NONE) return;
 
 	float num_intervals = fmaxf(1.0f, g->range / frequency);

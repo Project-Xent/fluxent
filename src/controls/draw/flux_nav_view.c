@@ -34,8 +34,8 @@ void flux_draw_nav_view(
 	FluxRect               pb = flux_snap_bounds(bounds, 1.0f, 1.0f);
 
 	/* Drop shadow cast onto the content as the overlay pane slides in (Minimal). */
-	if (snap->nav_shadow_opacity > 0.01f) {
-		float    a  = 0.22f * snap->nav_shadow_opacity;
+	if (snap->u.nav.nav_shadow_opacity > 0.01f) {
+		float    a  = 0.22f * snap->u.nav.nav_shadow_opacity;
 		FluxRect sh = {pb.x + pb.w, pb.y, FLUX_NAV_PANE_SHADOW_W, pb.h};
 		flux_fill_h_gradient(
 		  rc, &sh, flux_color_rgba(0, 0, 0, ( int ) (a * 255.0f + 0.5f)), flux_color_rgba(0, 0, 0, 0)
@@ -43,7 +43,7 @@ void flux_draw_nav_view(
 	}
 
 	flux_fill_rect(rc, &pb, t->solid_background);
-	if (snap->nav_top) {
+	if (snap->u.nav.nav_top) {
 		/* Top bar: 1px separator along the bottom edge instead of the right. */
 		float ey = pb.y + pb.h - FLUX_STROKE_WIDTH * 0.5f;
 		flux_draw_line(rc, &(FluxLineSpec) {pb.x, ey, pb.x + pb.w, ey}, t->divider_stroke_default, FLUX_STROKE_WIDTH);
@@ -55,14 +55,14 @@ void flux_draw_nav_view(
 }
 
 void flux_draw_nav_view_overlay(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds) {
-	if (snap->nav_ind_opacity <= 0.01f) return;
+	if (snap->u.nav.nav_ind_opacity <= 0.01f) return;
 	FluxThemeColors const *t      = rc->theme ? rc->theme : flux_theme_default_colors();
-	float                  lead   = snap->nav_ind_top;
-	float                  extent = snap->nav_ind_bottom - snap->nav_ind_top;
+	float                  lead   = snap->u.nav.nav_ind_top;
+	float                  extent = snap->u.nav.nav_ind_bottom - snap->u.nav.nav_ind_top;
 	if (extent <= 0.0f) return;
 
-	FluxColor fill = nav_with_opacity(t->accent_default, snap->nav_ind_opacity);
-	if (snap->nav_top) {
+	FluxColor fill = nav_with_opacity(t->accent_default, snap->u.nav.nav_ind_opacity);
+	if (snap->u.nav.nav_top) {
 		/* Horizontal pill at the bottom of the bar (16x3, animated along X). */
 		FluxRect pill = {bounds->x + lead, bounds->y + bounds->h - 4.0f - FLUX_NAV_TOP_IND_H, extent, FLUX_NAV_TOP_IND_H};
 		flux_fill_rounded_rect(rc, &pill, FLUX_NAV_INDICATOR_R, fill);
@@ -99,7 +99,7 @@ static void nav_item_draw_label(FluxRenderContext const *rc, FluxRect const *ib,
  * line with 3,0,4,0 margins on the Top bar). */
 static void nav_item_draw_separator(FluxRenderContext const *rc, FluxRect const *ib, FluxRenderSnapshot const *snap,
                                     FluxThemeColors const *t) {
-	if (snap->nav_top) {
+	if (snap->u.nav.nav_top) {
 		float x  = ib->x + 3.0f + 0.5f;
 		float y0 = ib->y + (ib->h - FLUX_NAV_SEP_TOP_LINE_H) * 0.5f;
 		flux_draw_line(rc, &(FluxLineSpec) {x, y0, x, y0 + FLUX_NAV_SEP_TOP_LINE_H}, t->divider_stroke_default, 1.0f);
@@ -113,8 +113,8 @@ static void nav_item_draw_separator(FluxRenderContext const *rc, FluxRect const 
  * the labels (Compact / closed pane). */
 static void nav_item_draw_header(FluxRenderContext const *rc, FluxRect const *ib, FluxRenderSnapshot const *snap,
                                  FluxThemeColors const *t) {
-	if (!snap->label || !rc->text) return;
-	float         pad = snap->nav_top ? 12.0f : FLUX_NAV_HEADER_PAD;
+	if (!snap->u.nav.label || !rc->text) return;
+	float         pad = snap->u.nav.nav_top ? 12.0f : FLUX_NAV_HEADER_PAD;
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
 	ts.font_size   = FLUX_NAV_HEADER_FONT;
@@ -123,7 +123,7 @@ static void nav_item_draw_header(FluxRenderContext const *rc, FluxRect const *ib
 	ts.vert_align  = FLUX_TEXT_VCENTER;
 	ts.color       = t->text_secondary;
 	FluxRect tr    = {ib->x + pad, ib->y, ib->w - pad * 2.0f, ib->h};
-	if (tr.w > 0.0f) flux_text_draw(rc->text, FLUX_RT(rc), snap->label, &tr, &ts);
+	if (tr.w > 0.0f) flux_text_draw(rc->text, FLUX_RT(rc), snap->u.nav.label, &tr, &ts);
 }
 
 void flux_draw_nav_view_item(
@@ -132,15 +132,15 @@ void flux_draw_nav_view_item(
 	FluxThemeColors const *t        = rc->theme ? rc->theme : flux_theme_default_colors();
 	FluxRect               ib       = flux_snap_bounds(bounds, 1.0f, 1.0f);
 	if (ib.w < 1.0f || ib.h < 1.0f) return; /* hidden (e.g. the toggle in Top mode) */
-	if (snap->nav_item_kind == FLUX_NAV_ITEM_SEPARATOR) {
+	if (snap->u.nav.nav_item_kind == FLUX_NAV_ITEM_SEPARATOR) {
 		nav_item_draw_separator(rc, &ib, snap, t);
 		return;
 	}
-	if (snap->nav_item_kind == FLUX_NAV_ITEM_HEADER) {
+	if (snap->u.nav.nav_item_kind == FLUX_NAV_ITEM_HEADER) {
 		nav_item_draw_header(rc, &ib, snap, t);
 		return;
 	}
-	bool                   selected = snap->is_checked;
+	bool                   selected = snap->u.nav.is_checked;
 
 	FluxColor              fill     = nav_item_fill(state, selected, t);
 	if (flux_color_af(fill) > 0.0f) flux_fill_rounded_rect(rc, &ib, FLUX_CORNER_RADIUS, fill);
@@ -150,20 +150,20 @@ void flux_draw_nav_view_item(
 	/* Hierarchical children indent their content by 31px per depth
 	 * (NavigationViewItemBase::c_itemIndentation); the chrome stays full-width. */
 	FluxRect ci  = ib;
-	ci.x        += ( float ) snap->nav_depth * 31.0f;
-	ci.w        -= ( float ) snap->nav_depth * 31.0f;
+	ci.x        += ( float ) snap->u.nav.nav_depth * 31.0f;
+	ci.w        -= ( float ) snap->u.nav.nav_depth * 31.0f;
 
-	wchar_t const *glyph = flux_icon_lookup(snap->icon_name);
+	wchar_t const *glyph = flux_icon_lookup(snap->u.nav.icon_name);
 	if (glyph) {
 		FluxRect icon = {ci.x, ci.y, FLUX_NAV_ICON_BOX, ci.h};
 		flux_button_draw_chevron(rc, &icon, glyph, FLUX_NAV_ICON_GLYPH, fg);
 	}
 
-	nav_item_draw_label(rc, &ci, snap->label, fg);
+	nav_item_draw_label(rc, &ci, snap->u.nav.label, fg);
 
 	/* Expand chevron at the trailing edge while children are not flyout-only. */
-	if (snap->nav_has_children && (snap->label || snap->nav_top)) {
+	if (snap->u.nav.nav_has_children && (snap->u.nav.label || snap->u.nav.nav_top)) {
 		FluxRect cb = {ib.x + ib.w - 28.0f, ib.y, 16.0f, ib.h};
-		flux_button_draw_chevron(rc, &cb, snap->nav_expanded ? L"\xE70E" : L"\xE70D", 12.0f, fg);
+		flux_button_draw_chevron(rc, &cb, snap->u.nav.nav_expanded ? L"\xE70E" : L"\xE70D", 12.0f, fg);
 	}
 }

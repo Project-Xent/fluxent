@@ -119,8 +119,8 @@ static ButtonColors button_colors_default(FluxControlState const *state, FluxThe
 static ButtonColors resolve_button_colors(
   FluxRenderSnapshot const *snap, FluxControlState const *state, bool force_accent, FluxThemeColors const *t
 ) {
-	bool is_accent = force_accent || (snap->button_style == FLUX_BUTTON_ACCENT);
-	bool is_subtle = (snap->button_style == FLUX_BUTTON_SUBTLE || snap->button_style == FLUX_BUTTON_TEXT);
+	bool is_accent = force_accent || (snap->u.button.button_style == FLUX_BUTTON_ACCENT);
+	bool is_subtle = (snap->u.button.button_style == FLUX_BUTTON_SUBTLE || snap->u.button.button_style == FLUX_BUTTON_TEXT);
 
 	if (!state->enabled) return button_colors_disabled(is_accent, is_subtle, t);
 	if (is_accent) return button_colors_accent(state, t);
@@ -147,11 +147,11 @@ apply_user_background(FluxColor base, FluxRenderSnapshot const *snap, FluxContro
 
 static ButtonContent button_content_from_snapshot(FluxRenderSnapshot const *snap) {
 	ButtonContent content = {0};
-	content.label         = snap->label ? snap->label : snap->text_content;
+	content.label         = snap->u.button.label ? snap->u.button.label : snap->u.button.text_content;
 	content.has_text      = content.label && content.label [0];
 
-	if (snap->icon_name && snap->icon_name [0]) {
-		content.icon_wc = flux_icon_lookup(snap->icon_name);
+	if (snap->u.button.icon_name && snap->u.button.icon_name [0]) {
+		content.icon_wc = flux_icon_lookup(snap->u.button.icon_name);
 		if (content.icon_wc) flux_icon_to_utf8(content.icon_wc, content.icon_utf8, sizeof(content.icon_utf8));
 	}
 
@@ -160,7 +160,7 @@ static ButtonContent button_content_from_snapshot(FluxRenderSnapshot const *snap
 }
 
 static FluxColor button_content_text_color(FluxRenderSnapshot const *snap, FluxColor fallback) {
-	if (flux_color_af(snap->text_color) > 0.0f) return snap->text_color;
+	if (flux_color_af(snap->u.button.text_color) > 0.0f) return snap->u.button.text_color;
 	return fallback;
 }
 
@@ -355,5 +355,5 @@ void flux_draw_button(
 void flux_draw_toggle(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	render_button_common(rc, snap, bounds, state, snap->is_checked);
+	render_button_common(rc, snap, bounds, state, snap->u.button.is_checked);
 }

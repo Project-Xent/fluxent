@@ -16,7 +16,7 @@ static FluxColor dropdown_chevron_color(FluxControlState const *state, bool is_a
 void flux_draw_dropdown_button(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	FluxButtonChrome       chrome  = flux_button_paint_chrome(rc, snap, bounds, state, snap->is_checked);
+	FluxButtonChrome       chrome  = flux_button_paint_chrome(rc, snap, bounds, state, snap->u.button.is_checked);
 	FluxThemeColors const *theme   = rc->theme ? rc->theme : flux_theme_default_colors();
 
 	/* flux_button_draw_content insets the box by the standard symmetric button

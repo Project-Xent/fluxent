@@ -106,7 +106,7 @@ draw_checkbox_glyph(FluxRenderContext const *rc, FluxRect const *box, FluxColor 
 static void draw_checkbox_label(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	if (!snap->label || !snap->label [0] || !rc->text) return;
+	if (!snap->u.check.label || !snap->u.check.label [0] || !rc->text) return;
 
 	FluxThemeColors const *t         = rc->theme;
 	float                  gap       = FLUX_CHECKBOX_GAP;
@@ -125,7 +125,7 @@ static void draw_checkbox_label(
 	ts.color       = label_color;
 	ts.word_wrap   = false;
 
-	flux_text_draw(rc->text, ( ID2D1RenderTarget * ) rc->d2d, snap->label, &text_rect, &ts);
+	flux_text_draw(rc->text, ( ID2D1RenderTarget * ) rc->d2d, snap->u.check.label, &text_rect, &ts);
 }
 
 void flux_draw_checkbox(
@@ -138,7 +138,7 @@ void flux_draw_checkbox(
 	float                  cy             = bounds->y + bounds->h * 0.5f;
 	FluxRect               box            = {bounds->x, cy - box_size * 0.5f, box_size, box_size};
 
-	bool                   checked        = (snap->check_state == FLUX_CHECK_CHECKED);
+	bool                   checked        = (snap->u.check.check_state == FLUX_CHECK_CHECKED);
 	float                  check_progress = checkbox_update_anim(rc, snap, state, checked);
 	CheckboxColors         colors         = checkbox_colors(state, t);
 

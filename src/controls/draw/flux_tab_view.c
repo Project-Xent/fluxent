@@ -185,17 +185,17 @@ static void tab_draw_icon_label(
   FluxRenderContext const *rc, FluxRect const *b, FluxRenderSnapshot const *snap, FluxColor fg, bool selected
 ) {
 	float          x     = b->x + FLUX_TAB_PAD_L;
-	wchar_t const *glyph = flux_icon_lookup(snap->icon_name);
+	wchar_t const *glyph = flux_icon_lookup(snap->u.tab.icon_name);
 	if (glyph) {
 		FluxRect ib = {x, b->y, FLUX_TAB_ICON, b->h};
 		flux_button_draw_chevron(rc, &ib, glyph, FLUX_TAB_ICON, fg);
 		x += FLUX_TAB_ICON + FLUX_TAB_ICON_GAP;
 	}
 
-	float close_w    = snap->tab_closable ? FLUX_TAB_CLOSE_MARGIN_L + FLUX_TAB_CLOSE_W + FLUX_TAB_PAD_R
+	float close_w    = snap->u.tab.tab_closable ? FLUX_TAB_CLOSE_MARGIN_L + FLUX_TAB_CLOSE_W + FLUX_TAB_PAD_R
 	                                      : FLUX_TAB_PAD_R_NOCLOSE;
 	float text_right = b->x + b->w - close_w;
-	if (!snap->label || !rc->text || text_right <= x) return;
+	if (!snap->u.tab.label || !rc->text || text_right <= x) return;
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
@@ -209,7 +209,7 @@ static void tab_draw_icon_label(
 	 * (MinWidth) tabs never run under the close button. */
 	D2D1_RECT_F cl = flux_d2d_rect(&tr);
 	ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(rc), &cl, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-	flux_text_draw(rc->text, FLUX_RT(rc), snap->label, &tr, &ts);
+	flux_text_draw(rc->text, FLUX_RT(rc), snap->u.tab.label, &tr, &ts);
 	ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
 }
 
@@ -222,14 +222,14 @@ void flux_draw_tab_view_item(
 	 * drawing centers into the rect regardless — skip them entirely. */
 	if (b.w < 1.0f || b.h < 1.0f) return;
 
-	if (snap->tab_kind != FLUX_TAB_KIND_TAB) {
-		if (snap->tab_kind == FLUX_TAB_KIND_ADD) tab_draw_add(rc, &b, state, t);
-		else if (snap->tab_kind == FLUX_TAB_KIND_CLOSE) tab_draw_close(rc, &b, state, t);
-		else tab_draw_scroll(rc, &b, state, t, snap->tab_kind == FLUX_TAB_KIND_SCROLL_DEC);
+	if (snap->u.tab.tab_kind != FLUX_TAB_KIND_TAB) {
+		if (snap->u.tab.tab_kind == FLUX_TAB_KIND_ADD) tab_draw_add(rc, &b, state, t);
+		else if (snap->u.tab.tab_kind == FLUX_TAB_KIND_CLOSE) tab_draw_close(rc, &b, state, t);
+		else tab_draw_scroll(rc, &b, state, t, snap->u.tab.tab_kind == FLUX_TAB_KIND_SCROLL_DEC);
 		return;
 	}
 
-	bool selected = snap->is_checked;
+	bool selected = snap->u.tab.is_checked;
 	/* The selected flares extend past the rect; clip everything else to the tab. */
 	if (!selected) {
 		D2D1_RECT_F cl = flux_d2d_rect(&b);
@@ -241,6 +241,6 @@ void flux_draw_tab_view_item(
 	if (!selected && state->enabled && !state->hovered && !state->pressed) fg = t->text_secondary;
 	tab_draw_icon_label(rc, &b, snap, fg, selected);
 
-	if (snap->tab_separator) tab_draw_separator(rc, &b, t);
+	if (snap->u.tab.tab_separator) tab_draw_separator(rc, &b, t);
 	if (!selected) ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
 }

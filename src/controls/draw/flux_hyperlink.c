@@ -36,7 +36,7 @@ static FluxColor hyperlink_text_color(
 ) {
 	if (!state->enabled) return t ? t->text_disabled : ft_text_disabled();
 
-	if (flux_color_af(snap->text_color) > 0.0f) return snap->text_color;
+	if (flux_color_af(snap->u.button.text_color) > 0.0f) return snap->u.button.text_color;
 
 	FluxColor acc_n = t ? t->accent_default : ft_accent_default();
 	FluxColor acc_h = t ? t->accent_secondary : ft_accent_secondary();
@@ -59,7 +59,7 @@ static void hyperlink_draw_background(HyperlinkBackground const *bg) {
 void flux_draw_hyperlink(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	char const *label = snap->label ? snap->label : snap->text_content;
+	char const *label = snap->u.button.label ? snap->u.button.label : snap->u.button.text_content;
 	if (!label || !label [0] || !rc->text) return;
 
 	FluxRect sb      = flux_snap_bounds(bounds, 1.0f, 1.0f);

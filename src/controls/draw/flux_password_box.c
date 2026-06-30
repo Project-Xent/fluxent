@@ -55,12 +55,12 @@ pb_masked_snapshot(FluxRenderSnapshot const *snap, bool has_text, bool revealed,
 	FluxRenderSnapshot masked = *snap;
 	if (!has_text || revealed) return masked;
 
-	uint32_t text_len = ( uint32_t ) strlen(snap->text_content);
-	pb_build_mask(snap->text_content, text_len, mask_buf, ( uint32_t ) mask_cap);
-	masked.text_content         = mask_buf;
-	masked.edit.cursor_position = pb_original_offset_to_mask(snap->text_content, text_len, snap->edit.cursor_position);
-	masked.edit.selection_start = pb_original_offset_to_mask(snap->text_content, text_len, snap->edit.selection_start);
-	masked.edit.selection_end   = pb_original_offset_to_mask(snap->text_content, text_len, snap->edit.selection_end);
+	uint32_t text_len = ( uint32_t ) strlen(snap->u.textbox.text_content);
+	pb_build_mask(snap->u.textbox.text_content, text_len, mask_buf, ( uint32_t ) mask_cap);
+	masked.u.textbox.text_content = mask_buf;
+	masked.u.textbox.edit.cursor_position = pb_original_offset_to_mask(snap->u.textbox.text_content, text_len, snap->u.textbox.edit.cursor_position);
+	masked.u.textbox.edit.selection_start = pb_original_offset_to_mask(snap->u.textbox.text_content, text_len, snap->u.textbox.edit.selection_start);
+	masked.u.textbox.edit.selection_end   = pb_original_offset_to_mask(snap->u.textbox.text_content, text_len, snap->u.textbox.edit.selection_end);
 	return masked;
 }
 
@@ -129,9 +129,9 @@ void flux_draw_password_box(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	float radius      = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-	bool  has_text    = snap->text_content && snap->text_content [0];
+	bool  has_text    = snap->u.textbox.text_content && snap->u.textbox.text_content [0];
 	bool  show_reveal = state->enabled && has_text && state->focused;
-	bool  revealed    = snap->is_checked;
+	bool  revealed    = snap->u.textbox.is_checked;
 
 	float col1_w      = show_reveal ? FLUX_PASSWORD_REVEAL_BTN_W : 0.0f;
 	float col0_w      = bounds->w - col1_w;

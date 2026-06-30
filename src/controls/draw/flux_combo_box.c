@@ -16,13 +16,13 @@ void flux_draw_combo_box(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	FluxControlState st = *state;
-	if (snap->is_checked) st.pressed = true;
+	if (snap->u.combo.is_checked) st.pressed = true;
 
 	FluxButtonChrome       chrome  = flux_button_paint_chrome(rc, snap, bounds, &st, false);
 	FluxThemeColors const *t       = rc->theme ? rc->theme : flux_theme_default_colors();
 
-	bool                   has_sel = snap->text_content && snap->text_content [0];
-	char const            *text    = has_sel ? snap->text_content : snap->placeholder;
+	bool                   has_sel = snap->u.combo.text_content && snap->u.combo.text_content [0];
+	char const            *text    = has_sel ? snap->u.combo.text_content : snap->u.combo.placeholder;
 	FluxColor              color   = !state->enabled ? t->text_disabled : has_sel ? t->text_primary : t->text_secondary;
 
 	if (text && text [0] && rc->text) {

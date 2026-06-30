@@ -159,15 +159,15 @@ static TextboxDrawStyles
 textbox_make_styles(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxControlState const *state) {
 	FluxThemeColors const *t     = rc->theme;
 	float                  size  = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
-	FluxColor              color = (flux_color_af(snap->text_color) > 0.0f)
-	                               ? snap->text_color
+	FluxColor              color = (flux_color_af(snap->u.textbox.text_color) > 0.0f)
+	                               ? snap->u.textbox.text_color
 	                               : (state->enabled ? (t ? t->text_primary : flux_color_rgba(0, 0, 0, 0xe4))
 													 : (t ? t->text_disabled : flux_color_rgba(0, 0, 0, 0x5c)));
 
 	TextboxDrawStyles      styles;
 	memset(&styles, 0, sizeof(styles));
 	styles.font_size        = size;
-	styles.text.font_family = snap->font_family;
+	styles.text.font_family = snap->u.textbox.font_family;
 	styles.text.font_size   = size;
 	styles.text.font_weight = FLUX_FONT_REGULAR;
 	styles.text.text_align  = FLUX_TEXT_LEFT;
@@ -198,18 +198,18 @@ static bool textbox_set_utf8_from_wide(TextboxComposedContent *out, wchar_t cons
 }
 
 static bool textbox_compose_with_existing(TextboxComposedContent *out, FluxRenderSnapshot const *snap) {
-	int wlen = MultiByteToWideChar(CP_UTF8, 0, snap->text_content, -1, NULL, 0);
+	int wlen = MultiByteToWideChar(CP_UTF8, 0, snap->u.textbox.text_content, -1, NULL, 0);
 	if (wlen <= 0) return false;
 
 	wchar_t *wtmp = ( wchar_t * ) malloc(( size_t ) wlen * sizeof(wchar_t));
 	if (!wtmp) return false;
-	MultiByteToWideChar(CP_UTF8, 0, snap->text_content, -1, wtmp, wlen);
+	MultiByteToWideChar(CP_UTF8, 0, snap->u.textbox.text_content, -1, wtmp, wlen);
 
 	int orig_wlen = wlen - 1;
-	int start     = ( int ) utf8_bytes_to_utf16_count(snap->text_content, snap->edit.cursor_position);
+	int start     = ( int ) utf8_bytes_to_utf16_count(snap->u.textbox.text_content, snap->u.textbox.edit.cursor_position);
 	if (start > orig_wlen) start = orig_wlen;
 
-	int      result_wlen = orig_wlen + ( int ) snap->edit.composition_length;
+	int      result_wlen = orig_wlen + ( int ) snap->u.textbox.edit.composition_length;
 	wchar_t *wresult     = ( wchar_t * ) malloc((( size_t ) result_wlen + 1) * sizeof(wchar_t));
 	if (!wresult) {
 		free(wtmp);
@@ -217,9 +217,9 @@ static bool textbox_compose_with_existing(TextboxComposedContent *out, FluxRende
 	}
 
 	memcpy(wresult, wtmp, ( size_t ) start * sizeof(wchar_t));
-	memcpy(wresult + start, snap->edit.composition_text, ( size_t ) snap->edit.composition_length * sizeof(wchar_t));
+	memcpy(wresult + start, snap->u.textbox.edit.composition_text, ( size_t ) snap->u.textbox.edit.composition_length * sizeof(wchar_t));
 	memcpy(
-	  wresult + start + snap->edit.composition_length, wtmp + start, ( size_t ) (orig_wlen - start) * sizeof(wchar_t)
+	  wresult + start + snap->u.textbox.edit.composition_length, wtmp + start, ( size_t ) (orig_wlen - start) * sizeof(wchar_t)
 	);
 	wresult [result_wlen]      = 0;
 
@@ -232,49 +232,49 @@ static bool textbox_compose_with_existing(TextboxComposedContent *out, FluxRende
 
 static bool textbox_compose_from_composition(TextboxComposedContent *out, FluxRenderSnapshot const *snap) {
 	out->composition_start_u16 = 0;
-	return textbox_set_utf8_from_wide(out, snap->edit.composition_text, ( int ) snap->edit.composition_length);
+	return textbox_set_utf8_from_wide(out, snap->u.textbox.edit.composition_text, ( int ) snap->u.textbox.edit.composition_length);
 }
 
 static void textbox_prepare_content(TextboxComposedContent *out, FluxRenderSnapshot const *snap) {
 	memset(out, 0, sizeof(*out));
-	out->content         = snap->text_content;
-	out->has_composition = snap->edit.composition_text && snap->edit.composition_length > 0;
+	out->content         = snap->u.textbox.text_content;
+	out->has_composition = snap->u.textbox.edit.composition_text && snap->u.textbox.edit.composition_length > 0;
 	if (!out->has_composition) {
 		out->has_text = out->content && out->content [0];
 		return;
 	}
 
-	bool ok = (snap->text_content && snap->text_content [0]) ? textbox_compose_with_existing(out, snap)
+	bool ok = (snap->u.textbox.text_content && snap->u.textbox.text_content [0]) ? textbox_compose_with_existing(out, snap)
 	                                                         : textbox_compose_from_composition(out, snap);
-	if (!ok) out->content = snap->text_content;
+	if (!ok) out->content = snap->u.textbox.text_content;
 	out->has_text = out->content && out->content [0];
 }
 
 static void textbox_free_content(TextboxComposedContent *content) { free(content->heap); }
 
 static void textbox_draw_placeholder(TextboxContentDrawContext const *dc) {
-	if (dc->content->has_text || !dc->snap->placeholder || !dc->snap->placeholder [0]) return;
+	if (dc->content->has_text || !dc->snap->u.textbox.placeholder || !dc->snap->u.textbox.placeholder [0]) return;
 
 	FluxThemeColors const *t  = dc->rc->theme;
 	FluxTextStyle          ph = dc->styles->text;
 	if (!dc->state->enabled) ph.color = t ? t->text_disabled : flux_color_rgba(0, 0, 0, 0x5c);
 	else ph.color = t ? t->text_secondary : flux_color_rgba(0, 0, 0, 0x9e);
-	flux_text_draw(dc->rc->text, FLUX_RT(dc->rc), dc->snap->placeholder, dc->text_area, &ph);
+	flux_text_draw(dc->rc->text, FLUX_RT(dc->rc), dc->snap->u.textbox.placeholder, dc->text_area, &ph);
 }
 
 static void textbox_draw_selection(TextboxContentDrawContext const *dc) {
 	if (!dc->content->has_text
 		|| !dc->state->focused
-		|| dc->snap->edit.readonly
-		|| dc->snap->edit.selection_start == dc->snap->edit.selection_end)
+		|| dc->snap->u.textbox.edit.readonly
+		|| dc->snap->u.textbox.edit.selection_start == dc->snap->u.textbox.edit.selection_end)
 		return;
 
-	uint32_t sel_s_byte = dc->snap->edit.selection_start < dc->snap->edit.selection_end ? dc->snap->edit.selection_start
-	                                                                                    : dc->snap->edit.selection_end;
-	uint32_t sel_e_byte = dc->snap->edit.selection_start > dc->snap->edit.selection_end ? dc->snap->edit.selection_start
-	                                                                                    : dc->snap->edit.selection_end;
-	int      sel_s      = ( int ) utf8_bytes_to_utf16_count(dc->snap->text_content, sel_s_byte);
-	int      sel_e      = ( int ) utf8_bytes_to_utf16_count(dc->snap->text_content, sel_e_byte);
+	uint32_t sel_s_byte = dc->snap->u.textbox.edit.selection_start < dc->snap->u.textbox.edit.selection_end ? dc->snap->u.textbox.edit.selection_start
+	                                                                                    : dc->snap->u.textbox.edit.selection_end;
+	uint32_t sel_e_byte = dc->snap->u.textbox.edit.selection_start > dc->snap->u.textbox.edit.selection_end ? dc->snap->u.textbox.edit.selection_start
+	                                                                                    : dc->snap->u.textbox.edit.selection_end;
+	int      sel_s      = ( int ) utf8_bytes_to_utf16_count(dc->snap->u.textbox.text_content, sel_s_byte);
+	int      sel_e      = ( int ) utf8_bytes_to_utf16_count(dc->snap->u.textbox.text_content, sel_e_byte);
 
 	FluxRect sel_rects [16];
 	FluxTextSelectionQuery query = {
@@ -284,8 +284,8 @@ static void textbox_draw_selection(TextboxContentDrawContext const *dc) {
 	uint32_t               n         = flux_text_selection_rects(&query);
 
 	FluxThemeColors const *t         = dc->rc->theme;
-	FluxColor              sel_base  = (flux_color_af(dc->snap->edit.selection_color) > 0.0f)
-	                                   ? dc->snap->edit.selection_color
+	FluxColor              sel_base  = (flux_color_af(dc->snap->u.textbox.edit.selection_color) > 0.0f)
+	                                   ? dc->snap->u.textbox.edit.selection_color
 	                                   : (t ? t->accent_default : flux_color_rgb(0, 120, 212));
 	D2D1_COLOR_F           sel_d2d   = flux_d2d_color(sel_base);
 	D2D1_BRUSH_PROPERTIES  sbp       = textbox_brush_props(0.4f);
@@ -295,7 +295,7 @@ static void textbox_draw_selection(TextboxContentDrawContext const *dc) {
 
 	for (uint32_t i = 0; i < n; i++) {
 		FluxRect sr = {
-		  dc->text_area->x + sel_rects [i].x - dc->snap->edit.scroll_offset_x, dc->text_area->y + sel_rects [i].y,
+		  dc->text_area->x + sel_rects [i].x - dc->snap->u.textbox.edit.scroll_offset_x, dc->text_area->y + sel_rects [i].y,
 		  sel_rects [i].w, sel_rects [i].h};
 		D2D1_RECT_F srd = flux_d2d_rect(&sr);
 		ID2D1RenderTarget_FillRectangle(FLUX_RT(dc->rc), &srd, ( ID2D1Brush * ) sel_brush);
@@ -306,7 +306,7 @@ static void textbox_draw_selection(TextboxContentDrawContext const *dc) {
 static void textbox_draw_composition_underline(TextboxContentDrawContext const *dc) {
 	if (!dc->content->has_composition || !dc->content->has_text) return;
 
-	int      comp_end_u16 = dc->content->composition_start_u16 + ( int ) dc->snap->edit.composition_length;
+	int      comp_end_u16 = dc->content->composition_start_u16 + ( int ) dc->snap->u.textbox.edit.composition_length;
 	FluxRect comp_rects [16];
 	FluxTextSelectionQuery query = {
 	  {dc->rc->text, dc->content->content, &dc->styles->hit, dc->text_area->w},
@@ -318,7 +318,7 @@ static void textbox_draw_composition_underline(TextboxContentDrawContext const *
 	FluxColor              ul_color = dc->state->enabled ? (t ? t->text_primary : flux_color_rgba(0, 0, 0, 0xe4))
 	                                                     : (t ? t->text_disabled : flux_color_rgba(0, 0, 0, 0x5c));
 	for (uint32_t i = 0; i < cn; i++) {
-		float lx0 = dc->text_area->x + comp_rects [i].x - dc->snap->edit.scroll_offset_x;
+		float lx0 = dc->text_area->x + comp_rects [i].x - dc->snap->u.textbox.edit.scroll_offset_x;
 		float ly  = dc->text_area->y + comp_rects [i].y + comp_rects [i].h;
 		float lx1 = lx0 + comp_rects [i].w;
 		flux_draw_line(dc->rc, &(FluxLineSpec) {lx0, ly, lx1, ly}, ul_color, 1.0f);
@@ -329,8 +329,8 @@ static void textbox_draw_content_text(TextboxContentDrawContext const *dc) {
 	if (!dc->content->has_text) return;
 
 	FluxRect draw_bounds = {
-	  dc->text_area->x - dc->snap->edit.scroll_offset_x, dc->text_area->y,
-	  dc->text_area->w + dc->snap->edit.scroll_offset_x, dc->text_area->h};
+	  dc->text_area->x - dc->snap->u.textbox.edit.scroll_offset_x, dc->text_area->y,
+	  dc->text_area->w + dc->snap->u.textbox.edit.scroll_offset_x, dc->text_area->h};
 	flux_text_draw(dc->rc->text, FLUX_RT(dc->rc), dc->content->content, &draw_bounds, &dc->styles->text);
 }
 
@@ -353,14 +353,14 @@ static bool textbox_caret_visible(FluxRenderContext const *rc, FluxRenderSnapsho
 static bool textbox_should_draw_caret(TextboxContentDrawContext const *dc) {
 	if (!dc->state->focused) return false;
 	if (dc->rc->animations_active) *dc->rc->animations_active = true;
-	if (dc->snap->edit.readonly) return false;
-	return dc->content->has_composition || dc->snap->edit.selection_start == dc->snap->edit.selection_end;
+	if (dc->snap->u.textbox.edit.readonly) return false;
+	return dc->content->has_composition || dc->snap->u.textbox.edit.selection_start == dc->snap->u.textbox.edit.selection_end;
 }
 
 static int textbox_caret_index(TextboxContentDrawContext const *dc) {
 	if (dc->content->has_composition)
-		return dc->content->composition_start_u16 + ( int ) dc->snap->edit.composition_cursor;
-	return ( int ) utf8_bytes_to_utf16_count(dc->snap->text_content, dc->snap->edit.cursor_position);
+		return dc->content->composition_start_u16 + ( int ) dc->snap->u.textbox.edit.composition_cursor;
+	return ( int ) utf8_bytes_to_utf16_count(dc->snap->u.textbox.text_content, dc->snap->u.textbox.edit.cursor_position);
 }
 
 static FluxRect textbox_caret_local_rect(TextboxContentDrawContext const *dc, int caret_u16, float *caret_h) {
@@ -395,7 +395,7 @@ static void textbox_draw_caret(TextboxContentDrawContext const *dc) {
 	FluxRect caret = textbox_caret_local_rect(dc, caret_u16, &caret_h);
 	float    caret_y
 	  = dc->content->has_text ? dc->text_area->y + caret.y : dc->text_area->y + (dc->text_area->h - caret_h) * 0.5f;
-	float caret_x = textbox_clamp_caret_x(dc->text_area, dc->text_area->x + caret.x - dc->snap->edit.scroll_offset_x);
+	float caret_x = textbox_clamp_caret_x(dc->text_area, dc->text_area->x + caret.x - dc->snap->u.textbox.edit.scroll_offset_x);
 	FluxRect               caret_abs   = {caret_x, caret_y, 1.0f, caret_h};
 
 	FluxThemeColors const *t           = dc->rc->theme;
@@ -544,9 +544,9 @@ void flux_draw_textbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	float radius   = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-	bool  has_text = snap->text_content && snap->text_content [0];
+	bool  has_text = snap->u.textbox.text_content && snap->u.textbox.text_content [0];
 	bool  show_delete
-	  = snap->type == FLUX_CONTROL_TEXT_INPUT && has_text && state->focused && !snap->edit.readonly && state->enabled;
+	  = snap->type == FLUX_CONTROL_TEXT_INPUT && has_text && state->focused && !snap->u.textbox.edit.readonly && state->enabled;
 	float col1_w = show_delete ? TB_DELETE_BTN_W : 0.0f;
 	float col0_w = flux_maxf(0.0f, bounds->w - col1_w);
 

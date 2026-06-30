@@ -188,8 +188,8 @@ static void nb_draw_spin(NbDrawContext const *dc) {
 	FluxRect               dn_outer
 	  = {spin_base_x + FLUX_NUMBER_BOX_COL_UP_W, dc->bounds->y, FLUX_NUMBER_BOX_COL_DN_W, dc->bounds->h};
 
-	bool         up_hovered = (dc->zone == ZONE_SPIN_UP && dc->snap->nb_up_enabled);
-	bool         dn_hovered = (dc->zone == ZONE_SPIN_DN && dc->snap->nb_down_enabled);
+	bool         up_hovered = (dc->zone == ZONE_SPIN_UP && dc->snap->u.textbox.nb_up_enabled);
+	bool         dn_hovered = (dc->zone == ZONE_SPIN_DN && dc->snap->u.textbox.nb_down_enabled);
 	bool         up_pressed = (up_hovered && dc->state->pressed);
 	bool         dn_pressed = (dn_hovered && dc->state->pressed);
 
@@ -203,9 +203,9 @@ static void nb_draw_spin(NbDrawContext const *dc) {
 	char       dn_utf8 [4] = {( char ) 0xee, ( char ) 0x9c, ( char ) 0x8d, '\0'};
 
 	NbIconSpec up_icon
-	  = {&up_outer, NB_UP_MARGINS, up_utf8, icon_fs, nb_action_icon_color(dc->snap->nb_up_enabled, up_pressed, t)};
+	  = {&up_outer, NB_UP_MARGINS, up_utf8, icon_fs, nb_action_icon_color(dc->snap->u.textbox.nb_up_enabled, up_pressed, t)};
 	NbIconSpec dn_icon
-	  = {&dn_outer, NB_DN_MARGINS, dn_utf8, icon_fs, nb_action_icon_color(dc->snap->nb_down_enabled, dn_pressed, t)};
+	  = {&dn_outer, NB_DN_MARGINS, dn_utf8, icon_fs, nb_action_icon_color(dc->snap->u.textbox.nb_down_enabled, dn_pressed, t)};
 	nb_draw_icon(dc->rc, &up_icon);
 	nb_draw_icon(dc->rc, &dn_icon);
 }
@@ -214,10 +214,10 @@ void flux_draw_number_box(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	float radius       = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-	bool  has_text     = snap->text_content && snap->text_content [0];
-	bool  spin_visible = (snap->nb_spin_placement == 2);
+	bool  has_text     = snap->u.textbox.text_content && snap->u.textbox.text_content [0];
+	bool  spin_visible = (snap->u.textbox.nb_spin_placement == 2);
 
-	bool  show_delete  = has_text && state->focused && !snap->edit.readonly && state->enabled;
+	bool  show_delete  = has_text && state->focused && !snap->u.textbox.edit.readonly && state->enabled;
 
 	float spin_w       = spin_visible ? FLUX_NUMBER_BOX_SPIN_W : 0.0f;
 	float delete_w     = show_delete ? FLUX_NUMBER_BOX_DELETE_BTN_W : 0.0f;

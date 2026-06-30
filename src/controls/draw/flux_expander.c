@@ -54,7 +54,7 @@ void flux_draw_expander_header(
 	FluxRect               hb       = flux_snap_bounds(bounds, 1.0f, 1.0f);
 	float                  radius   = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
 	FluxThemeColors const *t        = rc->theme ? rc->theme : flux_theme_default_colors();
-	bool                   expanded = snap->is_checked;
+	bool                   expanded = snap->u.expander.is_checked;
 
 	/* Header background + border are state-invariant CardBackgroundFillColorDefault
 	 * / CardStrokeColorDefault. Expanded: top-rounded, square bottom + seam line. */

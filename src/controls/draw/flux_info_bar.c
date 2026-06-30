@@ -114,7 +114,7 @@ void flux_draw_info_bar(
 	FluxRect               sb     = flux_snap_bounds(bounds, 1.0f, 1.0f);
 	float                  radius = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
 	FluxThemeColors const *t      = rc->theme ? rc->theme : flux_theme_default_colors();
-	IbSeverity             s      = ib_severity(( int ) (snap->current_value + 0.5f), rc->is_dark, t);
+	IbSeverity             s      = ib_severity(( int ) snap->u.info_bar.severity, rc->is_dark, t);
 
 	if (rc->fill_sink) {
 		rc->fill_sink->color         = s.bg;
@@ -131,16 +131,16 @@ void flux_draw_info_bar(
 	ib_draw_glyph(rc, &icon_box, IB_ICON_BG_GLYPH, IB_ICON_SIZE, s.icon_bg);
 	ib_draw_glyph(rc, &icon_box, s.glyph, IB_ICON_SIZE, s.icon_fg);
 
-	bool  closable   = snap->is_checked;
+	bool  closable   = snap->u.info_bar.is_closable;
 	float close_left = closable ? sb.x + sb.w - IB_CLOSE_MARGIN - IB_CLOSE_SIZE : sb.x + sb.w;
 	float text_x     = sb.x + IB_PAD_LEFT + IB_ICON_SIZE + IB_ICON_GAP;
 	float text_top   = sb.y + IB_TEXT_TOP;
 	float text_right = flux_maxf(text_x, close_left - IB_MSG_GAP);
 
 	float after_title
-	  = ib_draw_text(rc, snap->label, text_x, text_top, text_right, FLUX_FONT_SEMI_BOLD, t->text_primary);
+	  = ib_draw_text(rc, snap->u.info_bar.label, text_x, text_top, text_right, FLUX_FONT_SEMI_BOLD, t->text_primary);
 	float msg_x = after_title + (after_title > text_x ? IB_MSG_GAP : 0.0f);
-	ib_draw_text(rc, snap->text_content, msg_x, text_top, text_right, FLUX_FONT_REGULAR, t->text_primary);
+	ib_draw_text(rc, snap->u.info_bar.text_content, msg_x, text_top, text_right, FLUX_FONT_REGULAR, t->text_primary);
 
 	if (closable) ib_draw_close(rc, &sb, state, snap->hover_local_x, t);
 }

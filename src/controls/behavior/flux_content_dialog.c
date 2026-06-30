@@ -1,5 +1,6 @@
 #include "controls/factory/flux_factory.h"
 #include "controls/draw/flux_control_draw.h"
+#include "runtime/flux_anim_driver.h"
 
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_input.h"
@@ -56,11 +57,6 @@ struct FluxDialogRuntime {
  * thread timer because the dialog has no per-frame hook of its own. */
 #define DLG_ANIM_MS  250.0f
 #define DLG_FADE_MS  83.0f
-#define DLG_MAX_ANIM 4
-
-static FluxDialogRuntime *g_dlg_anim [DLG_MAX_ANIM];
-static int                g_dlg_anim_count;
-static UINT_PTR           g_dlg_timer;
 
 static FluxDialogRuntime *dialog_runtime(FluxNodeStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_node_store_get(store, id);
@@ -86,42 +82,28 @@ static void  dialog_set_card_transform(FluxDialogRuntime *rt, float scale, float
 }
 
 static void dialog_anim_remove(FluxDialogRuntime *rt) {
-	for (int i = 0; i < g_dlg_anim_count; i++) {
-		if (g_dlg_anim [i] != rt) continue;
-		g_dlg_anim [i] = g_dlg_anim [--g_dlg_anim_count];
-		break;
-	}
-	if (g_dlg_anim_count == 0 && g_dlg_timer) {
-		KillTimer(NULL, g_dlg_timer);
-		g_dlg_timer = 0;
-	}
+	flux_anim_unregister(rt);
 }
 
-static void CALLBACK dialog_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD now) {
-	( void ) hwnd;
-	( void ) msg;
-	( void ) id;
-	( void ) now;
-	for (int i = g_dlg_anim_count - 1; i >= 0; i--) {
-		FluxDialogRuntime *rt      = g_dlg_anim [i];
-		float              elapsed = ( float ) (GetTickCount() - rt->anim_start);
-		float              t       = dialog_clamp01(elapsed / DLG_ANIM_MS);
-		float              ease    = 1.0f - powf(1.0f - t, 3.0f);
-		float              fade    = dialog_clamp01(elapsed / DLG_FADE_MS);
-		dialog_set_card_transform(rt, 1.05f - 0.05f * ease, fade);
-		dialog_repaint(rt);
-		if (elapsed >= DLG_ANIM_MS) {
-			dialog_set_card_transform(rt, 1.0f, 1.0f);
-			dialog_anim_remove(rt);
-		}
+static bool dialog_step(void *ctx, unsigned long now) {
+	FluxDialogRuntime *rt      = ( FluxDialogRuntime * ) ctx;
+	float              elapsed = ( float ) (( unsigned long ) now - rt->anim_start);
+	float              t       = dialog_clamp01(elapsed / DLG_ANIM_MS);
+	float              ease    = 1.0f - powf(1.0f - t, 3.0f);
+	float              fade    = dialog_clamp01(elapsed / DLG_FADE_MS);
+	dialog_set_card_transform(rt, 1.05f - 0.05f * ease, fade);
+	dialog_repaint(rt);
+	if (elapsed >= DLG_ANIM_MS) {
+		dialog_set_card_transform(rt, 1.0f, 1.0f);
+		return false;
 	}
+	return true;
 }
 
 static void dialog_anim_start(FluxDialogRuntime *rt) {
 	dialog_set_card_transform(rt, 1.05f, 0.0f);
 	rt->anim_start = GetTickCount();
-	if (g_dlg_anim_count < DLG_MAX_ANIM) g_dlg_anim [g_dlg_anim_count++] = rt;
-	if (!g_dlg_timer) g_dlg_timer = SetTimer(NULL, 0, 16, dialog_timer_proc);
+	flux_anim_register(rt, dialog_step);
 }
 
 static void dialog_close(FluxDialogRuntime *rt, FluxDialogResult result) {

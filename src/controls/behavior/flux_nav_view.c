@@ -3,6 +3,7 @@
 #include "render/flux_anim.h"
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
+#include "runtime/flux_anim_driver.h"
 #include "runtime/flux_str.h"
 
 #include "fluxent/fluxent.h"
@@ -26,14 +27,9 @@
 #define NAV_SCRIM_ALPHA      0x4d /* SmokeFillColorDefault (#4D000000), matching ContentDialog's scrim. */
 #define NAV_ADAPT_COMPACT    641.0f
 #define NAV_ADAPT_EXPANDED   1008.0f
-#define NAV_MAX_ANIM         8
 #define NAV_EXPAND_MS        200.0f /* inline children reveal */
 #define NAV_CHEVRON_ZONE     40.0f  /* right-edge press region that only toggles */
 #define NAV_CHILD_INDENT     31.0f  /* NavigationViewItemBase c_itemIndentation */
-
-static FluxNavViewData *g_nav_anim [NAV_MAX_ANIM];
-static int              g_nav_anim_count;
-static UINT_PTR         g_nav_timer;
 
 /* Standard WinUI offset spline; the indicator's leading edge uses it directly and
  * its trailing edge a slower-starting variant, so the pill stretches then settles.
@@ -219,15 +215,8 @@ static void nav_update_indicator(FluxNavViewData *d) {
 }
 
 static void nav_anim_remove(FluxNavViewData *d) {
-	for (int i = 0; i < g_nav_anim_count; i++) {
-		if (g_nav_anim [i] != d) continue;
-		g_nav_anim [i] = g_nav_anim [--g_nav_anim_count];
-		break;
-	}
-	if (g_nav_anim_count == 0 && g_nav_timer) {
-		KillTimer(NULL, g_nav_timer);
-		g_nav_timer = 0;
-	}
+	d->anim_active = false;
+	flux_anim_unregister(d);
 }
 
 static bool nav_tick_one(FluxNavViewData *d, DWORD now) {
@@ -248,29 +237,17 @@ static bool nav_tick_one(FluxNavViewData *d, DWORD now) {
 	return active;
 }
 
-static void CALLBACK nav_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD now) {
-	( void ) hwnd;
-	( void ) msg;
-	( void ) id;
-	( void ) now;
-	DWORD t = GetTickCount();
-	for (int i = g_nav_anim_count - 1; i >= 0; i--) {
-		FluxNavViewData *d      = g_nav_anim [i];
-		bool             active = nav_tick_one(d, t);
-		nav_repaint(d);
-		if (!active) {
-			d->anim_active = false;
-			nav_anim_remove(d);
-		}
-	}
+static bool nav_step(void *ctx, unsigned long now) {
+	FluxNavViewData *d      = ( FluxNavViewData * ) ctx;
+	bool             active = nav_tick_one(d, ( DWORD ) now);
+	nav_repaint(d);
+	if (!active) d->anim_active = false;
+	return active;
 }
 
 static void nav_anim_start(FluxNavViewData *d) {
 	d->anim_active = true;
-	for (int i = 0; i < g_nav_anim_count; i++)
-		if (g_nav_anim [i] == d) return;
-	if (g_nav_anim_count < NAV_MAX_ANIM) g_nav_anim [g_nav_anim_count++] = d;
-	if (!g_nav_timer) g_nav_timer = SetTimer(NULL, 0, 16, nav_timer_proc);
+	flux_anim_register(d, nav_step);
 }
 
 static void nav_set_mode(FluxNavViewData *d, FluxNavDisplayMode mode) {

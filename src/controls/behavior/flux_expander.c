@@ -1,5 +1,6 @@
 #include "controls/factory/flux_factory.h"
 #include "controls/draw/flux_control_draw.h"
+#include "runtime/flux_anim_driver.h"
 
 #include "fluxent/fluxent.h"
 #include "fluxent/flux_window.h"
@@ -21,11 +22,6 @@
  * slide uses the node render-transform (render_translate_y + render_clip_subtree). */
 #define EXP_EXPAND_MS   333.0f
 #define EXP_COLLAPSE_MS 167.0f
-#define EXP_MAX_ANIM    8
-
-static FluxExpanderData *g_exp_anim [EXP_MAX_ANIM];
-static int               g_exp_anim_count;
-static UINT_PTR          g_exp_timer;
 
 static FluxExpanderData *expander_data(FluxNodeStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_node_store_get(store, id);
@@ -59,15 +55,7 @@ static void expander_pin_height(FluxExpanderData *d) {
 }
 
 static void expander_anim_remove(FluxExpanderData *d) {
-	for (int i = 0; i < g_exp_anim_count; i++) {
-		if (g_exp_anim [i] != d) continue;
-		g_exp_anim [i] = g_exp_anim [--g_exp_anim_count];
-		break;
-	}
-	if (g_exp_anim_count == 0 && g_exp_timer) {
-		KillTimer(NULL, g_exp_timer);
-		g_exp_timer = 0;
-	}
+	flux_anim_unregister(d);
 }
 
 static void expander_anim_finish(FluxExpanderData *d) {
@@ -75,27 +63,24 @@ static void expander_anim_finish(FluxExpanderData *d) {
 	expander_set_translate(d, 0.0f);
 	if (!d->anim_expanding) xent_remove_child(d->ctx, d->root, d->content);
 	expander_pin_height(d);
-	expander_anim_remove(d);
 }
 
-static void CALLBACK expander_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD now) {
-	( void ) hwnd;
-	( void ) msg;
-	( void ) id;
-	( void ) now;
-	for (int i = g_exp_anim_count - 1; i >= 0; i--) {
-		FluxExpanderData *d        = g_exp_anim [i];
-		float             duration = d->anim_expanding ? EXP_EXPAND_MS : EXP_COLLAPSE_MS;
-		float             elapsed  = ( float ) (GetTickCount() - d->anim_start);
-		float             t        = expander_clamp01(elapsed / duration);
-		float             eased    = 1.0f - powf(1.0f - t, 3.0f); /* approx KeySpline 0,0,0,1 / 1,1,0,1 */
-		float             h        = d->content_height;
-		/* Expand: -h -> 0 (slide down into place). Collapse (CollapseUp): 0 -> -h
-		 * (retract up behind the header). Both end clipped/hidden above row top. */
-		expander_set_translate(d, d->anim_expanding ? -(1.0f - eased) * h : -eased * h);
-		expander_repaint(d);
-		if (elapsed >= duration) expander_anim_finish(d);
+static bool expander_step(void *ctx, unsigned long now) {
+	FluxExpanderData *d        = ( FluxExpanderData * ) ctx;
+	float             duration = d->anim_expanding ? EXP_EXPAND_MS : EXP_COLLAPSE_MS;
+	float             elapsed  = ( float ) (( unsigned long ) now - d->anim_start);
+	float             t        = expander_clamp01(elapsed / duration);
+	float             eased    = 1.0f - powf(1.0f - t, 3.0f); /* approx KeySpline 0,0,0,1 / 1,1,0,1 */
+	float             h        = d->content_height;
+	/* Expand: -h -> 0 (slide down into place). Collapse (CollapseUp): 0 -> -h
+	 * (retract up behind the header). Both end clipped/hidden above row top. */
+	expander_set_translate(d, d->anim_expanding ? -(1.0f - eased) * h : -eased * h);
+	expander_repaint(d);
+	if (elapsed >= duration) {
+		expander_anim_finish(d);
+		return false;
 	}
+	return true;
 }
 
 static void expander_anim_start(FluxExpanderData *d, bool expanding) {
@@ -106,10 +91,7 @@ static void expander_anim_start(FluxExpanderData *d, bool expanding) {
 	expander_pin_height(d); /* reserve full height up-front; content slides within it */
 	expander_set_translate(d, expanding ? -d->content_height : 0.0f);
 	expander_repaint(d);
-	for (int i = 0; i < g_exp_anim_count; i++)
-		if (g_exp_anim [i] == d) return;
-	if (g_exp_anim_count < EXP_MAX_ANIM) g_exp_anim [g_exp_anim_count++] = d;
-	if (!g_exp_timer) g_exp_timer = SetTimer(NULL, 0, 16, expander_timer_proc);
+	flux_anim_register(d, expander_step);
 }
 
 static void expander_apply_expanded(FluxExpanderData *d, bool expanded) {

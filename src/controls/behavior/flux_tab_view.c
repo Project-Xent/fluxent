@@ -1,6 +1,7 @@
 #include "controls/factory/flux_factory.h"
 #include "controls/draw/flux_control_draw.h"
 #include "render/flux_fluent.h"
+#include "runtime/flux_anim_driver.h"
 #include "runtime/flux_str.h"
 
 #include "fluxent/fluxent.h"
@@ -29,14 +30,9 @@
 #define TAB_WIDTH_ANIM_MS   250.0f /* AddDeleteThemeTransition feel */
 #define TAB_SLIDE_MS        250.0f /* ReorderThemeTransition feel */
 #define TAB_SCROLL_ANIM_MS  250.0f /* ScrollViewer::ChangeView smooth scroll */
-#define TAB_MAX_ANIM        8
 #define TAB_REPEAT_DELAY_MS 400
 #define TAB_REPEAT_INTERVAL 100
 #define TAB_SCROLL_RESERVE  (2.0f * (FLUX_TAB_SCROLL_W + FLUX_TAB_SCROLL_PAD_OUT + FLUX_TAB_SCROLL_PAD_IN))
-
-static FluxTabViewData *g_tv_anim [TAB_MAX_ANIM];
-static int              g_tv_anim_count;
-static UINT_PTR         g_tv_timer;
 
 static FluxTabViewData *tv_data(FluxNodeStore *store, XentNodeId node) {
 	FluxNodeData *nd = flux_node_store_get(store, node);
@@ -298,25 +294,15 @@ static bool tv_strip_hovered(FluxTabViewData *tv) {
 }
 
 static void tv_anim_remove(FluxTabViewData *tv) {
-	for (int i = 0; i < g_tv_anim_count; i++) {
-		if (g_tv_anim [i] != tv) continue;
-		g_tv_anim [i] = g_tv_anim [--g_tv_anim_count];
-		break;
-	}
-	if (g_tv_anim_count == 0 && g_tv_timer) {
-		KillTimer(NULL, g_tv_timer);
-		g_tv_timer = 0;
-	}
+	tv->anim_active = false;
+	flux_anim_unregister(tv);
 }
 
-static void CALLBACK tv_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD t);
+static bool tv_step(void *ctx, unsigned long now);
 
-static void          tv_anim_start(FluxTabViewData *tv) {
+static void tv_anim_start(FluxTabViewData *tv) {
 	tv->anim_active = true;
-	for (int i = 0; i < g_tv_anim_count; i++)
-		if (g_tv_anim [i] == tv) return;
-	if (g_tv_anim_count < TAB_MAX_ANIM) g_tv_anim [g_tv_anim_count++] = tv;
-	if (!g_tv_timer) g_tv_timer = SetTimer(NULL, 0, 16, tv_timer_proc);
+	flux_anim_register(tv, tv_step);
 }
 
 static void tv_finalize_close(FluxTabViewData *tv, int idx) {
@@ -648,21 +634,12 @@ static bool tv_tick_one(FluxTabViewData *tv, DWORD now) {
 	return active;
 }
 
-static void CALLBACK tv_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD t) {
-	( void ) hwnd;
-	( void ) msg;
-	( void ) id;
-	( void ) t;
-	DWORD now = GetTickCount();
-	for (int i = g_tv_anim_count - 1; i >= 0; i--) {
-		FluxTabViewData *tv     = g_tv_anim [i];
-		bool             active = tv_tick_one(tv, now);
-		tv_repaint(tv);
-		if (!active) {
-			tv->anim_active = false;
-			tv_anim_remove(tv);
-		}
-	}
+static bool tv_step(void *ctx, unsigned long now) {
+	FluxTabViewData *tv     = ( FluxTabViewData * ) ctx;
+	bool             active = tv_tick_one(tv, ( DWORD ) now);
+	tv_repaint(tv);
+	if (!active) tv->anim_active = false;
+	return active;
 }
 
 static void tv_on_window_resize(void *ctx, int width_px, int height_px) {

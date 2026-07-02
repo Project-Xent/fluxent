@@ -533,6 +533,73 @@ void flux_tab_view_set_strip_header(FluxNodeStore *store, XentNodeId tabview, Xe
 /** @brief Place a caller-built node after the (+) button (TabStripFooter). */
 void flux_tab_view_set_strip_footer(FluxNodeStore *store, XentNodeId tabview, XentNodeId node);
 
+/* -------------------------------------------------------------------------
+ * Virtualized items hosts: ListView / ListBox / GridView / ItemsRepeater
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxListViewCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	XtkListKind    kind;      /**< Chrome flavor (list / list box / grid / repeater). */
+	FluxInput     *input;     /**< Keyboard focus moves (may be NULL for headless). */
+	void           (*on_select)(void *ctx, int index); /**< Lead index after every selection change. */
+	void          *userdata;
+} FluxListViewCreateInfo;
+
+typedef struct FluxListItemCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent; /**< The list's items host (flux_list_view_content_node). */
+} FluxListItemCreateInfo;
+
+/** @brief Create a virtualized items-host spine (root + scroll + items host). */
+XentNodeId flux_create_list_view(FluxListViewCreateInfo const *info);
+
+/** @brief Create one recycled cell node inside the items host (wires input + selection). */
+XentNodeId flux_create_list_item(FluxListItemCreateInfo const *info);
+
+/** @brief The ABSOLUTE items host realized rows mount into. */
+XentNodeId flux_list_view_content_node(FluxNodeStore *store, XentNodeId list);
+
+/** @brief Set count/cell metrics/columns; resizes the scrollable extent. */
+void flux_list_view_set_extent(
+  FluxNodeStore *store, XentNodeId list, int count, float item_height, float item_width, int columns
+);
+
+/** @brief WinUI SelectionMode (Single default). Switching modes clears the retained set. */
+void flux_list_view_set_sel_mode(FluxNodeStore *store, XentNodeId list, XtkListSelMode mode);
+
+/** @brief Single mode: app-controlled selected index (-1 = none). */
+void flux_list_view_set_selected(FluxNodeStore *store, XentNodeId list, int selected);
+
+/** @brief Multiple/Extended: query the control-retained selection set. */
+bool flux_list_view_is_selected(FluxNodeStore *store, XentNodeId list, int index);
+
+/** @brief Multiple/Extended: number of selected items. */
+int  flux_list_view_selection_count(FluxNodeStore *store, XentNodeId list);
+
+/** @brief Record the realized window + column count (reconciler-reported). */
+void flux_list_view_set_realized(FluxNodeStore *store, XentNodeId list, int first, int last, int cols);
+
+/** @brief Scroll offset + viewport extent + cross width in DIPs; false while layout hasn't run. */
+bool flux_list_view_viewport(FluxNodeStore *store, XentNodeId list, float *offset, float *extent, float *cross);
+
+/** @brief Wire the fired-once-per-window staleness callback (re-realize hook). */
+void flux_list_view_set_stale_callback(FluxNodeStore *store, XentNodeId list, void (*on_stale)(void *), void *ctx);
+
+/** @brief Engine per-frame hook: fire on_stale when the viewport (or column count) leaves the realized window. */
+void flux_list_view_update_window(XentContext *ctx, XentNodeId list, struct FluxNodeData *nd);
+
+/** @brief Minimal-edge scroll to bring an index into view (WinUI Default alignment). */
+void flux_list_view_scroll_into_view(FluxNodeStore *store, XentNodeId list, int index);
+
+/** @brief Update a recycled cell: index + content-space slot placement. */
+void flux_list_item_set_place(FluxNodeStore *store, XentNodeId item, int index, float x, float y);
+
+/** @brief Single-mode selected visual + Multiple-mode checkbox flag. */
+void flux_list_item_set_state(FluxNodeStore *store, XentNodeId item, bool selected, bool multi);
+
 #ifdef __cplusplus
 }
 #endif

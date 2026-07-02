@@ -226,6 +226,39 @@ static void flux_create_nav_items(FluxNodeStore *store, XentNodeId nav, XtkEl co
 	}
 }
 
+static XtkListKind flux_list_kind_for_type(XtkControlType type) {
+	switch (type) {
+	case XTK_CONTROL_LIST_BOX       : return XTK_LIST_KIND_LIST_BOX;
+	case XTK_CONTROL_GRID_VIEW      : return XTK_LIST_KIND_GRID;
+	case XTK_CONTROL_ITEMS_REPEATER : return XTK_LIST_KIND_REPEATER;
+	default                         : return XTK_LIST_KIND_LIST;
+	}
+}
+
+static XentNodeId flux_cr_list(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	XentNodeId list = flux_create_list_view(&(FluxListViewCreateInfo) {
+	  .ctx       = rt->ctx,
+	  .store     = rt->store,
+	  .parent    = p,
+	  .kind      = flux_list_kind_for_type(el->type),
+	  .input     = rt->app ? flux_app_get_input(rt->app) : NULL,
+	  .on_select = b ? flux_tramp_select : NULL,
+	  .userdata  = b});
+	if (list == XENT_NODE_INVALID) return list;
+	flux_list_view_set_extent(
+	  rt->store, list, el->list.count, el->list.item_height, el->list.item_width, el->list.columns
+	);
+	flux_list_view_set_sel_mode(rt->store, list, el->list.sel_mode);
+	flux_list_view_set_selected(rt->store, list, el->list.selected);
+	return list;
+}
+
+static XentNodeId flux_cr_list_item(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	( void ) el;
+	( void ) b;
+	return flux_create_list_item(&(FluxListItemCreateInfo) {rt->ctx, rt->store, p});
+}
+
 static XentNodeId flux_cr_nav(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	XentNodeId nav = flux_create_nav_view(&(FluxNavViewCreateInfo) {
 	  .ctx                  = rt->ctx,
@@ -274,6 +307,11 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_TAB_VIEW]        = flux_cr_tabview,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_cr_dialog,
 	[FLUX_CONTROL_NAV_VIEW]        = flux_cr_nav,
+	[FLUX_CONTROL_LIST]            = flux_cr_list,
+	[FLUX_CONTROL_LIST_BOX]        = flux_cr_list,
+	[FLUX_CONTROL_GRID_VIEW]       = flux_cr_list,
+	[FLUX_CONTROL_ITEMS_REPEATER]  = flux_cr_list,
+	[FLUX_CONTROL_LIST_ITEM]       = flux_cr_list_item,
 };
 
 XentNodeId flux_create_control(FluxBackendCtx *rt, XentNodeId parent, XtkEl const *el, FluxBinding *b) {
@@ -287,6 +325,10 @@ static XentNodeId flux_content_host_for(FluxNodeStore *store, XentNodeId node, F
 	case FLUX_CONTROL_NAV_VIEW:        return flux_nav_view_content_node(store, node);
 	case FLUX_CONTROL_EXPANDER:        return flux_expander_content_node(store, node);
 	case FLUX_CONTROL_CONTENT_DIALOG:  return flux_content_dialog_content_node(store, node);
+	case FLUX_CONTROL_LIST:
+	case FLUX_CONTROL_LIST_BOX:
+	case FLUX_CONTROL_GRID_VIEW:
+	case FLUX_CONTROL_ITEMS_REPEATER:  return flux_list_view_content_node(store, node);
 	default:                           return XENT_NODE_INVALID;
 	}
 }
@@ -295,6 +337,7 @@ static void flux_mount_content_host(FluxBackendCtx *rt, XtkNode *n, XtkEl const 
 	XentNodeId host = flux_content_host_for(rt->store, n->node, el->type);
 	if (host == XENT_NODE_INVALID) return;
 	n->host = host;
+	if (xtk_is_list_type(el->type)) return; /* items host keeps its ABSOLUTE protocol */
 	xent_set_protocol(rt->ctx, host, XENT_PROTOCOL_FLEX);
 	xent_set_flex_direction(rt->ctx, host, XENT_FLEX_COLUMN);
 	xent_set_flex_align_items(rt->ctx, host, XENT_FLEX_ALIGN_STRETCH);
@@ -347,10 +390,17 @@ static void flux_mount_menu_bar(FluxBackendCtx *rt, XtkNode *n, XentNodeId id, X
 	}
 }
 
+/* Scrolling outside the realized row window re-runs view + reconcile. */
+static void flux_be_list_stale(void *ctx) {
+	FluxBackendCtx *rt = ( FluxBackendCtx * ) ctx;
+	if (rt->runtime) xtk_runtime_invalidate(rt->runtime);
+}
+
 void flux_mount_setup(FluxBackendCtx *rt, XtkNode *n, XentNodeId id, XtkEl const *el) {
 	flux_mount_content_host(rt, n, el);
 	flux_mount_tab_view(rt, n, id, el);
 	flux_mount_menu_bar(rt, n, id, el);
+	if (xtk_is_list_type(el->type)) flux_list_view_set_stale_callback(rt->store, id, flux_be_list_stale, rt);
 	flux_apply_props(rt, n, NULL, el);
 	if (el->type == FLUX_CONTROL_INFO_BADGE && el->badge.icon)
 		flux_info_badge_set_icon(rt->store, id, el->badge.icon);

@@ -189,6 +189,13 @@ typedef struct FluxExpanderSnapshot {
 	bool is_checked; /**< Expander is expanded. */
 } FluxExpanderSnapshot;
 
+/** @brief ListView-family cell payload. */
+typedef struct FluxListItemSnapshot {
+	uint8_t kind;        /**< XtkListKind — selects the chrome (list/list box/grid). */
+	bool    is_selected; /**< Cell is in the selection set (resolved per mode). */
+	bool    multi;       /**< Multiple mode: draw the checkbox. */
+} FluxListItemSnapshot;
+
 /**
  * @brief Immutable snapshot of a control's visual state.
  *
@@ -226,6 +233,7 @@ typedef struct FluxRenderSnapshot {
 		FluxNavSnapshot       nav;        /**< NavigationView pane / item. */
 		FluxMenuSnapshot      menu;       /**< MenuBar item. */
 		FluxExpanderSnapshot  expander;   /**< Expander header. */
+		FluxListItemSnapshot  list_item;  /**< ListView row. */
 	} u;
 } FluxRenderSnapshot;
 

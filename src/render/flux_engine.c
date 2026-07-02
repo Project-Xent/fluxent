@@ -1,4 +1,5 @@
 #include "fluxent/flux_engine.h"
+#include "fluxent/fluxent.h" /* flux_list_view_update_window */
 #include "flux_fluent.h"
 #include "flux_render_internal.h"
 
@@ -165,6 +166,11 @@ static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *f
 
 	FluxNodeData *nd = ( FluxNodeData * ) xent_get_userdata(ctx, frame->node);
 	collect_update_scroll_extent(ctx, frame->node, nd, &rect);
+	/* Virtualized lists: fire the re-realize hook when scrolling (or a grid
+	 * column-count change) has moved the viewport outside the realized cell
+	 * window (same per-frame cadence as the scroll-extent refresh above). */
+	if (nd && nd->component_data && xtk_is_list_type(( XtkControlType ) nd->component_type))
+		flux_list_view_update_window(ctx, frame->node, nd);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
 	frame->state          = flux_compute_control_state(ctx, frame->node, nd);
 	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;

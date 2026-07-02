@@ -45,5 +45,6 @@
 #include "controls/flux_menu_bar_data.h"
 #include "controls/flux_nav_view_data.h"
 #include "controls/flux_tab_view_data.h"
+#include "controls/flux_list_view_data.h"
 
 #endif

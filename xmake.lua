@@ -155,6 +155,13 @@ target("test_fx_grow_wrap")
     add_includedirs("include", "src", "src/bridge")
 target_end()
 
+target("test_fx_list")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_list.c")
+    add_includedirs("include", "src", "src/bridge")
+target_end()
+
 target("hello_fluxent")
     set_kind("binary")
     add_deps("fluxent")

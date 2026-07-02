@@ -72,6 +72,7 @@ static void update(void *model, XtkMsg msg) {
 		m->dialog_open   = false;
 		m->dialog_result = msg.i;
 		break;
+	case MSG_LIST_SELECT : m->list_sel = msg.i; break;
 	default : break;
 	}
 }
@@ -103,6 +104,7 @@ static XtkEl *page_view(XtkUi *ui, Model const *m) {
 	case PAGE_MENUS       : return page_menus(ui, m);
 	case PAGE_TABVIEW     : return page_tabview(ui, m);
 	case PAGE_EXPANDER    : return page_expander(ui, m);
+	case PAGE_LISTVIEW    : return page_listview(ui, m);
 	case PAGE_DIALOG      : return page_dialog(ui, m);
 	case PAGE_SETTINGS    : return page_settings(ui, m);
 	default              : return page_home(ui, m);
@@ -154,6 +156,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	  .tab_count    = 3,
 	  .next_tab_id  = 4,
 	  .dialog_result = -1,
+	  .list_sel     = -1,
 	  .badge_value  = 5,
 	  .progress     = 60.0f,
 	};

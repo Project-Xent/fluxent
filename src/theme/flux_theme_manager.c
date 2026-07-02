@@ -80,6 +80,22 @@ static void init_light_palette(FluxThemeColors *c) {
 	c->layer_on_mica_alt_secondary     = flux_color_rgba(0, 0, 0, 0x0a);
 	c->solid_background                = flux_color_rgb(243, 243, 243);
 	c->solid_background_tertiary       = flux_color_rgb(249, 249, 249);
+
+	c->ctrl_on_image_default           = flux_color_rgba(255, 255, 255, 0xc9);
+	c->ctrl_on_image_secondary         = flux_color_rgb(243, 243, 243);
+	c->ctrl_on_image_tertiary          = flux_color_rgb(235, 235, 235);
+	c->ctrl_on_image_disabled          = flux_color_rgba(255, 255, 255, 0x00);
+
+	c->list_box_bg                     = flux_color_rgb(242, 242, 242);
+
+	c->flip_nav_bg_default             = flux_color_rgba(0, 0, 0, 0x66);
+	c->flip_nav_bg_hover               = flux_color_rgba(0, 0, 0, 0x99);
+	c->flip_nav_bg_pressed             = flux_color_rgba(0, 0, 0, 0xcc);
+	c->flip_nav_arrow                  = flux_color_rgba(255, 255, 255, 0xcc);
+	c->flip_view_bg                    = flux_color_rgba(0, 0, 0, 0x19);
+
+	c->flyout_background               = flux_color_rgb(249, 249, 249);
+	c->flyout_border                   = flux_color_rgba(0, 0, 0, 0x0f);
 }
 
 static void init_dark_palette(FluxThemeColors *c) {
@@ -135,6 +151,22 @@ static void init_dark_palette(FluxThemeColors *c) {
 	c->layer_on_mica_alt_secondary     = flux_color_rgba(255, 255, 255, 0x0f);
 	c->solid_background                = flux_color_rgb(32, 32, 32);
 	c->solid_background_tertiary       = flux_color_rgb(40, 40, 40);
+
+	c->ctrl_on_image_default           = flux_color_rgba(28, 28, 28, 0xb3);
+	c->ctrl_on_image_secondary         = flux_color_rgb(26, 26, 26);
+	c->ctrl_on_image_tertiary          = flux_color_rgb(19, 19, 19);
+	c->ctrl_on_image_disabled          = flux_color_rgb(30, 30, 30);
+
+	c->list_box_bg                     = flux_color_rgb(43, 43, 43);
+
+	c->flip_nav_bg_default             = flux_color_rgba(255, 255, 255, 0x66);
+	c->flip_nav_bg_hover               = flux_color_rgba(255, 255, 255, 0x99);
+	c->flip_nav_bg_pressed             = flux_color_rgba(255, 255, 255, 0xcc);
+	c->flip_nav_arrow                  = flux_color_rgba(0, 0, 0, 0xcc);
+	c->flip_view_bg                    = flux_color_rgba(255, 255, 255, 0x19);
+
+	c->flyout_background               = flux_color_rgb(44, 44, 44);
+	c->flyout_border                   = flux_color_rgba(0, 0, 0, 0x33);
 }
 
 static void theme_apply_accent(FluxThemeColors *c, WUI_Color a) {

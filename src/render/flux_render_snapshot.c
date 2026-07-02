@@ -348,6 +348,23 @@ static void snapshot_handle_info_badge(SnapshotContext const *ctx) {
 	snapshot_info_badge(ctx->snap, ( FluxInfoBadgeData const * ) ctx->data);
 }
 
+static bool snapshot_list_item_selected(FluxListItemData const *it) {
+	FluxListViewData const *ld = it->owner;
+	if (!ld) return it->selected;
+	if (ld->sel_mode == XTK_LIST_SELECT_SINGLE) return it->selected;
+	if (ld->sel_mode == XTK_LIST_SELECT_NONE) return false;
+	for (int i = 0; i < ld->range_count; i++)
+		if (it->index >= ld->ranges [i].first && it->index <= ld->ranges [i].last) return true;
+	return false;
+}
+
+static void snapshot_handle_list_item(SnapshotContext const *ctx) {
+	FluxListItemData const *it        = ( FluxListItemData const * ) ctx->data;
+	ctx->snap->u.list_item.kind        = ( uint8_t ) (it->owner ? it->owner->kind : XTK_LIST_KIND_LIST);
+	ctx->snap->u.list_item.is_selected = snapshot_list_item_selected(it);
+	ctx->snap->u.list_item.multi       = it->multi;
+}
+
 static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_TEXT]            = snapshot_handle_text,
   [FLUX_CONTROL_BUTTON]          = snapshot_handle_button,
@@ -375,6 +392,7 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_NAV_VIEW]        = snapshot_handle_nav_view,
   [FLUX_CONTROL_NAV_VIEW_ITEM]   = snapshot_handle_nav_view_item,
   [FLUX_CONTROL_TAB_VIEW_ITEM]   = snapshot_handle_tab_view_item,
+  [FLUX_CONTROL_LIST_ITEM]       = snapshot_handle_list_item,
 };
 
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {

@@ -40,6 +40,14 @@ static void flux_be_request_frame(void *ctx) {
 	if (rt->app) flux_app_request_render(rt->app);
 }
 
+static bool flux_be_list_viewport(void *ctx, XentNodeId id, float *offset, float *extent, float *cross) {
+	return flux_list_view_viewport((( FluxBackendCtx * ) ctx)->store, id, offset, extent, cross);
+}
+
+static void flux_be_list_realized(void *ctx, XentNodeId id, int first, int last, int cols) {
+	flux_list_view_set_realized((( FluxBackendCtx * ) ctx)->store, id, first, last, cols);
+}
+
 static void flux_be_node_cleanup(XtkNode *n) {
 	FluxNodeExt *ext = ( FluxNodeExt * ) n->ext;
 	if (ext) {
@@ -63,5 +71,7 @@ XtkBackend flux_xtk_backend(FluxBackendCtx *bctx) {
 	  .is_interactive = flux_is_interactive,
 	  .request_frame  = flux_be_request_frame,
 	  .node_cleanup   = flux_be_node_cleanup,
+	  .list_viewport  = flux_be_list_viewport,
+	  .list_realized  = flux_be_list_realized,
 	};
 }

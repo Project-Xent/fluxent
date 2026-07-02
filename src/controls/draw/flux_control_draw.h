@@ -248,6 +248,16 @@ void flux_draw_tab_view_item(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw a ListView-family cell (per-kind chrome: pill / fill / ring + checkbox). */
+void flux_draw_list_item(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw the ListBox surface (ChromeMediumLow fill). */
+void flux_draw_list_box(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw a text box (chrome + content + elevation border). */
 void flux_draw_textbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

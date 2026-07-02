@@ -41,6 +41,7 @@ enum
 	PAGE_MENUS,
 	PAGE_TABVIEW,
 	PAGE_EXPANDER,
+	PAGE_LISTVIEW,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
 	PAGE_SETTINGS,
@@ -88,6 +89,7 @@ enum
 	MSG_TAB_ADD,
 	MSG_DIALOG_OPEN,
 	MSG_DIALOG_RESULT, /**< .i = FluxDialogResult. */
+	MSG_LIST_SELECT,   /**< .i = row index. */
 };
 
 #define BAR_COUNT 4
@@ -123,6 +125,7 @@ typedef struct Model {
 	int    tab_gen;
 	bool   dialog_open;
 	int    dialog_result;
+	int    list_sel;
 } Model;
 
 /* -------------------------------------------------------------------------
@@ -158,6 +161,7 @@ XtkEl *page_image(XtkUi *ui, Model const *m);
 XtkEl *page_menus(XtkUi *ui, Model const *m);
 XtkEl *page_tabview(XtkUi *ui, Model const *m);
 XtkEl *page_expander(XtkUi *ui, Model const *m);
+XtkEl *page_listview(XtkUi *ui, Model const *m);
 XtkEl *page_dialog(XtkUi *ui, Model const *m);
 XtkEl *page_settings(XtkUi *ui, Model const *m);
 

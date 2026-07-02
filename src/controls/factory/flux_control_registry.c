@@ -66,5 +66,9 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	flux_control_registry_register(reg, FLUX_CONTROL_NAV_VIEW_ITEM, flux_draw_nav_view_item, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_TAB_VIEW, flux_draw_tab_view, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_TAB_VIEW_ITEM, flux_draw_tab_view_item, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_LIST_ITEM, flux_draw_list_item, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_LIST_BOX, flux_draw_list_box, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_GRID_VIEW, flux_draw_container, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_ITEMS_REPEATER, flux_draw_container, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_CUSTOM, flux_draw_container, NULL);
 }

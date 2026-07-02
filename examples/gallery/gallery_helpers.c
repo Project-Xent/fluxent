@@ -26,6 +26,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_MENUS]       = {XTK_NAV_CHILD,     NULL,       "Menus & links"    },
   [PAGE_TABVIEW]     = {XTK_NAV_CHILD,     NULL,       "TabView"          },
   [PAGE_EXPANDER]    = {XTK_NAV_CHILD,     NULL,       "Expander"         },
+  [PAGE_LISTVIEW]    = {XTK_NAV_CHILD,     NULL,       "ListView"         },
   [PAGE_CAT_DIALOGS] = {XTK_NAV_ITEM,      "Flag",     "Dialogs & flyouts"},
   [PAGE_DIALOG]      = {XTK_NAV_CHILD,     NULL,       "ContentDialog"    },
   [PAGE_SETTINGS]    = {XTK_NAV_FOOTER,    "Settings", "Settings"         },

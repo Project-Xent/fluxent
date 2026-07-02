@@ -80,6 +80,22 @@ typedef struct FluxThemeColors {
 	FluxColor layer_on_mica_alt_secondary; /**< LayerOnMicaBaseAltFillColorSecondary. */
 	FluxColor solid_background;
 	FluxColor solid_background_tertiary;   /**< SolidBackgroundFillColorTertiary. */
+
+	FluxColor ctrl_on_image_default;   /**< ControlOnImageFillColorDefault (GridView overlay check). */
+	FluxColor ctrl_on_image_secondary; /**< ControlOnImageFillColorSecondary. */
+	FluxColor ctrl_on_image_tertiary;  /**< ControlOnImageFillColorTertiary. */
+	FluxColor ctrl_on_image_disabled;  /**< ControlOnImageFillColorDisabled. */
+
+	FluxColor list_box_bg;             /**< SystemControlBackgroundChromeMediumLow (ListBox surface). */
+
+	FluxColor flip_nav_bg_default;     /**< FlipView nav button fill (SystemBaseMediumLow). */
+	FluxColor flip_nav_bg_hover;       /**< SystemBaseMedium. */
+	FluxColor flip_nav_bg_pressed;     /**< SystemBaseMediumHigh. */
+	FluxColor flip_nav_arrow;          /**< SystemAltMediumHigh (all states). */
+	FluxColor flip_view_bg;            /**< SystemListLow. */
+
+	FluxColor flyout_background;       /**< Popup surface (ComboBox dropdown, suggestions). */
+	FluxColor flyout_border;           /**< Popup 1px border. */
 } FluxThemeColors;
 
 /** @brief Opaque theme manager. */

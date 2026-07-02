@@ -255,6 +255,9 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_PASSWORD_BOX  : *out = el->textbox.on_change; return true;
 	case FLUX_CONTROL_COMBO_BOX    : *out = el->combo.on_select; return true;
 	case FLUX_CONTROL_NAV_VIEW     : *out = el->nav.on_select; return true;
+	case FLUX_CONTROL_LIST         :
+	case FLUX_CONTROL_LIST_BOX     :
+	case FLUX_CONTROL_GRID_VIEW    : *out = el->list.on_select; return true;
 	default                        : return false;
 	}
 }
@@ -483,6 +486,28 @@ static void flux_pp_nav(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl
 	if (prev && prev->nav.selected != el->nav.selected) flux_nav_view_select(rt->store, n->node, el->nav.selected);
 }
 
+static void flux_pp_list(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev || prev->list.count != el->list.count || prev->list.item_height != el->list.item_height
+	    || prev->list.item_width != el->list.item_width || prev->list.columns != el->list.columns)
+		flux_list_view_set_extent(
+		  rt->store, n->node, el->list.count, el->list.item_height, el->list.item_width, el->list.columns
+		);
+	if (!prev || prev->list.sel_mode != el->list.sel_mode)
+		flux_list_view_set_sel_mode(rt->store, n->node, el->list.sel_mode);
+	if (prev && prev->list.selected != el->list.selected)
+		flux_list_view_set_selected(rt->store, n->node, el->list.selected);
+}
+
+/* Recycled cells: an index change repositions the retained node to its new
+ * content-space slot; content underneath was already patched by the regular
+ * child diff. */
+static void flux_pp_list_item(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev || prev->item.index != el->item.index || prev->item.x != el->item.x || prev->item.y != el->item.y)
+		flux_list_item_set_place(rt->store, n->node, el->item.index, el->item.x, el->item.y);
+	if (!prev || prev->item.selected != el->item.selected || prev->item.multi != el->item.multi)
+		flux_list_item_set_state(rt->store, n->node, el->item.selected, el->item.multi);
+}
+
 static void flux_rewire_menu_bindings(XtkNode *n, XtkMenuItemDesc const *items, int count) {
 	FluxNodeExt *ext = ( FluxNodeExt * ) n->ext;
 	if (!ext) return;
@@ -567,6 +592,11 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_INFO_BAR]        = flux_pp_infobar,
 	[FLUX_CONTROL_NUMBER_BOX]      = flux_pp_number,
 	[FLUX_CONTROL_NAV_VIEW]        = flux_pp_nav,
+	[FLUX_CONTROL_LIST]            = flux_pp_list,
+	[FLUX_CONTROL_LIST_BOX]        = flux_pp_list,
+	[FLUX_CONTROL_GRID_VIEW]       = flux_pp_list,
+	[FLUX_CONTROL_ITEMS_REPEATER]  = flux_pp_list,
+	[FLUX_CONTROL_LIST_ITEM]       = flux_pp_list_item,
 	[FLUX_CONTROL_DROPDOWN_BUTTON] = flux_pp_dropdown,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_pp_split,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
@@ -601,6 +631,9 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_TAB_VIEW]        = true,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = true,
 	[FLUX_CONTROL_NAV_VIEW]        = true,
+	[FLUX_CONTROL_LIST]            = true,
+	[FLUX_CONTROL_LIST_BOX]        = true,
+	[FLUX_CONTROL_GRID_VIEW]       = true,
 };
 
 bool flux_is_interactive(XtkEl const *el) {

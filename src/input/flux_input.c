@@ -113,6 +113,43 @@ static FluxHitResult input_hit_test_root(FluxInput *input, XentNodeId root, floa
 	return hit_test_recursive(&query);
 }
 
+/* A node that participates in pointer interaction: it handles presses,
+ * clicks, hover, focus, or shows a tooltip. Plain content (text blocks,
+ * layout containers) is transparent to the pointer. */
+static bool input_node_interactive(FluxInput *input, XentNodeId node, FluxNodeData const *nd) {
+	if (xent_get_focusable(input->ctx, node)) return true;
+	if (!nd) return false;
+	FluxNodeBehavior const *b = &nd->behavior;
+	return b->on_click || b->on_pointer_down || b->on_middle_click || b->on_hover_changed || nd->tooltip_text;
+}
+
+/* Re-base a hit onto ancestor `node`, shifting bounds/local by the layout-rect
+ * delta (shared scroll offsets cancel out, so the delta is scroll-correct). */
+static FluxHitResult input_rebase_hit(FluxInput *input, FluxHitResult const *hit, XentNodeId node, FluxNodeData *nd) {
+	XentRect from = {0}, to = {0};
+	xent_get_layout_rect(input->ctx, hit->node, &from);
+	xent_get_layout_rect(input->ctx, node, &to);
+	float dx = to.x - from.x, dy = to.y - from.y;
+	return (FluxHitResult) {
+	  .node   = node,
+	  .data   = nd,
+	  .bounds = {hit->bounds.x + dx, hit->bounds.y + dy, to.w, to.h},
+	  .local  = {hit->local.x - dx, hit->local.y - dy},
+	};
+}
+
+/* Pointer events land on the deepest node under the cursor, but plain
+ * content must not swallow them: a click on the text inside a ListView row
+ * belongs to the row. Resolve the hit to the nearest interactive ancestor. */
+static FluxHitResult input_resolve_interactive(FluxInput *input, FluxHitResult const *hit) {
+	for (XentNodeId node = hit->node; node != XENT_NODE_INVALID; node = xent_get_parent(input->ctx, node)) {
+		FluxNodeData *nd = flux_node_store_get(input->store, node);
+		if (!input_node_interactive(input, node, nd)) continue;
+		return node == hit->node ? *hit : input_rebase_hit(input, hit, node, nd);
+	}
+	return (FluxHitResult) {0};
+}
+
 static InputScrollEvent
 input_scroll_event_from_pointer(FluxInput *input, XentNodeId root, FluxPointerEvent const *event) {
 	return (InputScrollEvent) {
@@ -309,8 +346,12 @@ static void input_release_pressed_node(FluxInput *input, FluxNodeData *nd, XentN
 	if (flux_get_control_type(input->ctx, input->pressed) == FLUX_CONTROL_PASSWORD_BOX)
 		xent_set_semantic_checked(input->ctx, input->pressed, 0);
 
-	FluxHitResult hit = input_hit_test_root(input, root, px, py);
-	if (hit.node == input->pressed) {
+	/* The release must land on the same interactive target the press did —
+	 * resolved through plain content, so releasing over a row's text still
+	 * counts as releasing on the row. */
+	FluxHitResult hit    = input_hit_test_root(input, root, px, py);
+	FluxHitResult target = input_resolve_interactive(input, &hit);
+	if (target.node == input->pressed) {
 		if (nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
 		return;
 	}
@@ -399,7 +440,8 @@ static void fi_cancel(FluxInput *input) {
  * release must simply land on a node that opted in. */
 static void input_dispatch_middle_button(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev) {
 	if (ev->kind != FLUX_POINTER_UP) return;
-	FluxHitResult hit = input_hit_test_root(input, root, ev->x, ev->y);
+	FluxHitResult raw = input_hit_test_root(input, root, ev->x, ev->y);
+	FluxHitResult hit = input_resolve_interactive(input, &raw);
 	if (!hit.data || !hit.data->behavior.on_middle_click) return;
 	if (!xent_get_semantic_enabled(input->ctx, hit.node)) return;
 	hit.data->behavior.on_middle_click(hit.data->behavior.on_middle_click_ctx);
@@ -446,7 +488,8 @@ static void fi_pointer_move(FluxInput *input, XentNodeId root, float px, float p
 	flux_scroll_update_hover(input, hit.node, px, py);
 	if (input_drive_touch_pan(input, px, py)) return;
 
-	input_update_hover_from_hit(input, &hit, px, py);
+	FluxHitResult target = input_resolve_interactive(input, &hit);
+	input_update_hover_from_hit(input, &target, px, py);
 	input_forward_pressed_move(input, px, py);
 }
 
@@ -455,13 +498,17 @@ static void fi_pointer_down(FluxInput *input, XentNodeId root, float px, float p
 
 	FluxHitResult hit = input_hit_test_root(input, root, px, py);
 
+	/* Scrollbar chrome and touch panning key off the raw (deepest) hit... */
 	if (input_press_scroll_overlay(input, &hit, px, py)) return;
 	if (input_press_number_box_spin(input, &hit)) return;
-
-	input_update_click_count(input, &hit, px, py);
 	input_setup_touch_pan(input, &hit, px, py);
-	input_press_hit(input, &hit);
-	input_update_focus_from_hit(input, &hit);
+
+	/* ...while press/click/focus route to the nearest interactive ancestor
+	 * (a click on a row's text belongs to the row). */
+	FluxHitResult target = input_resolve_interactive(input, &hit);
+	input_update_click_count(input, &target, px, py);
+	input_press_hit(input, &target);
+	input_update_focus_from_hit(input, &target);
 }
 
 static void fi_pointer_up(FluxInput *input, XentNodeId root, float px, float py) {

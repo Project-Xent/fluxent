@@ -56,6 +56,20 @@ void flux_tramp_select(void *ud, int index) {
 	xtk_runtime_post(b->rt, m);
 }
 
+void flux_tramp_query(void *ud, char const *text) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	XtkMsg      m = b->on_click;
+	m.ptr        = ( void * ) text;
+	xtk_runtime_post(b->rt, m);
+}
+
+void flux_tramp_chosen(void *ud, int index) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	XtkMsg      m = b->on_close;
+	m.i          = index;
+	xtk_runtime_post(b->rt, m);
+}
+
 void flux_tramp_expand(void *ud, bool expanded) {
 	FluxBinding *b = ( FluxBinding * ) ud;
 	XtkMsg      m = b->on_change;
@@ -149,11 +163,12 @@ static XentSize flux_badge_size(XtkBadgeDesc const *b) {
 	return b->value < 100 ? (XentSize) {24.0f, 16.0f} : (XentSize) {30.0f, 16.0f};
 }
 
-/* Deep-compare combo item arrays to avoid unnecessary flux_combo_box_set_items. */
-static bool flux_combo_items_eq(XtkComboDesc const *a, XtkComboDesc const *b) {
-	if (a->count != b->count) return false;
-	for (int i = 0; i < a->count; i++)
-		if (!flux_streq(a->items [i], b->items [i])) return false;
+/* Deep-compare two string arrays; controls use it to skip a rebuild when the
+ * item strings are unchanged. */
+static bool flux_str_array_eq(char const *const *a, int an, char const *const *b, int bn) {
+	if (an != bn) return false;
+	for (int i = 0; i < an; i++)
+		if (!flux_streq(a [i], b [i])) return false;
 	return true;
 }
 
@@ -243,6 +258,7 @@ static XtkMsg flux_binding_click(XtkEl const *el) {
 	case FLUX_CONTROL_INFO_BAR     : return el->info_bar.on_close;
 	case FLUX_CONTROL_SPLIT_BUTTON : return el->split.on_click;
 	case FLUX_CONTROL_TAB_VIEW     : return el->tab_view.on_add;
+	case FLUX_CONTROL_AUTO_SUGGEST : return el->suggest.on_query;
 	default                        : return el->button.on_click;
 	}
 }
@@ -260,6 +276,7 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_GRID_VIEW    : *out = el->list.on_select; return true;
 	case FLUX_CONTROL_FLIP_VIEW    : *out = el->flip.on_select; return true;
 	case FLUX_CONTROL_PIPS_PAGER   : *out = el->pips.on_select; return true;
+	case FLUX_CONTROL_AUTO_SUGGEST : *out = el->suggest.on_text; return true;
 	default                        : return false;
 	}
 }
@@ -282,7 +299,9 @@ static void flux_apply_bindings(XtkNode *n, XtkEl const *el) {
 	if (!b) return;
 	b->on_click  = flux_binding_click(el);
 	b->on_change = flux_binding_change(el);
-	b->on_close  = el->type == FLUX_CONTROL_TAB_VIEW ? el->tab_view.on_close : ( XtkMsg ) {0};
+	b->on_close  = el->type == FLUX_CONTROL_TAB_VIEW ? el->tab_view.on_close
+	    : el->type == FLUX_CONTROL_AUTO_SUGGEST      ? el->suggest.on_chosen
+	                                                 : ( XtkMsg ) {0};
 }
 
 /* Signature for per-type prop handlers; NULL in kPropsTable means no-op. */
@@ -448,7 +467,7 @@ static void flux_pp_repeat_button(FluxBackendCtx *rt, XtkNode *n, XtkEl const *p
 }
 
 static void flux_pp_combo(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
-	if (prev && !flux_combo_items_eq(&prev->combo, &el->combo))
+	if (prev && !flux_str_array_eq(prev->combo.items, prev->combo.count, el->combo.items, el->combo.count))
 		flux_combo_box_set_items(rt->store, n->node, el->combo.items, el->combo.count);
 	if (prev && prev->combo.selected != el->combo.selected)
 		flux_combo_box_set_selected(rt->store, n->node, el->combo.selected);
@@ -576,6 +595,16 @@ static void flux_pp_pips(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkE
 		);
 }
 
+static void flux_pp_suggest(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (prev
+	    && !flux_str_array_eq(prev->suggest.suggestions, prev->suggest.count, el->suggest.suggestions, el->suggest.count))
+		flux_auto_suggest_set_suggestions(rt->store, n->node, el->suggest.suggestions, el->suggest.count);
+	if (prev && el->suggest.content && !flux_streq(prev->suggest.content, el->suggest.content))
+		flux_auto_suggest_set_content(rt->store, n->node, el->suggest.content);
+	if (!prev || prev->suggest.disabled != el->suggest.disabled)
+		flux_auto_suggest_set_enabled(rt->store, n->node, !el->suggest.disabled);
+}
+
 static void flux_pp_dialog(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (prev && prev->dialog.open != el->dialog.open) {
 		if (el->dialog.open) flux_content_dialog_show(rt->store, n->node);
@@ -614,6 +643,7 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_LIST_ITEM]       = flux_pp_list_item,
 	[FLUX_CONTROL_FLIP_VIEW]       = flux_pp_flip,
 	[FLUX_CONTROL_PIPS_PAGER]      = flux_pp_pips,
+	[FLUX_CONTROL_AUTO_SUGGEST]    = flux_pp_suggest,
 	[FLUX_CONTROL_DROPDOWN_BUTTON] = flux_pp_dropdown,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_pp_split,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
@@ -653,6 +683,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_GRID_VIEW]       = true,
 	[FLUX_CONTROL_FLIP_VIEW]       = true,
 	[FLUX_CONTROL_PIPS_PAGER]      = true,
+	[FLUX_CONTROL_AUTO_SUGGEST]    = true,
 };
 
 bool flux_is_interactive(XtkEl const *el) {

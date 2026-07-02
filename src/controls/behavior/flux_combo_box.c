@@ -58,6 +58,10 @@ typedef struct FluxComboRuntime {
 	bool                  panning;          /**< Touch drag exceeded the slop: scroll, don't select. */
 	float                 press_y;          /**< Pointer y at the press, for the pan slop test. */
 	float                 pan_start_scroll; /**< scroll_y at the press; the pan offsets from here. */
+
+	wchar_t               search [64];      /**< IsTextSearchEnabled typeahead buffer. */
+	int                   search_len;
+	DWORD                 search_last;      /**< Tick of the last search char (1 s reset). */
 } FluxComboRuntime;
 
 /* WinUI lists treat a touch contact as a tap only until it travels past the
@@ -115,38 +119,47 @@ static int combo_item_at(FluxComboRuntime const *rt, float y) {
 	return (i >= 0 && i < rt->model.item_count) ? i : -1;
 }
 
+/* Row backplate per state; alpha 0 = none (ComboBoxItem CommonStates). */
+static FluxColor combo_item_fill(FluxThemeColors const *t, bool selected, bool hot, bool pressed) {
+	if (pressed) return t->subtle_fill_tertiary;
+	if (hot) return selected ? t->subtle_fill_tertiary : t->subtle_fill_secondary;
+	if (selected) return t->subtle_fill_secondary;
+	return flux_color_rgba(0, 0, 0, 0);
+}
+
+static void combo_draw_item_label(
+  FluxRenderContext const *rc, FluxThemeColors const *t, FluxRect const *item, char const *label
+) {
+	if (!label || !rc->text) return;
+	FluxRect tr = {item->x + CB_ITEM_PAD_LEFT, item->y, item->w - CB_ITEM_PAD_LEFT - 4.0f, item->h};
+	if (tr.w <= 0.0f) return;
+
+	FluxTextStyle ts;
+	memset(&ts, 0, sizeof(ts));
+	ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
+	ts.font_weight = FLUX_FONT_REGULAR;
+	ts.text_align  = FLUX_TEXT_LEFT;
+	ts.vert_align  = FLUX_TEXT_VCENTER;
+	ts.color       = t->text_primary;
+	flux_text_draw(rc->text, FLUX_RT(rc), label, &tr, &ts);
+}
+
 static void combo_draw_item(FluxRenderContext const *rc, FluxComboRuntime const *rt, FluxThemeColors const *t, int i) {
 	float    row  = CB_BORDER + CB_CONTENT_MARGIN_Y + ( float ) i * rt->row_h - rt->scroll_y;
 	FluxRect item = {
 	  CB_BORDER + CB_ITEM_MARGIN_X, row + CB_ITEM_MARGIN_Y, rt->width - 2.0f * (CB_BORDER + CB_ITEM_MARGIN_X),
 	  rt->row_h - 2.0f * CB_ITEM_MARGIN_Y};
 
-	bool selected = i == rt->model.selected_index;
-	bool hot      = i == rt->highlight;
-	bool pressed  = i == rt->pressed_index;
-	if (pressed) flux_fill_rounded_rect(rc, &item, CB_ITEM_CORNER, t->subtle_fill_tertiary);
-	else if (hot)
-		flux_fill_rounded_rect(
-		  rc, &item, CB_ITEM_CORNER, selected ? t->subtle_fill_tertiary : t->subtle_fill_secondary
-		);
-	else if (selected) flux_fill_rounded_rect(rc, &item, CB_ITEM_CORNER, t->subtle_fill_secondary);
+	bool      selected = i == rt->model.selected_index;
+	FluxColor fill     = combo_item_fill(t, selected, i == rt->highlight, i == rt->pressed_index);
+	if (flux_color_af(fill) > 0.0f) flux_fill_rounded_rect(rc, &item, CB_ITEM_CORNER, fill);
 
 	if (selected) {
 		FluxRect pill = {item.x + 1.0f, item.y + (item.h - CB_PILL_H) * 0.5f, CB_PILL_W, CB_PILL_H};
 		flux_fill_rounded_rect(rc, &pill, CB_PILL_CORNER, t->accent_default);
 	}
 
-	if (rt->model.items [i] && rc->text) {
-		FluxTextStyle ts;
-		memset(&ts, 0, sizeof(ts));
-		ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
-		ts.font_weight = FLUX_FONT_REGULAR;
-		ts.text_align  = FLUX_TEXT_LEFT;
-		ts.vert_align  = FLUX_TEXT_VCENTER;
-		ts.color       = t->text_primary;
-		FluxRect tr    = {item.x + CB_ITEM_PAD_LEFT, item.y, item.w - CB_ITEM_PAD_LEFT - 4.0f, item.h};
-		if (tr.w > 0.0f) flux_text_draw(rc->text, FLUX_RT(rc), rt->model.items [i], &tr, &ts);
-	}
+	combo_draw_item_label(rc, t, &item, rt->model.items [i]);
 }
 
 static void
@@ -196,7 +209,13 @@ static void combo_paint(void *ctx, FluxPopup *popup) {
 	FluxRect    view      = {CB_BORDER, CB_BORDER + CB_CONTENT_MARGIN_Y, rt->width - 2.0f * CB_BORDER, vp};
 	D2D1_RECT_F view_clip = flux_d2d_rect(&view);
 	ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(&rc), &view_clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-	for (int i = 0; i < rt->model.item_count; i++) combo_draw_item(&rc, rt, theme, i);
+	/* Only the rows intersecting the viewport paint — huge item sets stay
+	 * O(visible) per frame (memory is O(items) strings, no nodes at all). */
+	int first = rt->row_h > 0.0f ? ( int ) (rt->scroll_y / rt->row_h) : 0;
+	int last  = rt->row_h > 0.0f ? ( int ) ((rt->scroll_y + vp) / rt->row_h) + 1 : rt->model.item_count - 1;
+	if (first < 0) first = 0;
+	if (last > rt->model.item_count - 1) last = rt->model.item_count - 1;
+	for (int i = first; i <= last; i++) combo_draw_item(&rc, rt, theme, i);
 	ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(&rc));
 
 	combo_draw_scrollbar(&rc, rt, theme, vp);
@@ -235,6 +254,22 @@ static void combo_commit(FluxComboRuntime *rt, int index) {
 	combo_close(rt);
 }
 
+/* Drop-down width: at least the box width, grown to the widest item. */
+static float combo_dropdown_width(FluxComboRuntime const *rt, float base_w) {
+	if (!rt->text) return base_w;
+	FluxTextStyle ts;
+	memset(&ts, 0, sizeof(ts));
+	ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
+	ts.font_weight = FLUX_FONT_REGULAR;
+	float pad      = 2.0f * (CB_BORDER + CB_ITEM_MARGIN_X) + CB_ITEM_PAD_LEFT + 4.0f;
+	for (int i = 0; i < rt->model.item_count; i++) {
+		if (!rt->model.items [i]) continue;
+		float w = flux_text_measure(rt->text, rt->model.items [i], &ts, 0).w + pad;
+		if (w > base_w) base_w = w;
+	}
+	return base_w;
+}
+
 static void combo_open(FluxComboRuntime *rt) {
 	XentRect r = {0};
 	xent_get_layout_rect(rt->ctx, rt->node, &r);
@@ -245,20 +280,7 @@ static void combo_open(FluxComboRuntime *rt) {
 	bool          touch = nd && nd->state.pointer_type == 1;
 	rt->row_h           = touch ? CB_ROW_H_TOUCH : CB_ROW_H;
 
-	float base_w = r.w > 0.0f ? r.w : 120.0f;
-	if (rt->text) {
-		FluxTextStyle ts;
-		memset(&ts, 0, sizeof(ts));
-		ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
-		ts.font_weight = FLUX_FONT_REGULAR;
-		float pad      = 2.0f * (CB_BORDER + CB_ITEM_MARGIN_X) + CB_ITEM_PAD_LEFT + 4.0f;
-		for (int i = 0; i < rt->model.item_count; i++) {
-			if (!rt->model.items[i]) continue;
-			float w = flux_text_measure(rt->text, rt->model.items[i], &ts, 0).w + pad;
-			if (w > base_w) base_w = w;
-		}
-	}
-	rt->width           = base_w;
+	rt->width           = combo_dropdown_width(rt, r.w > 0.0f ? r.w : 120.0f);
 	rt->height          = combo_dropdown_height(rt->model.item_count, rt->row_h);
 	rt->content_h       = ( float ) rt->model.item_count * rt->row_h;
 	flux_popup_set_size(rt->popup, rt->width, rt->height);
@@ -360,22 +382,74 @@ static void combo_step_highlight(FluxComboRuntime *rt, int delta) {
 	combo_repaint_popup(rt);
 }
 
+static void combo_jump_selection(FluxComboRuntime *rt, int index) {
+	int n = rt->model.item_count;
+	if (n <= 0) return;
+	if (index < 0) index = 0;
+	if (index >= n) index = n - 1;
+	if (index == rt->model.selected_index) return;
+	rt->model.selected_index = index;
+	combo_update_layout_text(rt);
+	if (rt->model.on_select) rt->model.on_select(rt->model.on_select_ctx, index);
+	combo_repaint_owner(rt);
+}
+
+static void combo_jump_highlight(FluxComboRuntime *rt, int index) {
+	int n = rt->model.item_count;
+	if (n <= 0) return;
+	if (index < 0) index = 0;
+	if (index >= n) index = n - 1;
+	rt->highlight = index;
+	combo_ensure_visible(rt, index);
+	combo_repaint_popup(rt);
+}
+
+static bool combo_alt_down(void) { return (GetKeyState(VK_MENU) & 0x8000) != 0; }
+
+static int  combo_page_rows(FluxComboRuntime *rt) {
+	float vp = combo_viewport_h(rt);
+	int   n  = rt->row_h > 0.0f ? ( int ) (vp / rt->row_h) : 1;
+	return n > 0 ? n : 1;
+}
+
+/* ComboBox_Partial MainKeyDown: closed-state arrows move the selection;
+ * Home/End jump it; F4 / Alt+Down / Alt+Up open. */
 static bool combo_key_collapsed(FluxComboRuntime *rt, unsigned int vk) {
+	if (vk == VK_F4 || ((vk == VK_DOWN || vk == VK_UP) && combo_alt_down())) {
+		combo_open(rt);
+		return true;
+	}
 	switch (vk) {
 	case VK_DOWN   : combo_step_selection(rt, +1); return true;
 	case VK_UP     : combo_step_selection(rt, -1); return true;
+	case VK_HOME   : combo_jump_selection(rt, 0); return true;
+	case VK_END    : combo_jump_selection(rt, rt->model.item_count - 1); return true;
 	case VK_RETURN :
 	case VK_SPACE  : combo_open(rt); return true;
 	default        : return false;
 	}
 }
 
+/* ComboBox_Partial PopupKeyDown: navigation moves the highlight, Enter/Space
+ * commit, Escape / F4 / Alt+arrows / Tab close, Left/Right are swallowed. */
 static bool combo_key_open(FluxComboRuntime *rt, unsigned int vk) {
+	if (vk == VK_F4 || ((vk == VK_DOWN || vk == VK_UP) && combo_alt_down())) {
+		combo_close(rt);
+		return true;
+	}
 	switch (vk) {
 	case VK_DOWN   : combo_step_highlight(rt, +1); return true;
 	case VK_UP     : combo_step_highlight(rt, -1); return true;
+	case VK_HOME   : combo_jump_highlight(rt, 0); return true;
+	case VK_END    : combo_jump_highlight(rt, rt->model.item_count - 1); return true;
+	case VK_PRIOR  : combo_step_highlight(rt, -combo_page_rows(rt)); return true;
+	case VK_NEXT   : combo_step_highlight(rt, +combo_page_rows(rt)); return true;
+	case VK_LEFT   :
+	case VK_RIGHT  : return true; /* swallowed while open */
+	case VK_SPACE  :
 	case VK_RETURN : combo_commit(rt, rt->highlight); return true;
 	case VK_ESCAPE : combo_close(rt); return true;
+	case VK_TAB    : combo_close(rt); return false; /* close, but let focus move */
 	default        : return false;
 	}
 }
@@ -384,6 +458,38 @@ static bool combo_on_key(void *ctx, unsigned int vk, bool down) {
 	FluxComboRuntime *rt = ( FluxComboRuntime * ) ctx;
 	if (!rt || !down) return false;
 	return rt->model.open ? combo_key_open(rt, vk) : combo_key_collapsed(rt, vk);
+}
+
+/* Case-insensitive ASCII prefix match against the typeahead buffer. */
+static bool combo_prefix_match(FluxComboRuntime const *rt, char const *s) {
+	if (!s) return false;
+	for (int k = 0; k < rt->search_len; k++)
+		if (!s [k] || ( wchar_t ) towlower(( unsigned char ) s [k]) != rt->search [k]) return false;
+	return true;
+}
+
+/* IsTextSearchEnabled typeahead: prefix search over the items with a 1 s
+ * reset buffer, starting after the current position (ProcessSearch). */
+static void combo_on_char(void *ctx, wchar_t ch) {
+	FluxComboRuntime *rt = ( FluxComboRuntime * ) ctx;
+	if (!rt || rt->model.item_count <= 0 || ch < 32) return;
+
+	DWORD now = GetTickCount();
+	if (now - rt->search_last > 1000 || rt->search_len >= ( int ) (sizeof(rt->search) / sizeof(rt->search [0])) - 1)
+		rt->search_len = 0;
+	rt->search [rt->search_len++] = ( wchar_t ) towlower(ch);
+	rt->search [rt->search_len]   = 0;
+	rt->search_last               = now;
+
+	int n     = rt->model.item_count;
+	int start = rt->model.open ? rt->highlight : rt->model.selected_index;
+	for (int step = rt->search_len > 1 ? 0 : 1; step <= n; step++) {
+		int i = (((start < 0 ? -1 : start) + step) % n + n) % n;
+		if (!combo_prefix_match(rt, rt->model.items [i])) continue;
+		if (rt->model.open) combo_jump_highlight(rt, i);
+		else combo_jump_selection(rt, i);
+		return;
+	}
 }
 
 static void combo_destroy(void *component_data) {
@@ -486,6 +592,8 @@ XentNodeId flux_create_combo_box(FluxComboBoxCreateInfo const *info) {
 	nd->behavior.on_click_ctx  = rt;
 	nd->behavior.on_key        = combo_on_key;
 	nd->behavior.on_key_ctx    = rt;
+	nd->behavior.on_char       = combo_on_char;
+	nd->behavior.on_char_ctx   = rt;
 
 	xent_set_focusable(info->ctx, node, true);
 	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);

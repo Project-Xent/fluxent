@@ -273,6 +273,27 @@ static XentNodeId flux_cr_flip(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el
 	return flip;
 }
 
+static XentNodeId flux_cr_suggest(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	XentNodeId asb = flux_create_auto_suggest(&(FluxAutoSuggestCreateInfo) {
+	  .ctx         = rt->ctx,
+	  .store       = rt->store,
+	  .parent      = p,
+	  .app         = rt->app,
+	  .window      = flux_be_window(rt),
+	  .text        = flux_be_text(rt),
+	  .theme       = flux_be_theme(rt),
+	  .placeholder = el->text,
+	  .query_icon  = el->suggest.query_icon,
+	  .on_text     = flux_tramp_text,
+	  .on_query    = flux_tramp_query,
+	  .on_chosen   = flux_tramp_chosen,
+	  .userdata    = b});
+	if (asb == XENT_NODE_INVALID) return asb;
+	if (el->suggest.content) flux_auto_suggest_set_content(rt->store, asb, el->suggest.content);
+	flux_auto_suggest_set_suggestions(rt->store, asb, el->suggest.suggestions, el->suggest.count);
+	return asb;
+}
+
 static XentNodeId flux_cr_pips(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	XentNodeId pips = flux_create_pips_pager(&(FluxPipsPagerCreateInfo) {
 	  .ctx       = rt->ctx,
@@ -343,6 +364,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_LIST_ITEM]       = flux_cr_list_item,
 	[FLUX_CONTROL_FLIP_VIEW]       = flux_cr_flip,
 	[FLUX_CONTROL_PIPS_PAGER]      = flux_cr_pips,
+	[FLUX_CONTROL_AUTO_SUGGEST]    = flux_cr_suggest,
 };
 
 XentNodeId flux_create_control(FluxBackendCtx *rt, XentNodeId parent, XtkEl const *el, FluxBinding *b) {

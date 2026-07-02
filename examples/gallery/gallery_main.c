@@ -72,7 +72,21 @@ static void update(void *model, XtkMsg msg) {
 		m->dialog_open   = false;
 		m->dialog_result = msg.i;
 		break;
-	case MSG_LIST_SELECT : m->list_sel = msg.i; break;
+	case MSG_LIST_SELECT    : m->list_sel = msg.i; break;
+	case MSG_MULTI_SELECT   : m->multi_lead = msg.i; break;
+	case MSG_GRID_SELECT    : m->grid_sel = msg.i; break;
+	case MSG_LISTBOX_SELECT : m->listbox_sel = msg.i; break;
+	case MSG_FLIP_SELECT    : m->flip_page = msg.i; break;
+	case MSG_ASB_TEXT :
+		free(m->asb_text);
+		m->asb_text   = msg.ptr ? strdup(( char const * ) msg.ptr) : NULL;
+		m->asb_chosen = -1;
+		break;
+	case MSG_ASB_QUERY :
+		free(m->asb_query);
+		m->asb_query = msg.ptr ? strdup(( char const * ) msg.ptr) : NULL;
+		break;
+	case MSG_ASB_CHOSEN : m->asb_chosen = msg.i; break;
 	default : break;
 	}
 }
@@ -104,7 +118,13 @@ static XtkEl *page_view(XtkUi *ui, Model const *m) {
 	case PAGE_MENUS       : return page_menus(ui, m);
 	case PAGE_TABVIEW     : return page_tabview(ui, m);
 	case PAGE_EXPANDER    : return page_expander(ui, m);
+	case PAGE_CAT_COLLECTIONS :
+		return page_category(ui, "Collections", "Virtualized ListView, GridView, and ListBox.");
 	case PAGE_LISTVIEW    : return page_listview(ui, m);
+	case PAGE_GRIDVIEW    : return page_gridview(ui, m);
+	case PAGE_LISTBOX     : return page_listbox(ui, m);
+	case PAGE_FLIPVIEW    : return page_flipview(ui, m);
+	case PAGE_AUTOSUGGEST : return page_autosuggest(ui, m);
 	case PAGE_DIALOG      : return page_dialog(ui, m);
 	case PAGE_SETTINGS    : return page_settings(ui, m);
 	default              : return page_home(ui, m);
@@ -157,6 +177,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	  .next_tab_id  = 4,
 	  .dialog_result = -1,
 	  .list_sel     = -1,
+	  .multi_lead   = -1,
+	  .grid_sel     = -1,
+	  .listbox_sel  = -1,
+	  .asb_chosen   = -1,
 	  .badge_value  = 5,
 	  .progress     = 60.0f,
 	};

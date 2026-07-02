@@ -54,6 +54,35 @@ XtkEl *page_listview(XtkUi *ui, Model const *m) {
 			  xtk_text(ui, status, (XtkTextDesc) {.size = 13}), XTK_END}
 		  )
 		),
+		example(
+		  ui, "SelectionMode Extended: Ctrl+click toggles, Shift+click ranges, Ctrl+A selects all.",
+		  xtk_column(
+			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH},
+			(XtkEl *[]) {
+			  xtk_sized(
+				xtk_keyed(
+				  ui, "multi-list",
+				  xtk_list_view(
+				    ui, (XtkListDesc) {
+				          .count       = 200,
+				          .item_height = 40.0f,
+				          .item        = list_row,
+				          .sel_mode    = XTK_LIST_SELECT_EXTENDED,
+				          .on_select   = xtk_msg(MSG_MULTI_SELECT),
+				        }
+				  )
+				),
+				NAN, 240.0f
+			  ),
+			  xtk_text(
+				ui,
+				m->multi_lead >= 0 ? xtk_fmt(ui, "Lead selection: row %d", m->multi_lead)
+				                   : "Selection is control-retained; the lead index posts here.",
+				(XtkTextDesc) {.size = 13}
+			  ),
+			  XTK_END}
+		  )
+		),
 		XTK_END}
 	);
 }

@@ -647,6 +647,39 @@ void flux_pips_pager_configure(
   FluxNodeStore *store, XentNodeId pips, int count, int selected, int max_visible, int nav_vis
 );
 
+/* -------------------------------------------------------------------------
+ * AutoSuggestBox
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxAutoSuggestCreateInfo {
+	XentContext      *ctx;
+	FluxNodeStore    *store;
+	XentNodeId        parent;
+	FluxApp          *app;    /**< Hosts the inner TextBox (IME etc.). */
+	FluxWindow       *window;
+	FluxTextRenderer *text;
+	FluxThemeManager *theme;
+	char const       *placeholder;
+	char const       *query_icon; /**< Segoe Fluent Icons name; NULL hides the button. */
+
+	void (*on_text)(void *ctx, char const *text);  /**< User input only (WinUI Reason=UserInput). */
+	void (*on_query)(void *ctx, char const *text); /**< Enter / query button / suggestion click. */
+	void (*on_chosen)(void *ctx, int index);       /**< Arrow-key preview committed to the box. */
+	void  *userdata;
+} FluxAutoSuggestCreateInfo;
+
+/** @brief Create an AutoSuggestBox (TextBox + query button + suggestions popup). */
+XentNodeId flux_create_auto_suggest(FluxAutoSuggestCreateInfo const *info);
+
+/** @brief Replace the suggestion strings; opens/closes the list per WinUI rules. */
+void flux_auto_suggest_set_suggestions(FluxNodeStore *store, XentNodeId asb, char const *const *items, int count);
+
+/** @brief Programmatic text (Reason=ProgrammaticChange; does not post on_text). */
+void flux_auto_suggest_set_content(FluxNodeStore *store, XentNodeId asb, char const *text);
+
+/** @brief Enable / disable the box + button. */
+void flux_auto_suggest_set_enabled(FluxNodeStore *store, XentNodeId asb, bool enabled);
+
 #ifdef __cplusplus
 }
 #endif

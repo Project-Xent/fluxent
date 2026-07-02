@@ -28,6 +28,7 @@ enum
 	PAGE_TOGGLE,
 	PAGE_CAT_TEXT,
 	PAGE_TEXTBOX,
+	PAGE_AUTOSUGGEST,
 	PAGE_NUMBERBOX,
 	PAGE_TYPOGRAPHY,
 	PAGE_CAT_STATUS,
@@ -37,11 +38,15 @@ enum
 	PAGE_TOOLTIP,
 	PAGE_CAT_MEDIA,
 	PAGE_IMAGE,
+	PAGE_FLIPVIEW,
 	PAGE_CAT_MENUS,
 	PAGE_MENUS,
 	PAGE_TABVIEW,
 	PAGE_EXPANDER,
+	PAGE_CAT_COLLECTIONS,
 	PAGE_LISTVIEW,
+	PAGE_GRIDVIEW,
+	PAGE_LISTBOX,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
 	PAGE_SETTINGS,
@@ -90,6 +95,13 @@ enum
 	MSG_DIALOG_OPEN,
 	MSG_DIALOG_RESULT, /**< .i = FluxDialogResult. */
 	MSG_LIST_SELECT,   /**< .i = row index. */
+	MSG_MULTI_SELECT,  /**< .i = lead index of the Extended-mode list. */
+	MSG_GRID_SELECT,   /**< .i = cell index. */
+	MSG_LISTBOX_SELECT,/**< .i = row index. */
+	MSG_FLIP_SELECT,   /**< .i = page index (FlipView + PipsPager). */
+	MSG_ASB_TEXT,      /**< .ptr = transient query text. */
+	MSG_ASB_QUERY,     /**< .ptr = transient query text. */
+	MSG_ASB_CHOSEN,    /**< .i = previewed suggestion index. */
 };
 
 #define BAR_COUNT 4
@@ -126,6 +138,13 @@ typedef struct Model {
 	bool   dialog_open;
 	int    dialog_result;
 	int    list_sel;
+	int    multi_lead;
+	int    grid_sel;
+	int    listbox_sel;
+	int    flip_page;
+	char  *asb_text;
+	int    asb_chosen;
+	char  *asb_query;
 } Model;
 
 /* -------------------------------------------------------------------------
@@ -162,6 +181,10 @@ XtkEl *page_menus(XtkUi *ui, Model const *m);
 XtkEl *page_tabview(XtkUi *ui, Model const *m);
 XtkEl *page_expander(XtkUi *ui, Model const *m);
 XtkEl *page_listview(XtkUi *ui, Model const *m);
+XtkEl *page_gridview(XtkUi *ui, Model const *m);
+XtkEl *page_listbox(XtkUi *ui, Model const *m);
+XtkEl *page_flipview(XtkUi *ui, Model const *m);
+XtkEl *page_autosuggest(XtkUi *ui, Model const *m);
 XtkEl *page_dialog(XtkUi *ui, Model const *m);
 XtkEl *page_settings(XtkUi *ui, Model const *m);
 

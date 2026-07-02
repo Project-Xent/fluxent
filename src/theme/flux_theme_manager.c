@@ -88,11 +88,8 @@ static void init_light_palette(FluxThemeColors *c) {
 
 	c->list_box_bg                     = flux_color_rgb(242, 242, 242);
 
-	c->flip_nav_bg_default             = flux_color_rgba(0, 0, 0, 0x66);
-	c->flip_nav_bg_hover               = flux_color_rgba(0, 0, 0, 0x99);
-	c->flip_nav_bg_pressed             = flux_color_rgba(0, 0, 0, 0xcc);
-	c->flip_nav_arrow                  = flux_color_rgba(255, 255, 255, 0xcc);
-	c->flip_view_bg                    = flux_color_rgba(0, 0, 0, 0x19);
+	c->flip_nav_bg_default             = flux_color_rgba(252, 252, 252, 0xe6); /* acrylic in-app fallback */
+	c->flip_view_bg                    = flux_color_rgb(243, 243, 243);        /* SolidBackgroundFillColorBase */
 
 	c->flyout_background               = flux_color_rgb(249, 249, 249);
 	c->flyout_border                   = flux_color_rgba(0, 0, 0, 0x0f);
@@ -159,11 +156,8 @@ static void init_dark_palette(FluxThemeColors *c) {
 
 	c->list_box_bg                     = flux_color_rgb(43, 43, 43);
 
-	c->flip_nav_bg_default             = flux_color_rgba(255, 255, 255, 0x66);
-	c->flip_nav_bg_hover               = flux_color_rgba(255, 255, 255, 0x99);
-	c->flip_nav_bg_pressed             = flux_color_rgba(255, 255, 255, 0xcc);
-	c->flip_nav_arrow                  = flux_color_rgba(0, 0, 0, 0xcc);
-	c->flip_view_bg                    = flux_color_rgba(255, 255, 255, 0x19);
+	c->flip_nav_bg_default             = flux_color_rgba(44, 44, 44, 0xe6); /* acrylic in-app fallback */
+	c->flip_view_bg                    = flux_color_rgb(32, 32, 32);        /* SolidBackgroundFillColorBase */
 
 	c->flyout_background               = flux_color_rgb(44, 44, 44);
 	c->flyout_border                   = flux_color_rgba(0, 0, 0, 0x33);

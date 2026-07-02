@@ -88,11 +88,8 @@ typedef struct FluxThemeColors {
 
 	FluxColor list_box_bg;             /**< SystemControlBackgroundChromeMediumLow (ListBox surface). */
 
-	FluxColor flip_nav_bg_default;     /**< FlipView nav button fill (SystemBaseMediumLow). */
-	FluxColor flip_nav_bg_hover;       /**< SystemBaseMedium. */
-	FluxColor flip_nav_bg_pressed;     /**< SystemBaseMediumHigh. */
-	FluxColor flip_nav_arrow;          /**< SystemAltMediumHigh (all states). */
-	FluxColor flip_view_bg;            /**< SystemListLow. */
+	FluxColor flip_nav_bg_default;     /**< FlipView nav chip fill (AcrylicInApp fallback, all states). */
+	FluxColor flip_view_bg;            /**< FlipView surface (SolidBackgroundFillColorBase). */
 
 	FluxColor flyout_background;       /**< Popup surface (ComboBox dropdown, suggestions). */
 	FluxColor flyout_border;           /**< Popup 1px border. */

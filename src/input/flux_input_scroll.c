@@ -1,4 +1,5 @@
 #include "flux_input_internal.h"
+#include "fluxent/fluxent.h" /* flux_flip_view_handle_wheel */
 
 #include <assert.h>
 #include <windows.h>
@@ -392,6 +393,11 @@ bool input_handle_number_box_wheel(FluxInput *input, XentNodeId node, float delt
 	FluxNodeData *nd = flux_node_store_get(input->store, node);
 	input_dispatch_number_box_wheel(nd, delta_y);
 	return true;
+}
+
+bool input_handle_flip_view_wheel(FluxInput *input, XentNodeId node, float delta_y) {
+	if (flux_get_control_type(input->ctx, node) != FLUX_CONTROL_FLIP_VIEW) return false;
+	return flux_flip_view_handle_wheel(input->store, node, delta_y);
 }
 
 static float input_scroll_axis_max(float content, float viewport) {

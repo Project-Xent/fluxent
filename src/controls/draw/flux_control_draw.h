@@ -258,6 +258,19 @@ void flux_draw_list_box(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw the FlipView surface (SystemListLow fill). */
+void flux_draw_flip_view(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw FlipView nav buttons above the pages (overlay pass). */
+void flux_draw_flip_view_overlay(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
+
+/** @brief Draw a PipsPager (dots + nav carets). */
+void flux_draw_pips_pager(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw a text box (chrome + content + elevation border). */
 void flux_draw_textbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

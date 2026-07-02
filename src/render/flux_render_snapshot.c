@@ -1,5 +1,7 @@
 #include "fluxent/flux_render_snapshot.h"
 #include "controls/textbox/tb_internal.h"
+
+#include <windows.h>
 #include "fluxent/controls/flux_menu_bar_data.h"
 #include "fluxent/controls/flux_nav_view_data.h"
 #include "fluxent/controls/flux_tab_view_data.h"
@@ -365,6 +367,32 @@ static void snapshot_handle_list_item(SnapshotContext const *ctx) {
 	ctx->snap->u.list_item.multi       = it->multi;
 }
 
+static void snapshot_handle_flip_view(SnapshotContext const *ctx) {
+	FluxFlipViewData const *fv = ( FluxFlipViewData const * ) ctx->data;
+	int                     count = 0;
+	for (XentNodeId c = xent_get_first_child(ctx->ctx, fv->host); c != XENT_NODE_INVALID;
+	  c               = xent_get_next_sibling(ctx->ctx, c))
+		count++;
+	ctx->snap->u.flip.vertical      = fv->vertical;
+	ctx->snap->u.flip.prev_enabled  = fv->selected > 0 && count > 1;
+	ctx->snap->u.flip.next_enabled  = fv->selected < count - 1 && count > 1;
+	ctx->snap->u.flip.buttons_alive = GetTickCount() - fv->pointer_activity < 3000;
+	ctx->snap->u.flip.pressed_btn   = fv->pressed_btn;
+}
+
+static void snapshot_handle_pips_pager(SnapshotContext const *ctx) {
+	FluxPipsPagerData const *pd = ( FluxPipsPagerData const * ) ctx->data;
+	int visible                 = pd->max_visible < pd->count ? pd->max_visible : pd->count;
+	ctx->snap->u.pips.count        = pd->count;
+	ctx->snap->u.pips.selected     = pd->selected;
+	ctx->snap->u.pips.window_start = pd->window_start;
+	ctx->snap->u.pips.visible      = visible > 0 ? visible : 0;
+	ctx->snap->u.pips.vertical     = pd->vertical;
+	ctx->snap->u.pips.nav_vis      = pd->nav_vis;
+	ctx->snap->u.pips.pressed_pip  = pd->pressed_pip;
+	ctx->snap->u.pips.pressed_nav  = pd->pressed_nav;
+}
+
 static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_TEXT]            = snapshot_handle_text,
   [FLUX_CONTROL_BUTTON]          = snapshot_handle_button,
@@ -393,6 +421,8 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_NAV_VIEW_ITEM]   = snapshot_handle_nav_view_item,
   [FLUX_CONTROL_TAB_VIEW_ITEM]   = snapshot_handle_tab_view_item,
   [FLUX_CONTROL_LIST_ITEM]       = snapshot_handle_list_item,
+  [FLUX_CONTROL_FLIP_VIEW]       = snapshot_handle_flip_view,
+  [FLUX_CONTROL_PIPS_PAGER]      = snapshot_handle_pips_pager,
 };
 
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {

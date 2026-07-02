@@ -76,6 +76,7 @@ bool            input_finish_scroll_drag(FluxInput *input);
 bool            input_release_scroll_buttons(FluxInput *input);
 bool            input_finish_touch_pan(FluxInput *input);
 bool            input_handle_number_box_wheel(FluxInput *input, XentNodeId node, float delta_y);
+bool            input_handle_flip_view_wheel(FluxInput *input, XentNodeId node, float delta_y);
 bool            input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining_x, float *remaining_y);
 void            flux_scroll_update_hover(FluxInput *input, XentNodeId hit_node, float px, float py);
 

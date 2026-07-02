@@ -600,6 +600,53 @@ void flux_list_item_set_place(FluxNodeStore *store, XentNodeId item, int index, 
 /** @brief Single-mode selected visual + Multiple-mode checkbox flag. */
 void flux_list_item_set_state(FluxNodeStore *store, XentNodeId item, bool selected, bool multi);
 
+/* -------------------------------------------------------------------------
+ * FlipView + PipsPager
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxFlipViewCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	FluxWindow    *window; /**< Repaint target for slide-animation frames. */
+	bool           vertical;
+	void           (*on_select)(void *ctx, int index);
+	void          *userdata;
+} FluxFlipViewCreateInfo;
+
+/** @brief Create a FlipView (viewport-sized pages, nav buttons, wheel + keys). */
+XentNodeId flux_create_flip_view(FluxFlipViewCreateInfo const *info);
+
+/** @brief The ABSOLUTE pages host xtk children mount into. */
+XentNodeId flux_flip_view_content_node(FluxNodeStore *store, XentNodeId flip);
+
+/** @brief Select a page: adjacent moves animate, longer jumps snap. */
+void flux_flip_view_select(FluxNodeStore *store, XentNodeId flip, int index);
+
+/** @brief Engine per-frame hook: size/lay pages to the viewport + advance the slide. */
+void flux_flip_view_sync(XentContext *ctx, XentNodeId flip, struct FluxNodeData *nd);
+
+/** @brief Input hook: wheel over a FlipView flips (200 ms distinct-scroll gate).
+ * Returns true when consumed (edges chain to outer scrolls, per WinUI). */
+bool flux_flip_view_handle_wheel(FluxNodeStore *store, XentNodeId flip, float wheel_y);
+
+typedef struct FluxPipsPagerCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	bool           vertical;
+	void           (*on_select)(void *ctx, int index);
+	void          *userdata;
+} FluxPipsPagerCreateInfo;
+
+/** @brief Create a PipsPager (dot pager leaf). */
+XentNodeId flux_create_pips_pager(FluxPipsPagerCreateInfo const *info);
+
+/** @brief Set page count / selection / visible cap / nav-button visibility. */
+void flux_pips_pager_configure(
+  FluxNodeStore *store, XentNodeId pips, int count, int selected, int max_visible, int nav_vis
+);
+
 #ifdef __cplusplus
 }
 #endif

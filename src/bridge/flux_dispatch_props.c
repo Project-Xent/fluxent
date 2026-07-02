@@ -258,6 +258,8 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_LIST         :
 	case FLUX_CONTROL_LIST_BOX     :
 	case FLUX_CONTROL_GRID_VIEW    : *out = el->list.on_select; return true;
+	case FLUX_CONTROL_FLIP_VIEW    : *out = el->flip.on_select; return true;
+	case FLUX_CONTROL_PIPS_PAGER   : *out = el->pips.on_select; return true;
 	default                        : return false;
 	}
 }
@@ -561,6 +563,19 @@ static void flux_pp_tab(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl
 	}
 }
 
+static void flux_pp_flip(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (prev && prev->flip.selected != el->flip.selected)
+		flux_flip_view_select(rt->store, n->node, el->flip.selected);
+}
+
+static void flux_pp_pips(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev || prev->pips.count != el->pips.count || prev->pips.selected != el->pips.selected
+	    || prev->pips.max_visible != el->pips.max_visible || prev->pips.nav != el->pips.nav)
+		flux_pips_pager_configure(
+		  rt->store, n->node, el->pips.count, el->pips.selected, el->pips.max_visible, ( int ) el->pips.nav
+		);
+}
+
 static void flux_pp_dialog(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (prev && prev->dialog.open != el->dialog.open) {
 		if (el->dialog.open) flux_content_dialog_show(rt->store, n->node);
@@ -597,6 +612,8 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_GRID_VIEW]       = flux_pp_list,
 	[FLUX_CONTROL_ITEMS_REPEATER]  = flux_pp_list,
 	[FLUX_CONTROL_LIST_ITEM]       = flux_pp_list_item,
+	[FLUX_CONTROL_FLIP_VIEW]       = flux_pp_flip,
+	[FLUX_CONTROL_PIPS_PAGER]      = flux_pp_pips,
 	[FLUX_CONTROL_DROPDOWN_BUTTON] = flux_pp_dropdown,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_pp_split,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
@@ -634,6 +651,8 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_LIST]            = true,
 	[FLUX_CONTROL_LIST_BOX]        = true,
 	[FLUX_CONTROL_GRID_VIEW]       = true,
+	[FLUX_CONTROL_FLIP_VIEW]       = true,
+	[FLUX_CONTROL_PIPS_PAGER]      = true,
 };
 
 bool flux_is_interactive(XtkEl const *el) {

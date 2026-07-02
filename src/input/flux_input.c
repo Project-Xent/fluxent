@@ -587,6 +587,7 @@ static void fi_scroll(InputScrollEvent const *event) {
 
 	while (node != XENT_NODE_INVALID) {
 		if (input_handle_number_box_wheel(input, node, event->wheel.y)) return;
+		if (input_handle_flip_view_wheel(input, node, event->wheel.y)) return;
 		if (input_route_scroll_node(input, node, &remaining_x, &remaining_y)) return;
 		node = xent_get_parent(input->ctx, node);
 	}

@@ -196,6 +196,27 @@ typedef struct FluxListItemSnapshot {
 	bool    multi;       /**< Multiple mode: draw the checkbox. */
 } FluxListItemSnapshot;
 
+/** @brief FlipView payload (nav-button overlay state). */
+typedef struct FluxFlipSnapshot {
+	bool    vertical;
+	bool    prev_enabled;  /**< Not on the first page. */
+	bool    next_enabled;  /**< Not on the last page. */
+	bool    buttons_alive; /**< Within the 3 s pointer-activity window or focused. */
+	uint8_t pressed_btn;   /**< 0 none, 1 previous, 2 next. */
+} FluxFlipSnapshot;
+
+/** @brief PipsPager payload. */
+typedef struct FluxPipsSnapshot {
+	int     count;
+	int     selected;
+	int     window_start;
+	int     visible;
+	bool    vertical;
+	uint8_t nav_vis;     /**< XtkPipsNavVis. */
+	int     pressed_pip; /**< Pip index under an active press, or -1. */
+	uint8_t pressed_nav; /**< 0 none, 1 previous, 2 next. */
+} FluxPipsSnapshot;
+
 /**
  * @brief Immutable snapshot of a control's visual state.
  *
@@ -234,6 +255,8 @@ typedef struct FluxRenderSnapshot {
 		FluxMenuSnapshot      menu;       /**< MenuBar item. */
 		FluxExpanderSnapshot  expander;   /**< Expander header. */
 		FluxListItemSnapshot  list_item;  /**< ListView row. */
+		FluxFlipSnapshot      flip;       /**< FlipView. */
+		FluxPipsSnapshot      pips;       /**< PipsPager. */
 	} u;
 } FluxRenderSnapshot;
 

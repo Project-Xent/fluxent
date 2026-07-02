@@ -798,7 +798,10 @@ static float nav_item_height(FluxNavItemKind kind) {
 }
 
 static int nav_add(FluxNavViewData *d, XentNodeId host, char const *icon, char const *label, FluxNavItemKind kind) {
-	if (d->count >= FLUX_NAV_VIEW_MAX_ITEMS) return -1;
+	if (d->count >= FLUX_NAV_VIEW_MAX_ITEMS) {
+		OutputDebugStringA("fluxent: NavigationView item capacity exceeded; item dropped\n");
+		return -1;
+	}
 	XentNodeId node = flux_factory_create_node(d->ctx, d->store, host, FLUX_CONTROL_NAV_VIEW_ITEM);
 	if (node == XENT_NODE_INVALID) return -1;
 	/* Width is auto (NAN) so the host's align-stretch sizes it to the pane content

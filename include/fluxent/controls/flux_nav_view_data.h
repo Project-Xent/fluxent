@@ -33,7 +33,11 @@ typedef struct FluxTextRenderer FluxTextRenderer;
 typedef struct FluxNavViewData  FluxNavViewData;
 struct FluxScrollData;
 
-#define FLUX_NAV_VIEW_MAX_ITEMS 32
+/* Item slots are an embedded fixed array because retained node behaviors
+ * hold pointers into it (on_click_ctx = &items[i]) — growing it would
+ * dangle them. 64 comfortably covers any real navigation pane; nav_add
+ * reports overflow to the debugger instead of silently dropping items. */
+#define FLUX_NAV_VIEW_MAX_ITEMS 64
 
 /** @brief Left-nav display mode (WinUI NavigationViewDisplayMode). */
 typedef enum FluxNavDisplayMode

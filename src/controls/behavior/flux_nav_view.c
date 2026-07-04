@@ -31,12 +31,23 @@
 #define NAV_CHEVRON_ZONE     40.0f  /* right-edge press region that only toggles */
 #define NAV_CHILD_INDENT     31.0f  /* NavigationViewItemBase c_itemIndentation */
 
-/* Standard WinUI offset spline; the indicator's leading edge uses it directly and
- * its trailing edge a slower-starting variant, so the pill stretches then settles.
- * Solver shared via flux_cubic_bezier (render/flux_anim.h). */
-static float nav_ease_lead(float t) { return flux_cubic_bezier(t, 0.1f, 0.9f, 0.2f, 1.0f); }
+/* WinUI NavigationView::PlayIndicatorAnimations, decomposed to pill edges:
+ * over the 600 ms run, the LEADING edge does all of its travel in the first
+ * third (200 ms) on c_frame1 = bezier(0.9, 0.1, 1.0, 0.2) — a slow-start
+ * burst that stretches the pill across both items — then holds; the
+ * TRAILING edge holds for that first third, then settles over the
+ * remaining 400 ms on c_frame2 = bezier(0.1, 0.9, 0.2, 1). (The original
+ * composes Offset/Scale/CenterPoint with a single-frame step at 33.3%;
+ * this is the equivalent edge trajectory.) */
+static float nav_ease_lead(float t) {
+	if (t >= 1.0f / 3.0f) return 1.0f;
+	return flux_cubic_bezier(t * 3.0f, 0.9f, 0.1f, 1.0f, 0.2f);
+}
 
-static float nav_ease_trail(float t) { return flux_cubic_bezier(t, 0.55f, 0.0f, 0.2f, 1.0f); }
+static float nav_ease_trail(float t) {
+	if (t < 1.0f / 3.0f) return 0.0f;
+	return flux_cubic_bezier((t - 1.0f / 3.0f) * 1.5f, 0.1f, 0.9f, 0.2f, 1.0f);
+}
 
 static void  nav_tween_init(FluxNavTween *tw, float v) {
 	tw->current = tw->start = tw->target = v;

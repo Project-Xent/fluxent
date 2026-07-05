@@ -26,12 +26,47 @@ static FluxColor nav_with_opacity(FluxColor c, float op) {
  * ThemeShadow approximation: a soft right-edge falloff over the content). */
 #define FLUX_NAV_PANE_SHADOW_W 9.0f
 
+/* WinUI ContentGrid corner radius (OverlayCornerRadius). */
+#define FLUX_NAV_CONTENT_RADIUS 8.0f
+
+/* The content region's layer: LayerFillColorDefault over the window backdrop
+ * with the top-left corner rounded (both top corners for the Top bar) and a
+ * 1px CardStroke border along the rounded edges only — WinUI's ContentGrid
+ * with BorderThickness 1,1,0,0. Clipping to the layer rect and painting a
+ * rounded rect that extends past the square corners renders exactly that:
+ * extended edges (and their stroke) fall outside the clip. */
+static void nav_draw_content_layer(
+  FluxRenderContext const *rc, FluxRect const *root, FluxRenderSnapshot const *snap, FluxThemeColors const *t
+) {
+	float    cx    = snap->u.nav.nav_content_x;
+	float    cy    = snap->u.nav.nav_content_y;
+	FluxRect layer = {root->x + cx, root->y + cy, root->w - cx, root->h - cy};
+	if (layer.w < 1.0f || layer.h < 1.0f) return;
+
+	float       r    = FLUX_NAV_CONTENT_RADIUS;
+	FluxRect    ext  = {layer.x, layer.y, layer.w + (snap->u.nav.nav_top ? 0.0f : r), layer.h + r};
+	D2D1_RECT_F clip = flux_d2d_rect(&layer);
+	ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(rc), &clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+	flux_fill_rounded_rect(rc, &ext, r, t->layer_default);
+	FluxRect stroke = {ext.x + 0.5f, ext.y + 0.5f, ext.w - 1.0f, ext.h - 1.0f};
+	flux_draw_rounded_rect(rc, &stroke, r, t->card_stroke_default, FLUX_STROKE_WIDTH);
+	ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
+}
+
 void flux_draw_nav_view(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	( void ) state;
 	FluxThemeColors const *t  = rc->theme ? rc->theme : flux_theme_default_colors();
 	FluxRect               pb = flux_snap_bounds(bounds, 1.0f, 1.0f);
+
+	if (!snap->u.nav.nav_is_pane) {
+		/* Root: only the content layer — the pane region stays unpainted so the
+		 * DWM backdrop (Mica) shows through, matching WinUI's transparent
+		 * NavigationViewDefaultPaneBackground. */
+		nav_draw_content_layer(rc, &pb, snap, t);
+		return;
+	}
 
 	/* Drop shadow cast onto the content as the overlay pane slides in (Minimal). */
 	if (snap->u.nav.nav_shadow_opacity > 0.01f) {
@@ -42,6 +77,10 @@ void flux_draw_nav_view(
 		);
 	}
 
+	/* Inline panes are transparent over the backdrop and separated from content
+	 * by the layer's own border; the Minimal overlay pane floats above content,
+	 * so it keeps an opaque background (ExpandedPaneBackground) + edge line. */
+	if (!snap->u.nav.nav_pane_solid) return;
 	flux_fill_rect(rc, &pb, t->solid_background);
 	if (snap->u.nav.nav_top) {
 		/* Top bar: 1px separator along the bottom edge instead of the right. */

@@ -170,6 +170,10 @@ typedef struct FluxNavSnapshot {
 	float       nav_ind_bottom;     /**< Selection pill bottom (pane-local px). */
 	float       nav_ind_opacity;    /**< Selection pill opacity. */
 	float       nav_shadow_opacity; /**< Overlay-pane drop-shadow strength (0=none). */
+	float       nav_content_x;      /**< Root only: content-layer left offset (root-local). */
+	float       nav_content_y;      /**< Root only: content-layer top offset (root-local). */
+	bool        nav_is_pane;        /**< Pane node (vs the full-window root). */
+	bool        nav_pane_solid;     /**< Pane floats over content (Minimal): opaque background. */
 	bool        nav_top;            /**< Pane is the horizontal Top bar. */
 	uint8_t     nav_item_kind;      /**< FluxNavItemKind of the strip/pane item. */
 	uint8_t     nav_depth;          /**< Hierarchy depth (31px indent per level). */

@@ -160,6 +160,15 @@ static FluxRenderContext app_render_context(FluxApp *app, FluxGraphics *gfx, Flu
 	return rc;
 }
 
+/* With a DWM backdrop (Mica/acrylic) the swap chain clears transparent so the
+ * system material shows through everything the UI leaves unpainted; without
+ * one the window has no background at all, so clear with the theme's solid. */
+static FluxColor app_clear_color(FluxApp const *app) {
+	if (app->window && flux_window_backdrop(app->window) != FLUX_BACKDROP_NONE) return flux_color_rgba(0, 0, 0, 0);
+	FluxThemeColors const *t = app->theme ? flux_theme_colors(app->theme) : flux_theme_default_colors();
+	return t->solid_background;
+}
+
 static void app_sync_tooltip_theme(FluxApp *app, FluxRenderContext const *rc) {
 	if (!app->tooltip) return;
 
@@ -215,7 +224,7 @@ static void app_render_classic(FluxApp *app, FluxGraphics *gfx, FluxDpiInfo dpi)
 	app_sync_tooltip_theme(app, &rc);
 
 	flux_graphics_begin_draw(gfx);
-	flux_graphics_clear(gfx, flux_color_rgba(0, 0, 0, 0));
+	flux_graphics_clear(gfx, app_clear_color(app));
 	flux_engine_execute(app->engine, &rc);
 	flux_graphics_end_draw(gfx);
 	flux_graphics_present(gfx, kFluxAppPresentUseVsync);

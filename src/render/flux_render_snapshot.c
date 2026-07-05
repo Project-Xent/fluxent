@@ -217,9 +217,22 @@ static void snapshot_handle_menu_bar_item(SnapshotContext const *ctx) {
 
 static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	FluxNavViewData const *d = ( FluxNavViewData const * ) ctx->data;
-	/* Root and pane are both NAV_VIEW and share d; only the pane carries the moving
-	 * indicator so it slides off-screen in Minimal (the root stays full-width). */
-	if (ctx->node != d->pane) return;
+	ctx->snap->u.nav.nav_top = (d->mode == FLUX_NAV_TOP);
+	/* Root and pane are both NAV_VIEW and share d; the root draws the content
+	 * layer, only the pane carries the moving indicator so it slides off-screen
+	 * in Minimal (the root stays full-width). */
+	if (ctx->node != d->pane) {
+		XentRect rr = {0}, cr = {0};
+		if (xent_get_layout_rect(d->ctx, d->root, &rr) && xent_get_layout_rect(d->ctx, d->content, &cr)) {
+			ctx->snap->u.nav.nav_content_x = cr.x - rr.x;
+			ctx->snap->u.nav.nav_content_y = cr.y - rr.y;
+		}
+		return;
+	}
+	ctx->snap->u.nav.nav_is_pane    = true;
+	/* Inline panes are transparent over the window backdrop; the Minimal overlay
+	 * pane floats above content and needs an opaque background. */
+	ctx->snap->u.nav.nav_pane_solid = (d->mode == FLUX_NAV_MINIMAL);
 	/* The pill is drawn by the pane (outside the items viewport) from layout-space
 	 * tween values; shift it by the live scroll offset so it stays glued to the
 	 * visually translated item rows. */
@@ -231,7 +244,6 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	ctx->snap->u.nav.nav_ind_opacity    = d->ind_op.current;
 	/* Drop shadow only while the pane overlays content (Minimal); fades with the slide. */
 	ctx->snap->u.nav.nav_shadow_opacity = (d->mode == FLUX_NAV_MINIMAL) ? d->minimal_t.current : 0.0f;
-	ctx->snap->u.nav.nav_top            = (d->mode == FLUX_NAV_TOP);
 }
 
 static void snapshot_handle_nav_view_item(SnapshotContext const *ctx) {

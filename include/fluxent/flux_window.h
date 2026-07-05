@@ -93,6 +93,8 @@ void            flux_window_set_uia_provider_callback(FluxWindow *win, FluxUiaPr
 
 /** @brief Set the DWM backdrop type. */
 void            flux_window_set_backdrop(FluxWindow *win, int backdrop_type);
+/** @brief Current DWM backdrop type (FluxBackdropType; 0 = none). */
+int             flux_window_backdrop(FluxWindow const *win);
 /** @brief Set whether the window uses dark-mode DWM attributes. */
 void            flux_window_set_dark_mode(FluxWindow *win, bool enabled);
 /** @brief Set the window title. */

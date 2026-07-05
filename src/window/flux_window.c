@@ -890,6 +890,8 @@ void flux_window_set_backdrop(FluxWindow *win, int backdrop_type) {
 	win->config.backdrop = backdrop_type;
 }
 
+int flux_window_backdrop(FluxWindow const *win) { return win ? win->config.backdrop : 0; }
+
 void flux_window_set_ime_position(FluxWindow *win, int x, int y, int height) {
 	if (!win || !win->hwnd) return;
 

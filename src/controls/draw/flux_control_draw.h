@@ -248,6 +248,16 @@ void flux_draw_tab_view_item(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw a BreadcrumbBar element (crumb label / ellipsis + separator chevron). */
+void flux_draw_breadcrumb_item(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw a SelectorBarItem (icon + text + accent underline pill). */
+void flux_draw_selector_bar_item(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw a RatingControl (outline + clipped fill star strip + caption). */
 void flux_draw_rating(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

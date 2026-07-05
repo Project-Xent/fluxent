@@ -257,6 +257,64 @@ void flux_rating_set_value(FluxNodeStore *store, XentNodeId id, double value);
 /** @brief Toggle read-only. */
 void flux_rating_set_read_only(FluxNodeStore *store, XentNodeId id, bool read_only);
 
+/* -------------------------------------------------------------------------
+ * SelectorBar
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxSelectorBarCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	FluxInput     *input;
+	FluxWindow    *window; /**< Repaint target for the pill tween. */
+	int            item_count;
+	int            selected;
+	void           (*on_select)(void *ctx, int index);
+	void          *userdata;
+} FluxSelectorBarCreateInfo;
+
+/** @brief Create a SelectorBar (items set via flux_selector_bar_set_item). */
+XentNodeId flux_create_selector_bar(FluxSelectorBarCreateInfo const *info);
+
+/** @brief Set item i's content (icon_glyph 0 = none). */
+void flux_selector_bar_set_item(
+  FluxNodeStore *store, XentNodeId bar, int i, char const *text, uint32_t icon_glyph, bool disabled
+);
+
+/** @brief Select an item (animates the pill). */
+void flux_selector_bar_set_selected(FluxNodeStore *store, XentNodeId bar, int index);
+
+/* -------------------------------------------------------------------------
+ * BreadcrumbBar
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxBreadcrumbBarCreateInfo {
+	XentContext       *ctx;
+	FluxNodeStore     *store;
+	XentNodeId         parent;
+	FluxWindow        *window; /**< Ellipsis flyout + repaint. */
+	FluxTextRenderer  *text;   /**< Measures crumb labels for the collapse algorithm. */
+	FluxThemeManager  *theme;  /**< Flyout palette. */
+	FluxInput         *input;  /**< Arrow-key focus moves between crumbs. */
+	char const *const *items;  /**< Crumb labels, root first; deep-copied. */
+	int                item_count;
+	bool               disabled;
+	void               (*on_item_clicked)(void *ctx, int index);
+	void              *userdata;
+} FluxBreadcrumbBarCreateInfo;
+
+/** @brief Create a BreadcrumbBar (crumb strip with ellipsis overflow collapse). */
+XentNodeId flux_create_breadcrumb_bar(FluxBreadcrumbBarCreateInfo const *info);
+
+/** @brief Replace the crumb labels (deep-copied); dismisses a stale ellipsis flyout. */
+void flux_breadcrumb_bar_set_items(FluxNodeStore *store, XentNodeId bar, char const *const *items, int count);
+
+/** @brief Enable/disable the whole bar. */
+void flux_breadcrumb_bar_set_disabled(FluxNodeStore *store, XentNodeId bar, bool disabled);
+
+/** @brief Engine per-frame hook: re-measure labels + re-run the overflow collapse. */
+void flux_breadcrumb_bar_sync(XentContext *ctx, XentNodeId bar, struct FluxNodeData *nd);
+
 typedef struct FluxProgressCreateInfo {
 	XentContext   *ctx;
 	FluxNodeStore *store;

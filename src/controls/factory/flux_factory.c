@@ -60,6 +60,10 @@ static void info_badge_data_destroy(void *component_data) {
 void flux_leaf_default_metrics(FluxLeafMetrics const *m) {
 	if (m->label && m->label [0]) {
 		xent_set_text(m->ctx, m->node, m->label);
+		/* Button-like leaves are single-line; xent's default policy is
+		 * CHAR_WRAP, which stacks the label vertically under tight measure
+		 * constraints instead of keeping the natural one-line size. */
+		xent_set_text_line_break_policy(m->ctx, m->node, XENT_LINE_BREAK_NO_WRAP);
 		xent_set_font_size(m->ctx, m->node, 14.0f);
 		xent_set_padding(m->ctx, m->node, m->padding);
 	}

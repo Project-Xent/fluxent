@@ -58,6 +58,9 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	flux_control_registry_register(reg, FLUX_CONTROL_TOGGLE_SPLIT_BUTTON, flux_draw_split_button, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_RADIO_BUTTONS, flux_draw_container, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_RATING, flux_draw_rating, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_SELECTOR_BAR, flux_draw_container, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_SELECTOR_BAR_ITEM, flux_draw_selector_bar_item, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_BREADCRUMB_ITEM, flux_draw_breadcrumb_item, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_COMBO_BOX, flux_draw_combo_box, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_EXPANDER_HEADER, flux_draw_expander_header, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_EXPANDER_CONTENT, flux_draw_expander_content, NULL);

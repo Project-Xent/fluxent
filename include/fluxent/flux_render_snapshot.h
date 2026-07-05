@@ -189,6 +189,23 @@ typedef struct FluxExpanderSnapshot {
 	bool is_checked; /**< Expander is expanded. */
 } FluxExpanderSnapshot;
 
+/** @brief SelectorBarItem payload. */
+typedef struct FluxSelectorItemSnapshot {
+	char const *text;
+	uint32_t    icon_glyph; /**< 0 = no icon. */
+	bool        selected;
+	float       pill_t;     /**< Underline pill grow/fade progress 0..1. */
+} FluxSelectorItemSnapshot;
+
+/** @brief BreadcrumbBar element payload (ellipsis or crumb). */
+typedef struct FluxBreadcrumbSnapshot {
+	char const *label;        /**< Crumb label; NULL for the ellipsis element. */
+	bool        is_ellipsis;  /**< Draw U+E712 instead of the label. */
+	bool        is_last;      /**< Current crumb: plain text, no hover/pressed feedback. */
+	bool        show_chevron; /**< Trailing separator chevron (all but the last). */
+	float       content_w;    /**< Button-zone width (element width minus the chevron cell). */
+} FluxBreadcrumbSnapshot;
+
 /** @brief RatingControl payload. */
 typedef struct FluxRatingSnapshot {
 	double      value;             /**< Committed value; < 0 = unset. */
@@ -269,6 +286,8 @@ typedef struct FluxRenderSnapshot {
 		FluxMenuSnapshot      menu;       /**< MenuBar item. */
 		FluxExpanderSnapshot  expander;   /**< Expander header. */
 		FluxRatingSnapshot    rating;     /**< RatingControl. */
+		FluxSelectorItemSnapshot selector; /**< SelectorBarItem. */
+		FluxBreadcrumbSnapshot breadcrumb; /**< BreadcrumbBar element. */
 		FluxListItemSnapshot  list_item;  /**< ListView row. */
 		FluxFlipSnapshot      flip;       /**< FlipView. */
 		FluxPipsSnapshot      pips;       /**< PipsPager. */

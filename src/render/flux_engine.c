@@ -174,6 +174,9 @@ static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *f
 	/* FlipView: size/lay pages to the viewport and apply the slide offset. */
 	if (nd && nd->component_data && nd->component_type == FLUX_CONTROL_FLIP_VIEW)
 		flux_flip_view_sync(ctx, frame->node, nd);
+	/* BreadcrumbBar: re-run the overflow collapse against the assigned width. */
+	if (nd && nd->component_data && nd->component_type == FLUX_CONTROL_BREADCRUMB_BAR)
+		flux_breadcrumb_bar_sync(ctx, frame->node, nd);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
 	frame->state          = flux_compute_control_state(ctx, frame->node, nd);
 	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;

@@ -186,6 +186,42 @@ static XentNodeId flux_cr_rating(FluxBackendCtx *rt, XentNodeId p, XtkEl const *
 	  .userdata          = b});
 }
 
+static XentNodeId flux_cr_breadcrumb(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	return flux_create_breadcrumb_bar(&(FluxBreadcrumbBarCreateInfo) {
+	  .ctx             = rt->ctx,
+	  .store           = rt->store,
+	  .parent          = p,
+	  .window          = flux_be_window(rt),
+	  .text            = flux_be_text(rt),
+	  .theme           = flux_be_theme(rt),
+	  .input           = rt->app ? flux_app_get_input(rt->app) : NULL,
+	  .items           = el->breadcrumb.items,
+	  .item_count      = el->breadcrumb.count,
+	  .disabled        = el->breadcrumb.disabled,
+	  .on_item_clicked = flux_tramp_select,
+	  .userdata        = b});
+}
+
+static XentNodeId flux_cr_selector_bar(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	XentNodeId bar = flux_create_selector_bar(&(FluxSelectorBarCreateInfo) {
+	  .ctx        = rt->ctx,
+	  .store      = rt->store,
+	  .parent     = p,
+	  .input      = rt->app ? flux_app_get_input(rt->app) : NULL,
+	  .window     = flux_be_window(rt),
+	  .item_count = el->selector_bar.item_count,
+	  .selected   = el->selector_bar.selected,
+	  .on_select  = flux_tramp_select,
+	  .userdata   = b});
+	if (bar == XENT_NODE_INVALID) return bar;
+	for (int i = 0; i < el->selector_bar.item_count; i++) {
+		XtkSelectorItem const *it = &el->selector_bar.items [i];
+		wchar_t const         *g  = it->icon ? flux_icon_lookup(it->icon) : NULL;
+		flux_selector_bar_set_item(rt->store, bar, i, it->text, g && g [0] ? ( uint32_t ) g [0] : 0, it->disabled);
+	}
+	return bar;
+}
+
 static XentNodeId flux_cr_radio_buttons(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	/* XtkRadioItem and FluxRadioItem are the same {const char*, bool} layout. */
 	return flux_create_radio_buttons(&(FluxRadioButtonsCreateInfo) {
@@ -394,6 +430,8 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = flux_cr_toggle_split,
 	[FLUX_CONTROL_RADIO_BUTTONS]   = flux_cr_radio_buttons,
 	[FLUX_CONTROL_RATING]          = flux_cr_rating,
+	[FLUX_CONTROL_SELECTOR_BAR]    = flux_cr_selector_bar,
+	[FLUX_CONTROL_BREADCRUMB_BAR]  = flux_cr_breadcrumb,
 	[FLUX_CONTROL_MENU_BAR]        = flux_cr_menubar,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_cr_tabview,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_cr_dialog,

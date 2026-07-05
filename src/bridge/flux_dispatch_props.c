@@ -288,6 +288,8 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_TOGGLE_SPLIT_BUTTON : *out = el->split.on_toggle; return true;
 	case FLUX_CONTROL_RADIO_BUTTONS : *out = el->radio_buttons.on_select; return true;
 	case FLUX_CONTROL_RATING       : *out = el->rating.on_change; return true;
+	case FLUX_CONTROL_SELECTOR_BAR : *out = el->selector_bar.on_select; return true;
+	case FLUX_CONTROL_BREADCRUMB_BAR : *out = el->breadcrumb.on_click; return true;
 	default                        : return false;
 	}
 }
@@ -599,6 +601,19 @@ static void flux_pp_rating(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, Xt
 		flux_rating_set_read_only(rt->store, n->node, el->rating.is_read_only);
 }
 
+static void flux_pp_breadcrumb(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (prev
+	    && !flux_str_array_eq(prev->breadcrumb.items, prev->breadcrumb.count, el->breadcrumb.items, el->breadcrumb.count))
+		flux_breadcrumb_bar_set_items(rt->store, n->node, el->breadcrumb.items, el->breadcrumb.count);
+	if (!prev || prev->breadcrumb.disabled != el->breadcrumb.disabled)
+		flux_breadcrumb_bar_set_disabled(rt->store, n->node, el->breadcrumb.disabled);
+}
+
+static void flux_pp_selector_bar(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (prev && prev->selector_bar.selected != el->selector_bar.selected)
+		flux_selector_bar_set_selected(rt->store, n->node, el->selector_bar.selected);
+}
+
 static void flux_pp_radio_buttons(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (prev && prev->radio_buttons.selected != el->radio_buttons.selected)
 		flux_radio_buttons_set_selected(rt->store, n->node, el->radio_buttons.selected);
@@ -680,6 +695,8 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = flux_pp_toggle_split,
 	[FLUX_CONTROL_RADIO_BUTTONS]   = flux_pp_radio_buttons,
 	[FLUX_CONTROL_RATING]          = flux_pp_rating,
+	[FLUX_CONTROL_SELECTOR_BAR]    = flux_pp_selector_bar,
+	[FLUX_CONTROL_BREADCRUMB_BAR]  = flux_pp_breadcrumb,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_pp_dialog,
 };
@@ -712,6 +729,8 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = true,
 	[FLUX_CONTROL_RADIO_BUTTONS]   = true,
 	[FLUX_CONTROL_RATING]          = true,
+	[FLUX_CONTROL_SELECTOR_BAR]    = true,
+	[FLUX_CONTROL_BREADCRUMB_BAR]  = true,
 	[FLUX_CONTROL_TAB_VIEW]        = true,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = true,
 	[FLUX_CONTROL_NAV_VIEW]        = true,

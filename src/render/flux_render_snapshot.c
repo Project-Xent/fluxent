@@ -5,6 +5,7 @@
 #include "fluxent/controls/flux_menu_bar_data.h"
 #include "fluxent/controls/flux_nav_view_data.h"
 #include "fluxent/controls/flux_tab_view_data.h"
+#include "fluxent/controls/flux_breadcrumb_data.h"
 
 #include <string.h>
 
@@ -360,6 +361,25 @@ static bool snapshot_list_item_selected(FluxListItemData const *it) {
 	return false;
 }
 
+static void snapshot_handle_breadcrumb_item(SnapshotContext const *ctx) {
+	FluxBreadcrumbItem const    *it = ( FluxBreadcrumbItem const * ) ctx->data;
+	FluxBreadcrumbBarData const *d  = it->bar;
+	bool is_last                    = it->elem == d->count;
+	ctx->snap->u.breadcrumb.label        = it->elem > 0 ? d->labels [it->elem - 1] : NULL;
+	ctx->snap->u.breadcrumb.is_ellipsis  = it->elem == 0;
+	ctx->snap->u.breadcrumb.is_last      = is_last;
+	ctx->snap->u.breadcrumb.show_chevron = !is_last;
+	ctx->snap->u.breadcrumb.content_w    = d->widths [it->elem] - (is_last ? 0.0f : d->chevron_cell_w);
+}
+
+static void snapshot_handle_selector_item(SnapshotContext const *ctx) {
+	FluxSelectorBarItemData const *it = ( FluxSelectorBarItemData const * ) ctx->data;
+	ctx->snap->u.selector.text       = it->text;
+	ctx->snap->u.selector.icon_glyph = it->icon_glyph;
+	ctx->snap->u.selector.selected   = it->selected;
+	ctx->snap->u.selector.pill_t     = it->pill_t;
+}
+
 static void snapshot_handle_rating(SnapshotContext const *ctx) {
 	FluxRatingData const *r      = ( FluxRatingData const * ) ctx->data;
 	ctx->snap->u.rating.value             = r->value;
@@ -415,6 +435,8 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_SPLIT_BUTTON]    = snapshot_handle_button,
   [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = snapshot_handle_button,
   [FLUX_CONTROL_RATING]          = snapshot_handle_rating,
+  [FLUX_CONTROL_SELECTOR_BAR_ITEM] = snapshot_handle_selector_item,
+  [FLUX_CONTROL_BREADCRUMB_ITEM] = snapshot_handle_breadcrumb_item,
   [FLUX_CONTROL_CHECKBOX]        = snapshot_handle_checkbox_like,
   [FLUX_CONTROL_RADIO]           = snapshot_handle_checkbox_like,
   [FLUX_CONTROL_SWITCH]          = snapshot_handle_switch,

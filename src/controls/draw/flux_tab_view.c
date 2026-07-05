@@ -213,6 +213,17 @@ static void tab_draw_icon_label(
 	ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
 }
 
+/* The strip's auxiliary buttons (add / close / overflow scroll) share the
+ * item node type. */
+static void tab_draw_aux(
+  FluxRenderContext const *rc, FluxRect const *b, FluxControlState const *state, FluxThemeColors const *t,
+  uint8_t kind
+) {
+	if (kind == FLUX_TAB_KIND_ADD) tab_draw_add(rc, b, state, t);
+	else if (kind == FLUX_TAB_KIND_CLOSE) tab_draw_close(rc, b, state, t);
+	else tab_draw_scroll(rc, b, state, t, kind == FLUX_TAB_KIND_SCROLL_DEC);
+}
+
 void flux_draw_tab_view_item(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
@@ -223,9 +234,7 @@ void flux_draw_tab_view_item(
 	if (b.w < 1.0f || b.h < 1.0f) return;
 
 	if (snap->u.tab.tab_kind != FLUX_TAB_KIND_TAB) {
-		if (snap->u.tab.tab_kind == FLUX_TAB_KIND_ADD) tab_draw_add(rc, &b, state, t);
-		else if (snap->u.tab.tab_kind == FLUX_TAB_KIND_CLOSE) tab_draw_close(rc, &b, state, t);
-		else tab_draw_scroll(rc, &b, state, t, snap->u.tab.tab_kind == FLUX_TAB_KIND_SCROLL_DEC);
+		tab_draw_aux(rc, &b, state, t, snap->u.tab.tab_kind);
 		return;
 	}
 

@@ -333,6 +333,30 @@ static XentNodeId flux_cr_list_item(FluxBackendCtx *rt, XentNodeId p, XtkEl cons
 	return flux_create_list_item(&(FluxListItemCreateInfo) {rt->ctx, rt->store, p});
 }
 
+static XentNodeId flux_cr_items_view(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	XtkItemsViewLayout layout =
+	  (el->list.item_width > 0.0f || el->list.columns != 1) ? XTK_ITEMS_LAYOUT_UNIFORM_GRID : XTK_ITEMS_LAYOUT_STACK_V;
+	XentNodeId view = flux_create_items_view(&(FluxItemsViewCreateInfo) {
+	  .ctx                  = rt->ctx,
+	  .store                = rt->store,
+	  .parent               = p,
+	  .layout               = layout,
+	  .selection_mode       = el->list.sel_mode,
+	  .item_spacing         = el->list.item_spacing,
+	  .item_invoked_enabled = el->list.item_invoked_enabled,
+	  .input                = rt->app ? flux_app_get_input(rt->app) : NULL,
+	  .on_select            = b ? flux_tramp_select : NULL,
+	  .on_invoke            = b ? flux_tramp_invoke : NULL,
+	  .userdata             = b});
+	if (view == XENT_NODE_INVALID) return view;
+	flux_list_view_set_extent(
+	  rt->store, view, el->list.count, el->list.item_height, el->list.item_width, el->list.columns
+	);
+	flux_list_view_set_sel_mode(rt->store, view, el->list.sel_mode);
+	flux_list_view_set_selected(rt->store, view, el->list.selected);
+	return view;
+}
+
 static XentNodeId flux_cr_flip(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	XentNodeId flip = flux_create_flip_view(&(FluxFlipViewCreateInfo) {
 	  .ctx       = rt->ctx,
@@ -440,6 +464,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_LIST_BOX]        = flux_cr_list,
 	[FLUX_CONTROL_GRID_VIEW]       = flux_cr_list,
 	[FLUX_CONTROL_ITEMS_REPEATER]  = flux_cr_list,
+	[FLUX_CONTROL_ITEMS_VIEW]      = flux_cr_items_view,
 	[FLUX_CONTROL_LIST_ITEM]       = flux_cr_list_item,
 	[FLUX_CONTROL_FLIP_VIEW]       = flux_cr_flip,
 	[FLUX_CONTROL_PIPS_PAGER]      = flux_cr_pips,
@@ -460,7 +485,8 @@ static XentNodeId flux_content_host_for(FluxNodeStore *store, XentNodeId node, F
 	case FLUX_CONTROL_LIST:
 	case FLUX_CONTROL_LIST_BOX:
 	case FLUX_CONTROL_GRID_VIEW:
-	case FLUX_CONTROL_ITEMS_REPEATER:  return flux_list_view_content_node(store, node);
+	case FLUX_CONTROL_ITEMS_REPEATER:
+	case FLUX_CONTROL_ITEMS_VIEW:      return flux_list_view_content_node(store, node);
 	case FLUX_CONTROL_FLIP_VIEW:       return flux_flip_view_content_node(store, node);
 	default:                           return XENT_NODE_INVALID;
 	}

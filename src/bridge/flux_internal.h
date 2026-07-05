@@ -49,6 +49,7 @@ void flux_tramp_slider(void *ud, float value);
 void flux_tramp_text(void *ud, char const *text);
 void flux_tramp_password(void *ud, char const *text);
 void flux_tramp_select(void *ud, int index);
+void flux_tramp_invoke(void *ud, int index);
 void flux_tramp_query(void *ud, char const *text);
 void flux_tramp_chosen(void *ud, int index);
 void flux_tramp_rating(void *ud, double value, int stars);

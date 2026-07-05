@@ -268,6 +268,11 @@ void flux_draw_list_item(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw the ItemsView ItemContainer chrome (accent border + inner ring + checkbox). */
+void flux_draw_items_container(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw the ListBox surface (ChromeMediumLow fill). */
 void flux_draw_list_box(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

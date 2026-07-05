@@ -79,6 +79,10 @@ typedef struct FluxListViewData {
 	void (*on_select)(void *ctx, int index); /**< Lead-index report after every selection change. */
 	void  *on_select_ctx;
 
+	bool  item_invoked_enabled;               /**< ItemsView: gate on_invoke (tap/Enter raise Invoked only when mode == None). */
+	void (*on_invoke)(void *ctx, int index);  /**< ItemsView ItemInvoked (index); NULL for other list flavors. */
+	void  *on_invoke_ctx;
+
 	void (*on_stale)(void *ctx);   /**< Viewport left the realized window. */
 	void  *on_stale_ctx;
 } FluxListViewData;

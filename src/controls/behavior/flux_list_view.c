@@ -29,7 +29,8 @@ static FluxListViewData *list_data(FluxNodeStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_node_store_get(store, id);
 	if (!nd || !nd->component_data) return NULL;
 	if (nd->component_type != FLUX_CONTROL_LIST && nd->component_type != FLUX_CONTROL_LIST_BOX
-	    && nd->component_type != FLUX_CONTROL_GRID_VIEW && nd->component_type != FLUX_CONTROL_ITEMS_REPEATER)
+	    && nd->component_type != FLUX_CONTROL_GRID_VIEW && nd->component_type != FLUX_CONTROL_ITEMS_REPEATER
+	    && nd->component_type != FLUX_CONTROL_ITEMS_VIEW)
 		return NULL;
 	return ( FluxListViewData * ) nd->component_data;
 }
@@ -134,6 +135,11 @@ static bool multi_mode(FluxListViewData const *ld) {
 
 static void list_report(FluxListViewData *ld, int lead) {
 	if (ld->on_select) ld->on_select(ld->on_select_ctx, lead);
+}
+
+static void list_invoke(FluxListViewData *ld, int index) {
+	if (ld->on_invoke && ld->item_invoked_enabled && ld->sel_mode == XTK_LIST_SELECT_NONE)
+		ld->on_invoke(ld->on_invoke_ctx, index);
 }
 
 /* MakeSingleSelection: replace the set with one item; anchor follows in
@@ -348,8 +354,9 @@ static bool list_item_on_key(void *ctx, unsigned int vk, bool down) {
 	case VK_SPACE :
 		if (key_down(VK_CONTROL)) list_gesture_secondary(ld, it->index);
 		else list_gesture_primary(ld, it->index);
+		list_invoke(ld, it->index);
 		return true;
-	case VK_RETURN : list_gesture_primary(ld, it->index); return true;
+	case VK_RETURN : list_gesture_primary(ld, it->index); list_invoke(ld, it->index); return true;
 	case 'A' :
 		if (!key_down(VK_CONTROL) || key_down(VK_SHIFT) || !multi_mode(ld)) return false;
 		sel_all_toggle(ld);
@@ -367,6 +374,7 @@ static void list_item_on_click(void *ctx) {
 	ld->focused = it->index;
 	if (key_down(VK_CONTROL)) list_gesture_secondary(ld, it->index);
 	else list_gesture_primary(ld, it->index);
+	list_invoke(ld, it->index);
 }
 
 /* -------------------------------------------------------------------------

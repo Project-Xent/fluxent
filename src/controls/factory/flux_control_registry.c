@@ -76,6 +76,7 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	flux_control_registry_register(reg, FLUX_CONTROL_LIST_BOX, flux_draw_list_box, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_GRID_VIEW, flux_draw_container, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_ITEMS_REPEATER, flux_draw_container, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_ITEMS_VIEW, flux_draw_container, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_FLIP_VIEW, flux_draw_flip_view, flux_draw_flip_view_overlay);
 	flux_control_registry_register(reg, FLUX_CONTROL_PIPS_PAGER, flux_draw_pips_pager, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_AUTO_SUGGEST, flux_draw_container, NULL);

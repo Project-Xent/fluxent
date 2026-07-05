@@ -18,6 +18,11 @@
 
 #include <math.h>
 
+/* ItemContainer chrome (ItemsView) — defined in draw/flux_items_view.c. */
+void flux_draw_items_container(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /* Accent with an absolute alpha override (SystemControlHighlightListAccent*). */
 static FluxColor list_accent_alpha(FluxThemeColors const *t, uint8_t alpha) {
 	FluxColor c = t->accent_default;
@@ -168,6 +173,7 @@ void flux_draw_list_item(
 	switch (( XtkListKind ) snap->u.list_item.kind) {
 	case XTK_LIST_KIND_LIST_BOX : list_draw_list_box_cell(rc, t, snap, bounds, state); break;
 	case XTK_LIST_KIND_GRID     : list_draw_grid_cell(rc, t, snap, bounds, state); break;
+	case XTK_LIST_KIND_ITEMS    : flux_draw_items_container(rc, snap, bounds, state); break;
 	case XTK_LIST_KIND_REPEATER : break;
 	default                     : list_draw_list_cell(rc, t, snap, bounds, state); break;
 	}

@@ -741,6 +741,32 @@ void flux_list_item_set_place(FluxNodeStore *store, XentNodeId item, int index, 
 void flux_list_item_set_state(FluxNodeStore *store, XentNodeId item, bool selected, bool multi);
 
 /* -------------------------------------------------------------------------
+ * ItemsView (ItemsRepeater + Layout + SelectionModel; ItemContainer chrome)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxItemsViewCreateInfo {
+	XentContext       *ctx;
+	FluxNodeStore     *store;
+	XentNodeId         parent;
+	XtkItemsViewLayout layout;
+	XtkListSelMode     selection_mode;
+	float              item_spacing;
+	bool               item_invoked_enabled;
+	FluxInput         *input;
+	void               (*on_select)(void *ctx, int index);
+	void               (*on_invoke)(void *ctx, int index);
+	void              *userdata;
+} FluxItemsViewCreateInfo;
+
+XentNodeId flux_create_items_view(FluxItemsViewCreateInfo const *info);
+XentNodeId flux_items_view_content_node(FluxNodeStore *store, XentNodeId view);
+void flux_items_view_set_extent(FluxNodeStore *store, XentNodeId view, int count, float item_height, float item_width, int columns);
+void flux_items_view_set_selection_mode(FluxNodeStore *store, XentNodeId view, XtkListSelMode mode);
+void flux_items_view_set_selected(FluxNodeStore *store, XentNodeId view, int index);
+bool flux_items_view_is_selected(FluxNodeStore *store, XentNodeId view, int index);
+int  flux_items_view_selection_count(FluxNodeStore *store, XentNodeId view);
+
+/* -------------------------------------------------------------------------
  * FlipView + PipsPager
  * ---------------------------------------------------------------------- */
 

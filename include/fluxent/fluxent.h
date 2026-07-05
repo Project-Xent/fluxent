@@ -225,6 +225,38 @@ void flux_radio_buttons_set_selected(FluxNodeStore *store, XentNodeId id, int in
 /** @brief Enable/disable the whole group. */
 void flux_radio_buttons_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
 
+/* -------------------------------------------------------------------------
+ * RatingControl
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxRatingCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	double         value;             /**< <= 0 = unset. */
+	int            max_rating;        /**< 0 = 5. */
+	double         placeholder_value; /**< < 0 = none. */
+	int            initial_set_value; /**< 0 = 1. */
+	bool           is_clear_enabled;
+	bool           is_read_only;
+	char const    *caption;
+	double         item_spacing; /**< 0 = 8. */
+	double         star_size;    /**< 0 = 16. */
+	uint32_t       set_glyph;    /**< 0 = U+E735. */
+	uint32_t       unset_glyph;  /**< 0 = U+E734. */
+	void           (*on_change)(void *ctx, double value, int stars);
+	void          *userdata;
+} FluxRatingCreateInfo;
+
+/** @brief Create a RatingControl (star strip with hover preview + clear). */
+XentNodeId flux_create_rating(FluxRatingCreateInfo const *info);
+
+/** @brief Set the value (< 0 = unset). */
+void flux_rating_set_value(FluxNodeStore *store, XentNodeId id, double value);
+
+/** @brief Toggle read-only. */
+void flux_rating_set_read_only(FluxNodeStore *store, XentNodeId id, bool read_only);
+
 typedef struct FluxProgressCreateInfo {
 	XentContext   *ctx;
 	FluxNodeStore *store;

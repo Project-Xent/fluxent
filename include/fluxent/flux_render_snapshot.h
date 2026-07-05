@@ -189,6 +189,20 @@ typedef struct FluxExpanderSnapshot {
 	bool is_checked; /**< Expander is expanded. */
 } FluxExpanderSnapshot;
 
+/** @brief RatingControl payload. */
+typedef struct FluxRatingSnapshot {
+	double      value;             /**< Committed value; < 0 = unset. */
+	double      hover_value;       /**< Preview value; < 0 = none. */
+	double      placeholder_value; /**< Placeholder fill; < 0 = none. */
+	int         max_rating;
+	float       star_size;
+	float       item_spacing;
+	uint32_t    set_glyph;
+	uint32_t    unset_glyph;
+	char const *caption;
+	bool        is_read_only; /**< No hover preview. */
+} FluxRatingSnapshot;
+
 /** @brief ListView-family cell payload. */
 typedef struct FluxListItemSnapshot {
 	uint8_t kind;        /**< XtkListKind — selects the chrome (list/list box/grid). */
@@ -254,6 +268,7 @@ typedef struct FluxRenderSnapshot {
 		FluxNavSnapshot       nav;        /**< NavigationView pane / item. */
 		FluxMenuSnapshot      menu;       /**< MenuBar item. */
 		FluxExpanderSnapshot  expander;   /**< Expander header. */
+		FluxRatingSnapshot    rating;     /**< RatingControl. */
 		FluxListItemSnapshot  list_item;  /**< ListView row. */
 		FluxFlipSnapshot      flip;       /**< FlipView. */
 		FluxPipsSnapshot      pips;       /**< PipsPager. */

@@ -170,6 +170,22 @@ static XentNodeId flux_cr_toggle_split(FluxBackendCtx *rt, XentNodeId p, XtkEl c
 	  rt->ctx, rt->store, p, el->text, el->split.icon, el->split.checked, flux_tramp_expand, b});
 }
 
+static XentNodeId flux_cr_rating(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	return flux_create_rating(&(FluxRatingCreateInfo) {
+	  .ctx               = rt->ctx,
+	  .store             = rt->store,
+	  .parent            = p,
+	  .value             = el->rating.value,
+	  .max_rating        = el->rating.max_rating,
+	  .placeholder_value = el->rating.placeholder_value,
+	  .initial_set_value = el->rating.initial_set_value,
+	  .is_clear_enabled  = el->rating.is_clear_enabled,
+	  .is_read_only      = el->rating.is_read_only,
+	  .caption           = el->rating.caption,
+	  .on_change         = flux_tramp_rating,
+	  .userdata          = b});
+}
+
 static XentNodeId flux_cr_radio_buttons(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	/* XtkRadioItem and FluxRadioItem are the same {const char*, bool} layout. */
 	return flux_create_radio_buttons(&(FluxRadioButtonsCreateInfo) {
@@ -377,6 +393,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_cr_split,
 	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = flux_cr_toggle_split,
 	[FLUX_CONTROL_RADIO_BUTTONS]   = flux_cr_radio_buttons,
+	[FLUX_CONTROL_RATING]          = flux_cr_rating,
 	[FLUX_CONTROL_MENU_BAR]        = flux_cr_menubar,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_cr_tabview,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_cr_dialog,

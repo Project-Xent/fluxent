@@ -360,6 +360,20 @@ static bool snapshot_list_item_selected(FluxListItemData const *it) {
 	return false;
 }
 
+static void snapshot_handle_rating(SnapshotContext const *ctx) {
+	FluxRatingData const *r      = ( FluxRatingData const * ) ctx->data;
+	ctx->snap->u.rating.value             = r->value;
+	ctx->snap->u.rating.hover_value       = r->hover_value;
+	ctx->snap->u.rating.placeholder_value = r->placeholder_value;
+	ctx->snap->u.rating.max_rating        = r->max_rating;
+	ctx->snap->u.rating.star_size         = ( float ) r->star_size;
+	ctx->snap->u.rating.item_spacing      = ( float ) r->item_spacing;
+	ctx->snap->u.rating.set_glyph         = r->set_glyph;
+	ctx->snap->u.rating.unset_glyph       = r->unset_glyph;
+	ctx->snap->u.rating.caption           = r->caption;
+	ctx->snap->u.rating.is_read_only      = r->is_read_only;
+}
+
 static void snapshot_handle_list_item(SnapshotContext const *ctx) {
 	FluxListItemData const *it        = ( FluxListItemData const * ) ctx->data;
 	ctx->snap->u.list_item.kind        = ( uint8_t ) (it->owner ? it->owner->kind : XTK_LIST_KIND_LIST);
@@ -400,6 +414,7 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_DROPDOWN_BUTTON] = snapshot_handle_button,
   [FLUX_CONTROL_SPLIT_BUTTON]    = snapshot_handle_button,
   [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = snapshot_handle_button,
+  [FLUX_CONTROL_RATING]          = snapshot_handle_rating,
   [FLUX_CONTROL_CHECKBOX]        = snapshot_handle_checkbox_like,
   [FLUX_CONTROL_RADIO]           = snapshot_handle_checkbox_like,
   [FLUX_CONTROL_SWITCH]          = snapshot_handle_switch,

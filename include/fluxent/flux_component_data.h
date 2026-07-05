@@ -48,5 +48,6 @@
 #include "controls/flux_list_view_data.h"
 #include "controls/flux_flip_view_data.h"
 #include "controls/flux_radio_buttons_data.h"
+#include "controls/flux_rating_data.h"
 
 #endif

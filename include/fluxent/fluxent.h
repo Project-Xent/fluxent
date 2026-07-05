@@ -192,6 +192,39 @@ XentNodeId flux_create_toggle_split_button(FluxToggleSplitButtonCreateInfo const
 /** @brief Set the toggle state (controlled from the model each frame). */
 void flux_toggle_split_button_set_checked(FluxNodeStore *store, XentNodeId id, bool checked);
 
+/* -------------------------------------------------------------------------
+ * RadioButtons (grouping control)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxRadioItem {
+	char const *label;
+	bool        disabled;
+} FluxRadioItem;
+
+typedef struct FluxRadioButtonsCreateInfo {
+	XentContext         *ctx;
+	FluxNodeStore       *store;
+	XentNodeId           parent;
+	FluxInput           *input; /**< Keyboard focus moves within the group. */
+	char const          *header;
+	FluxRadioItem const *items;
+	int                  item_count;
+	int                  selected;    /**< -1 = none. */
+	int                  max_columns; /**< 0/1 = single column. */
+	bool                 disabled;
+	void                 (*on_select)(void *ctx, int index);
+	void                *userdata;
+} FluxRadioButtonsCreateInfo;
+
+/** @brief Create a RadioButtons group (single selection + group keyboard nav). */
+XentNodeId flux_create_radio_buttons(FluxRadioButtonsCreateInfo const *info);
+
+/** @brief Programmatically set the selected item (no callback). */
+void flux_radio_buttons_set_selected(FluxNodeStore *store, XentNodeId id, int index);
+
+/** @brief Enable/disable the whole group. */
+void flux_radio_buttons_set_enabled(FluxNodeStore *store, XentNodeId id, bool enabled);
+
 typedef struct FluxProgressCreateInfo {
 	XentContext   *ctx;
 	FluxNodeStore *store;

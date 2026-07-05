@@ -278,6 +278,7 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_PIPS_PAGER   : *out = el->pips.on_select; return true;
 	case FLUX_CONTROL_AUTO_SUGGEST : *out = el->suggest.on_text; return true;
 	case FLUX_CONTROL_TOGGLE_SPLIT_BUTTON : *out = el->split.on_toggle; return true;
+	case FLUX_CONTROL_RADIO_BUTTONS : *out = el->radio_buttons.on_select; return true;
 	default                        : return false;
 	}
 }
@@ -582,6 +583,13 @@ static void flux_pp_toggle_split(FluxBackendCtx *rt, XtkNode *n, XtkEl const *pr
 		flux_toggle_split_button_set_checked(rt->store, n->node, el->split.checked);
 }
 
+static void flux_pp_radio_buttons(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (prev && prev->radio_buttons.selected != el->radio_buttons.selected)
+		flux_radio_buttons_set_selected(rt->store, n->node, el->radio_buttons.selected);
+	if (!prev || prev->radio_buttons.disabled != el->radio_buttons.disabled)
+		flux_radio_buttons_set_enabled(rt->store, n->node, !el->radio_buttons.disabled);
+}
+
 static void flux_pp_tab(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (prev && prev->tab_view.selected != el->tab_view.selected) {
 		flux_tab_view_select(rt->store, n->node, el->tab_view.selected);
@@ -654,6 +662,7 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_DROPDOWN_BUTTON] = flux_pp_dropdown,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_pp_split,
 	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = flux_pp_toggle_split,
+	[FLUX_CONTROL_RADIO_BUTTONS]   = flux_pp_radio_buttons,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_pp_dialog,
 };
@@ -684,6 +693,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_NUMBER_BOX]      = true,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = true,
 	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = true,
+	[FLUX_CONTROL_RADIO_BUTTONS]   = true,
 	[FLUX_CONTROL_TAB_VIEW]        = true,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = true,
 	[FLUX_CONTROL_NAV_VIEW]        = true,

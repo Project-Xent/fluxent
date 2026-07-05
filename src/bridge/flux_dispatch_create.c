@@ -170,6 +170,23 @@ static XentNodeId flux_cr_toggle_split(FluxBackendCtx *rt, XentNodeId p, XtkEl c
 	  rt->ctx, rt->store, p, el->text, el->split.icon, el->split.checked, flux_tramp_expand, b});
 }
 
+static XentNodeId flux_cr_radio_buttons(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	/* XtkRadioItem and FluxRadioItem are the same {const char*, bool} layout. */
+	return flux_create_radio_buttons(&(FluxRadioButtonsCreateInfo) {
+	  .ctx         = rt->ctx,
+	  .store       = rt->store,
+	  .parent      = p,
+	  .input       = rt->app ? flux_app_get_input(rt->app) : NULL,
+	  .header      = el->radio_buttons.header,
+	  .items       = ( FluxRadioItem const * ) el->radio_buttons.items,
+	  .item_count  = el->radio_buttons.item_count,
+	  .selected    = el->radio_buttons.selected,
+	  .max_columns = el->radio_buttons.max_columns,
+	  .disabled    = el->radio_buttons.disabled,
+	  .on_select   = flux_tramp_select,
+	  .userdata    = b});
+}
+
 static XentNodeId flux_cr_menubar(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	( void ) el; ( void ) b;
 	return flux_create_menu_bar(&(FluxMenuBarCreateInfo) {
@@ -359,6 +376,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_DROPDOWN_BUTTON] = flux_cr_dropdown,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_cr_split,
 	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = flux_cr_toggle_split,
+	[FLUX_CONTROL_RADIO_BUTTONS]   = flux_cr_radio_buttons,
 	[FLUX_CONTROL_MENU_BAR]        = flux_cr_menubar,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_cr_tabview,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_cr_dialog,

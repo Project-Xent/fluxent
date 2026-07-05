@@ -574,6 +574,28 @@ XentNodeId        flux_expander_content_node(FluxNodeStore *store, XentNodeId id
 /** @brief Get the expander's header node (host for arbitrary header content). */
 XentNodeId        flux_expander_header_node(FluxNodeStore *store, XentNodeId id);
 
+/* -------------------------------------------------------------------------
+ * RefreshContainer (PullToRefresh)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxRefreshContainerCreateInfo {
+	XentContext      *ctx;
+	FluxNodeStore    *store;
+	XentNodeId        parent;
+	FluxWindow       *window;
+	FluxPullDirection direction;
+	float             visualizer_size;
+	float             threshold_ratio;
+	void            (*on_refresh)(void *ud, int direction);
+	void             *userdata;
+} FluxRefreshContainerCreateInfo;
+
+XentNodeId        flux_create_refresh(FluxRefreshContainerCreateInfo const *info);
+XentNodeId        flux_refresh_content_node(FluxNodeStore *store, XentNodeId id);
+void              flux_refresh_set_direction(FluxNodeStore *store, XentNodeId id, FluxPullDirection dir);
+void              flux_refresh_set_refreshing(FluxNodeStore *store, XentNodeId id, bool refreshing);
+void              flux_refresh_request_refresh(FluxNodeStore *store, XentNodeId id);
+
 /** @brief Create a menu bar (horizontal row of top-level menus). */
 XentNodeId        flux_create_menu_bar(FluxMenuBarCreateInfo const *info);
 

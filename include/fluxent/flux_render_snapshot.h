@@ -248,6 +248,17 @@ typedef struct FluxPipsSnapshot {
 	uint8_t pressed_nav; /**< 0 none, 1 previous, 2 next. */
 } FluxPipsSnapshot;
 
+typedef struct FluxRefreshSnapshot {
+	int   state;
+	int   direction;
+	float interaction_ratio;
+	float threshold_ratio;
+	float visualizer_size;
+	float glyph_angle;
+	float glyph_opacity;
+	float glyph_scale;
+} FluxRefreshSnapshot;
+
 /**
  * @brief Immutable snapshot of a control's visual state.
  *
@@ -291,6 +302,7 @@ typedef struct FluxRenderSnapshot {
 		FluxListItemSnapshot  list_item;  /**< ListView row. */
 		FluxFlipSnapshot      flip;       /**< FlipView. */
 		FluxPipsSnapshot      pips;       /**< PipsPager. */
+		FluxRefreshSnapshot   refresh;    /**< RefreshContainer / PullToRefresh. */
 	} u;
 } FluxRenderSnapshot;
 

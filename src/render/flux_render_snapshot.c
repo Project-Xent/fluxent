@@ -5,6 +5,7 @@
 #include "fluxent/controls/flux_menu_bar_data.h"
 #include "fluxent/controls/flux_nav_view_data.h"
 #include "fluxent/controls/flux_tab_view_data.h"
+#include "fluxent/controls/flux_refresh_data.h"
 #include "fluxent/controls/flux_breadcrumb_data.h"
 
 #include <string.h>
@@ -427,6 +428,41 @@ static void snapshot_handle_pips_pager(SnapshotContext const *ctx) {
 	ctx->snap->u.pips.pressed_nav  = pd->pressed_nav;
 }
 
+static void snapshot_handle_refresh(SnapshotContext const *ctx) {
+	FluxRefreshData const *d   = ( FluxRefreshData const * ) ctx->data;
+	FluxRefreshSnapshot   *r   = &ctx->snap->u.refresh;
+	unsigned long          now = GetTickCount();
+	float const            two_pi = 6.28318530718f;
+	float                  thr    = d->threshold_ratio > 0.0f ? d->threshold_ratio : FLUX_REFRESH_EXECUTION_RATIO;
+
+	r->state             = d->state;
+	r->direction         = ( int ) d->direction;
+	r->interaction_ratio = d->interaction_ratio;
+	r->threshold_ratio   = thr;
+	r->visualizer_size   = d->visualizer_size;
+
+	if (d->state == FLUX_REFRESH_REFRESHING) {
+		unsigned long e    = now - d->spin_start_tick;
+		float         frac = ( float ) (e % ( unsigned long ) FLUX_REFRESH_SPIN_MS) / FLUX_REFRESH_SPIN_MS;
+		r->glyph_angle     = d->start_angle + frac * two_pi;
+	}
+	else {
+		float ratio    = d->interaction_ratio < 0.0f ? 0.0f : (d->interaction_ratio > thr ? thr : d->interaction_ratio);
+		r->glyph_angle = d->start_angle + two_pi * (ratio / thr);
+	}
+
+	bool bright = d->state == FLUX_REFRESH_PEEKING || d->state == FLUX_REFRESH_PENDING
+	           || d->state == FLUX_REFRESH_REFRESHING;
+	r->glyph_opacity = bright ? 1.0f : d->min_opacity;
+
+	float scale = 1.0f;
+	if (d->state == FLUX_REFRESH_PENDING && d->pop_start_tick) {
+		float t = ( float ) (now - d->pop_start_tick) / FLUX_REFRESH_POP_MS;
+		if (t < 1.0f) scale = (t < 0.5f) ? 1.0f + 0.5f * (t / 0.5f) : 1.5f - 0.5f * ((t - 0.5f) / 0.5f);
+	}
+	r->glyph_scale = scale;
+}
+
 static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_TEXT]            = snapshot_handle_text,
   [FLUX_CONTROL_BUTTON]          = snapshot_handle_button,
@@ -461,6 +497,7 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_LIST_ITEM]       = snapshot_handle_list_item,
   [FLUX_CONTROL_FLIP_VIEW]       = snapshot_handle_flip_view,
   [FLUX_CONTROL_PIPS_PAGER]      = snapshot_handle_pips_pager,
+  [FLUX_CONTROL_REFRESH]         = snapshot_handle_refresh,
 };
 
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {

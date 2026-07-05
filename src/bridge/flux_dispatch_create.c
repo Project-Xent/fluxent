@@ -426,6 +426,19 @@ static XentNodeId flux_cr_nav(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el,
 	return nav;
 }
 
+static XentNodeId flux_cr_refresh(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	return flux_create_refresh(&(FluxRefreshContainerCreateInfo) {
+	  .ctx             = rt->ctx,
+	  .store           = rt->store,
+	  .parent          = p,
+	  .window          = flux_be_window(rt),
+	  .direction       = ( FluxPullDirection ) el->refresh.direction,
+	  .visualizer_size = el->refresh.visualizer_size,
+	  .threshold_ratio = el->refresh.threshold_ratio,
+	  .on_refresh      = b ? flux_tramp_refresh : NULL,
+	  .userdata        = b});
+}
+
 static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_CONTAINER]       = flux_cr_container,
 	[FLUX_CONTROL_CARD]            = flux_cr_card,
@@ -469,6 +482,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_FLIP_VIEW]       = flux_cr_flip,
 	[FLUX_CONTROL_PIPS_PAGER]      = flux_cr_pips,
 	[FLUX_CONTROL_AUTO_SUGGEST]    = flux_cr_suggest,
+	[FLUX_CONTROL_REFRESH]         = flux_cr_refresh,
 };
 
 XentNodeId flux_create_control(FluxBackendCtx *rt, XentNodeId parent, XtkEl const *el, FluxBinding *b) {
@@ -488,6 +502,7 @@ static XentNodeId flux_content_host_for(FluxNodeStore *store, XentNodeId node, F
 	case FLUX_CONTROL_ITEMS_REPEATER:
 	case FLUX_CONTROL_ITEMS_VIEW:      return flux_list_view_content_node(store, node);
 	case FLUX_CONTROL_FLIP_VIEW:       return flux_flip_view_content_node(store, node);
+	case FLUX_CONTROL_REFRESH:         return flux_refresh_content_node(store, node);
 	default:                           return XENT_NODE_INVALID;
 	}
 }

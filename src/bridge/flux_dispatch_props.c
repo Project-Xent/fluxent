@@ -114,6 +114,13 @@ void flux_tramp_dialog_result(void *ud, FluxDialogResult result) {
 	xtk_runtime_post(b->rt, m);
 }
 
+void flux_tramp_refresh(void *ud, int direction) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	XtkMsg      m = b->on_change;
+	m.i          = direction;
+	xtk_runtime_post(b->rt, m);
+}
+
 FluxWindow       *flux_be_window(FluxBackendCtx *rt) { return rt->app ? flux_app_get_window(rt->app) : NULL; }
 FluxTextRenderer *flux_be_text(FluxBackendCtx *rt) { return rt->app ? flux_app_get_text_renderer(rt->app) : NULL; }
 FluxThemeManager *flux_be_theme(FluxBackendCtx *rt) { return rt->app ? flux_app_get_theme(rt->app) : NULL; }
@@ -297,6 +304,7 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_TOGGLE_SPLIT_BUTTON : *out = el->split.on_toggle; return true;
 	case FLUX_CONTROL_RADIO_BUTTONS : *out = el->radio_buttons.on_select; return true;
 	case FLUX_CONTROL_RATING       : *out = el->rating.on_change; return true;
+	case FLUX_CONTROL_REFRESH      : *out = el->refresh.on_refresh; return true;
 	case FLUX_CONTROL_SELECTOR_BAR : *out = el->selector_bar.on_select; return true;
 	case FLUX_CONTROL_BREADCRUMB_BAR : *out = el->breadcrumb.on_click; return true;
 	default                        : return false;
@@ -667,6 +675,13 @@ static void flux_pp_dialog(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, Xt
 	}
 }
 
+static void flux_pp_refresh(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev || prev->refresh.direction != el->refresh.direction)
+		flux_refresh_set_direction(rt->store, n->node, ( FluxPullDirection ) el->refresh.direction);
+	if (prev && prev->refresh.is_refreshing != el->refresh.is_refreshing)
+		flux_refresh_set_refreshing(rt->store, n->node, el->refresh.is_refreshing);
+}
+
 /* Dispatch table: FluxControlType → per-type prop update handler. */
 static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_CONTAINER]       = flux_pp_stack,
@@ -709,6 +724,7 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_BREADCRUMB_BAR]  = flux_pp_breadcrumb,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_pp_dialog,
+	[FLUX_CONTROL_REFRESH]         = flux_pp_refresh,
 };
 
 void flux_apply_props(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
@@ -751,6 +767,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_FLIP_VIEW]       = true,
 	[FLUX_CONTROL_PIPS_PAGER]      = true,
 	[FLUX_CONTROL_AUTO_SUGGEST]    = true,
+	[FLUX_CONTROL_REFRESH]         = true,
 };
 
 bool flux_is_interactive(XtkEl const *el) {

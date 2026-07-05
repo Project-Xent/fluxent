@@ -285,6 +285,8 @@ void flux_draw_flip_view(
 
 /** @brief Draw FlipView nav buttons above the pages (overlay pass). */
 void flux_draw_flip_view_overlay(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
+void flux_draw_refresh(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state);
+void flux_draw_refresh_overlay(FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds);
 
 /** @brief Draw a PipsPager (dots + nav carets). */
 void flux_draw_pips_pager(

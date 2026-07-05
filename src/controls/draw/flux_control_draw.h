@@ -278,6 +278,11 @@ void flux_draw_list_box(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw a TreeView row (indent + chevron + pill/checkbox + label). */
+void flux_draw_tree_item(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw the FlipView surface (SystemListLow fill). */
 void flux_draw_flip_view(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

@@ -227,6 +227,15 @@ typedef struct FluxListItemSnapshot {
 	bool    multi;       /**< Multiple mode: draw the checkbox. */
 } FluxListItemSnapshot;
 
+typedef struct FluxTreeItemSnapshot {
+	char const *label;
+	uint32_t    glyph;
+	int16_t     depth;
+	uint8_t     sel_state;
+	uint8_t     flags;
+} FluxTreeItemSnapshot;
+
+
 /** @brief FlipView payload (nav-button overlay state). */
 typedef struct FluxFlipSnapshot {
 	bool    vertical;
@@ -300,6 +309,7 @@ typedef struct FluxRenderSnapshot {
 		FluxSelectorItemSnapshot selector; /**< SelectorBarItem. */
 		FluxBreadcrumbSnapshot breadcrumb; /**< BreadcrumbBar element. */
 		FluxListItemSnapshot  list_item;  /**< ListView row. */
+		FluxTreeItemSnapshot  tree_item;  /**< TreeView row. */
 		FluxFlipSnapshot      flip;       /**< FlipView. */
 		FluxPipsSnapshot      pips;       /**< PipsPager. */
 		FluxRefreshSnapshot   refresh;    /**< RefreshContainer / PullToRefresh. */

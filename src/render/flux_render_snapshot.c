@@ -6,6 +6,7 @@
 #include "fluxent/controls/flux_nav_view_data.h"
 #include "fluxent/controls/flux_tab_view_data.h"
 #include "fluxent/controls/flux_refresh_data.h"
+#include "fluxent/controls/flux_tree_view_data.h"
 #include "fluxent/controls/flux_breadcrumb_data.h"
 
 #include <string.h>
@@ -402,6 +403,24 @@ static void snapshot_handle_list_item(SnapshotContext const *ctx) {
 	ctx->snap->u.list_item.multi       = it->multi;
 }
 
+static void snapshot_handle_tree_item(SnapshotContext const *ctx) {
+	FluxTreeItemData const *it = ( FluxTreeItemData const * ) ctx->data;
+	FluxTreeViewData const *d  = it->owner;
+	if (!d || it->flat_index < 0 || it->flat_index >= d->flat_count) return;
+	int                 h = d->flat [it->flat_index];
+	FluxTreeNode const *n = &d->nodes [h];
+	ctx->snap->u.tree_item.label     = n->text;
+	ctx->snap->u.tree_item.glyph     = n->glyph;
+	ctx->snap->u.tree_item.depth     = n->depth;
+	ctx->snap->u.tree_item.sel_state = d->sel_mode == XTK_TREE_SELECT_SINGLE
+	    ? ( uint8_t ) (d->selected == h ? FLUX_TREE_SEL_SELECTED : FLUX_TREE_SEL_NONE)
+	    : n->sel_state;
+	ctx->snap->u.tree_item.flags = ( uint8_t ) ((n->first_child >= 0 ? FLUX_TREE_ROW_HAS_CHILDREN : 0)
+	    | (n->expanded ? FLUX_TREE_ROW_EXPANDED : 0)
+	    | (d->sel_mode == XTK_TREE_SELECT_MULTIPLE ? FLUX_TREE_ROW_MULTI : 0)
+	    | (n->disabled ? FLUX_TREE_ROW_DISABLED : 0));
+}
+
 static void snapshot_handle_flip_view(SnapshotContext const *ctx) {
 	FluxFlipViewData const *fv = ( FluxFlipViewData const * ) ctx->data;
 	int                     count = 0;
@@ -495,6 +514,7 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_NAV_VIEW_ITEM]   = snapshot_handle_nav_view_item,
   [FLUX_CONTROL_TAB_VIEW_ITEM]   = snapshot_handle_tab_view_item,
   [FLUX_CONTROL_LIST_ITEM]       = snapshot_handle_list_item,
+  [FLUX_CONTROL_TREE_ITEM]       = snapshot_handle_tree_item,
   [FLUX_CONTROL_FLIP_VIEW]       = snapshot_handle_flip_view,
   [FLUX_CONTROL_PIPS_PAGER]      = snapshot_handle_pips_pager,
   [FLUX_CONTROL_REFRESH]         = snapshot_handle_refresh,

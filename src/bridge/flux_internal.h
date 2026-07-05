@@ -58,6 +58,9 @@ void flux_tramp_double(void *ud, double value);
 bool flux_tramp_tab_close_req(void *ud, int index);
 void flux_tramp_dialog_result(void *ud, FluxDialogResult result);
 void flux_tramp_refresh(void *ud, int direction);
+void flux_tramp_tree_invoke(void *ud, int flat_index);
+void flux_tramp_tree_expand(void *ud, int flat_index, bool expanded);
+void flux_tramp_tree_select(void *ud, int flat_index, bool selected);
 
 FluxWindow       *flux_be_window(FluxBackendCtx *rt);
 FluxTextRenderer *flux_be_text(FluxBackendCtx *rt);

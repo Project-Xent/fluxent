@@ -426,6 +426,35 @@ static XentNodeId flux_cr_nav(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el,
 	return nav;
 }
 
+static void flux_tree_add_desc(FluxNodeStore *store, XentNodeId tree, int parent, XtkTreeNodeDesc const *nodes, int count) {
+	for (int i = 0; i < count; i++) {
+		XtkTreeNodeDesc const *it = &nodes [i];
+		int                    h  = flux_tree_view_add_node(store, tree, parent, it->text, it->icon);
+		if (h < 0) continue;
+		if (it->disabled) flux_tree_view_set_node_disabled(store, tree, h, true);
+		if (it->expanded) flux_tree_view_set_expanded(store, tree, h, true);
+		flux_tree_add_desc(store, tree, h, it->children, it->child_count);
+	}
+}
+
+static XentNodeId flux_cr_tree(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	XentNodeId tree = flux_create_tree_view(&(FluxTreeViewCreateInfo) {
+	  .ctx            = rt->ctx,
+	  .store          = rt->store,
+	  .parent         = p,
+	  .window         = flux_be_window(rt),
+	  .input          = rt->app ? flux_app_get_input(rt->app) : NULL,
+	  .selection_mode = el->tree_view.sel_mode,
+	  .row_height     = el->tree_view.row_height,
+	  .on_invoke      = b ? flux_tramp_tree_invoke : NULL,
+	  .on_expand      = b ? flux_tramp_tree_expand : NULL,
+	  .on_select      = b ? flux_tramp_tree_select : NULL,
+	  .userdata       = b});
+	if (tree == XENT_NODE_INVALID) return tree;
+	flux_tree_add_desc(rt->store, tree, -1, el->tree_view.roots, el->tree_view.root_count);
+	return tree;
+}
+
 static XentNodeId flux_cr_refresh(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	return flux_create_refresh(&(FluxRefreshContainerCreateInfo) {
 	  .ctx             = rt->ctx,
@@ -482,6 +511,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_FLIP_VIEW]       = flux_cr_flip,
 	[FLUX_CONTROL_PIPS_PAGER]      = flux_cr_pips,
 	[FLUX_CONTROL_AUTO_SUGGEST]    = flux_cr_suggest,
+	[FLUX_CONTROL_TREE_VIEW]       = flux_cr_tree,
 	[FLUX_CONTROL_REFRESH]         = flux_cr_refresh,
 };
 

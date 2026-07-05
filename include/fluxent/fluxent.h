@@ -763,6 +763,38 @@ void flux_list_item_set_place(FluxNodeStore *store, XentNodeId item, int index, 
 void flux_list_item_set_state(FluxNodeStore *store, XentNodeId item, bool selected, bool multi);
 
 /* -------------------------------------------------------------------------
+ * TreeView (flattened-tree ViewModel over the virtualized items host)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxTreeViewCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	FluxWindow    *window;
+	FluxInput     *input;
+	XtkTreeSelMode selection_mode;
+	float          row_height;
+	void           (*on_invoke)(void *ctx, int flat_index);
+	void           (*on_expand)(void *ctx, int flat_index, bool expanded);
+	void           (*on_select)(void *ctx, int flat_index, bool selected);
+	void          *userdata;
+} FluxTreeViewCreateInfo;
+
+XentNodeId flux_create_tree_view(FluxTreeViewCreateInfo const *info);
+int  flux_tree_view_add_node(FluxNodeStore *store, XentNodeId tree, int parent, char const *text, char const *icon);
+void flux_tree_view_remove_node(FluxNodeStore *store, XentNodeId tree, int node);
+void flux_tree_view_clear(FluxNodeStore *store, XentNodeId tree);
+void flux_tree_view_set_expanded(FluxNodeStore *store, XentNodeId tree, int node, bool expanded);
+void flux_tree_view_set_node_disabled(FluxNodeStore *store, XentNodeId tree, int node, bool disabled);
+void flux_tree_view_set_selection_mode(FluxNodeStore *store, XentNodeId tree, XtkTreeSelMode mode);
+void flux_tree_view_set_selected(FluxNodeStore *store, XentNodeId tree, int node, bool selected);
+void flux_tree_view_select_all(FluxNodeStore *store, XentNodeId tree);
+bool flux_tree_view_is_expanded(FluxNodeStore *store, XentNodeId tree, int node);
+bool flux_tree_view_is_selected(FluxNodeStore *store, XentNodeId tree, int node);
+int  flux_tree_view_flat_count(FluxNodeStore *store, XentNodeId tree);
+int  flux_tree_view_flat_node(FluxNodeStore *store, XentNodeId tree, int flat_index);
+
+/* -------------------------------------------------------------------------
  * ItemsView (ItemsRepeater + Layout + SelectionModel; ItemContainer chrome)
  * ---------------------------------------------------------------------- */
 

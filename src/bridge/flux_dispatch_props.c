@@ -121,6 +121,27 @@ void flux_tramp_refresh(void *ud, int direction) {
 	xtk_runtime_post(b->rt, m);
 }
 
+void flux_tramp_tree_invoke(void *ud, int flat_index) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	XtkMsg       m = b->on_click;
+	m.i            = flat_index;
+	xtk_runtime_post(b->rt, m);
+}
+
+void flux_tramp_tree_expand(void *ud, int flat_index, bool expanded) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	XtkMsg       m = b->on_close;
+	m.i            = expanded ? flat_index : -1 - flat_index;
+	xtk_runtime_post(b->rt, m);
+}
+
+void flux_tramp_tree_select(void *ud, int flat_index, bool selected) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	XtkMsg       m = b->on_change;
+	m.i            = selected ? flat_index : -1 - flat_index;
+	xtk_runtime_post(b->rt, m);
+}
+
 FluxWindow       *flux_be_window(FluxBackendCtx *rt) { return rt->app ? flux_app_get_window(rt->app) : NULL; }
 FluxTextRenderer *flux_be_text(FluxBackendCtx *rt) { return rt->app ? flux_app_get_text_renderer(rt->app) : NULL; }
 FluxThemeManager *flux_be_theme(FluxBackendCtx *rt) { return rt->app ? flux_app_get_theme(rt->app) : NULL; }
@@ -282,6 +303,7 @@ static XtkMsg flux_binding_click(XtkEl const *el) {
 	case FLUX_CONTROL_TAB_VIEW     : return el->tab_view.on_add;
 	case FLUX_CONTROL_AUTO_SUGGEST : return el->suggest.on_query;
 	case FLUX_CONTROL_ITEMS_VIEW   : return el->list.on_invoke;
+	case FLUX_CONTROL_TREE_VIEW    : return el->tree_view.on_invoke;
 	default                        : return el->button.on_click;
 	}
 }
@@ -298,6 +320,7 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_LIST_BOX     :
 	case FLUX_CONTROL_GRID_VIEW    :
 	case FLUX_CONTROL_ITEMS_VIEW   : *out = el->list.on_select; return true;
+	case FLUX_CONTROL_TREE_VIEW    : *out = el->tree_view.on_select; return true;
 	case FLUX_CONTROL_FLIP_VIEW    : *out = el->flip.on_select; return true;
 	case FLUX_CONTROL_PIPS_PAGER   : *out = el->pips.on_select; return true;
 	case FLUX_CONTROL_AUTO_SUGGEST : *out = el->suggest.on_text; return true;
@@ -331,6 +354,7 @@ static void flux_apply_bindings(XtkNode *n, XtkEl const *el) {
 	b->on_change = flux_binding_change(el);
 	b->on_close  = el->type == FLUX_CONTROL_TAB_VIEW ? el->tab_view.on_close
 	    : el->type == FLUX_CONTROL_AUTO_SUGGEST      ? el->suggest.on_chosen
+	    : el->type == FLUX_CONTROL_TREE_VIEW         ? el->tree_view.on_expand
 	                                                 : ( XtkMsg ) {0};
 }
 
@@ -559,6 +583,11 @@ static void flux_pp_list_item(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev,
 		flux_list_item_set_state(rt->store, n->node, el->item.selected, el->item.multi);
 }
 
+static void flux_pp_tree(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (prev && prev->tree_view.sel_mode != el->tree_view.sel_mode)
+		flux_tree_view_set_selection_mode(rt->store, n->node, el->tree_view.sel_mode);
+}
+
 static void flux_rewire_menu_bindings(XtkNode *n, XtkMenuItemDesc const *items, int count) {
 	FluxNodeExt *ext = ( FluxNodeExt * ) n->ext;
 	if (!ext) return;
@@ -712,6 +741,7 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_ITEMS_REPEATER]  = flux_pp_list,
 	[FLUX_CONTROL_ITEMS_VIEW]      = flux_pp_list,
 	[FLUX_CONTROL_LIST_ITEM]       = flux_pp_list_item,
+	[FLUX_CONTROL_TREE_VIEW]       = flux_pp_tree,
 	[FLUX_CONTROL_FLIP_VIEW]       = flux_pp_flip,
 	[FLUX_CONTROL_PIPS_PAGER]      = flux_pp_pips,
 	[FLUX_CONTROL_AUTO_SUGGEST]    = flux_pp_suggest,
@@ -764,6 +794,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_LIST_BOX]        = true,
 	[FLUX_CONTROL_GRID_VIEW]       = true,
 	[FLUX_CONTROL_ITEMS_VIEW]      = true,
+	[FLUX_CONTROL_TREE_VIEW]       = true,
 	[FLUX_CONTROL_FLIP_VIEW]       = true,
 	[FLUX_CONTROL_PIPS_PAGER]      = true,
 	[FLUX_CONTROL_AUTO_SUGGEST]    = true,

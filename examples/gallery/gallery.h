@@ -26,6 +26,9 @@ enum
 	PAGE_COMBO,
 	PAGE_SLIDER,
 	PAGE_TOGGLE,
+	PAGE_RADIO_BUTTONS,
+	PAGE_RATING,
+	PAGE_TOGGLE_SPLIT,
 	PAGE_CAT_TEXT,
 	PAGE_TEXTBOX,
 	PAGE_AUTOSUGGEST,
@@ -43,12 +46,18 @@ enum
 	PAGE_MENUS,
 	PAGE_TABVIEW,
 	PAGE_EXPANDER,
+	PAGE_BREADCRUMB,
+	PAGE_SELECTOR_BAR,
 	PAGE_CAT_COLLECTIONS,
 	PAGE_LISTVIEW,
 	PAGE_GRIDVIEW,
 	PAGE_LISTBOX,
+	PAGE_TREE_VIEW,
+	PAGE_ITEMS_VIEW,
+	PAGE_PULL_REFRESH,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
+	PAGE_TEACHING_TIP,
 	PAGE_SETTINGS,
 	PAGE_COUNT,
 };
@@ -102,6 +111,23 @@ enum
 	MSG_ASB_TEXT,      /**< .ptr = transient query text. */
 	MSG_ASB_QUERY,     /**< .ptr = transient query text. */
 	MSG_ASB_CHOSEN,    /**< .i = previewed suggestion index. */
+	MSG_RADIO_BUTTONS, /**< .i = selected index. */
+	MSG_RATING,        /**< .d = value; .i = star count. */
+	MSG_TOGGLE_SPLIT,  /**< .b = checked (ToggleSplitButton). */
+	MSG_TOGGLE_SPLIT_CLICK,
+	MSG_TOGGLE_SPLIT_MENU, /**< .i = menu item ordinal. */
+	MSG_BREADCRUMB,    /**< .i = clicked crumb index. */
+	MSG_SELECTOR_BAR,  /**< .i = selected index. */
+	MSG_TIP_OPEN,
+	MSG_TIP_CLOSE,     /**< .i = close reason. */
+	MSG_TIP_ACTION,
+	MSG_TREE_SELECT,   /**< .i = flat index when selected, else -(flat+1). */
+	MSG_TREE_EXPAND,   /**< .i = flat when expanded, else -(flat+1). */
+	MSG_TREE_INVOKE,   /**< .i = flat index. */
+	MSG_ITEMS_SELECT,  /**< .i = selected index. */
+	MSG_ITEMS_INVOKE,  /**< .i = invoked index. */
+	MSG_REFRESH,       /**< .i = pull direction. */
+	MSG_REFRESH_DONE,
 };
 
 #define BAR_COUNT 4
@@ -145,6 +171,21 @@ typedef struct Model {
 	char  *asb_text;
 	int    asb_chosen;
 	char  *asb_query;
+	int    radio_buttons_sel;
+	double rating_value;
+	bool   toggle_split_checked;
+	int    toggle_split_menu;
+	int    breadcrumb_click;
+	int    selector_sel;
+	bool   tip_open;
+	int    tip_actions;
+	int    tip_close_reason;
+	int    tree_sel;
+	int    tree_invoke;
+	int    items_sel;
+	int    items_invoke;
+	bool   refresh_busy;
+	int    refresh_count;
 } Model;
 
 /* -------------------------------------------------------------------------
@@ -169,6 +210,12 @@ XtkEl *page_radio(XtkUi *ui, Model const *m);
 XtkEl *page_combo(XtkUi *ui, Model const *m);
 XtkEl *page_slider(XtkUi *ui, Model const *m);
 XtkEl *page_toggle(XtkUi *ui, Model const *m);
+XtkEl *page_radio_buttons(XtkUi *ui, Model const *m);
+XtkEl *page_rating(XtkUi *ui, Model const *m);
+XtkEl *page_toggle_split(XtkUi *ui, Model const *m);
+XtkEl *page_breadcrumb(XtkUi *ui, Model const *m);
+XtkEl *page_selector_bar(XtkUi *ui, Model const *m);
+XtkEl *page_teaching_tip(XtkUi *ui, Model const *m);
 XtkEl *page_textbox(XtkUi *ui, Model const *m);
 XtkEl *page_numberbox(XtkUi *ui, Model const *m);
 XtkEl *page_typography(XtkUi *ui, Model const *m);
@@ -183,6 +230,9 @@ XtkEl *page_expander(XtkUi *ui, Model const *m);
 XtkEl *page_listview(XtkUi *ui, Model const *m);
 XtkEl *page_gridview(XtkUi *ui, Model const *m);
 XtkEl *page_listbox(XtkUi *ui, Model const *m);
+XtkEl *page_tree_view(XtkUi *ui, Model const *m);
+XtkEl *page_items_view(XtkUi *ui, Model const *m);
+XtkEl *page_pull_refresh(XtkUi *ui, Model const *m);
 XtkEl *page_flipview(XtkUi *ui, Model const *m);
 XtkEl *page_autosuggest(XtkUi *ui, Model const *m);
 XtkEl *page_dialog(XtkUi *ui, Model const *m);

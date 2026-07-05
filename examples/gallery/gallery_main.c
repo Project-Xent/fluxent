@@ -87,6 +87,33 @@ static void update(void *model, XtkMsg msg) {
 		m->asb_query = msg.ptr ? strdup(( char const * ) msg.ptr) : NULL;
 		break;
 	case MSG_ASB_CHOSEN : m->asb_chosen = msg.i; break;
+	case MSG_RADIO_BUTTONS : m->radio_buttons_sel = msg.i; break;
+	case MSG_RATING :
+		m->rating_value = msg.d;
+		break;
+	case MSG_TOGGLE_SPLIT      : m->toggle_split_checked = msg.b; break;
+	case MSG_TOGGLE_SPLIT_CLICK: m->toggle_split_menu    = 0; break;
+	case MSG_TOGGLE_SPLIT_MENU : m->toggle_split_menu    = msg.i + 1; break;
+	case MSG_BREADCRUMB   : m->breadcrumb_click = msg.i; break;
+	case MSG_SELECTOR_BAR : m->selector_sel     = msg.i; break;
+	case MSG_TIP_OPEN     : m->tip_open = !m->tip_open; break;
+	case MSG_TIP_CLOSE :
+		m->tip_open         = false;
+		m->tip_close_reason = msg.i;
+		break;
+	case MSG_TIP_ACTION : m->tip_actions++; break;
+	case MSG_TREE_SELECT :
+		m->tree_sel = msg.i >= 0 ? msg.i : -1;
+		break;
+	case MSG_TREE_EXPAND : break;
+	case MSG_TREE_INVOKE : m->tree_invoke = msg.i; break;
+	case MSG_ITEMS_SELECT: m->items_sel   = msg.i; break;
+	case MSG_ITEMS_INVOKE: m->items_invoke = msg.i; break;
+	case MSG_REFRESH :
+		m->refresh_busy  = true;
+		m->refresh_count++;
+		break;
+	case MSG_REFRESH_DONE : m->refresh_busy = false; break;
 	default : break;
 	}
 }
@@ -107,6 +134,9 @@ static XtkEl *page_view(XtkUi *ui, Model const *m) {
 	case PAGE_COMBO       : return page_combo(ui, m);
 	case PAGE_SLIDER      : return page_slider(ui, m);
 	case PAGE_TOGGLE      : return page_toggle(ui, m);
+	case PAGE_RADIO_BUTTONS : return page_radio_buttons(ui, m);
+	case PAGE_RATING      : return page_rating(ui, m);
+	case PAGE_TOGGLE_SPLIT: return page_toggle_split(ui, m);
 	case PAGE_TEXTBOX     : return page_textbox(ui, m);
 	case PAGE_NUMBERBOX   : return page_numberbox(ui, m);
 	case PAGE_TYPOGRAPHY  : return page_typography(ui, m);
@@ -118,14 +148,20 @@ static XtkEl *page_view(XtkUi *ui, Model const *m) {
 	case PAGE_MENUS       : return page_menus(ui, m);
 	case PAGE_TABVIEW     : return page_tabview(ui, m);
 	case PAGE_EXPANDER    : return page_expander(ui, m);
+	case PAGE_BREADCRUMB  : return page_breadcrumb(ui, m);
+	case PAGE_SELECTOR_BAR: return page_selector_bar(ui, m);
 	case PAGE_CAT_COLLECTIONS :
-		return page_category(ui, "Collections", "Virtualized ListView, GridView, and ListBox.");
+		return page_category(ui, "Collections", "ListView, GridView, ListBox, TreeView, ItemsView, and PullToRefresh.");
 	case PAGE_LISTVIEW    : return page_listview(ui, m);
 	case PAGE_GRIDVIEW    : return page_gridview(ui, m);
 	case PAGE_LISTBOX     : return page_listbox(ui, m);
+	case PAGE_TREE_VIEW   : return page_tree_view(ui, m);
+	case PAGE_ITEMS_VIEW  : return page_items_view(ui, m);
+	case PAGE_PULL_REFRESH: return page_pull_refresh(ui, m);
 	case PAGE_FLIPVIEW    : return page_flipview(ui, m);
 	case PAGE_AUTOSUGGEST : return page_autosuggest(ui, m);
 	case PAGE_DIALOG      : return page_dialog(ui, m);
+	case PAGE_TEACHING_TIP: return page_teaching_tip(ui, m);
 	case PAGE_SETTINGS    : return page_settings(ui, m);
 	default              : return page_home(ui, m);
 	}
@@ -183,6 +219,15 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	  .asb_chosen   = -1,
 	  .badge_value  = 5,
 	  .progress     = 60.0f,
+	  .radio_buttons_sel = 0,
+	  .rating_value      = -1.0,
+	  .selector_sel      = 0,
+	  .tree_sel          = -1,
+	  .tree_invoke       = -1,
+	  .items_sel         = -1,
+	  .items_invoke      = -1,
+	  .breadcrumb_click  = -1,
+	  .tip_close_reason  = -1,
 	};
 
 	FluxAppConfig cfg = {

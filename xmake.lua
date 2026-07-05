@@ -162,6 +162,13 @@ target("test_fx_list")
     add_includedirs("include", "src", "src/bridge")
 target_end()
 
+target("test_fx_new_controls")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/tests/test_fx_new_controls.c")
+    add_includedirs("include", "src", "src/bridge")
+target_end()
+
 target("hello_fluxent")
     set_kind("binary")
     add_deps("fluxent")

@@ -399,6 +399,7 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_TOGGLE_BUTTON]   = snapshot_handle_button,
   [FLUX_CONTROL_DROPDOWN_BUTTON] = snapshot_handle_button,
   [FLUX_CONTROL_SPLIT_BUTTON]    = snapshot_handle_button,
+  [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = snapshot_handle_button,
   [FLUX_CONTROL_CHECKBOX]        = snapshot_handle_checkbox_like,
   [FLUX_CONTROL_RADIO]           = snapshot_handle_checkbox_like,
   [FLUX_CONTROL_SWITCH]          = snapshot_handle_switch,

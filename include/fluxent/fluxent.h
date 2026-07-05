@@ -175,6 +175,23 @@ typedef struct FluxSplitButtonCreateInfo {
 	void          *userdata;
 } FluxSplitButtonCreateInfo;
 
+typedef struct FluxToggleSplitButtonCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	char const    *label;
+	char const    *icon_name;
+	bool           checked;
+	void           (*on_toggle)(void *ctx, bool checked); /**< Primary-zone toggle. */
+	void          *userdata;
+} FluxToggleSplitButtonCreateInfo;
+
+/** @brief Create a ToggleSplitButton (SplitButton whose primary zone toggles IsChecked). */
+XentNodeId flux_create_toggle_split_button(FluxToggleSplitButtonCreateInfo const *info);
+
+/** @brief Set the toggle state (controlled from the model each frame). */
+void flux_toggle_split_button_set_checked(FluxNodeStore *store, XentNodeId id, bool checked);
+
 typedef struct FluxProgressCreateInfo {
 	XentContext   *ctx;
 	FluxNodeStore *store;

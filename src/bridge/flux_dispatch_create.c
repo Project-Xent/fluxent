@@ -165,6 +165,11 @@ static XentNodeId flux_cr_split(FluxBackendCtx *rt, XentNodeId p, XtkEl const *e
 	  rt->ctx, rt->store, p, el->text, el->split.icon, flux_tramp_click, b});
 }
 
+static XentNodeId flux_cr_toggle_split(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	return flux_create_toggle_split_button(&(FluxToggleSplitButtonCreateInfo) {
+	  rt->ctx, rt->store, p, el->text, el->split.icon, el->split.checked, flux_tramp_expand, b});
+}
+
 static XentNodeId flux_cr_menubar(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
 	( void ) el; ( void ) b;
 	return flux_create_menu_bar(&(FluxMenuBarCreateInfo) {
@@ -353,6 +358,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_NUMBER_BOX]      = flux_cr_numberbox,
 	[FLUX_CONTROL_DROPDOWN_BUTTON] = flux_cr_dropdown,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_cr_split,
+	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = flux_cr_toggle_split,
 	[FLUX_CONTROL_MENU_BAR]        = flux_cr_menubar,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_cr_tabview,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_cr_dialog,

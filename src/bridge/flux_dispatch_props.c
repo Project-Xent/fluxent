@@ -277,6 +277,7 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_FLIP_VIEW    : *out = el->flip.on_select; return true;
 	case FLUX_CONTROL_PIPS_PAGER   : *out = el->pips.on_select; return true;
 	case FLUX_CONTROL_AUTO_SUGGEST : *out = el->suggest.on_text; return true;
+	case FLUX_CONTROL_TOGGLE_SPLIT_BUTTON : *out = el->split.on_toggle; return true;
 	default                        : return false;
 	}
 }
@@ -575,6 +576,12 @@ static void flux_pp_split(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, Xtk
 	flux_sync_split_menu(rt, n, prev, el);
 }
 
+static void flux_pp_toggle_split(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	flux_pp_split(rt, n, prev, el);
+	if (!prev || prev->split.checked != el->split.checked)
+		flux_toggle_split_button_set_checked(rt->store, n->node, el->split.checked);
+}
+
 static void flux_pp_tab(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (prev && prev->tab_view.selected != el->tab_view.selected) {
 		flux_tab_view_select(rt->store, n->node, el->tab_view.selected);
@@ -646,6 +653,7 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_AUTO_SUGGEST]    = flux_pp_suggest,
 	[FLUX_CONTROL_DROPDOWN_BUTTON] = flux_pp_dropdown,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = flux_pp_split,
+	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = flux_pp_toggle_split,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_pp_dialog,
 };
@@ -675,6 +683,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_INFO_BAR]        = true,
 	[FLUX_CONTROL_NUMBER_BOX]      = true,
 	[FLUX_CONTROL_SPLIT_BUTTON]    = true,
+	[FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = true,
 	[FLUX_CONTROL_TAB_VIEW]        = true,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = true,
 	[FLUX_CONTROL_NAV_VIEW]        = true,

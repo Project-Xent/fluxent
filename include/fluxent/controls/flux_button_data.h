@@ -36,6 +36,8 @@ typedef struct FluxButtonData {
 	bool            is_checked;             /**< For toggle buttons */
 	void            (*on_click)(void *ctx); /**< Callback invoked when the button is clicked. */
 	void           *on_click_ctx;
+	void            (*on_toggle)(void *ctx, bool checked); /**< ToggleSplitButton: primary-zone toggle. */
+	void           *on_toggle_ctx;
 } FluxButtonData;
 
 /**

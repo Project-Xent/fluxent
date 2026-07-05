@@ -23,6 +23,7 @@ typedef struct FluxSplitButtonBinding {
 	FluxWindow     *window;
 	XentContext    *ctx;
 	bool            pressed_secondary; /**< Which zone the active press landed in. */
+	bool            toggle;            /**< ToggleSplitButton: primary click flips is_checked. */
 } FluxSplitButtonBinding;
 
 static bool split_secondary_zone(FluxSplitButtonBinding const *b, float local_x) {
@@ -34,7 +35,16 @@ static bool split_secondary_zone(FluxSplitButtonBinding const *b, float local_x)
 static void split_invoke_primary(FluxSplitButtonBinding const *b) {
 	FluxNodeData   *nd = flux_node_store_get(b->store, b->node);
 	FluxButtonData *bd = nd ? ( FluxButtonData * ) nd->component_data : NULL;
-	if (bd && bd->on_click) bd->on_click(bd->on_click_ctx);
+	if (!bd) return;
+	/* ToggleSplitButton (ToggleSplitButton.cpp OnClickPrimary): flip IsChecked
+	 * FIRST, then notify — the checked visual is optimistic; the app re-sets the
+	 * same value from on_toggle on the next frame. */
+	if (b->toggle) {
+		bd->is_checked = !bd->is_checked;
+		if (bd->on_toggle) bd->on_toggle(bd->on_toggle_ctx, bd->is_checked);
+		return;
+	}
+	if (bd->on_click) bd->on_click(bd->on_click_ctx);
 }
 
 /* Open the secondary flyout. A hosted MenuFlyout opens with the right input kind (so a
@@ -146,6 +156,66 @@ XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
     });
 
 	return node;
+}
+
+/* ToggleSplitButton = SplitButton with a checked primary zone. Identical node
+ * spine, flyout, keyboard, and draw (the split-button draw is already
+ * checked-aware); only the primary-click semantics differ (toggle, see
+ * split_invoke_primary) and the initial checked state is seeded here. */
+XentNodeId flux_create_toggle_split_button(FluxToggleSplitButtonCreateInfo const *info) {
+	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
+
+	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_TOGGLE_SPLIT_BUTTON);
+	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+
+	FluxNodeData           *nd = flux_node_store_get(info->store, node);
+	FluxButtonData         *bd = nd ? ( FluxButtonData * ) calloc(1, sizeof(FluxButtonData)) : NULL;
+	FluxSplitButtonBinding *b  = nd ? ( FluxSplitButtonBinding * ) calloc(1, sizeof(*b)) : NULL;
+	if (!nd || !bd || !b) {
+		free(bd);
+		free(b);
+		return node;
+	}
+	bd->label                        = flux_str_dup(info->label);
+	bd->icon_name                    = flux_str_dup(info->icon_name);
+	bd->font_size                    = 14.0f;
+	bd->style                        = FLUX_BUTTON_STANDARD;
+	bd->is_checked                   = info->checked;
+	bd->on_toggle                    = info->on_toggle;
+	bd->on_toggle_ctx                = info->userdata;
+
+	b->placement                     = FLUX_PLACEMENT_BOTTOM;
+	b->store                         = info->store;
+	b->node                          = node;
+	b->ctx                           = info->ctx;
+	b->toggle                        = true;
+
+	nd->component_data               = bd;
+	nd->destroy_component_data       = flux_button_data_destroy;
+	nd->behavior.on_pointer_down     = split_on_pointer_down;
+	nd->behavior.on_pointer_down_ctx = b;
+	nd->behavior.on_click            = split_on_click;
+	nd->behavior.on_click_ctx        = b;
+	nd->behavior.on_key              = split_on_key;
+	nd->behavior.on_key_ctx          = b;
+
+	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
+	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
+	xent_set_focusable(info->ctx, node, true);
+
+	flux_leaf_default_metrics(&(FluxLeafMetrics) {
+	  info->ctx, node, info->label, {11.0f, 5.0f, 11.0f + FLUX_SPLIT_DIVIDER_W + FLUX_SPLIT_SECONDARY_W, 6.0f},
+	  {0.0f, 32.0f},
+	         {68.0f, 32.0f}
+    });
+
+	return node;
+}
+
+void flux_toggle_split_button_set_checked(FluxNodeStore *store, XentNodeId id, bool checked) {
+	FluxNodeData *nd = flux_node_store_get(store, id);
+	if (nd && nd->component_type == FLUX_CONTROL_TOGGLE_SPLIT_BUTTON && nd->component_data)
+		(( FluxButtonData * ) nd->component_data)->is_checked = checked;
 }
 
 void flux_split_button_set_flyout_ex(FluxFlyoutBindingInfo const *info) {

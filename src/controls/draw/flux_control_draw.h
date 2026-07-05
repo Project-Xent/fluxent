@@ -138,6 +138,11 @@ void flux_draw_dialog_content(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief TeachingTip owner-tree stub (the tip surface paints in its own FluxPopup). */
+void flux_draw_teaching_tip(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw an image (decoded bitmap with stretch mode), or a placeholder. */
 void flux_draw_image(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

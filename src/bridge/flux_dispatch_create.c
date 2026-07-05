@@ -278,6 +278,32 @@ static XentNodeId flux_cr_dialog(FluxBackendCtx *rt, XentNodeId p, XtkEl const *
 	  .userdata       = b});
 }
 
+static XentNodeId flux_cr_teaching_tip(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	wchar_t const *glyph = el->teaching_tip.icon ? flux_icon_lookup(el->teaching_tip.icon) : NULL;
+	return flux_create_teaching_tip(&(FluxTeachingTipCreateInfo) {
+	  .ctx                 = rt->ctx,
+	  .store               = rt->store,
+	  .parent              = p,
+	  .window              = flux_be_window(rt),
+	  .text                = flux_be_text(rt),
+	  .theme               = flux_be_theme(rt),
+	  .input               = rt->app ? flux_app_get_input(rt->app) : NULL,
+	  .title               = el->text,
+	  .subtitle            = el->teaching_tip.subtitle,
+	  .icon_glyph          = glyph ? ( uint32_t ) glyph [0] : 0,
+	  .action_text         = el->teaching_tip.action_text,
+	  .action_accent       = el->teaching_tip.action_accent,
+	  .close_text          = el->teaching_tip.close_text,
+	  .preferred_placement = el->teaching_tip.placement,
+	  .untargeted          = el->teaching_tip.untargeted,
+	  .light_dismiss       = el->teaching_tip.light_dismiss,
+	  .tail_visibility     = el->teaching_tip.tail,
+	  .placement_margin    = el->teaching_tip.placement_margin,
+	  .on_action           = flux_tramp_click,
+	  .on_close            = flux_tramp_tip_close,
+	  .userdata            = b});
+}
+
 static int flux_nav_add_child(FluxNodeStore *store, XentNodeId nav, int group, XtkNavItemDesc const *it) {
 	if (group >= 0) {
 		flux_nav_view_add_child_item(store, nav, group, it->icon, it->label);
@@ -501,6 +527,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_MENU_BAR]        = flux_cr_menubar,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_cr_tabview,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_cr_dialog,
+	[FLUX_CONTROL_TEACHING_TIP]    = flux_cr_teaching_tip,
 	[FLUX_CONTROL_NAV_VIEW]        = flux_cr_nav,
 	[FLUX_CONTROL_LIST]            = flux_cr_list,
 	[FLUX_CONTROL_LIST_BOX]        = flux_cr_list,

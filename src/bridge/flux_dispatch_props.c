@@ -114,6 +114,13 @@ void flux_tramp_dialog_result(void *ud, FluxDialogResult result) {
 	xtk_runtime_post(b->rt, m);
 }
 
+void flux_tramp_tip_close(void *ud, FluxTeachingTipCloseReason reason) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	XtkMsg      m = b->on_change;
+	m.i          = ( int32_t ) reason;
+	xtk_runtime_post(b->rt, m);
+}
+
 void flux_tramp_refresh(void *ud, int direction) {
 	FluxBinding *b = ( FluxBinding * ) ud;
 	XtkMsg      m = b->on_change;
@@ -301,8 +308,9 @@ static XtkMsg flux_binding_click(XtkEl const *el) {
 	case FLUX_CONTROL_INFO_BAR     : return el->info_bar.on_close;
 	case FLUX_CONTROL_SPLIT_BUTTON : return el->split.on_click;
 	case FLUX_CONTROL_TAB_VIEW     : return el->tab_view.on_add;
-	case FLUX_CONTROL_AUTO_SUGGEST : return el->suggest.on_query;
-	case FLUX_CONTROL_ITEMS_VIEW   : return el->list.on_invoke;
+	case FLUX_CONTROL_AUTO_SUGGEST  : return el->suggest.on_query;
+	case FLUX_CONTROL_TEACHING_TIP  : return el->teaching_tip.on_action;
+	case FLUX_CONTROL_ITEMS_VIEW    : return el->list.on_invoke;
 	case FLUX_CONTROL_TREE_VIEW    : return el->tree_view.on_invoke;
 	default                        : return el->button.on_click;
 	}
@@ -340,6 +348,7 @@ static XtkMsg flux_binding_change(XtkEl const *el) {
 	switch (el->type) {
 	case FLUX_CONTROL_TAB_VIEW       : return el->tab_view.on_select;
 	case FLUX_CONTROL_CONTENT_DIALOG : return el->dialog.on_result;
+	case FLUX_CONTROL_TEACHING_TIP   : return el->teaching_tip.on_close;
 	case FLUX_CONTROL_EXPANDER       : return el->expander.on_toggle;
 	case FLUX_CONTROL_NUMBER_BOX     : return el->number.on_change;
 	default                          : return el->toggle.on_change;
@@ -704,6 +713,19 @@ static void flux_pp_dialog(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, Xt
 	}
 }
 
+static void flux_pp_teaching_tip(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (prev
+	    && (!flux_streq(prev->text, el->text)
+	        || !flux_streq(prev->teaching_tip.subtitle, el->teaching_tip.subtitle)))
+		flux_teaching_tip_set_texts(rt->store, n->node, el->text, el->teaching_tip.subtitle);
+	if (prev && prev->teaching_tip.placement != el->teaching_tip.placement)
+		flux_teaching_tip_set_placement(rt->store, n->node, el->teaching_tip.placement);
+	if (prev ? prev->teaching_tip.open != el->teaching_tip.open : el->teaching_tip.open) {
+		if (el->teaching_tip.open) flux_teaching_tip_show(rt->store, n->node);
+		else flux_teaching_tip_hide(rt->store, n->node);
+	}
+}
+
 static void flux_pp_refresh(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (!prev || prev->refresh.direction != el->refresh.direction)
 		flux_refresh_set_direction(rt->store, n->node, ( FluxPullDirection ) el->refresh.direction);
@@ -754,6 +776,7 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_BREADCRUMB_BAR]  = flux_pp_breadcrumb,
 	[FLUX_CONTROL_TAB_VIEW]        = flux_pp_tab,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_pp_dialog,
+	[FLUX_CONTROL_TEACHING_TIP]    = flux_pp_teaching_tip,
 	[FLUX_CONTROL_REFRESH]         = flux_pp_refresh,
 };
 
@@ -789,6 +812,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_BREADCRUMB_BAR]  = true,
 	[FLUX_CONTROL_TAB_VIEW]        = true,
 	[FLUX_CONTROL_CONTENT_DIALOG]  = true,
+	[FLUX_CONTROL_TEACHING_TIP]    = true,
 	[FLUX_CONTROL_NAV_VIEW]        = true,
 	[FLUX_CONTROL_LIST]            = true,
 	[FLUX_CONTROL_LIST_BOX]        = true,

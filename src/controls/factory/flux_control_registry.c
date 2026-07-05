@@ -67,6 +67,7 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	flux_control_registry_register(reg, FLUX_CONTROL_INFO_BAR, flux_draw_info_bar, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_CONTENT_DIALOG, flux_draw_content_dialog, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_DIALOG_CONTENT, flux_draw_dialog_content, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_TEACHING_TIP, flux_draw_teaching_tip, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_MENU_BAR_ITEM, flux_draw_menu_bar_item, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_NAV_VIEW, flux_draw_nav_view, flux_draw_nav_view_overlay);
 	flux_control_registry_register(reg, FLUX_CONTROL_NAV_VIEW_ITEM, flux_draw_nav_view_item, NULL);

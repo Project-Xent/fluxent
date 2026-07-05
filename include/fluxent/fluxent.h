@@ -900,6 +900,58 @@ void flux_auto_suggest_set_content(FluxNodeStore *store, XentNodeId asb, char co
 /** @brief Enable / disable the box + button. */
 void flux_auto_suggest_set_enabled(FluxNodeStore *store, XentNodeId asb, bool enabled);
 
+/* -------------------------------------------------------------------------
+ * TeachingTip
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxTeachingTipCreateInfo {
+	XentContext             *ctx;
+	FluxNodeStore           *store;
+	XentNodeId               parent;        /**< Anchor/target node; also the tree parent. */
+	FluxWindow              *window;        /**< Owner window for the popup + anchor mapping. */
+	FluxTextRenderer        *text;          /**< Shared text renderer for the tip surface. */
+	FluxThemeManager        *theme;         /**< Theme source for the tip surface. */
+	FluxInput               *input;         /**< Esc/F6 focus handling; may be NULL. */
+	char const              *title;         /**< Deep-copied; NULL hides the title row. */
+	char const              *subtitle;      /**< Deep-copied; NULL hides the subtitle row. */
+	uint32_t                 icon_glyph;    /**< Segoe Fluent Icons codepoint; 0 = none. */
+	char const              *action_text;   /**< NULL omits the action button. */
+	bool                     action_accent; /**< Accent-style the action button. */
+	char const              *close_text;    /**< NULL = header X instead of footer Close. */
+	FluxTeachingTipPlacement preferred_placement;
+	bool                     untargeted;    /**< Window-relative; ignore the anchor. */
+	bool                     light_dismiss; /**< Outside press dismisses; acrylic background. */
+	int8_t                   tail_visibility; /**< FLUX_TIP_TAIL_AUTO / _VISIBLE / _COLLAPSED. */
+	float                    placement_margin; /**< Extra gap to the target/window edge. */
+	void                     (*on_action)(void *userdata);
+	void                     (*on_close)(void *userdata, FluxTeachingTipCloseReason reason);
+	void                    *userdata;
+} FluxTeachingTipCreateInfo;
+
+/** @brief Create a teaching tip anchored to @p parent (closed until shown). */
+XentNodeId               flux_create_teaching_tip(FluxTeachingTipCreateInfo const *info);
+
+/** @brief Solve placement and show the tip (expand animation). */
+void                     flux_teaching_tip_show(FluxNodeStore *store, XentNodeId tip);
+
+/** @brief Contract-animate then dismiss; reason Programmatic. */
+void                     flux_teaching_tip_hide(FluxNodeStore *store, XentNodeId tip);
+
+/** @brief Whether the tip is currently open. */
+bool                     flux_teaching_tip_is_open(FluxNodeStore *store, XentNodeId tip);
+
+/** @brief Retarget the tail anchor (XENT_NODE_INVALID = untargeted). */
+void                     flux_teaching_tip_set_target(FluxNodeStore *store, XentNodeId tip, XentNodeId target);
+
+/** @brief Set the preferred placement (repositions while open). */
+void flux_teaching_tip_set_placement(FluxNodeStore *store, XentNodeId tip, FluxTeachingTipPlacement placement);
+
+/** @brief Replace title/subtitle (re-measures + repositions while open). */
+void flux_teaching_tip_set_texts(FluxNodeStore *store, XentNodeId tip, char const *title, char const *subtitle);
+
+/** @brief Solved placement while open; FLUX_TIP_PLACE_AUTO otherwise (test hook). */
+FluxTeachingTipPlacement flux_teaching_tip_effective_placement(FluxNodeStore *store, XentNodeId tip);
+
 #ifdef __cplusplus
 }
 #endif

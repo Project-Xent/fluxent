@@ -51,6 +51,7 @@
 #include "controls/flux_flip_view_data.h"
 #include "controls/flux_radio_buttons_data.h"
 #include "controls/flux_rating_data.h"
+#include "controls/flux_teaching_tip_data.h"
 #include "controls/flux_refresh_data.h"
 #include "controls/flux_selector_bar_data.h"
 #include "controls/flux_breadcrumb_data.h"

@@ -183,11 +183,9 @@ static void inline flux_fill_h_gradient(
 	if (!collection) return;
 
 	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp = {flux_point(r->x, r->y), flux_point(r->x + r->w, r->y)};
-	D2D1_BRUSH_PROPERTIES                 bp = {
-	  1.0f, {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}
-    };
 	ID2D1LinearGradientBrush *grad = NULL;
-	ID2D1RenderTarget_CreateLinearGradientBrush(rt, &gp, &bp, collection, &grad);
+	/* NULL brush properties = identity transform + opacity 1.0. */
+	ID2D1RenderTarget_CreateLinearGradientBrush(rt, &gp, NULL, collection, &grad);
 	ID2D1GradientStopCollection_Release(collection);
 	if (!grad) return;
 

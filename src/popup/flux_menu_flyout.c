@@ -351,6 +351,10 @@ void flux_menu_flyout_set_text_renderer(FluxMenuFlyout *m, FluxTextRenderer *tr)
 	if (m) m->text = tr;
 }
 
+void flux_menu_flyout_set_min_item_height(FluxMenuFlyout *m, float height) {
+	if (m) m->min_item_height = height > 0.0f ? height : 0.0f;
+}
+
 int flux_menu_flyout_add_item(FluxMenuFlyout *m, FluxMenuItemDef const *def) {
 	if (!m || !def || m->item_count >= FLUX_MENU_MAX_ITEMS) return -1;
 

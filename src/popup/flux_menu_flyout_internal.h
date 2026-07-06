@@ -50,6 +50,7 @@ struct FluxMenuFlyout {
 	float                    total_h;
 	float                    pad_top;
 	float                    pad_bot;
+	float                    min_item_height; /**< Per-item slot floor (DIPs); 0 = intrinsic. */
 
 	float                    scroll_y;
 	float                    scroll_max;

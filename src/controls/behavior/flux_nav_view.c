@@ -191,6 +191,7 @@ static float nav_selected_center(FluxNavViewData *d) {
 	if (ir.h <= 0.0f) return -1.0f;
 	/* Layout rects are scroll-agnostic; the snapshot shifts the pill by the live
 	 * viewport offset for menu items (footer items sit outside the viewport). */
+	d->ind_visible   = ind;
 	d->ind_in_scroll = (d->items [ind].kind != FLUX_NAV_ITEM_FOOTER);
 	if (d->mode == FLUX_NAV_TOP) return (ir.x + ir.w * 0.5f) - pr.x;
 	return (ir.y + ir.h * 0.5f) - pr.y;
@@ -490,6 +491,9 @@ static void nav_show_child_flyout(FluxNavViewData *d, int parent) {
 		flux_menu_flyout_set_theme_manager(d->child_flyout, d->theme);
 		flux_menu_flyout_set_text_renderer(d->child_flyout, d->text);
 		flux_menu_flyout_set_dismiss_callback(d->child_flyout, nav_child_flyout_dismissed, d);
+		/* WinUI shows these children as NavigationViewItems, not dense menu rows:
+		 * pin the slot to the pane's row pitch (36 min-height + 4 button margin). */
+		flux_menu_flyout_set_min_item_height(d->child_flyout, FLUX_NAV_ITEM_HEIGHT + FLUX_NAV_ITEM_GAP);
 	}
 	flux_menu_flyout_clear(d->child_flyout);
 	for (int i = 0; i < d->count; i++) {
@@ -732,6 +736,7 @@ static void nav_init_data(FluxNavViewData *d, FluxNavViewCreateInfo const *info,
 	d->root                 = root;
 	d->selected             = -1;
 	d->ind_index            = -1;
+	d->ind_visible          = -1;
 	d->adaptive             = info->adaptive;
 	d->mode                 = ( FluxNavDisplayMode ) info->mode;
 	d->fill_window          = info->width <= 0.0f;

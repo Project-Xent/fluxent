@@ -72,7 +72,8 @@ static void menu_measure_columns(FluxMenuFlyout *m, float *max_label, float *max
 static float menu_item_slot_height(FluxMenuFlyout const *m, float max_text_h) {
 	float text_h = max_text_h > FLUX_MENU_ITEM_ICON_SIZE ? max_text_h : FLUX_MENU_ITEM_ICON_SIZE;
 	float item_h = m->pad_top + text_h + m->pad_bot;
-	return item_h + 2.0f * FLUX_MENU_ITEM_MARGIN_V;
+	float slot   = item_h + 2.0f * FLUX_MENU_ITEM_MARGIN_V;
+	return slot > m->min_item_height ? slot : m->min_item_height;
 }
 
 static float menu_assign_item_layouts(FluxMenuFlyout *m, float item_slot_h) {

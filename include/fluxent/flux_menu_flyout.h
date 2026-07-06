@@ -128,6 +128,14 @@ void flux_menu_flyout_set_theme_manager(FluxMenuFlyout *menu, FluxThemeManager *
 void flux_menu_flyout_set_text_renderer(FluxMenuFlyout *menu, FluxTextRenderer *tr);
 
 /**
+ * @brief Floor the per-item slot height (DIPs); 0 (default) uses the intrinsic
+ * text-driven height. NavigationView's compact/overflow child flyout sets this
+ * to the 40px WinUI nav-row pitch (NavigationViewItemOnLeftMinHeight 36 + the
+ * 4px button margin) so its rows match the pane's, not a dense context menu.
+ */
+void flux_menu_flyout_set_min_item_height(FluxMenuFlyout *menu, float height);
+
+/**
  * @brief Append a menu item. The definition is deep-copied.
  * Returns the 0-based index of the new item, or -1 on failure.
  */

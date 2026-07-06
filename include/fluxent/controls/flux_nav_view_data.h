@@ -135,6 +135,10 @@ struct FluxNavViewData {
 	int                    count;
 	int                    selected;  /**< Selected item index, or -1. */
 	int                    ind_index; /**< Item the indicator is currently tracking, or -1. */
+	int                    ind_visible;    /**< Visible ancestor the pill actually sits on (== selection
+	                                             unless it is hidden in a collapsed/flyout parent); drives
+	                                             the depth indent so a compact-flyout child does not push
+	                                             the pill in by its own (unshown) depth. */
 
 	FluxNavDisplayMode     mode;
 	FluxMenuFlyout        *child_flyout;  /**< Children flyout for Compact/Top (lazily created). */

@@ -169,6 +169,9 @@ typedef struct FluxNavSnapshot {
 	float       nav_ind_top;        /**< Selection pill top (pane-local px). */
 	float       nav_ind_bottom;     /**< Selection pill bottom (pane-local px). */
 	float       nav_ind_opacity;    /**< Selection pill opacity. */
+	float       nav_ind_indent;     /**< Pill left indent for nested items (depth * 31). */
+	float       nav_ind_clip_top;   /**< Pane-local clip for a menu-item pill (viewport top). */
+	float       nav_ind_clip_bottom;/**< Pane-local clip for a menu-item pill (viewport bottom). */
 	float       nav_shadow_opacity; /**< Overlay-pane drop-shadow strength (0=none). */
 	float       nav_content_x;      /**< Root only: content-layer left offset (root-local). */
 	float       nav_content_y;      /**< Root only: content-layer top offset (root-local). */

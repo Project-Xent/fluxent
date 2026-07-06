@@ -242,6 +242,25 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	ctx->snap->u.nav.nav_ind_top        = d->ind_top.current - scroll;
 	ctx->snap->u.nav.nav_ind_bottom     = d->ind_bot.current - scroll;
 	ctx->snap->u.nav.nav_ind_opacity    = d->ind_op.current;
+	/* The pill tracks the item content, so it indents with the item's depth and
+	 * (for menu items) is clipped to the scroll viewport so it never bleeds over
+	 * the pinned footer. Footer-item pills sit outside the viewport (no clip).
+	 * Depth comes from the *visible* item the pill sits on, not the raw selection:
+	 * a compact-flyout child is drawn on its parent's rail row, so indenting by the
+	 * child's own (unshown) depth would shove the pill a level to the right. */
+	int ind_item = (d->ind_visible >= 0 && d->ind_visible < d->count) ? d->ind_visible : -1;
+	ctx->snap->u.nav.nav_ind_indent = ind_item >= 0 ? ( float ) d->items [ind_item].depth * 31.0f : 0.0f;
+	if (d->ind_in_scroll) {
+		XentRect sr = {0}, pr = {0};
+		if (xent_get_layout_rect(d->ctx, d->items_scroll, &sr) && xent_get_layout_rect(d->ctx, d->pane, &pr)) {
+			ctx->snap->u.nav.nav_ind_clip_top    = sr.y - pr.y;
+			ctx->snap->u.nav.nav_ind_clip_bottom = sr.y - pr.y + sr.h;
+		}
+	}
+	else {
+		ctx->snap->u.nav.nav_ind_clip_top    = 0.0f;
+		ctx->snap->u.nav.nav_ind_clip_bottom = 1.0e6f; /* footer pill: unclipped */
+	}
 	/* Drop shadow only while the pane overlays content (Minimal); fades with the slide. */
 	ctx->snap->u.nav.nav_shadow_opacity = (d->mode == FLUX_NAV_MINIMAL) ? d->minimal_t.current : 0.0f;
 }

@@ -107,8 +107,18 @@ void flux_draw_nav_view_overlay(FluxRenderContext const *rc, FluxRenderSnapshot 
 		flux_fill_rounded_rect(rc, &pill, FLUX_NAV_INDICATOR_R, fill);
 		return;
 	}
-	FluxRect pill = {bounds->x + FLUX_NAV_ITEM_MARGIN_H - 1.0f, bounds->y + lead, FLUX_NAV_INDICATOR_W, extent};
+	/* The pill indents with the item's depth (nested items) and is clipped to the
+	 * menu-item viewport so it never bleeds over the pinned footer. */
+	float    px   = bounds->x + FLUX_NAV_ITEM_MARGIN_H - 1.0f + snap->u.nav.nav_ind_indent;
+	FluxRect pill = {px, bounds->y + lead, FLUX_NAV_INDICATOR_W, extent};
+
+	float    ct   = bounds->y + snap->u.nav.nav_ind_clip_top;
+	float    cb   = bounds->y + snap->u.nav.nav_ind_clip_bottom;
+	FluxRect clip = {bounds->x, ct, bounds->w, cb - ct};
+	D2D1_RECT_F dc = flux_d2d_rect(&clip);
+	ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(rc), &dc, D2D1_ANTIALIAS_MODE_ALIASED);
 	flux_fill_rounded_rect(rc, &pill, FLUX_NAV_INDICATOR_R, fill);
+	ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(rc));
 }
 
 static FluxColor nav_item_fill(FluxControlState const *state, bool selected, FluxThemeColors const *t) {
@@ -119,9 +129,17 @@ static FluxColor nav_item_fill(FluxControlState const *state, bool selected, Flu
 	return flux_color_rgba(0, 0, 0, 0);
 }
 
-static void nav_item_draw_label(FluxRenderContext const *rc, FluxRect const *ib, char const *label, FluxColor fg) {
+/* Icon column reserved before the label: the full icon box when the item has an
+ * icon, or WinUI's collapsed 8px when it does not (IconColumn.Width in the
+ * IconCollapsed state) — so an iconless nested item's depth indent lands its
+ * text aligned with the parent's, instead of reserving a full empty icon slot. */
+#define FLUX_NAV_ICON_COLLAPSED 8.0f
+
+static void nav_item_draw_label(
+  FluxRenderContext const *rc, FluxRect const *ib, char const *label, FluxColor fg, float icon_w
+) {
 	if (!label || !rc->text) return;
-	FluxRect tr = {ib->x + FLUX_NAV_ICON_BOX, ib->y, ib->w - FLUX_NAV_ICON_BOX - 8.0f, ib->h};
+	FluxRect tr = {ib->x + icon_w, ib->y, ib->w - icon_w - 8.0f, ib->h};
 	if (tr.w <= 0.0f) return;
 
 	FluxTextStyle ts;
@@ -192,13 +210,14 @@ void flux_draw_nav_view_item(
 	ci.x        += ( float ) snap->u.nav.nav_depth * 31.0f;
 	ci.w        -= ( float ) snap->u.nav.nav_depth * 31.0f;
 
-	wchar_t const *glyph = flux_icon_lookup(snap->u.nav.icon_name);
+	wchar_t const *glyph   = flux_icon_lookup(snap->u.nav.icon_name);
+	float          icon_w  = glyph ? FLUX_NAV_ICON_BOX : FLUX_NAV_ICON_COLLAPSED;
 	if (glyph) {
 		FluxRect icon = {ci.x, ci.y, FLUX_NAV_ICON_BOX, ci.h};
 		flux_button_draw_chevron(rc, &icon, glyph, FLUX_NAV_ICON_GLYPH, fg);
 	}
 
-	nav_item_draw_label(rc, &ci, snap->u.nav.label, fg);
+	nav_item_draw_label(rc, &ci, snap->u.nav.label, fg, icon_w);
 
 	/* Expand chevron at the trailing edge while children are not flyout-only. */
 	if (snap->u.nav.nav_has_children && (snap->u.nav.label || snap->u.nav.nav_top)) {

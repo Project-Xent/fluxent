@@ -318,6 +318,11 @@ void flux_draw_split_pane(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw a TitleBar band (back / pane-toggle / icon / title / subtitle). */
+void flux_draw_title_bar(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw a text box (chrome + content + elevation border). */
 void flux_draw_textbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

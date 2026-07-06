@@ -122,6 +122,9 @@ struct FluxNavViewData {
 	XentNodeId             footer_host;       /**< Flex column of footer items. */
 	XentNodeId             content;           /**< Content host (caller fills). */
 	XentNodeId             scrim;             /**< Minimal-mode dimming overlay (FLUX_CONTROL_CONTAINER). */
+	XentNodeId             title_bar;         /**< Optional integrated title-bar strip (FLUX_CONTROL_TITLE_BAR). */
+	char                  *app_title;         /**< Owned app title shown in the integrated title bar, or NULL. */
+	bool                   window_title_bar;  /**< Extend into the OS title bar; the nav's top strip owns it. */
 
 	struct FluxScrollData *items_scroll_data; /**< Borrowed scroll state of items_scroll. */
 	bool                   ind_in_scroll;     /**< Indicator tracks a menu item (shifts with the

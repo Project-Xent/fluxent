@@ -123,6 +123,8 @@ static void update(void *model, XtkMsg msg) {
 	case MSG_SPLIT_TOGGLE : m->split_open = !m->split_open; break;
 	case MSG_SPLIT_MODE   : m->split_mode = msg.i; break;
 	case MSG_SPLIT_PLACE  : m->split_right = msg.b; break;
+	case MSG_TB_BACK      : m->tb_back_clicks++; break;
+	case MSG_TB_PANE      : m->tb_pane_clicks++; break;
 	default : break;
 	}
 }
@@ -158,6 +160,7 @@ static XtkEl *page_view(XtkUi *ui, Model const *m) {
 	case PAGE_PAGER       : return page_pager(ui, m);
 	case PAGE_CAT_SHELL   : return page_category(ui, "Layout & shell", "SplitView and window scaffolding.");
 	case PAGE_SPLIT_VIEW  : return page_split_view(ui, m);
+	case PAGE_TITLE_BAR   : return page_title_bar(ui, m);
 	case PAGE_MENUS       : return page_menus(ui, m);
 	case PAGE_TABVIEW     : return page_tabview(ui, m);
 	case PAGE_EXPANDER    : return page_expander(ui, m);
@@ -185,7 +188,12 @@ static XtkEl *view(XtkUi *ui, void *model) {
 	return xtk_nav_view(
 	  ui,
 	  (XtkNavDesc) {
-		.items = kNavItems, .item_count = PAGE_COUNT, .selected = m->page, .on_select = xtk_msg(MSG_NAV)
+		.items            = kNavItems,
+		.item_count       = PAGE_COUNT,
+		.selected         = m->page,
+		.window_title_bar = true,
+		.app_title        = "FluXent Gallery",
+		.on_select        = xtk_msg(MSG_NAV),
     },
 	  (XtkEl *[]) {
 		xtk_grow(

@@ -34,6 +34,13 @@ FluxScene *flux_scene_create(uint32_t initial_capacity) {
 	flux_set_control_type(scene->ctx, scene->root, FLUX_CONTROL_CONTAINER);
 	xent_set_semantic_role(scene->ctx, scene->root, XENT_SEMANTIC_CUSTOM);
 
+	/* The root fills the window and stretches its content across the width, so a
+	 * top-level column (or a stretched band like a TitleBar) spans the window
+	 * instead of hugging its content. */
+	xent_set_protocol(scene->ctx, scene->root, XENT_PROTOCOL_FLEX);
+	xent_set_flex_direction(scene->ctx, scene->root, XENT_FLEX_COLUMN);
+	xent_set_flex_align_items(scene->ctx, scene->root, XENT_FLEX_ALIGN_STRETCH);
+
 	FluxNodeData *nd = flux_node_store_get_or_create(scene->store, scene->root);
 	if (nd) nd->component_type = FLUX_CONTROL_CONTAINER;
 	xent_set_userdata(scene->ctx, scene->root, nd);

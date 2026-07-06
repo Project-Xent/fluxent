@@ -140,6 +140,75 @@ static LRESULT window_on_set_cursor(FluxWindow *win, LPARAM lp) {
 	return TRUE;
 }
 
+static bool window_rect_contains_pt(FluxRect const *r, float x, float y) {
+	return x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
+}
+
+/* Extend the client area over the OS caption. Run the default frame calc for
+ * the side/bottom borders, then remove the caption by pulling the client top up:
+ * to the window top when restored (keeping the sizing borders), or to the frame
+ * inset when maximized (the maximized window overhangs the monitor by the frame
+ * thickness, so the caption row must become the frame inset, not the window top). */
+static LRESULT window_on_nccalcsize(FluxWindow *win, HWND hwnd, WPARAM wp, LPARAM lp) {
+	if (!win->title_bar_extended || !wp) return DefWindowProcW(hwnd, WM_NCCALCSIZE, wp, lp);
+	NCCALCSIZE_PARAMS *p        = ( NCCALCSIZE_PARAMS * ) lp;
+	LONG               req_top  = p->rgrc [0].top;
+	LRESULT            ret      = DefWindowProcW(hwnd, WM_NCCALCSIZE, wp, lp);
+	if (IsZoomed(hwnd)) {
+		UINT dpi = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
+		int  fy  = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+		p->rgrc [0].top = req_top + fy;
+	}
+	else {
+		p->rgrc [0].top = req_top;
+	}
+	return ret;
+}
+
+/* Top grab strip of an extended, resizable frame: HTTOP / HTTOPLEFT / HTTOPRIGHT
+ * over the DPI-scaled border height. False when the point sits below the strip. */
+static bool window_hittest_top_border(FluxWindow *win, HWND hwnd, POINT pt, LRESULT *result) {
+	UINT dpi = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
+	int  rb  = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+	if (pt.y < 0 || pt.y >= rb) return false;
+	RECT rc = {0};
+	GetClientRect(hwnd, &rc);
+	*result = pt.x < rb ? HTTOPLEFT : pt.x >= rc.right - rb ? HTTOPRIGHT : HTTOP;
+	return true;
+}
+
+/* Drag region: HTCAPTION so the band moves the window, except over a registered
+ * interactive rect (a caption button) which stays HTCLIENT. False outside it. */
+static bool window_hittest_drag(FluxWindow *win, float x, float y, LRESULT *result) {
+	if (!window_rect_contains_pt(&win->title_bar_drag, x, y)) return false;
+	for (int i = 0; i < win->title_bar_pass_count; i++)
+		if (window_rect_contains_pt(&win->title_bar_pass [i], x, y)) {
+			*result = HTCLIENT;
+			return true;
+		}
+	*result = HTCAPTION;
+	return true;
+}
+
+/* Custom title-bar hit-testing: a top resize strip (when extended + resizable),
+ * caption over the drag region, and client over the interactive rects. Points
+ * outside defer to the default frame handling (side/bottom resize borders). */
+static bool window_on_nc_hittest(FluxWindow *win, HWND hwnd, LPARAM lp, LRESULT *result) {
+	if (!win->title_bar_active && !win->title_bar_extended) return false;
+
+	POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+	ScreenToClient(hwnd, &pt);
+	float scale = window_dpi_scale(win);
+	float x     = ( float ) pt.x / scale;
+	float y     = ( float ) pt.y / scale;
+
+	if (win->title_bar_extended && win->config.resizable && !IsZoomed(hwnd)
+	    && window_hittest_top_border(win, hwnd, pt, result))
+		return true;
+	if (win->title_bar_active && window_hittest_drag(win, x, y, result)) return true;
+	return false;
+}
+
 static LRESULT window_on_size(FluxWindow *win, LPARAM lp) {
 	int w = LOWORD(lp);
 	int h = HIWORD(lp);
@@ -645,6 +714,18 @@ static bool window_handle_lifecycle(WindowMessage const *m, LRESULT *result) {
 		return true;
 	}
 	if (m->msg == WM_SETCURSOR) return window_on_set_cursor(m->win, m->lp) ? (*result = TRUE, true) : false;
+	if (m->msg == FLUX_WM_APPLY_FRAME) {
+		SetWindowPos(
+		  m->hwnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+		);
+		*result = 0;
+		return true;
+	}
+	if (m->msg == WM_NCCALCSIZE && m->win->title_bar_extended) {
+		*result = window_on_nccalcsize(m->win, m->hwnd, m->wp, m->lp);
+		return true;
+	}
+	if (m->msg == WM_NCHITTEST && window_on_nc_hittest(m->win, m->hwnd, m->lp, result)) return true;
 	if (window_handle_close_message(m, result)) return true;
 	if (window_handle_popup_lifecycle(m)) return false;
 	return false;

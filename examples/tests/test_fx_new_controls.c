@@ -11,6 +11,7 @@
 #include "fluxent/controls/flux_person_picture_data.h"
 #include "fluxent/controls/flux_radio_buttons_data.h"
 #include "fluxent/controls/flux_split_view_data.h"
+#include "fluxent/controls/flux_title_bar_data.h"
 #include "fluxent/controls/flux_refresh_data.h"
 #include "fluxent/controls/flux_tree_view_data.h"
 
@@ -403,6 +404,36 @@ static int test_refresh_touch(void) {
 	return 0;
 }
 
+/* ---------------------------------------------------------------- TitleBar */
+
+static XtkEl *view_title_bar(XtkUi *ui, void *model) {
+	( void ) model;
+	return xtk_sized(
+	  xtk_title_bar(
+	    ui, "Fluxent", (XtkTitleBarDesc) {.subtitle = "Preview", .icon = "Home", .show_back = true, .show_pane_toggle = true}
+	  ),
+	  600.0f, 48.0f
+	);
+}
+
+static int check_title_bar(XentContext *ctx, FluxNodeStore *store, XtkRuntime *rt) {
+	( void ) ctx;
+	FluxNodeData *nd = flux_node_store_get(store, rt->root->node);
+	EXPECT(nd && nd->component_type == FLUX_CONTROL_TITLE_BAR, "title bar type");
+	FluxTitleBarData *d = ( FluxTitleBarData * ) nd->component_data;
+	EXPECT(d && d->title && strcmp(d->title, "Fluxent") == 0, "title carried");
+	EXPECT(d->show_back && d->show_pane_toggle, "back + pane-toggle enabled");
+	EXPECT(d->icon_glyph [0] != '\0', "icon resolved to a glyph");
+	EXPECT(d->title_w > 0.0f, "title measured for subtitle placement");
+
+	/* Back button sits at the far left; its hit box maps to the back region. */
+	FluxRect           b = {0.0f, 0.0f, 600.0f, FLUX_TB_HEIGHT};
+	FluxTitleBarLayout l = flux_titlebar_layout(&b, true, true, true, false);
+	EXPECT(l.has_back && l.back.x < l.toggle.x, "back precedes pane-toggle");
+	EXPECT(l.title_x > l.toggle.x, "title follows the buttons");
+	return 0;
+}
+
 int main(void) {
 	int m = 0;
 	if (run_view("radio buttons", &m, view_radio_buttons, check_radio_buttons)) return 1;
@@ -416,6 +447,7 @@ int main(void) {
 	if (run_view("person picture", &m, view_person, check_person)) return 1;
 	if (run_view("pager control", &m, view_pager, check_pager)) return 1;
 	if (run_view("split view", &m, view_split, check_split)) return 1;
+	if (run_view("title bar", &m, view_title_bar, check_title_bar)) return 1;
 	if (test_refresh_touch()) return 1;
 	printf("PASS: all new-control probes\n");
 	return 0;

@@ -44,6 +44,7 @@ bool       flux_is_interactive(XtkEl const *el);
 void       flux_mount_setup(FluxBackendCtx *rt, XtkNode *n, XentNodeId id, XtkEl const *el);
 
 void flux_tramp_click(void *ud);
+void flux_tramp_titlebar_pane(void *ud);
 void flux_tramp_toggle(void *ud, FluxCheckState state);
 void flux_tramp_slider(void *ud, float value);
 void flux_tramp_text(void *ud, char const *text);

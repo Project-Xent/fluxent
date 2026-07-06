@@ -5,6 +5,11 @@
 
 #define FLUX_WINDOW_MAX_RESIZE_OBSERVERS 8
 
+/** @brief Private message: apply a deferred frame change (extend-into-title-bar).
+ *  Posted so the SWP_FRAMECHANGED runs after the current frame instead of
+ *  re-entering WM_SIZE/render mid-reconcile (which double-composites the scene). */
+#define FLUX_WM_APPLY_FRAME (WM_APP + 0x51)
+
 struct FluxWindow {
 	HWND                       hwnd;
 	FluxDpiInfo                dpi;
@@ -50,6 +55,12 @@ struct FluxWindow {
 	int                        ime_h;
 	bool                       ime_position_valid;
 	bool                       ime_applying_position;
+
+	bool                       title_bar_active;                                    /**< A custom title bar registered a drag region. */
+	bool                       title_bar_extended;                                  /**< OS caption removed; client covers the title bar. */
+	FluxRect                   title_bar_drag;                                      /**< Drag region (client-local DIPs). */
+	FluxRect                   title_bar_pass [FLUX_WINDOW_MAX_TITLE_BAR_PASS];     /**< Interactive passthrough rects (DIPs). */
+	int                        title_bar_pass_count;
 };
 
 /** @brief Handle WM_GETOBJECT via the UIA provider callback; 0 if not applicable. */

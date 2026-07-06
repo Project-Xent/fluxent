@@ -444,6 +444,8 @@ static XentNodeId flux_cr_nav(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el,
 	  .width                = isnan(el->width) ? 0.0f : el->width,
 	  .height               = isnan(el->height) ? 0.0f : el->height,
 	  .adaptive             = true,
+	  .window_title_bar     = el->nav.window_title_bar,
+	  .app_title            = el->nav.app_title,
 	  .on_selection_changed = flux_tramp_select,
 	  .userdata             = b});
 	if (nav == XENT_NODE_INVALID) return nav;
@@ -550,6 +552,24 @@ static XentNodeId flux_cr_split_pane(FluxBackendCtx *rt, XentNodeId p, XtkEl con
 	return flux_create_split_view_pane(rt->ctx, rt->store, p);
 }
 
+static XentNodeId flux_cr_title_bar(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	return flux_create_title_bar(&(FluxTitleBarCreateInfo) {
+	  .ctx              = rt->ctx,
+	  .store            = rt->store,
+	  .parent           = p,
+	  .window           = flux_be_window(rt),
+	  .title            = el->text,
+	  .subtitle         = el->title_bar.subtitle,
+	  .icon             = el->title_bar.icon,
+	  .show_back        = el->title_bar.show_back,
+	  .back_disabled    = el->title_bar.back_disabled,
+	  .show_pane_toggle = el->title_bar.show_pane_toggle,
+	  .integrate_window = el->title_bar.integrate_window,
+	  .on_back          = b ? flux_tramp_click : NULL,
+	  .on_pane_toggle   = b ? flux_tramp_titlebar_pane : NULL,
+	  .userdata         = b});
+}
+
 static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_CONTAINER]       = flux_cr_container,
 	[FLUX_CONTROL_CARD]            = flux_cr_card,
@@ -601,6 +621,7 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_SPLIT_VIEW]         = flux_cr_split_view,
 	[FLUX_CONTROL_SPLIT_VIEW_CONTENT] = flux_cr_split_content,
 	[FLUX_CONTROL_SPLIT_VIEW_PANE]    = flux_cr_split_pane,
+	[FLUX_CONTROL_TITLE_BAR]          = flux_cr_title_bar,
 };
 
 XentNodeId flux_create_control(FluxBackendCtx *rt, XentNodeId parent, XtkEl const *el, FluxBinding *b) {

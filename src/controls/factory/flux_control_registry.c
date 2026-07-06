@@ -89,5 +89,6 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	flux_control_registry_register(reg, FLUX_CONTROL_SPLIT_VIEW, flux_draw_container, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_SPLIT_VIEW_CONTENT, flux_draw_container, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_SPLIT_VIEW_PANE, flux_draw_split_pane, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_TITLE_BAR, flux_draw_title_bar, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_CUSTOM, flux_draw_container, NULL);
 }

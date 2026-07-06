@@ -422,6 +422,8 @@ typedef struct FluxNavViewCreateInfo {
 	float             height;
 	int               mode;     /**< Initial FluxNavDisplayMode (ignored when adaptive). */
 	bool              adaptive; /**< Auto-switch Expanded/Compact/Minimal by window width. */
+	bool              window_title_bar; /**< Extend into the OS title bar; the nav top strip owns it. */
+	char const       *app_title;        /**< App title for the integrated title bar, or NULL. */
 	void              (*on_selection_changed)(void *ctx, int index);
 	void             *userdata;
 	XentNodeId       *out_content; /**< Optional: receives the content host node to fill. */
@@ -1069,6 +1071,42 @@ void flux_split_view_set_pane_open(FluxNodeStore *store, XentNodeId id, bool ope
 void flux_split_view_configure(
   FluxNodeStore *store, XentNodeId id, int display_mode, int placement, float open_len, float compact_len
 );
+
+/* -------------------------------------------------------------------------
+ * TitleBar (WinUI 3 TitleBar band)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxTitleBarCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	FluxWindow    *window;           /**< Required for window integration. */
+	char const    *title;
+	char const    *subtitle;
+	char const    *icon;             /**< Segoe Fluent Icons name, or NULL. */
+	bool           show_back;
+	bool           back_disabled;
+	bool           show_pane_toggle;
+	bool           integrate_window; /**< Report drag/passthrough regions to the window. */
+	void           (*on_back)(void *ctx);
+	void           (*on_pane_toggle)(void *ctx);
+	void          *userdata;
+} FluxTitleBarCreateInfo;
+
+/** @brief Create a TitleBar band leaf. */
+XentNodeId flux_create_title_bar(FluxTitleBarCreateInfo const *info);
+
+/** @brief Engine per-frame hook: report drag/passthrough regions to the window. */
+void flux_title_bar_sync(XentContext *ctx, XentNodeId node, struct FluxNodeData *nd);
+
+/** @brief Replace the title and subtitle (re-measures the title). */
+void flux_title_bar_set_title(FluxNodeStore *store, XentNodeId id, char const *title, char const *subtitle);
+
+/** @brief Show/hide the back button and set its disabled state. */
+void flux_title_bar_set_back(FluxNodeStore *store, XentNodeId id, bool show, bool disabled);
+
+/** @brief Show/hide the pane-toggle button. */
+void flux_title_bar_set_pane_toggle(FluxNodeStore *store, XentNodeId id, bool show);
 
 #ifdef __cplusplus
 }

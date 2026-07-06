@@ -44,6 +44,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_PULL_REFRESH]= {XTK_NAV_CHILD,     NULL,       "PullToRefresh"    },
   [PAGE_CAT_SHELL]   = {XTK_NAV_ITEM,      "GlobalNavButton", "Layout & shell"},
   [PAGE_SPLIT_VIEW]  = {XTK_NAV_CHILD,     NULL,       "SplitView"        },
+  [PAGE_TITLE_BAR]   = {XTK_NAV_CHILD,     NULL,       "TitleBar"         },
   [PAGE_CAT_DIALOGS] = {XTK_NAV_ITEM,      "Flag",     "Dialogs & flyouts"},
   [PAGE_DIALOG]      = {XTK_NAV_CHILD,     NULL,       "ContentDialog"    },
   [PAGE_TEACHING_TIP]= {XTK_NAV_CHILD,     NULL,       "TeachingTip"      },

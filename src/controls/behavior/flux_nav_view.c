@@ -10,6 +10,7 @@
 #include "fluxent/flux_window.h"
 #include "fluxent/flux_menu_flyout.h"
 #include "fluxent/controls/flux_nav_view_data.h"
+#include "fluxent/controls/flux_title_bar_data.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -137,8 +138,9 @@ static void nav_apply_geometry_minimal(FluxNavViewData *d) {
 
 static void nav_apply_geometry_inline(FluxNavViewData *d) {
 	float flow = d->pane_w.current; /* animates between 320 and 48 */
+	float tb   = d->window_title_bar ? FLUX_TB_HEIGHT : 0.0f; /* content clears the caption row */
 	nav_set_abs(d, d->pane, 0.0f, 0.0f, flow, d->height);
-	nav_set_abs(d, d->content, flow, 0.0f, flux_maxf(0.0f, d->width - flow), d->height);
+	nav_set_abs(d, d->content, flow, tb, flux_maxf(0.0f, d->width - flow), flux_maxf(0.0f, d->height - tb));
 	nav_set_abs(d, d->scrim, 0.0f, 0.0f, 0.0f, 0.0f);
 	nav_set_scrim_alpha(d, 0);
 }
@@ -155,7 +157,12 @@ static void nav_apply_geometry(FluxNavViewData *d) {
 
 	if (d->mode == FLUX_NAV_TOP) { nav_apply_geometry_top(d); return; }
 
-	xent_set_size(d->ctx, d->toggle, (XentSize) {FLUX_NAV_TOGGLE_W, FLUX_NAV_TOGGLE_H});
+	/* The integrated title bar owns the hamburger, so hide the built-in one and
+	 * park the strip full-width across the top (drawn last => over pane/content). */
+	if (d->title_bar != XENT_NODE_INVALID) nav_set_abs(d, d->title_bar, 0.0f, 0.0f, d->width, FLUX_TB_HEIGHT);
+	xent_set_size(
+	  d->ctx, d->toggle, d->window_title_bar ? (XentSize) {0.0f, 0.0f} : (XentSize) {FLUX_NAV_TOGGLE_W, FLUX_NAV_TOGGLE_H}
+	);
 
 	if (d->mode == FLUX_NAV_MINIMAL) { nav_apply_geometry_minimal(d); return; }
 
@@ -643,6 +650,7 @@ static void nav_destroy(void *component_data) {
 	if (d->child_flyout) flux_menu_flyout_destroy(d->child_flyout);
 	nav_anim_remove(d);
 	flux_window_remove_resize_observer(d->window, nav_on_window_resize, d);
+	flux_str_free(d->app_title);
 	for (int i = 0; i < d->count; i++) {
 		flux_str_free(d->items [i].label);
 		flux_str_free(d->items [i].icon_name);
@@ -658,9 +666,11 @@ static void nav_setup_pane(FluxNavViewData *d) {
 	xent_set_flex_direction(d->ctx, d->pane, XENT_FLEX_COLUMN);
 	xent_set_flex_align_items(d->ctx, d->pane, XENT_FLEX_ALIGN_STRETCH);
 	xent_set_gap(d->ctx, d->pane, FLUX_NAV_ITEM_GAP);
+	/* Reserve the hamburger row at the pane top — or the full title-bar height
+	 * when an integrated title bar owns that strip, so the first item clears it. */
+	float top_pad = d->window_title_bar ? FLUX_TB_HEIGHT : (FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD);
 	xent_set_padding(
-	  d->ctx, d->pane,
-	  (XentInsets) {FLUX_NAV_ITEM_MARGIN_H, FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD, FLUX_NAV_ITEM_MARGIN_H, 4.0f}
+	  d->ctx, d->pane, (XentInsets) {FLUX_NAV_ITEM_MARGIN_H, top_pad, FLUX_NAV_ITEM_MARGIN_H, 4.0f}
 	);
 
 	/* The menu list lives inside a scroll viewport: a zero-base grow child that
@@ -728,6 +738,9 @@ static void nav_init_data(FluxNavViewData *d, FluxNavViewCreateInfo const *info,
 	d->max_width            = info->width;
 	d->width                = info->width;
 	d->height               = info->height;
+	d->window_title_bar     = info->window_title_bar;
+	d->app_title            = info->app_title ? flux_str_dup(info->app_title) : NULL;
+	d->title_bar            = XENT_NODE_INVALID;
 	d->theme                = info->theme;
 	d->flyout_parent        = -1;
 	d->on_selection_changed = info->on_selection_changed;
@@ -761,6 +774,22 @@ static void nav_build_tree(FluxNavViewData *d) {
 	if (pn) pn->component_data = d;
 	nav_setup_pane(d);
 	nav_make_toggle(d); /* last root child: floats above pane + content in every mode */
+
+	/* Integrated title bar: extends into the OS caption, owns the pane-toggle
+	 * (wired straight to nav_toggle_click) + app title, and draws the min/max/close
+	 * caption buttons. Created last so it draws over the pane/content top strip. */
+	if (d->window_title_bar) {
+		d->title_bar = flux_create_title_bar(&(FluxTitleBarCreateInfo) {
+		  .ctx              = d->ctx,
+		  .store            = d->store,
+		  .parent           = d->root,
+		  .window           = d->window,
+		  .title            = d->app_title,
+		  .show_pane_toggle = true,
+		  .integrate_window = true,
+		  .on_pane_toggle   = nav_toggle_click,
+		  .userdata         = d});
+	}
 }
 
 /* Fit the nav view to the current window and apply initial geometry. */

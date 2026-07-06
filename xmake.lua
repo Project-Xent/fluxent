@@ -182,3 +182,17 @@ target("hello_fluxent")
         add_ldflags("/SUBSYSTEM:WINDOWS", "/OPT:REF", "/OPT:ICF", { force = true })
     end
 target_end()
+
+target("titlebar_demo")
+    set_kind("binary")
+    add_deps("fluxent")
+    add_files("examples/titlebar_demo/*.c")
+    add_includedirs("include", "examples/titlebar_demo")
+    if is_plat("mingw") then
+        add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
+        add_ldflags("-Wl,--subsystem,windows", "-Wl,--gc-sections", "-Wl,--icf=safe", { force = true })
+    end
+    if is_plat("windows") then
+        add_ldflags("/SUBSYSTEM:WINDOWS", "/OPT:REF", "/OPT:ICF", { force = true })
+    end
+target_end()

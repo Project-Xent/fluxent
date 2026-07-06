@@ -180,6 +180,9 @@ static void collect_emit_main(FluxEngine *eng, XentContext *ctx, CollectFrame *f
 	/* SplitView: position the content + pane wrappers for the current open state. */
 	if (nd && nd->component_data && nd->component_type == FLUX_CONTROL_SPLIT_VIEW)
 		flux_split_view_sync(ctx, frame->node, nd);
+	/* TitleBar: report the drag + passthrough regions to the window (opt-in). */
+	if (nd && nd->component_data && nd->component_type == FLUX_CONTROL_TITLE_BAR)
+		flux_title_bar_sync(ctx, frame->node, nd);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
 	frame->state          = flux_compute_control_state(ctx, frame->node, nd);
 	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;

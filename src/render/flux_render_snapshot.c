@@ -513,6 +513,21 @@ static void snapshot_handle_pager(SnapshotContext const *ctx) {
 	p->suffix       = d->suffix;
 }
 
+static void snapshot_handle_title_bar(SnapshotContext const *ctx) {
+	FluxTitleBarData const *d = ( FluxTitleBarData const * ) ctx->data;
+	FluxTitleBarSnapshot   *t = &ctx->snap->u.title_bar;
+	t->title            = d->title;
+	t->subtitle         = d->subtitle;
+	t->icon_glyph       = d->icon_glyph [0] ? d->icon_glyph : NULL;
+	t->title_w          = d->title_w;
+	t->pressed          = d->pressed;
+	t->show_back        = d->show_back;
+	t->back_disabled    = d->back_disabled;
+	t->show_pane_toggle = d->show_pane_toggle;
+	t->caption_buttons  = d->integrate_window;
+	t->maximized        = d->maximized;
+}
+
 static void snapshot_handle_split_pane(SnapshotContext const *ctx) {
 	FluxSplitPaneData const *d = ( FluxSplitPaneData const * ) ctx->data;
 	ctx->snap->u.split_pane.overlay   = d->overlay;
@@ -570,6 +585,7 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_PERSON_PICTURE]  = snapshot_handle_person_picture,
   [FLUX_CONTROL_PAGER]           = snapshot_handle_pager,
   [FLUX_CONTROL_SPLIT_VIEW_PANE] = snapshot_handle_split_pane,
+  [FLUX_CONTROL_TITLE_BAR]       = snapshot_handle_title_bar,
 };
 
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {

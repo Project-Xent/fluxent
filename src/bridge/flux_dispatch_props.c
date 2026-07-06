@@ -21,6 +21,11 @@ void flux_tramp_click(void *ud) {
 	xtk_runtime_post(b->rt, b->on_click);
 }
 
+void flux_tramp_titlebar_pane(void *ud) {
+	FluxBinding *b = ( FluxBinding * ) ud;
+	xtk_runtime_post(b->rt, b->on_change); /* pane-toggle routes through the change slot */
+}
+
 void flux_tramp_toggle(void *ud, FluxCheckState state) {
 	FluxBinding *b = ( FluxBinding * ) ud;
 	XtkMsg      m = b->on_change;
@@ -312,6 +317,7 @@ static XtkMsg flux_binding_click(XtkEl const *el) {
 	case FLUX_CONTROL_TEACHING_TIP  : return el->teaching_tip.on_action;
 	case FLUX_CONTROL_ITEMS_VIEW    : return el->list.on_invoke;
 	case FLUX_CONTROL_TREE_VIEW    : return el->tree_view.on_invoke;
+	case FLUX_CONTROL_TITLE_BAR    : return el->title_bar.on_back;
 	default                        : return el->button.on_click;
 	}
 }
@@ -352,6 +358,7 @@ static XtkMsg flux_binding_change(XtkEl const *el) {
 	case FLUX_CONTROL_TEACHING_TIP   : return el->teaching_tip.on_close;
 	case FLUX_CONTROL_EXPANDER       : return el->expander.on_toggle;
 	case FLUX_CONTROL_NUMBER_BOX     : return el->number.on_change;
+	case FLUX_CONTROL_TITLE_BAR      : return el->title_bar.on_pane_toggle;
 	default                          : return el->toggle.on_change;
 	}
 }
@@ -697,6 +704,16 @@ static void flux_pp_pips(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkE
 		);
 }
 
+static void flux_pp_title_bar(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev || !flux_streq(prev->text, el->text) || !flux_streq(prev->title_bar.subtitle, el->title_bar.subtitle))
+		flux_title_bar_set_title(rt->store, n->node, el->text, el->title_bar.subtitle);
+	if (!prev || prev->title_bar.show_back != el->title_bar.show_back
+	    || prev->title_bar.back_disabled != el->title_bar.back_disabled)
+		flux_title_bar_set_back(rt->store, n->node, el->title_bar.show_back, el->title_bar.back_disabled);
+	if (!prev || prev->title_bar.show_pane_toggle != el->title_bar.show_pane_toggle)
+		flux_title_bar_set_pane_toggle(rt->store, n->node, el->title_bar.show_pane_toggle);
+}
+
 static void flux_pp_split_view(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (!prev || prev->split_view.display_mode != el->split_view.display_mode
 	    || prev->split_view.pane_placement != el->split_view.pane_placement
@@ -823,6 +840,7 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_PERSON_PICTURE]  = flux_pp_person_picture,
 	[FLUX_CONTROL_PAGER]           = flux_pp_pager,
 	[FLUX_CONTROL_SPLIT_VIEW]      = flux_pp_split_view,
+	[FLUX_CONTROL_TITLE_BAR]       = flux_pp_title_bar,
 };
 
 void flux_apply_props(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
@@ -867,6 +885,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_FLIP_VIEW]       = true,
 	[FLUX_CONTROL_PIPS_PAGER]      = true,
 	[FLUX_CONTROL_PAGER]           = true,
+	[FLUX_CONTROL_TITLE_BAR]       = true,
 	[FLUX_CONTROL_AUTO_SUGGEST]    = true,
 	[FLUX_CONTROL_REFRESH]         = true,
 };

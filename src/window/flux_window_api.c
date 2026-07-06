@@ -117,6 +117,38 @@ void flux_window_set_title(FluxWindow *win, wchar_t const *title) {
 	SetWindowTextW(win->hwnd, title);
 }
 
+void flux_window_set_title_bar(FluxWindow *win, FluxRect drag, FluxRect const *passthrough, int count) {
+	if (!win) return;
+	if (drag.w <= 0.0f || drag.h <= 0.0f) {
+		win->title_bar_active     = false;
+		win->title_bar_pass_count = 0;
+		return;
+	}
+	if (count < 0) count = 0;
+	if (count > FLUX_WINDOW_MAX_TITLE_BAR_PASS) count = FLUX_WINDOW_MAX_TITLE_BAR_PASS;
+	win->title_bar_active     = true;
+	win->title_bar_drag       = drag;
+	win->title_bar_pass_count = count;
+	for (int i = 0; i < count; i++) win->title_bar_pass [i] = passthrough [i];
+}
+
+void flux_window_extend_into_title_bar(FluxWindow *win, bool enabled) {
+	if (!win || win->title_bar_extended == enabled) return;
+	win->title_bar_extended = enabled;
+	if (!win->hwnd) return;
+
+	/* A 1px top glass strip keeps the DWM drop shadow/rounded corners while the
+	 * client covers the whole window. Defer the SWP_FRAMECHANGED (re-runs
+	 * WM_NCCALCSIZE) to after the current frame: extend is typically requested
+	 * from a control's create during reconcile, and a synchronous SetWindowPos
+	 * there re-enters WM_SIZE/render mid-frame and double-composites the scene. */
+	MARGINS m = enabled ? (MARGINS) {0, 0, 1, 0} : (MARGINS) {0, 0, 0, 0};
+	DwmExtendFrameIntoClientArea(win->hwnd, &m);
+	PostMessageW(win->hwnd, FLUX_WM_APPLY_FRAME, 0, 0);
+}
+
+bool flux_window_title_bar_extended(FluxWindow const *win) { return win && win->title_bar_extended; }
+
 void flux_window_request_render(FluxWindow *win) {
 	if (win) win->render_requested = true;
 }

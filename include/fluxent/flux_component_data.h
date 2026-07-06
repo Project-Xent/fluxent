@@ -58,5 +58,6 @@
 #include "controls/flux_person_picture_data.h"
 #include "controls/flux_pager_data.h"
 #include "controls/flux_split_view_data.h"
+#include "controls/flux_title_bar_data.h"
 
 #endif

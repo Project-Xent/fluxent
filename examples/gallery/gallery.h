@@ -59,6 +59,7 @@ enum
 	PAGE_PULL_REFRESH,
 	PAGE_CAT_SHELL,
 	PAGE_SPLIT_VIEW,
+	PAGE_TITLE_BAR,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
 	PAGE_TEACHING_TIP,
@@ -138,6 +139,8 @@ enum
 	MSG_SPLIT_TOGGLE,  /**< toggle the SplitView pane. */
 	MSG_SPLIT_MODE,    /**< .i = display mode. */
 	MSG_SPLIT_PLACE,   /**< .b = place pane on the right. */
+	MSG_TB_BACK,       /**< TitleBar back button. */
+	MSG_TB_PANE,       /**< TitleBar pane-toggle button. */
 };
 
 #define BAR_COUNT 4
@@ -202,6 +205,8 @@ typedef struct Model {
 	bool   split_open;
 	int    split_mode;
 	bool   split_right;
+	int    tb_back_clicks;
+	int    tb_pane_clicks;
 } Model;
 
 /* -------------------------------------------------------------------------
@@ -243,6 +248,7 @@ XtkEl *page_image(XtkUi *ui, Model const *m);
 XtkEl *page_person_picture(XtkUi *ui, Model const *m);
 XtkEl *page_pager(XtkUi *ui, Model const *m);
 XtkEl *page_split_view(XtkUi *ui, Model const *m);
+XtkEl *page_title_bar(XtkUi *ui, Model const *m);
 XtkEl *page_menus(XtkUi *ui, Model const *m);
 XtkEl *page_tabview(XtkUi *ui, Model const *m);
 XtkEl *page_expander(XtkUi *ui, Model const *m);

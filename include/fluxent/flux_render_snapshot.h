@@ -295,6 +295,20 @@ typedef struct FluxSplitPaneSnapshot {
 	bool    divider;   /**< Draw the content-facing divider. */
 } FluxSplitPaneSnapshot;
 
+/** @brief TitleBar payload (back / pane-toggle / icon / title / subtitle). */
+typedef struct FluxTitleBarSnapshot {
+	char const *title;
+	char const *subtitle;
+	char const *icon_glyph;  /**< UTF-8 glyph, or "" / NULL. */
+	float       title_w;     /**< Measured title width (subtitle placement). */
+	int         pressed;     /**< FLUX_TB_REGION_* under an active press. */
+	bool        show_back;
+	bool        back_disabled;
+	bool        show_pane_toggle;
+	bool        caption_buttons; /**< Draw min/max/close (window-integrated). */
+	bool        maximized;       /**< Restore vs maximize glyph. */
+} FluxTitleBarSnapshot;
+
 /** @brief PersonPicture payload (photo / initials / placeholder + badge). */
 typedef struct FluxPersonSnapshot {
 	char const *initials;     /**< Resolved initials (may be empty). */
@@ -353,6 +367,7 @@ typedef struct FluxRenderSnapshot {
 		FluxPersonSnapshot    person;     /**< PersonPicture. */
 		FluxPagerSnapshot     pager;      /**< PagerControl. */
 		FluxSplitPaneSnapshot split_pane; /**< SplitView pane wrapper. */
+		FluxTitleBarSnapshot  title_bar;  /**< TitleBar. */
 	} u;
 } FluxRenderSnapshot;
 

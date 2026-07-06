@@ -100,6 +100,27 @@ void            flux_window_set_dark_mode(FluxWindow *win, bool enabled);
 /** @brief Set the window title. */
 void            flux_window_set_title(FluxWindow *win, wchar_t const *title);
 
+/** @brief Maximum interactive (passthrough) rects a custom title bar may register. */
+#define FLUX_WINDOW_MAX_TITLE_BAR_PASS 8
+
+/**
+ * @brief Register a custom title-bar drag region and its interactive passthrough
+ * rects (all in client-local DIPs). Points inside @p drag hit-test as caption
+ * (the window drags), except points inside a passthrough rect, which stay client
+ * (buttons remain clickable). Pass @p drag with zero width to clear.
+ */
+void            flux_window_set_title_bar(FluxWindow *win, FluxRect drag, FluxRect const *passthrough, int count);
+
+/**
+ * @brief Extend the client area over the OS title bar (removes the system
+ * caption; the app draws its own title bar and caption buttons). Resize borders,
+ * DWM shadow, snap, and maximize are preserved. Idempotent.
+ */
+void            flux_window_extend_into_title_bar(FluxWindow *win, bool enabled);
+
+/** @brief True while the client area covers the (removed) OS title bar. */
+bool            flux_window_title_bar_extended(FluxWindow const *win);
+
 /** @brief Position the IME composition window. */
 void            flux_window_set_ime_position(FluxWindow *win, int x, int y, int height);
 /** @brief Set the cursor type used over the client area. */

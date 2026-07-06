@@ -331,6 +331,7 @@ static bool flux_binding_change_special(XtkEl const *el, XtkMsg *out) {
 	case FLUX_CONTROL_TREE_VIEW    : *out = el->tree_view.on_select; return true;
 	case FLUX_CONTROL_FLIP_VIEW    : *out = el->flip.on_select; return true;
 	case FLUX_CONTROL_PIPS_PAGER   : *out = el->pips.on_select; return true;
+	case FLUX_CONTROL_PAGER        : *out = el->pager.on_select; return true;
 	case FLUX_CONTROL_AUTO_SUGGEST : *out = el->suggest.on_text; return true;
 	case FLUX_CONTROL_TOGGLE_SPLIT_BUTTON : *out = el->split.on_toggle; return true;
 	case FLUX_CONTROL_RADIO_BUTTONS : *out = el->radio_buttons.on_select; return true;
@@ -696,6 +697,47 @@ static void flux_pp_pips(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkE
 		);
 }
 
+static void flux_pp_split_view(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev || prev->split_view.display_mode != el->split_view.display_mode
+	    || prev->split_view.pane_placement != el->split_view.pane_placement
+	    || prev->split_view.open_pane_length != el->split_view.open_pane_length
+	    || prev->split_view.compact_pane_length != el->split_view.compact_pane_length)
+		flux_split_view_configure(
+		  rt->store, n->node, el->split_view.display_mode, el->split_view.pane_placement,
+		  el->split_view.open_pane_length, el->split_view.compact_pane_length
+		);
+	if (!prev || prev->split_view.pane_open != el->split_view.pane_open)
+		flux_split_view_set_pane_open(rt->store, n->node, el->split_view.pane_open);
+}
+
+static void flux_pp_pager(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev || prev->pager.count != el->pager.count || prev->pager.selected != el->pager.selected
+	    || prev->pager.display_mode != el->pager.display_mode)
+		flux_pager_configure(rt->store, n->node, el->pager.count, el->pager.selected, el->pager.display_mode);
+	if (!prev || prev->pager.first_button != el->pager.first_button || prev->pager.prev_button != el->pager.prev_button
+	    || prev->pager.next_button != el->pager.next_button || prev->pager.last_button != el->pager.last_button)
+		flux_pager_set_button_visibility(
+		  rt->store, n->node, el->pager.first_button, el->pager.prev_button, el->pager.next_button, el->pager.last_button
+		);
+}
+
+static void flux_pp_person_picture(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
+	if (!prev) return; /* creator applied the initial state */
+	if (!flux_streq(prev->person_picture.display_name, el->person_picture.display_name))
+		flux_person_picture_set_display_name(rt->store, n->node, el->person_picture.display_name);
+	if (!flux_streq(prev->person_picture.initials, el->person_picture.initials))
+		flux_person_picture_set_initials(rt->store, n->node, el->person_picture.initials);
+	if (!flux_streq(prev->person_picture.image, el->person_picture.image))
+		flux_person_picture_set_image(rt->store, n->node, el->person_picture.image);
+	if (!flux_streq(prev->person_picture.badge_glyph, el->person_picture.badge_glyph)
+	    || prev->person_picture.badge_number != el->person_picture.badge_number)
+		flux_person_picture_set_badge(
+		  rt->store, n->node, el->person_picture.badge_glyph, el->person_picture.badge_number
+		);
+	if (prev->person_picture.is_group != el->person_picture.is_group)
+		flux_person_picture_set_group(rt->store, n->node, el->person_picture.is_group);
+}
+
 static void flux_pp_suggest(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
 	if (prev
 	    && !flux_str_array_eq(prev->suggest.suggestions, prev->suggest.count, el->suggest.suggestions, el->suggest.count))
@@ -778,6 +820,9 @@ static FluxPropsFn const kPropsTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_CONTENT_DIALOG]  = flux_pp_dialog,
 	[FLUX_CONTROL_TEACHING_TIP]    = flux_pp_teaching_tip,
 	[FLUX_CONTROL_REFRESH]         = flux_pp_refresh,
+	[FLUX_CONTROL_PERSON_PICTURE]  = flux_pp_person_picture,
+	[FLUX_CONTROL_PAGER]           = flux_pp_pager,
+	[FLUX_CONTROL_SPLIT_VIEW]      = flux_pp_split_view,
 };
 
 void flux_apply_props(FluxBackendCtx *rt, XtkNode *n, XtkEl const *prev, XtkEl const *el) {
@@ -821,6 +866,7 @@ static const bool kInteractive [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_TREE_VIEW]       = true,
 	[FLUX_CONTROL_FLIP_VIEW]       = true,
 	[FLUX_CONTROL_PIPS_PAGER]      = true,
+	[FLUX_CONTROL_PAGER]           = true,
 	[FLUX_CONTROL_AUTO_SUGGEST]    = true,
 	[FLUX_CONTROL_REFRESH]         = true,
 };

@@ -303,6 +303,21 @@ void flux_draw_pips_pager(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+/** @brief Draw a PersonPicture (circle + photo/initials/glyph + badge). */
+void flux_draw_person_picture(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw a PagerControl (nav buttons + number panel / text). */
+void flux_draw_pager(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
+/** @brief Draw a SplitView pane wrapper (inline/overlay surface + divider). */
+void flux_draw_split_pane(
+  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 /** @brief Draw a text box (chrome + content + elevation border). */
 void flux_draw_textbox(
   FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds, FluxControlState const *state

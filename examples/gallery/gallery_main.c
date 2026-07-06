@@ -114,6 +114,15 @@ static void update(void *model, XtkMsg msg) {
 		m->refresh_count++;
 		break;
 	case MSG_REFRESH_DONE : m->refresh_busy = false; break;
+	case MSG_PP_BADGE :
+		m->pp_badge += msg.i;
+		if (m->pp_badge < 0) m->pp_badge = 0;
+		break;
+	case MSG_PP_GROUP : m->pp_group = msg.b; break;
+	case MSG_PAGER_SELECT : m->pager_page = msg.i; break;
+	case MSG_SPLIT_TOGGLE : m->split_open = !m->split_open; break;
+	case MSG_SPLIT_MODE   : m->split_mode = msg.i; break;
+	case MSG_SPLIT_PLACE  : m->split_right = msg.b; break;
 	default : break;
 	}
 }
@@ -145,6 +154,10 @@ static XtkEl *page_view(XtkUi *ui, Model const *m) {
 	case PAGE_PROGRESS    : return page_progress(ui, m);
 	case PAGE_TOOLTIP     : return page_tooltip(ui, m);
 	case PAGE_IMAGE       : return page_image(ui, m);
+	case PAGE_PERSON_PICTURE : return page_person_picture(ui, m);
+	case PAGE_PAGER       : return page_pager(ui, m);
+	case PAGE_CAT_SHELL   : return page_category(ui, "Layout & shell", "SplitView and window scaffolding.");
+	case PAGE_SPLIT_VIEW  : return page_split_view(ui, m);
 	case PAGE_MENUS       : return page_menus(ui, m);
 	case PAGE_TABVIEW     : return page_tabview(ui, m);
 	case PAGE_EXPANDER    : return page_expander(ui, m);

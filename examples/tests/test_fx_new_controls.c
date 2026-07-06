@@ -7,9 +7,14 @@
 #include "flux_internal.h"
 
 #include "fluxent/controls/flux_list_view_data.h"
+#include "fluxent/controls/flux_pager_data.h"
+#include "fluxent/controls/flux_person_picture_data.h"
 #include "fluxent/controls/flux_radio_buttons_data.h"
+#include "fluxent/controls/flux_split_view_data.h"
 #include "fluxent/controls/flux_refresh_data.h"
 #include "fluxent/controls/flux_tree_view_data.h"
+
+#include <string.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -268,6 +273,86 @@ static int check_refresh(XentContext *ctx, FluxNodeStore *store, XtkRuntime *rt)
 	return 0;
 }
 
+/* ---------------------------------------------------------------- PersonPicture */
+
+static XtkEl *view_person(XtkUi *ui, void *model) {
+	( void ) model;
+	return xtk_person_picture(
+	  ui, (XtkPersonPictureDesc) {.display_name = "John Smith", .badge_number = 128, .size = 80.0f}
+	);
+}
+
+static int check_person(XentContext *ctx, FluxNodeStore *store, XtkRuntime *rt) {
+	FluxNodeData *nd = flux_node_store_get(store, rt->root->node);
+	EXPECT(nd && nd->component_type == FLUX_CONTROL_PERSON_PICTURE, "person picture type");
+	FluxPersonPictureData *pd = ( FluxPersonPictureData * ) nd->component_data;
+	EXPECT(pd && strcmp(pd->resolved, "JS") == 0, "initials derive from first+last word");
+	EXPECT(pd->badge_number == 128, "badge number carried");
+	EXPECT(pd->diameter == 80.0f, "requested diameter carried");
+	( void ) ctx;
+	return 0;
+}
+
+/* ---------------------------------------------------------------- PagerControl */
+
+static XtkEl *view_pager(XtkUi *ui, void *model) {
+	( void ) model;
+	return xtk_pager(ui, (XtkPagerDesc) {.count = 32, .selected = 6, .first_button = XTK_PAGER_BUTTON_AUTO});
+}
+
+static int check_pager(XentContext *ctx, FluxNodeStore *store, XtkRuntime *rt) {
+	( void ) ctx;
+	FluxNodeData *nd = flux_node_store_get(store, rt->root->node);
+	EXPECT(nd && nd->component_type == FLUX_CONTROL_PAGER, "pager type");
+	FluxPagerData *pd = ( FluxPagerData * ) nd->component_data;
+	EXPECT(pd && pd->count == 32 && pd->selected == 6, "pager config carried");
+
+	/* Center-ellipsis window for sel0=6: 1 … 6 7 8 … 32 (selected page 7 centered). */
+	int16_t cells [FLUX_PAGER_MAX_CELLS];
+	int     cc = flux_pager_build_cells(pd->count, pd->selected, cells);
+	EXPECT(cc == 7, "center window has seven cells");
+	EXPECT(cells [0] == 1 && cells [6] == 32, "first and last pages anchored");
+	EXPECT(cells [1] == FLUX_PAGER_ELLIPSIS_PAGE && cells [5] == FLUX_PAGER_ELLIPSIS_PAGE, "both ellipses present");
+	EXPECT(cells [3] == pd->selected + 1, "selected page centered");
+	return 0;
+}
+
+/* ---------------------------------------------------------------- SplitView */
+
+static XtkEl *view_split(XtkUi *ui, void *model) {
+	( void ) model;
+	return xtk_sized(
+	  xtk_split_view(
+	    ui, (XtkSplitViewDesc) {.pane_open = true, .display_mode = XTK_SPLITVIEW_INLINE},
+	    xtk_text(ui, "pane", (XtkTextDesc) {0}), xtk_text(ui, "content", (XtkTextDesc) {0})
+	  ),
+	  600.0f, 300.0f
+	);
+}
+
+static int check_split(XentContext *ctx, FluxNodeStore *store, XtkRuntime *rt) {
+	XentNodeId    root = rt->root->node;
+	FluxNodeData *nd   = flux_node_store_get(store, root);
+	EXPECT(nd && nd->component_type == FLUX_CONTROL_SPLIT_VIEW, "split view type");
+	FluxSplitViewData *d = ( FluxSplitViewData * ) nd->component_data;
+	EXPECT(d && d->pane_open && d->display_mode == FLUX_SPLITVIEW_INLINE, "split config carried");
+	EXPECT(d->open_len == FLUX_SPLITVIEW_OPEN_LEN, "default open pane length");
+
+	XentNodeId content = xent_get_first_child(ctx, root);
+	XentNodeId pane    = content != XENT_NODE_INVALID ? xent_get_next_sibling(ctx, content) : XENT_NODE_INVALID;
+	FluxNodeData *cnd  = flux_node_store_get(store, content);
+	FluxNodeData *pnd  = flux_node_store_get(store, pane);
+	EXPECT(cnd && cnd->component_type == FLUX_CONTROL_SPLIT_VIEW_CONTENT, "content wrapper first");
+	EXPECT(pnd && pnd->component_type == FLUX_CONTROL_SPLIT_VIEW_PANE, "pane wrapper second");
+
+	/* Drive the layout sync the engine would run each frame, then confirm the
+	 * pane wrapper picked up the (inline) surface state. */
+	flux_split_view_sync(ctx, root, nd);
+	FluxSplitPaneData *pd = ( FluxSplitPaneData * ) pnd->component_data;
+	EXPECT(pd && !pd->overlay && pd->divider, "inline pane: divider, no overlay surface");
+	return 0;
+}
+
 int main(void) {
 	int m = 0;
 	if (run_view("radio buttons", &m, view_radio_buttons, check_radio_buttons)) return 1;
@@ -278,6 +363,9 @@ int main(void) {
 	if (run_view("tree view", &m, view_tree, check_tree)) return 1;
 	if (run_view("items view", &m, view_items, check_items)) return 1;
 	if (run_view("pull to refresh", &m, view_refresh, check_refresh)) return 1;
+	if (run_view("person picture", &m, view_person, check_person)) return 1;
+	if (run_view("pager control", &m, view_pager, check_pager)) return 1;
+	if (run_view("split view", &m, view_split, check_split)) return 1;
 	printf("PASS: all new-control probes\n");
 	return 0;
 }

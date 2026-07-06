@@ -41,7 +41,9 @@ enum
 	PAGE_TOOLTIP,
 	PAGE_CAT_MEDIA,
 	PAGE_IMAGE,
+	PAGE_PERSON_PICTURE,
 	PAGE_FLIPVIEW,
+	PAGE_PAGER,
 	PAGE_CAT_MENUS,
 	PAGE_MENUS,
 	PAGE_TABVIEW,
@@ -55,6 +57,8 @@ enum
 	PAGE_TREE_VIEW,
 	PAGE_ITEMS_VIEW,
 	PAGE_PULL_REFRESH,
+	PAGE_CAT_SHELL,
+	PAGE_SPLIT_VIEW,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
 	PAGE_TEACHING_TIP,
@@ -128,6 +132,12 @@ enum
 	MSG_ITEMS_INVOKE,  /**< .i = invoked index. */
 	MSG_REFRESH,       /**< .i = pull direction. */
 	MSG_REFRESH_DONE,
+	MSG_PP_BADGE,      /**< .i = +1 / -1 (PersonPicture badge count). */
+	MSG_PP_GROUP,      /**< .b = group mode. */
+	MSG_PAGER_SELECT,  /**< .i = selected page index (PagerControl). */
+	MSG_SPLIT_TOGGLE,  /**< toggle the SplitView pane. */
+	MSG_SPLIT_MODE,    /**< .i = display mode. */
+	MSG_SPLIT_PLACE,   /**< .b = place pane on the right. */
 };
 
 #define BAR_COUNT 4
@@ -186,6 +196,12 @@ typedef struct Model {
 	int    items_invoke;
 	bool   refresh_busy;
 	int    refresh_count;
+	int    pp_badge;
+	bool   pp_group;
+	int    pager_page;
+	bool   split_open;
+	int    split_mode;
+	bool   split_right;
 } Model;
 
 /* -------------------------------------------------------------------------
@@ -224,6 +240,9 @@ XtkEl *page_badge(XtkUi *ui, Model const *m);
 XtkEl *page_progress(XtkUi *ui, Model const *m);
 XtkEl *page_tooltip(XtkUi *ui, Model const *m);
 XtkEl *page_image(XtkUi *ui, Model const *m);
+XtkEl *page_person_picture(XtkUi *ui, Model const *m);
+XtkEl *page_pager(XtkUi *ui, Model const *m);
+XtkEl *page_split_view(XtkUi *ui, Model const *m);
 XtkEl *page_menus(XtkUi *ui, Model const *m);
 XtkEl *page_tabview(XtkUi *ui, Model const *m);
 XtkEl *page_expander(XtkUi *ui, Model const *m);

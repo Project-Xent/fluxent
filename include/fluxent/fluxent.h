@@ -952,6 +952,109 @@ void flux_teaching_tip_set_texts(FluxNodeStore *store, XentNodeId tip, char cons
 /** @brief Solved placement while open; FLUX_TIP_PLACE_AUTO otherwise (test hook). */
 FluxTeachingTipPlacement flux_teaching_tip_effective_placement(FluxNodeStore *store, XentNodeId tip);
 
+/* -------------------------------------------------------------------------
+ * PersonPicture (circular avatar: photo / initials / placeholder + badge)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxPersonPictureCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	float          diameter;     /**< 0 = default 72. */
+	char const    *display_name; /**< Derives initials when @c initials is NULL. */
+	char const    *initials;     /**< Explicit initials override. */
+	char const    *image_path;   /**< Profile-photo source, or NULL. */
+	char const    *badge_glyph;  /**< Segoe Fluent Icons name for the badge, or NULL. */
+	int            badge_number; /**< Badge count (capped "99+"); <= 0 hides it. */
+	bool           is_group;     /**< Group mode (People placeholder). */
+} FluxPersonPictureCreateInfo;
+
+/** @brief Create a PersonPicture avatar leaf. */
+XentNodeId flux_create_person_picture(FluxPersonPictureCreateInfo const *info);
+
+/** @brief Replace the display name (re-derives initials when no override is set). */
+void flux_person_picture_set_display_name(FluxNodeStore *store, XentNodeId pp, char const *display_name);
+
+/** @brief Set an explicit initials override (NULL/"" reverts to the derived value). */
+void flux_person_picture_set_initials(FluxNodeStore *store, XentNodeId pp, char const *initials);
+
+/** @brief Set the profile-photo source path (NULL clears the photo). */
+void flux_person_picture_set_image(FluxNodeStore *store, XentNodeId pp, char const *image_path);
+
+/** @brief Set the badge: an icon name and/or a count (count <= 0 and NULL glyph clears it). */
+void flux_person_picture_set_badge(FluxNodeStore *store, XentNodeId pp, char const *badge_glyph, int badge_number);
+
+/** @brief Toggle group mode (People placeholder glyph). */
+void flux_person_picture_set_group(FluxNodeStore *store, XentNodeId pp, bool is_group);
+
+/* -------------------------------------------------------------------------
+ * PagerControl (numeric/arrow pager; distinct from the dot PipsPager)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxPagerCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	int            count;         /**< NumberOfPages (>= 1). */
+	int            selected;      /**< SelectedPageIndex (0-based). */
+	int            display_mode;  /**< FluxPagerDisplayMode. */
+	int            first_button;  /**< FluxPagerButtonVis. */
+	int            prev_button;   /**< FluxPagerButtonVis. */
+	int            next_button;   /**< FluxPagerButtonVis. */
+	int            last_button;   /**< FluxPagerButtonVis. */
+	char const    *prefix;        /**< NumberText leading label, or NULL. */
+	char const    *suffix;        /**< NumberText infix before the total, or NULL. */
+	void           (*on_select)(void *ctx, int index);
+	void          *userdata;
+} FluxPagerCreateInfo;
+
+/** @brief Create a PagerControl leaf. */
+XentNodeId flux_create_pager(FluxPagerCreateInfo const *info);
+
+/** @brief Set page count / selection / display mode (re-measures). */
+void flux_pager_configure(FluxNodeStore *store, XentNodeId id, int count, int selected, int display_mode);
+
+/** @brief Set the selected page index (0-based, clamped). */
+void flux_pager_set_selected(FluxNodeStore *store, XentNodeId id, int index);
+
+/** @brief Set First/Previous/Next/Last button visibility modes (FluxPagerButtonVis). */
+void flux_pager_set_button_visibility(FluxNodeStore *store, XentNodeId id, int first, int prev, int next, int last);
+
+/* -------------------------------------------------------------------------
+ * SplitView (collapsible side pane beside main content)
+ * ---------------------------------------------------------------------- */
+
+typedef struct FluxSplitViewCreateInfo {
+	XentContext   *ctx;
+	FluxNodeStore *store;
+	XentNodeId     parent;
+	int            display_mode;        /**< FluxSplitViewDisplayMode. */
+	int            pane_placement;      /**< FluxSplitViewPanePlacement. */
+	bool           pane_open;
+	float          open_pane_length;    /**< 0 = default 320. */
+	float          compact_pane_length; /**< 0 = default 48. */
+} FluxSplitViewCreateInfo;
+
+/** @brief Create a SplitView root (ABSOLUTE host of the content + pane wrappers). */
+XentNodeId flux_create_split_view(FluxSplitViewCreateInfo const *info);
+
+/** @brief Create the internal content wrapper (drawn under the pane). */
+XentNodeId flux_create_split_view_content(XentContext *ctx, FluxNodeStore *store, XentNodeId parent);
+
+/** @brief Create the internal pane wrapper (drawn over content in overlay modes). */
+XentNodeId flux_create_split_view_pane(XentContext *ctx, FluxNodeStore *store, XentNodeId parent);
+
+/** @brief Engine per-frame hook: position the content + pane wrappers. */
+void flux_split_view_sync(XentContext *ctx, XentNodeId node, struct FluxNodeData *nd);
+
+/** @brief Open or close the pane. */
+void flux_split_view_set_pane_open(FluxNodeStore *store, XentNodeId id, bool open);
+
+/** @brief Set display mode / placement / pane lengths. */
+void flux_split_view_configure(
+  FluxNodeStore *store, XentNodeId id, int display_mode, int placement, float open_len, float compact_len
+);
+
 #ifdef __cplusplus
 }
 #endif

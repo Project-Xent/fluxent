@@ -494,6 +494,62 @@ static XentNodeId flux_cr_refresh(FluxBackendCtx *rt, XentNodeId p, XtkEl const 
 	  .userdata        = b});
 }
 
+static XentNodeId flux_cr_person_picture(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	( void ) b;
+	return flux_create_person_picture(&(FluxPersonPictureCreateInfo) {
+	  .ctx          = rt->ctx,
+	  .store        = rt->store,
+	  .parent       = p,
+	  .diameter     = el->person_picture.size,
+	  .display_name = el->person_picture.display_name,
+	  .initials     = el->person_picture.initials,
+	  .image_path   = el->person_picture.image,
+	  .badge_glyph  = el->person_picture.badge_glyph,
+	  .badge_number = el->person_picture.badge_number,
+	  .is_group     = el->person_picture.is_group});
+}
+
+static XentNodeId flux_cr_pager(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	return flux_create_pager(&(FluxPagerCreateInfo) {
+	  .ctx          = rt->ctx,
+	  .store        = rt->store,
+	  .parent       = p,
+	  .count        = el->pager.count,
+	  .selected     = el->pager.selected,
+	  .display_mode = el->pager.display_mode,
+	  .first_button = el->pager.first_button,
+	  .prev_button  = el->pager.prev_button,
+	  .next_button  = el->pager.next_button,
+	  .last_button  = el->pager.last_button,
+	  .prefix       = el->pager.prefix,
+	  .suffix       = el->pager.suffix,
+	  .on_select    = b ? flux_tramp_select : NULL,
+	  .userdata     = b});
+}
+
+static XentNodeId flux_cr_split_view(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	( void ) b;
+	return flux_create_split_view(&(FluxSplitViewCreateInfo) {
+	  .ctx                 = rt->ctx,
+	  .store               = rt->store,
+	  .parent              = p,
+	  .display_mode        = el->split_view.display_mode,
+	  .pane_placement      = el->split_view.pane_placement,
+	  .pane_open           = el->split_view.pane_open,
+	  .open_pane_length    = el->split_view.open_pane_length,
+	  .compact_pane_length = el->split_view.compact_pane_length});
+}
+
+static XentNodeId flux_cr_split_content(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	( void ) el; ( void ) b;
+	return flux_create_split_view_content(rt->ctx, rt->store, p);
+}
+
+static XentNodeId flux_cr_split_pane(FluxBackendCtx *rt, XentNodeId p, XtkEl const *el, FluxBinding *b) {
+	( void ) el; ( void ) b;
+	return flux_create_split_view_pane(rt->ctx, rt->store, p);
+}
+
 static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_CONTAINER]       = flux_cr_container,
 	[FLUX_CONTROL_CARD]            = flux_cr_card,
@@ -540,6 +596,11 @@ static FluxCreateFn const kCreateTable [FLUX_CONTROL_TYPE_MAX] = {
 	[FLUX_CONTROL_AUTO_SUGGEST]    = flux_cr_suggest,
 	[FLUX_CONTROL_TREE_VIEW]       = flux_cr_tree,
 	[FLUX_CONTROL_REFRESH]         = flux_cr_refresh,
+	[FLUX_CONTROL_PERSON_PICTURE]  = flux_cr_person_picture,
+	[FLUX_CONTROL_PAGER]           = flux_cr_pager,
+	[FLUX_CONTROL_SPLIT_VIEW]         = flux_cr_split_view,
+	[FLUX_CONTROL_SPLIT_VIEW_CONTENT] = flux_cr_split_content,
+	[FLUX_CONTROL_SPLIT_VIEW_PANE]    = flux_cr_split_pane,
 };
 
 XentNodeId flux_create_control(FluxBackendCtx *rt, XentNodeId parent, XtkEl const *el, FluxBinding *b) {

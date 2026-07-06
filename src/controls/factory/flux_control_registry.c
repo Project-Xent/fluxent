@@ -84,5 +84,10 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	flux_control_registry_register(reg, FLUX_CONTROL_TREE_VIEW, flux_draw_container, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_TREE_ITEM, flux_draw_tree_item, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_REFRESH, flux_draw_refresh, flux_draw_refresh_overlay);
+	flux_control_registry_register(reg, FLUX_CONTROL_PERSON_PICTURE, flux_draw_person_picture, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_PAGER, flux_draw_pager, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_SPLIT_VIEW, flux_draw_container, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_SPLIT_VIEW_CONTENT, flux_draw_container, NULL);
+	flux_control_registry_register(reg, FLUX_CONTROL_SPLIT_VIEW_PANE, flux_draw_split_pane, NULL);
 	flux_control_registry_register(reg, FLUX_CONTROL_CUSTOM, flux_draw_container, NULL);
 }

@@ -494,6 +494,43 @@ static void snapshot_handle_refresh(SnapshotContext const *ctx) {
 	r->glyph_scale = scale;
 }
 
+static void snapshot_handle_pager(SnapshotContext const *ctx) {
+	FluxPagerData const *d = ( FluxPagerData const * ) ctx->data;
+	FluxPagerSnapshot   *p = &ctx->snap->u.pager;
+	bool                 at_first = d->selected <= 0;
+	bool                 at_last  = d->selected >= d->count - 1;
+
+	p->count        = d->count;
+	p->selected     = d->selected;
+	p->display_mode = d->display_mode;
+	p->first_state  = ( uint8_t ) flux_pager_nav_state(d->first_vis, at_first);
+	p->prev_state   = ( uint8_t ) flux_pager_nav_state(d->prev_vis, at_first);
+	p->next_state   = ( uint8_t ) flux_pager_nav_state(d->next_vis, at_last);
+	p->last_state   = ( uint8_t ) flux_pager_nav_state(d->last_vis, at_last);
+	p->cell_count   = ( uint8_t ) flux_pager_build_cells(d->count, d->selected, p->cells);
+	p->pressed_elem = ( int16_t ) d->pressed_elem;
+	p->prefix       = d->prefix;
+	p->suffix       = d->suffix;
+}
+
+static void snapshot_handle_split_pane(SnapshotContext const *ctx) {
+	FluxSplitPaneData const *d = ( FluxSplitPaneData const * ) ctx->data;
+	ctx->snap->u.split_pane.overlay   = d->overlay;
+	ctx->snap->u.split_pane.placement = d->placement;
+	ctx->snap->u.split_pane.divider   = d->divider;
+}
+
+static void snapshot_handle_person_picture(SnapshotContext const *ctx) {
+	FluxPersonPictureData const *d = ( FluxPersonPictureData const * ) ctx->data;
+	FluxPersonSnapshot          *p = &ctx->snap->u.person;
+	p->initials     = d->resolved;
+	p->image_path   = d->image_path;
+	p->badge_glyph  = d->badge_glyph;
+	p->badge_number = d->badge_number;
+	p->diameter     = d->diameter;
+	p->is_group     = d->is_group;
+}
+
 static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_TEXT]            = snapshot_handle_text,
   [FLUX_CONTROL_BUTTON]          = snapshot_handle_button,
@@ -530,6 +567,9 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
   [FLUX_CONTROL_FLIP_VIEW]       = snapshot_handle_flip_view,
   [FLUX_CONTROL_PIPS_PAGER]      = snapshot_handle_pips_pager,
   [FLUX_CONTROL_REFRESH]         = snapshot_handle_refresh,
+  [FLUX_CONTROL_PERSON_PICTURE]  = snapshot_handle_person_picture,
+  [FLUX_CONTROL_PAGER]           = snapshot_handle_pager,
+  [FLUX_CONTROL_SPLIT_VIEW_PANE] = snapshot_handle_split_pane,
 };
 
 void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {

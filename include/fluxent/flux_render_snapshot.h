@@ -272,6 +272,39 @@ typedef struct FluxRefreshSnapshot {
 	float glyph_scale;
 } FluxRefreshSnapshot;
 
+/** @brief PagerControl payload (nav buttons + number panel / text). */
+typedef struct FluxPagerSnapshot {
+	int         count;
+	int         selected;     /**< 0-based. */
+	uint8_t     display_mode; /**< FluxPagerDisplayMode. */
+	uint8_t     first_state;  /**< FLUX_PAGER_NAV_*. */
+	uint8_t     prev_state;
+	uint8_t     next_state;
+	uint8_t     last_state;
+	int16_t     cells [12];   /**< 1-based pages / ellipsis sentinels. */
+	uint8_t     cell_count;
+	int16_t     pressed_elem; /**< Element index pressed, or -1. */
+	char const *prefix;
+	char const *suffix;
+} FluxPagerSnapshot;
+
+/** @brief SplitView pane-wrapper payload (background surface + divider). */
+typedef struct FluxSplitPaneSnapshot {
+	bool    overlay;   /**< Opaque floating surface + shadow. */
+	uint8_t placement; /**< FluxSplitViewPanePlacement (divider edge). */
+	bool    divider;   /**< Draw the content-facing divider. */
+} FluxSplitPaneSnapshot;
+
+/** @brief PersonPicture payload (photo / initials / placeholder + badge). */
+typedef struct FluxPersonSnapshot {
+	char const *initials;     /**< Resolved initials (may be empty). */
+	char const *image_path;   /**< Profile-photo source, or NULL. */
+	char const *badge_glyph;  /**< UTF-8 badge glyph, or NULL. */
+	int         badge_number; /**< Badge count; <= 0 = none. */
+	float       diameter;     /**< Circle diameter (DIP). */
+	bool        is_group;     /**< Group placeholder glyph. */
+} FluxPersonSnapshot;
+
 /**
  * @brief Immutable snapshot of a control's visual state.
  *
@@ -317,6 +350,9 @@ typedef struct FluxRenderSnapshot {
 		FluxFlipSnapshot      flip;       /**< FlipView. */
 		FluxPipsSnapshot      pips;       /**< PipsPager. */
 		FluxRefreshSnapshot   refresh;    /**< RefreshContainer / PullToRefresh. */
+		FluxPersonSnapshot    person;     /**< PersonPicture. */
+		FluxPagerSnapshot     pager;      /**< PagerControl. */
+		FluxSplitPaneSnapshot split_pane; /**< SplitView pane wrapper. */
 	} u;
 } FluxRenderSnapshot;
 

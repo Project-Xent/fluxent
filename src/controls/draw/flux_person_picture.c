@@ -84,7 +84,7 @@ static void person_draw_badge(
 		person_draw_centered_text(rc, &pr, buf, NULL, font, FLUX_FONT_SEMI_BOLD, t->text_on_accent_primary);
 	}
 	else {
-		person_draw_centered_text(rc, &pr, glyph, "Segoe Fluent Icons", font, FLUX_FONT_REGULAR, t->text_on_accent_primary);
+		person_draw_centered_text(rc, &pr, glyph, flux_icon_font_family(), font, FLUX_FONT_REGULAR, t->text_on_accent_primary);
 	}
 }
 
@@ -101,7 +101,7 @@ static void person_draw_fallback(
 	}
 	char g [8];
 	flux_icon_to_utf8(is_group ? L"\xE716" : L"\xE77B", g, sizeof(g));
-	person_draw_centered_text(rc, box, g, "Segoe Fluent Icons", size, FLUX_FONT_REGULAR, t->text_primary);
+	person_draw_centered_text(rc, box, g, flux_icon_font_family(), size, FLUX_FONT_REGULAR, t->text_primary);
 }
 
 void flux_draw_person_picture(

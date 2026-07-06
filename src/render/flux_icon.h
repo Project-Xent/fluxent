@@ -3,7 +3,7 @@
  * @brief Segoe Fluent Icons / MDL2 Assets codepoint lookup.
  *
  * Provides a sorted table mapping icon names to Unicode codepoints for use
- * with the "Segoe Fluent Icons" font. Includes binary search lookup and
+ * with the icon font (see flux_icon_font_family). Includes binary search lookup and
  * UTF-8 conversion utilities.
  *
  * @code
@@ -17,6 +17,10 @@
 
 #include <stddef.h>
 #include <string.h>
+
+/** @brief Available icon font family: "Segoe Fluent Icons" on Windows 11, else
+ *  "Segoe MDL2 Assets" (Windows 10, same codepoints for the shared glyphs). */
+char const *flux_icon_font_family(void);
 
 /** @brief Icon table entry mapping name to codepoint. */
 typedef struct FluxIconEntry {

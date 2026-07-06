@@ -1,3 +1,4 @@
+#include "render/flux_icon.h"
 #include "render/flux_fluent.h"
 #include <stdlib.h>
 #include <string.h>
@@ -519,7 +520,7 @@ static FluxTextStyle textbox_delete_icon_style(FluxThemeColors const *t, bool pr
 
 	FluxTextStyle xs;
 	memset(&xs, 0, sizeof(xs));
-	xs.font_family = "Segoe Fluent Icons";
+	xs.font_family = flux_icon_font_family();
 	xs.font_size   = 12.0f;
 	xs.font_weight = FLUX_FONT_REGULAR;
 	xs.text_align  = FLUX_TEXT_CENTER;

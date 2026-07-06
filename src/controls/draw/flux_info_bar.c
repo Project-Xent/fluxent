@@ -61,7 +61,7 @@ ib_draw_glyph(FluxRenderContext const *rc, FluxRect const *box, wchar_t const *g
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_family = "Segoe Fluent Icons";
+	ts.font_family = flux_icon_font_family();
 	ts.font_size   = font;
 	ts.text_align  = FLUX_TEXT_CENTER;
 	ts.vert_align  = FLUX_TEXT_VCENTER;

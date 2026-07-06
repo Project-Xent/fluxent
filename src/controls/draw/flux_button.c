@@ -178,7 +178,7 @@ static FluxTextStyle button_text_style(float font_size, FluxColor color) {
 
 static FluxTextStyle button_icon_style(float font_size, FluxColor color) {
 	FluxTextStyle style = button_text_style(font_size * FLUX_BTN_ICON_SIZE_MUL, color);
-	style.font_family   = "Segoe Fluent Icons";
+	style.font_family   = flux_icon_font_family();
 	return style;
 }
 
@@ -239,7 +239,7 @@ void flux_button_draw_chevron(
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_family = "Segoe Fluent Icons";
+	ts.font_family = flux_icon_font_family();
 	ts.font_size   = font_size;
 	ts.text_align  = FLUX_TEXT_CENTER;
 	ts.vert_align  = FLUX_TEXT_VCENTER;

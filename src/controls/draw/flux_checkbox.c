@@ -92,7 +92,7 @@ draw_checkbox_glyph(FluxRenderContext const *rc, FluxRect const *box, FluxColor 
 
 	FluxTextStyle icon_style;
 	memset(&icon_style, 0, sizeof(icon_style));
-	icon_style.font_family = "Segoe Fluent Icons";
+	icon_style.font_family = flux_icon_font_family();
 	icon_style.font_size   = 12.0f * flux_ease_out_quad(check_progress);
 	icon_style.font_weight = FLUX_FONT_REGULAR;
 	icon_style.text_align  = FLUX_TEXT_CENTER;

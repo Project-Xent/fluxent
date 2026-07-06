@@ -107,7 +107,7 @@ static void pb_draw_reveal_icon(PbDrawContext const *dc, PbRevealState const *bu
 
 	FluxTextStyle          is;
 	memset(&is, 0, sizeof(is));
-	is.font_family = "Segoe Fluent Icons";
+	is.font_family = flux_icon_font_family();
 	is.font_size   = 12.0f;
 	is.font_weight = FLUX_FONT_REGULAR;
 	is.text_align  = FLUX_TEXT_CENTER;

@@ -112,7 +112,7 @@ static void nb_draw_icon(FluxRenderContext const *rc, NbIconSpec const *icon) {
 
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_family = "Segoe Fluent Icons";
+	ts.font_family = flux_icon_font_family();
 	ts.font_size   = icon->font_size;
 	ts.font_weight = FLUX_FONT_REGULAR;
 	ts.text_align  = FLUX_TEXT_CENTER;

@@ -5,6 +5,7 @@
  * title and a secondary subtitle. Element geometry comes from
  * flux_titlebar_layout, the same source hit-testing uses.
  */
+#include "render/flux_icon.h"
 #include "controls/draw/flux_button_internal.h"
 #include "render/flux_fluent.h"
 #include "render/flux_render_internal.h"
@@ -54,7 +55,7 @@ static void titlebar_draw_icon(
 	if (!rc->text || !glyph) return;
 	FluxRect      r  = {bounds->x + ir->x, bounds->y + ir->y, ir->w, ir->h};
 	FluxTextStyle ts = {0};
-	ts.font_family   = "Segoe Fluent Icons";
+	ts.font_family   = flux_icon_font_family();
 	ts.font_size     = FLUX_TB_ICON;
 	ts.text_align    = FLUX_TEXT_CENTER;
 	ts.vert_align    = FLUX_TEXT_VCENTER;

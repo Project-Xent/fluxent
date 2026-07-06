@@ -71,6 +71,30 @@ typedef struct WindowContactPointer {
 	FluxPointerEvent *ev;
 } WindowContactPointer;
 
+/* Windows build number via RtlGetVersion (GetVersionEx lies without a manifest). */
+static DWORD flux_os_build(void) {
+	static DWORD build = 0;
+	if (build) return build;
+	OSVERSIONINFOW vi      = {0};
+	vi.dwOSVersionInfoSize = sizeof(vi);
+	HMODULE nt             = GetModuleHandleW(L"ntdll.dll");
+	if (nt) {
+		typedef LONG(WINAPI * rtl_get_version_t)(OSVERSIONINFOW *);
+		rtl_get_version_t p = ( rtl_get_version_t ) GetProcAddress(nt, "RtlGetVersion");
+		if (p) p(&vi);
+	}
+	build = vi.dwBuildNumber ? vi.dwBuildNumber : 1;
+	return build;
+}
+
+/* Mica (DWMWA_SYSTEMBACKDROP_TYPE) needs Windows 11 22H2 (build 22621). */
+static bool flux_os_supports_backdrop(void) { return flux_os_build() >= 22621; }
+
+/* Segoe Fluent Icons ships with Windows 11; Windows 10 has Segoe MDL2 Assets. */
+char const *flux_icon_font_family(void) {
+	return flux_os_build() >= 22000 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets";
+}
+
 static void setup_dwm_backdrop(FluxWindow *win) {
 	BOOL dark = win->config.dark_mode ? TRUE : FALSE;
 	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
@@ -960,6 +984,9 @@ HRESULT flux_window_create(FluxWindowConfig const *cfg, FluxWindow **out) {
 
 void flux_window_set_backdrop(FluxWindow *win, int backdrop_type) {
 	if (!win || !win->hwnd) return;
+	/* Before Win11 22H2 the attribute is ignored; the transparent clear would then
+	 * show the desktop, so fall back to no backdrop (opaque window). */
+	if (backdrop_type != 0 && !flux_os_supports_backdrop()) backdrop_type = 0;
 	DWORD bd = DWMSBT_NONE;
 	switch (backdrop_type) {
 	case 1  : bd = DWMSBT_MAINWINDOW; break;

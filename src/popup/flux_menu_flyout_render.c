@@ -1,3 +1,4 @@
+#include "render/flux_icon.h"
 #include "flux_menu_flyout_internal.h"
 #include "render/flux_render_internal.h"
 
@@ -141,7 +142,7 @@ static ResolvedColors resolve_colors(FluxMenuFlyout const *m) {
 static void draw_menu_text(MenuDrawContext const *dc, MenuTextDraw const *draw) {
 	if (!dc->menu->text || !draw->text || !*draw->text) return;
 	FluxTextStyle ts = {0};
-	ts.font_family   = draw->icon_font ? "Segoe Fluent Icons" : NULL;
+	ts.font_family   = draw->icon_font ? flux_icon_font_family() : NULL;
 	ts.font_size     = draw->size;
 	ts.font_weight   = FLUX_FONT_REGULAR;
 	ts.text_align    = draw->align;

@@ -1,3 +1,4 @@
+#include "render/flux_icon.h"
 #include "render/flux_render_internal.h"
 #include "render/flux_anim.h"
 #include "render/flux_scroll_geom.h"
@@ -66,7 +67,7 @@ static void draw_arrow_glyph(FluxRenderContext const *rc, FluxRect const *r, cha
 	if (r->w <= 0.0f || r->h <= 0.0f) return;
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_family = "Segoe Fluent Icons";
+	ts.font_family = flux_icon_font_family();
 	ts.font_size   = 8.0f;
 	ts.font_weight = FLUX_FONT_REGULAR;
 	ts.text_align  = FLUX_TEXT_CENTER;

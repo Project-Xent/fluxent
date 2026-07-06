@@ -42,7 +42,7 @@ static void draw_info_badge_icon(
 	if (icon_wc) flux_icon_to_utf8(icon_wc, icon_utf8, sizeof(icon_utf8));
 	if (!icon_utf8 [0]) return;
 
-	FluxTextStyle is        = info_badge_text_style(text_color, 10.0f, FLUX_FONT_REGULAR, "Segoe Fluent Icons");
+	FluxTextStyle is        = info_badge_text_style(text_color, 10.0f, FLUX_FONT_REGULAR, flux_icon_font_family());
 	FluxRect      icon_rect = {cx - badge_r, cy - badge_r, badge_size, badge_size};
 	flux_text_draw(rc->text, FLUX_RT(rc), icon_utf8, &icon_rect, &is);
 }

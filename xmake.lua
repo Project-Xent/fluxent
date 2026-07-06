@@ -45,15 +45,16 @@ target("fluxent")
                  "cwinrt-bindings-numberformatting",
                  "cwinrt-bindings-input")
     else
-        add_packages("xent-core", "xent-kit", "cwinrt")
+        -- public: fluxent's public headers expose xtk/xent/cwinrt types.
+        add_packages("xent-core", "xent-kit", "cwinrt", { public = true })
     end
     add_includedirs("include", { public = true })
     add_includedirs("src", { private = true })
     add_includedirs("thirdparty/c_d2d_dwrite", { public = true })
-    -- The granular binding targets don't export their include dir (the umbrella did,
-    -- {public}); add the cwinrt header path here so fluxent + its consumers resolve
-    -- cwinrt/*.h.
-    add_includedirs("../cwinrt/include", { public = true })
+    if dev then
+        -- granular binding targets don't export their include dir; point at siblings.
+        add_includedirs("../cwinrt/include", { public = true })
+    end
     add_headerfiles("include/fluxent/*.h")
     add_files(
         "src/*.c",

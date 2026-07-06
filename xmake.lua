@@ -1,5 +1,5 @@
 set_project("fluxent")
-set_version("0.1.0")
+set_version("0.1.1")
 set_languages("c17")
 add_rules("mode.debug", "mode.release")
 set_warnings("all")

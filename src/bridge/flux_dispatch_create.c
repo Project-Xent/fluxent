@@ -264,7 +264,7 @@ static XentNodeId flux_cr_dialog(FluxBackendCtx *rt, XentNodeId p, XtkEl const *
 	return flux_create_content_dialog(&(FluxContentDialogCreateInfo) {
 	  .ctx            = rt->ctx,
 	  .store          = rt->store,
-	  .overlay_parent = rt->runtime->host,
+	  .overlay_parent = flux_app_get_overlay(rt->app),
 	  .input          = flux_app_get_input(rt->app),
 	  .window         = flux_be_window(rt),
 	  .theme          = flux_be_theme(rt),

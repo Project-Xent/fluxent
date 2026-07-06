@@ -12,5 +12,7 @@ void                     flux_scene_destroy(FluxScene *scene);
 XentContext             *flux_scene_context(FluxScene const *scene);
 FluxNodeStore           *flux_scene_store(FluxScene const *scene);
 XentNodeId               flux_scene_root(FluxScene const *scene);
+XentNodeId               flux_scene_content(FluxScene const *scene);
+XentNodeId               flux_scene_overlay(FluxScene const *scene);
 
 #endif

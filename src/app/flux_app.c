@@ -628,7 +628,9 @@ XentContext      *flux_app_get_context(FluxApp *app) { return app ? app_ctx(app)
 
 FluxNodeStore    *flux_app_get_store(FluxApp *app) { return app ? app_store(app) : NULL; }
 
-XentNodeId        flux_app_get_root(FluxApp *app) { return app ? app_root(app) : XENT_NODE_INVALID; }
+XentNodeId        flux_app_get_root(FluxApp *app) { return app ? flux_scene_content(app->scene) : XENT_NODE_INVALID; }
+
+XentNodeId        flux_app_get_overlay(FluxApp *app) { return app ? flux_scene_overlay(app->scene) : XENT_NODE_INVALID; }
 
 void              flux_app_request_render(FluxApp *app) {
 	if (!app || !app->window) return;

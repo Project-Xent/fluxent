@@ -69,6 +69,14 @@ static HitChildList hit_collect_children(XentContext *ctx, XentNodeId node) {
 
 static FluxHitResult hit_test_recursive(InputHitQuery const *query);
 
+/* A node that participates in pointer interaction (press/click/hover/focus/tooltip). */
+static bool hit_node_interactive(XentContext *ctx, XentNodeId node, FluxNodeData const *nd) {
+	if (xent_get_focusable(ctx, node)) return true;
+	if (!nd) return false;
+	FluxNodeBehavior const *b = &nd->behavior;
+	return b->on_click || b->on_pointer_down || b->on_middle_click || b->on_hover_changed || nd->tooltip_text;
+}
+
 static FluxHitResult
 hit_test_children(InputHitQuery const *query, HitChildList const *children, FluxPoint child_scroll) {
 	for (uint32_t i = children->count; i > 0; i--) {
@@ -92,6 +100,10 @@ static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 	FluxHitResult child_hit    = hit_test_children(query, &children, child_scroll);
 	free(children.items);
 	if (child_hit.node != XENT_NODE_INVALID) return child_hit;
+
+	/* An empty, non-interactive node (e.g. the overlay layer with no modal) is
+	 * transparent to the pointer so clicks fall through to the content beneath. */
+	if (children.count == 0 && !hit_node_interactive(query->ctx, query->node, nd)) return (FluxHitResult) {0};
 
 	float ax = rect.x - query->scroll.x;
 	float ay = rect.y - query->scroll.y;
@@ -117,10 +129,7 @@ static FluxHitResult input_hit_test_root(FluxInput *input, XentNodeId root, floa
  * clicks, hover, focus, or shows a tooltip. Plain content (text blocks,
  * layout containers) is transparent to the pointer. */
 static bool input_node_interactive(FluxInput *input, XentNodeId node, FluxNodeData const *nd) {
-	if (xent_get_focusable(input->ctx, node)) return true;
-	if (!nd) return false;
-	FluxNodeBehavior const *b = &nd->behavior;
-	return b->on_click || b->on_pointer_down || b->on_middle_click || b->on_hover_changed || nd->tooltip_text;
+	return hit_node_interactive(input->ctx, node, nd);
 }
 
 /* Re-base a hit onto ancestor `node`, shifting bounds/local by the layout-rect

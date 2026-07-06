@@ -454,8 +454,10 @@ FluxTextRenderer *flux_app_get_text_renderer(FluxApp *app);
 XentContext      *flux_app_get_context(FluxApp *app);
 /** @brief Get the app node store. */
 FluxNodeStore    *flux_app_get_store(FluxApp *app);
-/** @brief Get the app root node. */
+/** @brief Get the app content root node (where the reconciled view mounts). */
 XentNodeId        flux_app_get_root(FluxApp *app);
+/** @brief Get the app overlay layer node (modal surfaces: dialogs, flyouts). */
+XentNodeId        flux_app_get_overlay(FluxApp *app);
 
 /** @brief Request rendering for the next compositor frame on the app window. */
 void              flux_app_request_render(FluxApp *app);

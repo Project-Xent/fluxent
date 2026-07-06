@@ -190,6 +190,13 @@ static void input_promote_touch_pan(FluxInput *input, float px, float py) {
 	input->touch.just_promoted = true;
 }
 
+/* The RefreshContainer root wrapping a scroll target, or INVALID. */
+static XentNodeId input_refresh_root_for_scroll(FluxInput *input, XentNodeId scroll) {
+	XentNodeId p = xent_get_parent(input->ctx, scroll);
+	if (p != XENT_NODE_INVALID && flux_get_control_type(input->ctx, p) == FLUX_CONTROL_REFRESH) return p;
+	return XENT_NODE_INVALID;
+}
+
 bool input_drive_touch_pan(FluxInput *input, float px, float py) {
 	if (input->pointer_type != FLUX_POINTER_TOUCH || input->touch.target == XENT_NODE_INVALID) return false;
 
@@ -207,8 +214,13 @@ bool input_drive_touch_pan(FluxInput *input, float px, float py) {
 	float max_y = sd->content_h - srect.h;
 	if (max_y < 0.0f) max_y = 0.0f;
 
-	float new_sx           = input->touch.origin_sx - (px - input->touch.start_x);
-	float new_sy           = input->touch.origin_sy - (py - input->touch.start_y);
+	float new_sx = input->touch.origin_sx - (px - input->touch.start_x);
+	float new_sy = input->touch.origin_sy - (py - input->touch.start_y);
+
+	/* Feed the pull past the edge into a wrapping RefreshContainer's visualizer. */
+	XentNodeId refresh = input_refresh_root_for_scroll(input, input->touch.target);
+	if (refresh != XENT_NODE_INVALID) flux_refresh_touch_pull(input->store, refresh, new_sx, new_sy, max_x, max_y);
+
 	sd->scroll_x           = input_clampf(new_sx, 0.0f, max_x);
 	sd->scroll_y           = input_clampf(new_sy, 0.0f, max_y);
 	sd->last_activity_time = flux_now_seconds();
@@ -373,6 +385,12 @@ bool input_release_scroll_buttons(FluxInput *input) {
 
 bool input_finish_touch_pan(FluxInput *input) {
 	if (!input->touch.active) return false;
+
+	/* Commit or retract a pull-to-refresh over-pull before dropping the target. */
+	if (input->touch.target != XENT_NODE_INVALID) {
+		XentNodeId refresh = input_refresh_root_for_scroll(input, input->touch.target);
+		if (refresh != XENT_NODE_INVALID) flux_refresh_touch_release(input->store, refresh);
+	}
 
 	input->touch.active = false;
 	input->touch.target = XENT_NODE_INVALID;

@@ -596,6 +596,21 @@ void              flux_refresh_set_direction(FluxNodeStore *store, XentNodeId id
 void              flux_refresh_set_refreshing(FluxNodeStore *store, XentNodeId id, bool refreshing);
 void              flux_refresh_request_refresh(FluxNodeStore *store, XentNodeId id);
 
+/**
+ * @brief Touch over-pull hook: feed the pull past the scroll edge into the
+ * visualizer. @p new_sx/@p new_sy are the requested (pre-clamp) scroll offsets
+ * of the wrapped scroller and @p max_x/@p max_y its scrollable extents; the
+ * amount beyond the pull edge drives interactionRatio. Called by the input
+ * layer each touch-pan frame while the scroller is at its pull edge.
+ * @return true while an over-pull is in progress.
+ */
+bool              flux_refresh_touch_pull(
+       FluxNodeStore *store, XentNodeId id, float new_sx, float new_sy, float max_x, float max_y
+     );
+
+/** @brief Touch release hook: finger lifted — commit (refresh) or retract. */
+void              flux_refresh_touch_release(FluxNodeStore *store, XentNodeId id);
+
 /** @brief Create a menu bar (horizontal row of top-level menus). */
 XentNodeId        flux_create_menu_bar(FluxMenuBarCreateInfo const *info);
 

@@ -353,6 +353,56 @@ static int check_split(XentContext *ctx, FluxNodeStore *store, XtkRuntime *rt) {
 	return 0;
 }
 
+/* ---------------------------------------------- PullToRefresh touch gesture */
+
+static void refresh_touch_cb(void *ud, int dir) {
+	( void ) dir;
+	(*( int * ) ud)++;
+}
+
+static int test_refresh_touch(void) {
+	XentConfig     cfg   = {0};
+	XentContext   *ctx   = xent_create_context(&cfg);
+	FluxNodeStore *store = flux_node_store_create(64);
+	flux_node_store_bind_context(store, ctx);
+	XentNodeId host = xent_create_node(ctx);
+
+	int        fired = 0;
+	XentNodeId root  = flux_create_refresh(&(FluxRefreshContainerCreateInfo) {
+	   .ctx        = ctx,
+	   .store      = store,
+	   .parent     = host,
+	   .direction  = FLUX_PULL_TOP_TO_BOTTOM,
+	   .on_refresh = refresh_touch_cb,
+	   .userdata   = &fired});
+	EXPECT(root != XENT_NODE_INVALID, "refresh container created");
+
+	FluxNodeData    *nd = flux_node_store_get(store, root);
+	FluxRefreshData *d  = ( FluxRefreshData * ) nd->component_data;
+
+	/* Default visualizer 100dip, execution ratio 0.8 -> threshold 80dip. A 20dip
+	 * over-pull arms and interacts; 90dip crosses the threshold to Pending. */
+	flux_refresh_touch_pull(store, root, 0.0f, -20.0f, 0.0f, 0.0f);
+	EXPECT(d->state == FLUX_REFRESH_INTERACTING, "small over-pull interacts");
+	flux_refresh_touch_pull(store, root, 0.0f, -90.0f, 0.0f, 0.0f);
+	EXPECT(d->state == FLUX_REFRESH_PENDING, "over-pull past threshold pends");
+	flux_refresh_touch_release(store, root);
+	EXPECT(d->state == FLUX_REFRESH_REFRESHING, "release past threshold refreshes");
+	EXPECT(fired == 1, "on_refresh fired once");
+
+	/* Releasing below the threshold retracts without refreshing. */
+	flux_refresh_set_refreshing(store, root, false);
+	flux_refresh_touch_pull(store, root, 0.0f, -30.0f, 0.0f, 0.0f);
+	flux_refresh_touch_release(store, root);
+	EXPECT(d->state == FLUX_REFRESH_IDLE, "below-threshold release retracts");
+	EXPECT(fired == 1, "no extra refresh below threshold");
+
+	flux_node_store_destroy(store);
+	xent_destroy_context(ctx);
+	printf("PASS: pull-to-refresh touch\n");
+	return 0;
+}
+
 int main(void) {
 	int m = 0;
 	if (run_view("radio buttons", &m, view_radio_buttons, check_radio_buttons)) return 1;
@@ -366,6 +416,7 @@ int main(void) {
 	if (run_view("person picture", &m, view_person, check_person)) return 1;
 	if (run_view("pager control", &m, view_pager, check_pager)) return 1;
 	if (run_view("split view", &m, view_split, check_split)) return 1;
+	if (test_refresh_touch()) return 1;
 	printf("PASS: all new-control probes\n");
 	return 0;
 }

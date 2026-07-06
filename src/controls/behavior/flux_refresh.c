@@ -310,3 +310,48 @@ void flux_refresh_request_refresh(FluxNodeStore *store, XentNodeId id) {
 	FluxRefreshData *d = refresh_data(store, id);
 	if (d && d->state != FLUX_REFRESH_REFRESHING) refresh_begin_refresh(d, true);
 }
+
+/* -------------------------------------------------------------------------
+ * Touch over-pull seam (driven by the input layer's touch-pan path).
+ *
+ * A touch pan clamps the wrapped scroller at its edge; the amount it would have
+ * scrolled past that edge is the over-pull that WinUI's InteractionTracker
+ * would report as interactionRatio. This reconstructs it from the pre-clamp
+ * offsets so real touch pulls drive the same five-state machine as the
+ * programmatic path (the mouse path uses the pointer behaviors above).
+ * ---------------------------------------------------------------------- */
+
+static float refresh_overpull_px(FluxRefreshData const *d, float new_sx, float new_sy, float max_x, float max_y) {
+	switch (d->direction) {
+	case FLUX_PULL_TOP_TO_BOTTOM: return new_sy < 0.0f ? -new_sy : 0.0f;
+	case FLUX_PULL_BOTTOM_TO_TOP: return new_sy > max_y ? new_sy - max_y : 0.0f;
+	case FLUX_PULL_LEFT_TO_RIGHT: return new_sx < 0.0f ? -new_sx : 0.0f;
+	case FLUX_PULL_RIGHT_TO_LEFT: return new_sx > max_x ? new_sx - max_x : 0.0f;
+	default:                      return 0.0f;
+	}
+}
+
+bool flux_refresh_touch_pull(FluxNodeStore *store, XentNodeId id, float new_sx, float new_sy, float max_x, float max_y) {
+	FluxRefreshData *d = refresh_data(store, id);
+	if (!d || d->state == FLUX_REFRESH_REFRESHING) return false;
+
+	float overpull = refresh_overpull_px(d, new_sx, new_sy, max_x, max_y);
+	if (overpull > 0.0f) {
+		/* First over-pull arms the gesture: an over-pull only exists at the edge,
+		 * which is exactly WinUI's isInteractingForRefresh condition. */
+		if (!d->pull_tracking) {
+			d->interacting_for_refresh = true;
+			d->was_at_zero             = true;
+		}
+		d->pull_tracking = true;
+		refresh_on_ratio(d, overpull / d->visualizer_size);
+		return true;
+	}
+	if (d->pull_tracking) refresh_on_ratio(d, 0.0f); /* back inside the edge: retract */
+	return false;
+}
+
+void flux_refresh_touch_release(FluxNodeStore *store, XentNodeId id) {
+	FluxRefreshData *d = refresh_data(store, id);
+	if (d && d->pull_tracking) refresh_on_lift(d);
+}

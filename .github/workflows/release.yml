@@ -1,8 +1,7 @@
 name: release
 
-# Build the FluXent Gallery demo for Windows x64 + arm64 and attach the binaries
-# to the GitHub Release when a v* tag is pushed. Manual runs (workflow_dispatch)
-# build + upload workflow artifacts without touching Releases.
+# Build the FluXent Gallery for Windows x64 + arm64 with clang/llvm-mingw (no MSVC)
+# and attach the binaries to the GitHub Release on a v* tag.
 on:
   push:
     tags:
@@ -10,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write        # create release / upload assets
+  contents: write
 
 jobs:
   gallery:
@@ -18,7 +17,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]      # arm64 cross-builds via the MSVC arm64 toolset on the x64 runner
+        include:
+          - { xarch: x86_64, name: x64 }
+          - { xarch: arm64,  name: arm64 }
     steps:
       - uses: actions/checkout@v4
 
@@ -27,13 +28,20 @@ jobs:
         with:
           xmake-version: latest
 
-      # Configure for the target arch, release mode. During configure/build,
-      # fluxent's flux_dep clones xent-core / xent-kit / cwinrt from GitHub.
-      # NOTE: flux_dep pulls dep main HEAD; once the repo switches to
-      # add_repositories(xent-repo) + add_requires (repo task #2), the release
-      # build will resolve deps at pinned versions instead.
-      - name: Configure
-        run: xmake f -p windows -a ${{ matrix.arch }} -m release -y
+      - name: Setup llvm-mingw (clang + mingw runtime, x64 & arm64 targets)
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod https://api.github.com/repos/mstorsjo/llvm-mingw/releases/latest
+          $asset = $rel.assets | Where-Object { $_.name -like 'llvm-mingw-*-ucrt-x86_64.zip' } | Select-Object -First 1
+          Invoke-WebRequest $asset.browser_download_url -OutFile llvm-mingw.zip
+          Expand-Archive llvm-mingw.zip -DestinationPath C:\ -Force
+          $root = (Get-ChildItem 'C:\llvm-mingw-*' -Directory | Select-Object -First 1).FullName
+          "LLVM_MINGW=$root" | Out-File -Append -Encoding ascii $env:GITHUB_ENV
+          "$root\bin"        | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+
+      - name: Configure (clang / mingw / ${{ matrix.xarch }})
+        shell: pwsh
+        run: xmake f -p mingw -a ${{ matrix.xarch }} --mingw="$env:LLVM_MINGW" -m release -y
 
       - name: Build gallery
         run: xmake build fluxent_gallery
@@ -41,21 +49,21 @@ jobs:
       - name: Stage artifact
         shell: pwsh
         run: |
-          $exe = "build/windows/${{ matrix.arch }}/release/fluxent_gallery.exe"
-          if (-not (Test-Path $exe)) { throw "expected artifact not found: $exe" }
+          $exe = Get-ChildItem -Recurse build -Filter fluxent_gallery.exe | Select-Object -First 1
+          if (-not $exe) { throw 'fluxent_gallery.exe not found' }
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item $exe "dist/fluxent_gallery-windows-${{ matrix.arch }}.exe"
+          Copy-Item $exe.FullName "dist/fluxent_gallery-windows-${{ matrix.name }}.exe"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fluxent_gallery-windows-${{ matrix.arch }}
-          path: dist/fluxent_gallery-windows-${{ matrix.arch }}.exe
+          name: fluxent_gallery-windows-${{ matrix.name }}
+          path: dist/fluxent_gallery-windows-${{ matrix.name }}.exe
           if-no-files-found: error
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/fluxent_gallery-windows-${{ matrix.arch }}.exe
+          files: dist/fluxent_gallery-windows-${{ matrix.name }}.exe
           fail_on_unmatched_files: true

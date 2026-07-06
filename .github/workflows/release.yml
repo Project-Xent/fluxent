@@ -1,0 +1,61 @@
+name: release
+
+# Build the FluXent Gallery demo for Windows x64 + arm64 and attach the binaries
+# to the GitHub Release when a v* tag is pushed. Manual runs (workflow_dispatch)
+# build + upload workflow artifacts without touching Releases.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write        # create release / upload assets
+
+jobs:
+  gallery:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]      # arm64 cross-builds via the MSVC arm64 toolset on the x64 runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+
+      # Configure for the target arch, release mode. During configure/build,
+      # fluxent's flux_dep clones xent-core / xent-kit / cwinrt from GitHub.
+      # NOTE: flux_dep pulls dep main HEAD; once the repo switches to
+      # add_repositories(xent-repo) + add_requires (repo task #2), the release
+      # build will resolve deps at pinned versions instead.
+      - name: Configure
+        run: xmake f -p windows -a ${{ matrix.arch }} -m release -y
+
+      - name: Build gallery
+        run: xmake build fluxent_gallery
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          $exe = "build/windows/${{ matrix.arch }}/release/fluxent_gallery.exe"
+          if (-not (Test-Path $exe)) { throw "expected artifact not found: $exe" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $exe "dist/fluxent_gallery-windows-${{ matrix.arch }}.exe"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxent_gallery-windows-${{ matrix.arch }}
+          path: dist/fluxent_gallery-windows-${{ matrix.arch }}.exe
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/fluxent_gallery-windows-${{ matrix.arch }}.exe
+          fail_on_unmatched_files: true

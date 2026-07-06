@@ -17,21 +17,16 @@ if is_plat("windows") then
     add_defines("_CRT_SECURE_NO_WARNINGS")
 end
 
--- Dependencies resolve from a sibling checkout when present (local dev), and are
--- otherwise cloned from GitHub into .deps/ on first configure.
-local function flux_dep(name, url)
-    local sibling = path.absolute(path.join(os.scriptdir(), "..", name))
-    if os.isdir(sibling) then return sibling end
-    local vendor = path.join(os.scriptdir(), ".deps", name)
-    if not os.isdir(vendor) then
-        print("fluxent: cloning %s from %s", name, url)
-        os.vrunv("git", {"clone", "--depth=1", url, vendor})
-    end
-    return vendor
+-- Pinned packages by default; sibling source when present (local dev).
+-- xent-core comes transitively via xent-kit.
+add_repositories("xent-repo https://github.com/Project-Xent/xent-repo.git")
+local dev = os.isdir(path.absolute(path.join(os.scriptdir(), "..", "xent-kit")))
+if dev then
+    includes(path.join(os.scriptdir(), "..", "xent-kit"))
+    includes(path.join(os.scriptdir(), "..", "cwinrt"))
+else
+    add_requires("xent-core", "xent-kit", "cwinrt")
 end
-
-includes(flux_dep("xent-kit", "https://github.com/Project-Xent/xent-kit.git"))
-includes(flux_dep("cwinrt", "https://github.com/Project-Xent/cwinrt.git"))
 
 add_defines("COBJMACROS")
 add_defines("_WIN32_WINNT=0x0A00", "WINVER=0x0A00", "UNICODE", "_UNICODE")
@@ -39,16 +34,19 @@ add_defines("WIN32_LEAN_AND_MEAN", "NOMINMAX")
 
 target("fluxent")
     set_kind("static")
-    -- Granular cwinrt deps instead of the `cwinrt` umbrella: the umbrella pulls
-    -- cwinrt-bindings-all (every generated namespace, 343 TUs). fluxent only uses
-    -- Foundation + Composition (+ Interactions), so depend on just those.
-    add_deps("xent_core", "xtk", "cwinrt-rt",
-             "cwinrt-bindings-foundation",
-             "cwinrt-bindings-composition",
-             "cwinrt-bindings-interactions",
-             "cwinrt-bindings-viewmanagement",
-             "cwinrt-bindings-numberformatting",
-             "cwinrt-bindings-input")
+    -- Granular cwinrt targets (dev) vs the umbrella package (343 binding TUs,
+    -- unused ones stripped by /OPT:REF); fluxent uses Foundation/Composition/Interactions.
+    if dev then
+        add_deps("xent_core", "xtk", "cwinrt-rt",
+                 "cwinrt-bindings-foundation",
+                 "cwinrt-bindings-composition",
+                 "cwinrt-bindings-interactions",
+                 "cwinrt-bindings-viewmanagement",
+                 "cwinrt-bindings-numberformatting",
+                 "cwinrt-bindings-input")
+    else
+        add_packages("xent-core", "xent-kit", "cwinrt")
+    end
     add_includedirs("include", { public = true })
     add_includedirs("src", { private = true })
     add_includedirs("thirdparty/c_d2d_dwrite", { public = true })

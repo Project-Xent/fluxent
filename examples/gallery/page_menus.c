@@ -9,7 +9,7 @@ XtkEl *page_menus(XtkUi *ui, Model const *m) {
 	int choice = (m->menu_choice >= 0 && m->menu_choice <= 9) ? m->menu_choice : 0;
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "Menus & links", "MenuBar and DropDownButton open flyout menus; RepeatButton fires while held; "
 		  "HyperlinkButton opens a URL."
@@ -18,7 +18,7 @@ XtkEl *page_menus(XtkUi *ui, Model const *m) {
 		  ui, "A MenuBar with File / Edit / Help menus.",
 		  xtk_card(
 			ui, (XtkStackDesc) {.align = XENT_FLEX_ALIGN_STRETCH},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_menu_bar(
 				ui,
 				(XtkMenuBarDesc) {
@@ -45,8 +45,7 @@ XtkEl *page_menus(XtkUi *ui, Model const *m) {
 				       .item_count = 1},
 					},
 				  .menu_count = 3}
-			  ),
-			  XTK_END}
+			  ))
 		  )
 		),
 		example(
@@ -79,14 +78,12 @@ XtkEl *page_menus(XtkUi *ui, Model const *m) {
 		  ui, "A HyperlinkButton opens the project page.",
 		  xtk_card(
 			ui, (XtkStackDesc) {0},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_hyperlink(
 				ui, "FluXent on GitHub", (XtkHyperlinkDesc) {.url = "https://github.com/Project-Xent"}
-			  ),
-			  XTK_END}
+			  ))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -99,7 +96,7 @@ XtkEl *page_tabview(XtkUi *ui, Model const *m) {
 
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "TabView",
 		  "Tabs live in the model: closing posts a message and the keyed element remounts with the new set."
@@ -118,13 +115,13 @@ XtkEl *page_tabview(XtkUi *ui, Model const *m) {
 				  .on_select = xtk_msg(MSG_TAB_SELECT),
 				  .on_close  = xtk_msg(MSG_TAB_CLOSE),
 				  .on_add    = xtk_msg(MSG_TAB_ADD)},
-				(XtkEl *[]) {
+				xtk_kids(
 				  xtk_column(
 					ui,
 					(XtkStackDesc) {
 					  .gap = 8, .padding = {16, 16, 16, 16}
                 },
-					(XtkEl *[]) {
+					xtk_kids(
 					  xtk_text(
 						ui, xtk_fmt(ui, "Document %d", count ? m->tab_ids [sel] : 0),
 						(XtkTextDesc) {.size = 20, .weight = FLUX_FONT_SEMI_BOLD}
@@ -132,38 +129,33 @@ XtkEl *page_tabview(XtkUi *ui, Model const *m) {
 					  xtk_text(
 						ui, "This page is a function of the model's selection — the same view subtree follows it.",
 						(XtkTextDesc) {.size = 13}
-					  ),
-					  XTK_END}
-				  ),
-				  XTK_END}
+					  ))
+				  ))
 			  ),
 			  NAN, 280
 			)
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
 XtkEl *page_expander(XtkUi *ui, Model const *m) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(ui, "Expander", "An Expander shows a header and reveals a content region when toggled."),
 		example(
 		  ui, "An Expander with interactive content.",
 		  xtk_expander(
 			ui, "This Expander is bound to the model",
 			(XtkExpanderDesc) {.expanded = m->expanded, .on_toggle = xtk_msg(MSG_EXPAND)},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_text(ui, "Anything can live in here — it is a normal container.", (XtkTextDesc) {0}),
 			  xtk_checkbox(
 				ui, "Even this checkbox from the CheckBox page",
 				(XtkToggleDesc) {.checked = m->check_a, .on_change = xtk_msg(MSG_CHECK_A)}
-			  ),
-			  XTK_END}
+			  ))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }

@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <xtk/xtk_types.h>
+#include <xent/xent_types.h>   /* XENT_NODISCARD + the C23 toolchain gate */
 
 /** @brief RGBA color — alias of XtkColor for API compatibility. */
 typedef XtkColor FluxColor;

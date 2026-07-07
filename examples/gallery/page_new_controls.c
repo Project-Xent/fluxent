@@ -20,7 +20,7 @@ XtkEl *page_radio_buttons(XtkUi *ui, Model const *m) {
 	                       : "Nothing selected";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "RadioButtons",
 		  "A grouped set of mutually exclusive radio options — one control, one selection index."
@@ -40,8 +40,7 @@ XtkEl *page_radio_buttons(XtkUi *ui, Model const *m) {
 			),
 			xtk_fmt(ui, "Selected: %s", status), NULL
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -52,7 +51,7 @@ XtkEl *page_rating(XtkUi *ui, Model const *m) {
 	                                         : "Unset (-1). Click a star to rate.";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "RatingControl",
 		  "A star strip: hovering previews the prospective rating under the pointer, a click commits, "
@@ -82,8 +81,7 @@ XtkEl *page_rating(XtkUi *ui, Model const *m) {
 			),
 			"Value: 3.5", NULL
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -94,7 +92,7 @@ XtkEl *page_toggle_split(XtkUi *ui, Model const *m) {
 	int menu = m->toggle_split_menu >= 0 && m->toggle_split_menu <= 3 ? m->toggle_split_menu : 0;
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "ToggleSplitButton",
 		  "The left zone toggles checked state; the chevron opens a menu of secondary actions."
@@ -121,8 +119,7 @@ XtkEl *page_toggle_split(XtkUi *ui, Model const *m) {
 			),
 			xtk_fmt(ui, "%s — %s", m->toggle_split_checked ? "On" : "Off", kMenuOut [menu]), NULL
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -136,7 +133,7 @@ XtkEl *page_breadcrumb(XtkUi *ui, Model const *m) {
 	                       : "Click a crumb to navigate.";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "BreadcrumbBar",
 		  "Shows the path to the current location. Every crumb except the last posts on_click."
@@ -154,8 +151,7 @@ XtkEl *page_breadcrumb(XtkUi *ui, Model const *m) {
 			),
 			status, NULL
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -174,7 +170,7 @@ XtkEl *page_selector_bar(XtkUi *ui, Model const *m) {
 	                       : "No filter selected.";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "SelectorBar",
 		  "A horizontal strip of pill toggles — one selected item at a time."
@@ -193,8 +189,7 @@ XtkEl *page_selector_bar(XtkUi *ui, Model const *m) {
 			),
 			status, NULL
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -204,7 +199,7 @@ XtkEl *page_teaching_tip(XtkUi *ui, Model const *m) {
 	char const *status = m->tip_open ? "Tip is open." : "Tip is closed.";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "TeachingTip",
 		  "A lightweight teaching surface with subtitle, action, and close affordances."
@@ -229,13 +224,13 @@ XtkEl *page_teaching_tip(XtkUi *ui, Model const *m) {
 			.on_action     = xtk_msg(MSG_TIP_ACTION),
 			.on_close      = xtk_msg(MSG_TIP_CLOSE),
 		  },
-		  (XtkEl *[]) {XTK_END}
+		  xtk_kids()
 		),
 		example(
 		  ui, "Tip events.",
 		  xtk_card(
 			ui, (XtkStackDesc) {0},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_text(
 				ui,
 				xtk_fmt(
@@ -243,11 +238,9 @@ XtkEl *page_teaching_tip(XtkUi *ui, Model const *m) {
 				  m->tip_close_reason
 				),
 				(XtkTextDesc) {.size = 13}
-			  ),
-			  XTK_END}
+			  ))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -285,7 +278,7 @@ XtkEl *page_tree_view(XtkUi *ui, Model const *m) {
 	char const *inv = m->tree_invoke >= 0 ? xtk_fmt(ui, "Last invoked: %d", m->tree_invoke) : "Double-click a row to invoke.";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "TreeView",
 		  "Hierarchical data flattened into a virtualized list. Chevron toggles expand; row selects and invokes."
@@ -294,7 +287,7 @@ XtkEl *page_tree_view(XtkUi *ui, Model const *m) {
 		  ui, "Sample folder tree.",
 		  xtk_column(
 			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_sized(
 				xtk_tree_view(
 				  ui, (XtkTreeDesc) {
@@ -309,10 +302,9 @@ XtkEl *page_tree_view(XtkUi *ui, Model const *m) {
 				NAN, 280.0f
 			  ),
 			  xtk_text(ui, sel, (XtkTextDesc) {.size = 13}),
-			  xtk_text(ui, inv, (XtkTextDesc) {.size = 13}), XTK_END}
+			  xtk_text(ui, inv, (XtkTextDesc) {.size = 13}))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -322,9 +314,9 @@ static XtkEl *items_cell(XtkUi *ui, void *env, int index) {
 	( void ) env;
 	return xtk_card(
 	  ui, (XtkStackDesc) {.padding = {12, 12, 12, 12}, .align = XENT_FLEX_ALIGN_CENTER},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		xtk_text(ui, xtk_fmt(ui, "Item %d", index), (XtkTextDesc) {.weight = FLUX_FONT_SEMI_BOLD}),
-		xtk_text(ui, "Tap to invoke", (XtkTextDesc) {.size = 11}), XTK_END}
+		xtk_text(ui, "Tap to invoke", (XtkTextDesc) {.size = 11}))
 	);
 }
 
@@ -332,7 +324,7 @@ XtkEl *page_items_view(XtkUi *ui, Model const *m) {
 	char const *inv = m->items_invoke >= 0 ? xtk_fmt(ui, "Invoked: %d", m->items_invoke) : "Tap a cell to invoke.";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "ItemsView",
 		  "ItemsRepeater + layout + ItemContainer chrome. Here: a wrapping flow of 24 cards."
@@ -341,7 +333,7 @@ XtkEl *page_items_view(XtkUi *ui, Model const *m) {
 		  ui, "Flow layout with ItemInvoked (no selection chrome).",
 		  xtk_column(
 			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_sized(
 				xtk_items_view(
 				  ui, (XtkItemsViewDesc) {
@@ -358,10 +350,9 @@ XtkEl *page_items_view(XtkUi *ui, Model const *m) {
 				),
 				NAN, 360.0f
 			  ),
-			  xtk_text(ui, inv, (XtkTextDesc) {.size = 13}), XTK_END}
+			  xtk_text(ui, inv, (XtkTextDesc) {.size = 13}))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -375,7 +366,7 @@ static XtkEl *refresh_row(XtkUi *ui, void *env, int index) {
 XtkEl *page_pull_refresh(XtkUi *ui, Model const *m) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "PullToRefresh",
 		  "A RefreshContainer wrapping scrollable content. Pull from the top edge to refresh."
@@ -384,22 +375,21 @@ XtkEl *page_pull_refresh(XtkUi *ui, Model const *m) {
 		  ui, "List inside a top-edge pull container.",
 		  xtk_column(
 			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_sized(
 				xtk_refresh_container(
 				  ui, (XtkRefreshDesc) {
 					.is_refreshing = m->refresh_busy,
 					.on_refresh    = xtk_msg(MSG_REFRESH),
 				      },
-				  (XtkEl *[]) {
+				  xtk_kids(
 					xtk_list_view(
 					  ui, (XtkListDesc) {
 					        .count       = 40,
 					        .item_height = 40.0f,
 					        .item        = refresh_row,
 					      }
-					),
-					XTK_END}
+					))
 				),
 				NAN, 360.0f
 			  ),
@@ -410,10 +400,8 @@ XtkEl *page_pull_refresh(XtkUi *ui, Model const *m) {
 			  xtk_button(
 				ui, "End refresh",
 				(XtkButtonDesc) {.on_click = xtk_msg(MSG_REFRESH_DONE), .disabled = !m->refresh_busy}
-			  ),
-			  XTK_END}
+			  ))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }

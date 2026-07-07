@@ -1,6 +1,6 @@
 # Fluxent
 
-A WinUI 3-style Fluent UI framework written in pure C (C17), layered directly on
+A WinUI 3-style Fluent UI framework written in pure C (C23), layered directly on
 the Win32 / DirectX stack. Fluxent renders Fluent Design controls, drives them
 with a retained node store, and integrates with Windows platform services through
 [cwinrt](../cwinrt) (pure-C WinRT bindings).
@@ -42,7 +42,7 @@ xmake run hello_fluxent      # run the showcase demo
 
 `FLUX_USE_COMPOSITION=1 xmake run hello_fluxent` exercises the composition backend.
 
-Requires Windows 10 1903+, a C17 compiler (MSVC or MinGW/Clang), and `xmake`.
+Requires Windows 10 1903+, a C23 compiler (MSVC or MinGW/Clang), and `xmake`.
 
 ## Dependencies
 

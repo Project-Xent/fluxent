@@ -54,16 +54,16 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
 XtkEl *page_header(XtkUi *ui, char const *title, char const *blurb) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 8},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		xtk_text(ui, title, (XtkTextDesc) {.size = 28, .weight = FLUX_FONT_SEMI_BOLD}),
-		xtk_text(ui, blurb, (XtkTextDesc) {.size = 13}), XTK_END}
+		xtk_text(ui, blurb, (XtkTextDesc) {.size = 13}))
 	);
 }
 
 XtkEl *example(XtkUi *ui, char const *caption, XtkEl *content) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 8, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {xtk_text(ui, caption, (XtkTextDesc) {.size = 14}), content, XTK_END}
+	  xtk_kids(xtk_text(ui, caption, (XtkTextDesc) {.size = 14}), content)
 	);
 }
 
@@ -71,9 +71,9 @@ XtkEl *output_col(XtkUi *ui, char const *value) {
 	return xtk_sized(
 	  xtk_column(
 		ui, (XtkStackDesc) {.gap = 4},
-		(XtkEl *[]) {
+		xtk_kids(
 		  xtk_text(ui, "Output:", (XtkTextDesc) {.size = 12, .weight = FLUX_FONT_SEMI_BOLD}),
-		  xtk_text(ui, value, (XtkTextDesc) {.size = 14}), XTK_END}
+		  xtk_text(ui, value, (XtkTextDesc) {.size = 14}))
 	  ),
 	  260, NAN
 	);
@@ -82,20 +82,19 @@ XtkEl *output_col(XtkUi *ui, char const *value) {
 XtkEl *demo_card(XtkUi *ui, XtkEl *control, char const *output, XtkEl *extra) {
 	return xtk_card(
 	  ui, (XtkStackDesc) {.align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		xtk_row(
 		  ui, (XtkStackDesc) {.gap = 16, .align = XENT_FLEX_ALIGN_CENTER, .fill = true},
-		  (XtkEl *[]) {control, xtk_spacer(ui), output ? output_col(ui, output) : NULL, extra, XTK_END}
-		),
-		XTK_END}
+		  xtk_kids(control, xtk_spacer(ui), output ? output_col(ui, output) : NULL, extra)
+		))
 	);
 }
 
 XtkEl *page_category(XtkUi *ui, char const *title, char const *blurb) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(ui, title, blurb),
-		xtk_text(ui, "Expand this group in the navigation pane to pick a control.", (XtkTextDesc) {.size = 13}), XTK_END}
+		xtk_text(ui, "Expand this group in the navigation pane to pick a control.", (XtkTextDesc) {.size = 13}))
 	);
 }

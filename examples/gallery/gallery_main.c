@@ -6,6 +6,12 @@
 #include <string.h>
 #include <windows.h>
 
+/* MSVC deprecates the POSIX name `strdup` (C4996); `_strdup` is identical. Keep the
+ * portable spelling in the source so the Unix backends stay happy. */
+#ifdef _MSC_VER
+#  define strdup _strdup
+#endif
+
 static void tab_close(Model *m, int index) {
 	if (index < 0 || index >= m->tab_count || m->tab_count <= 1) return;
 	memmove(&m->tab_ids [index], &m->tab_ids [index + 1], sizeof(int) * ( size_t ) (m->tab_count - index - 1));
@@ -195,23 +201,21 @@ static XtkEl *view(XtkUi *ui, void *model) {
 		.app_title        = "FluXent Gallery",
 		.on_select        = xtk_msg(MSG_NAV),
     },
-	  (XtkEl *[]) {
+	  xtk_kids(
 		xtk_grow(
 		  xtk_scroll(
 			ui,
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_keyed(
 				ui, xtk_fmt(ui, "page-%d", m->page),
 				xtk_column(
 				  ui, (XtkStackDesc) {.padding = {36, 28, 36, 28}, .align = XENT_FLEX_ALIGN_STRETCH},
-				  (XtkEl *[]) {page_view(ui, m), XTK_END}
+				  xtk_kids(page_view(ui, m))
 				)
-			  ),
-			  XTK_END}
+			  ))
 		  ),
 		  1.0f
-		),
-		XTK_END}
+		))
 	);
 }
 

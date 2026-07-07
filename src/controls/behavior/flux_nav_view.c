@@ -128,11 +128,17 @@ static void nav_apply_geometry_top(FluxNavViewData *d) {
 }
 
 static void nav_apply_geometry_minimal(FluxNavViewData *d) {
-	float top    = FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD;
+	/* Content clears the integrated caption row (48) or the built-in toggle (40) —
+	 * same rule as inline mode and the pane top-pad at nav_build_tree. */
+	float top    = d->window_title_bar ? FLUX_TB_HEIGHT : (FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD);
 	float pane_x = -(1.0f - d->minimal_t.current) * FLUX_NAV_PANE_EXPANDED;
+	/* The scrim is an interactive (on_click) full-window overlay used to light-dismiss
+	 * the open flyout. Only size it while the flyout is actually open — a closed,
+	 * alpha-0 but full-window scrim still hit-tests and would eat every content click. */
+	bool scrim_on = d->minimal_t.current > 0.01f;
 	nav_set_abs(d, d->content, 0.0f, top, d->width, flux_maxf(0.0f, d->height - top));
 	nav_set_abs(d, d->pane, pane_x, 0.0f, FLUX_NAV_PANE_EXPANDED, d->height);
-	nav_set_abs(d, d->scrim, 0.0f, 0.0f, d->width, d->height);
+	nav_set_abs(d, d->scrim, 0.0f, 0.0f, scrim_on ? d->width : 0.0f, scrim_on ? d->height : 0.0f);
 	nav_set_scrim_alpha(d, ( int ) (NAV_SCRIM_ALPHA * d->minimal_t.current));
 }
 
@@ -494,6 +500,10 @@ static void nav_show_child_flyout(FluxNavViewData *d, int parent) {
 		/* WinUI shows these children as NavigationViewItems, not dense menu rows:
 		 * pin the slot to the pane's row pitch (36 min-height + 4 button margin). */
 		flux_menu_flyout_set_min_item_height(d->child_flyout, FLUX_NAV_ITEM_HEIGHT + FLUX_NAV_ITEM_GAP);
+		/* WinUI's ChildrenFlyout is a plain Flyout (Placement RightEdgeAlignedTop), not a
+		 * MenuFlyout — it enters with the PopupThemeTransition directional slide + fade
+		 * (emerging from the left rail edge), not a vertical menu scale-reveal. */
+		flux_menu_flyout_set_anim_style(d->child_flyout, FLUX_POPUP_ANIM_FLYOUT);
 	}
 	flux_menu_flyout_clear(d->child_flyout);
 	for (int i = 0; i < d->count; i++) {

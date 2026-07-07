@@ -46,7 +46,7 @@ typedef struct FluxPlugin {
 typedef struct FluxPluginRegistry FluxPluginRegistry;
 
 /** @brief Create a plugin registry. */
-FluxPluginRegistry               *flux_plugin_registry_create(void);
+XENT_NODISCARD FluxPluginRegistry *flux_plugin_registry_create(void);
 /** @brief Destroy a plugin registry and its registered plugins. */
 void                              flux_plugin_registry_destroy(FluxPluginRegistry *reg);
 

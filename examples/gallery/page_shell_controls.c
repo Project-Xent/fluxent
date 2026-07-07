@@ -15,14 +15,14 @@ static XtkEl *avatar(XtkUi *ui, XtkPersonPictureDesc desc) {
 static XtkEl *avatar_labeled(XtkUi *ui, char const *caption, XtkPersonPictureDesc desc) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 8, .align = XENT_FLEX_ALIGN_CENTER},
-	  (XtkEl *[]) {avatar(ui, desc), xtk_text(ui, caption, (XtkTextDesc) {.size = 12}), XTK_END}
+	  xtk_kids(avatar(ui, desc), xtk_text(ui, caption, (XtkTextDesc) {.size = 12}))
 	);
 }
 
 XtkEl *page_person_picture(XtkUi *ui, Model const *m) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "PersonPicture",
 		  "A circular avatar that shows a profile photo, initials derived from a display name, or a "
@@ -32,30 +32,28 @@ XtkEl *page_person_picture(XtkUi *ui, Model const *m) {
 		  ui, "Content modes.",
 		  xtk_row(
 			ui, (XtkStackDesc) {.gap = 24, .align = XENT_FLEX_ALIGN_START},
-			(XtkEl *[]) {
+			xtk_kids(
 			  avatar_labeled(ui, "Display name", (XtkPersonPictureDesc) {.display_name = "John Smith"}),
 			  avatar_labeled(ui, "Initials", (XtkPersonPictureDesc) {.initials = "AB"}),
 			  avatar_labeled(ui, "Placeholder", (XtkPersonPictureDesc) {0}),
-			  avatar_labeled(ui, "Group", (XtkPersonPictureDesc) {.is_group = true}),
-			  XTK_END}
+			  avatar_labeled(ui, "Group", (XtkPersonPictureDesc) {.is_group = true}))
 		  )
 		),
 		example(
 		  ui, "Badges.",
 		  xtk_row(
 			ui, (XtkStackDesc) {.gap = 24, .align = XENT_FLEX_ALIGN_START},
-			(XtkEl *[]) {
+			xtk_kids(
 			  avatar_labeled(ui, "Number", (XtkPersonPictureDesc) {.display_name = "Ada Lovelace", .badge_number = 4}),
 			  avatar_labeled(ui, "Overflow", (XtkPersonPictureDesc) {.display_name = "Grace Hopper", .badge_number = 128}),
-			  avatar_labeled(ui, "Glyph", (XtkPersonPictureDesc) {.display_name = "Alan Turing", .badge_glyph = "Mail"}),
-			  XTK_END}
+			  avatar_labeled(ui, "Glyph", (XtkPersonPictureDesc) {.display_name = "Alan Turing", .badge_glyph = "Mail"}))
 		  )
 		),
 		example(
 		  ui, "Live badge + group toggle.",
 		  xtk_card(
 			ui, (XtkStackDesc) {.gap = 16, .align = XENT_FLEX_ALIGN_CENTER},
-			(XtkEl *[]) {
+			xtk_kids(
 			  avatar(
 				ui, (XtkPersonPictureDesc) {
 				  .display_name = "Fluxent User",
@@ -66,17 +64,14 @@ XtkEl *page_person_picture(XtkUi *ui, Model const *m) {
 			  ),
 			  xtk_row(
 				ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_CENTER},
-				(XtkEl *[]) {
+				xtk_kids(
 				  xtk_button(ui, "Badge -", (XtkButtonDesc) {.on_click = xtk_msg_i(MSG_PP_BADGE, -1)}),
 				  xtk_text(ui, xtk_fmt(ui, "Badge: %d", m->pp_badge), (XtkTextDesc) {.size = 13}),
-				  xtk_button(ui, "Badge +", (XtkButtonDesc) {.on_click = xtk_msg_i(MSG_PP_BADGE, +1)}),
-				  XTK_END}
+				  xtk_button(ui, "Badge +", (XtkButtonDesc) {.on_click = xtk_msg_i(MSG_PP_BADGE, +1)}))
 			  ),
-			  xtk_checkbox(ui, "Group mode", (XtkToggleDesc) {.checked = m->pp_group, .on_change = xtk_msg(MSG_PP_GROUP)}),
-			  XTK_END}
+			  xtk_checkbox(ui, "Group mode", (XtkToggleDesc) {.checked = m->pp_group, .on_change = xtk_msg(MSG_PP_GROUP)}))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -91,28 +86,26 @@ static XtkEl *split_pane_item(XtkUi *ui, char const *icon, char const *label) {
 XtkEl *page_split_view(XtkUi *ui, Model const *m) {
 	XtkEl *pane = xtk_column(
 	  ui, (XtkStackDesc) {.gap = 4, .align = XENT_FLEX_ALIGN_STRETCH, .padding = {8, 8, 8, 8}},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		split_pane_item(ui, "Home", "Home"),
 		split_pane_item(ui, "Folder", "Documents"),
 		split_pane_item(ui, "Pictures", "Pictures"),
-		split_pane_item(ui, "Settings", "Settings"),
-		XTK_END}
+		split_pane_item(ui, "Settings", "Settings"))
 	);
 
 	XtkEl *content = xtk_column(
 	  ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_START, .padding = {16, 16, 16, 16}},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		xtk_button(ui, "\xE2\x98\xB0 Toggle pane", (XtkButtonDesc) {.on_click = xtk_msg(MSG_SPLIT_TOGGLE)}),
 		xtk_text(ui, "Main content area", (XtkTextDesc) {.size = 20, .weight = FLUX_FONT_SEMI_BOLD}),
 		xtk_text(
 		  ui, m->split_open ? "The pane is open." : "The pane is collapsed.", (XtkTextDesc) {.size = 13}
-		),
-		XTK_END}
+		))
 	);
 
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "SplitView",
 		  "A collapsible side pane beside main content: Inline and CompactInline push the content; Overlay and "
@@ -120,13 +113,12 @@ XtkEl *page_split_view(XtkUi *ui, Model const *m) {
 		),
 		xtk_row(
 		  ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_CENTER},
-		  (XtkEl *[]) {
+		  xtk_kids(
 			xtk_combo_box(
 			  ui, "Display mode",
 			  (XtkComboDesc) {.items = kSplitModes, .count = 4, .selected = m->split_mode, .on_select = xtk_msg(MSG_SPLIT_MODE)}
 			),
-			xtk_checkbox(ui, "Pane on right", (XtkToggleDesc) {.checked = m->split_right, .on_change = xtk_msg(MSG_SPLIT_PLACE)}),
-			XTK_END}
+			xtk_checkbox(ui, "Pane on right", (XtkToggleDesc) {.checked = m->split_right, .on_change = xtk_msg(MSG_SPLIT_PLACE)}))
 		),
 		xtk_sized(
 		  xtk_split_view(
@@ -138,8 +130,7 @@ XtkEl *page_split_view(XtkUi *ui, Model const *m) {
 			pane, content
 		  ),
 		  NAN, 320.0f
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -148,7 +139,7 @@ XtkEl *page_split_view(XtkUi *ui, Model const *m) {
 XtkEl *page_title_bar(XtkUi *ui, Model const *m) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "TitleBar",
 		  "A window title-bar band: an app icon, title and subtitle, plus optional back and pane-toggle "
@@ -158,7 +149,7 @@ XtkEl *page_title_bar(XtkUi *ui, Model const *m) {
 		  ui, "Icon, title, subtitle, back and pane-toggle buttons.",
 		  xtk_card(
 			ui, (XtkStackDesc) {.gap = 0, .align = XENT_FLEX_ALIGN_STRETCH, .padding = {0, 0, 0, 0}},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_title_bar(
 				ui, "FluXent Gallery",
 				(XtkTitleBarDesc) {
@@ -169,23 +160,20 @@ XtkEl *page_title_bar(XtkUi *ui, Model const *m) {
 				  .on_back          = xtk_msg(MSG_TB_BACK),
 				  .on_pane_toggle   = xtk_msg(MSG_TB_PANE),
 			      }
-			  ),
-			  XTK_END}
+			  ))
 		  )
 		),
 		example(
 		  ui, "Button events.",
 		  xtk_card(
 			ui, (XtkStackDesc) {0},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_text(
 				ui, xtk_fmt(ui, "Back clicks: %d.  Pane-toggle clicks: %d.", m->tb_back_clicks, m->tb_pane_clicks),
 				(XtkTextDesc) {.size = 13}
-			  ),
-			  XTK_END}
+			  ))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }
 
@@ -194,7 +182,7 @@ XtkEl *page_title_bar(XtkUi *ui, Model const *m) {
 XtkEl *page_pager(XtkUi *ui, Model const *m) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "PagerControl",
 		  "A numeric/arrow pager (distinct from the dot PipsPager): First/Previous/Next/Last buttons around a "
@@ -204,7 +192,7 @@ XtkEl *page_pager(XtkUi *ui, Model const *m) {
 		  ui, "Number panel (32 pages) with First/Last buttons.",
 		  xtk_card(
 			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_START},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_pager(
 				ui, (XtkPagerDesc) {
 				  .count        = 32,
@@ -214,8 +202,7 @@ XtkEl *page_pager(XtkUi *ui, Model const *m) {
 				  .on_select    = xtk_msg(MSG_PAGER_SELECT),
 			      }
 			  ),
-			  xtk_text(ui, xtk_fmt(ui, "Page %d of 32", m->pager_page + 1), (XtkTextDesc) {.size = 13}),
-			  XTK_END}
+			  xtk_text(ui, xtk_fmt(ui, "Page %d of 32", m->pager_page + 1), (XtkTextDesc) {.size = 13}))
 		  )
 		),
 		example(
@@ -230,7 +217,6 @@ XtkEl *page_pager(XtkUi *ui, Model const *m) {
 			  .on_select    = xtk_msg(MSG_PAGER_SELECT),
 		      }
 		  )
-		),
-		XTK_END}
+		))
 	);
 }

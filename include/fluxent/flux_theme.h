@@ -99,7 +99,7 @@ typedef struct FluxThemeColors {
 typedef struct FluxThemeManager FluxThemeManager;
 
 /** @brief Create a theme manager. */
-FluxThemeManager               *flux_theme_create(void);
+XENT_NODISCARD FluxThemeManager *flux_theme_create(void);
 /** @brief Destroy a theme manager. */
 void                            flux_theme_destroy(FluxThemeManager *tm);
 

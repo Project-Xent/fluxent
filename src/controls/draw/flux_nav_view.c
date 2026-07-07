@@ -43,6 +43,14 @@ static void nav_draw_content_layer(
 	FluxRect layer = {root->x + cx, root->y + cy, root->w - cx, root->h - cy};
 	if (layer.w < 1.0f || layer.h < 1.0f) return;
 
+	/* Minimal mode: the pane is an overlay flyout and the content is full-bleed
+	 * (content_x == 0, not the Top bar), so there is no pane edge to round against
+	 * — draw a square layer fill with no rounded top-left corner or card border. */
+	if (!snap->u.nav.nav_top && cx < 0.5f) {
+		flux_fill_rect(rc, &layer, t->layer_default);
+		return;
+	}
+
 	float       r    = FLUX_NAV_CONTENT_RADIUS;
 	FluxRect    ext  = {layer.x, layer.y, layer.w + (snap->u.nav.nav_top ? 0.0f : r), layer.h + r};
 	D2D1_RECT_F clip = flux_d2d_rect(&layer);

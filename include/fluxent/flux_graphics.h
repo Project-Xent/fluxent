@@ -68,7 +68,7 @@ typedef struct IDCompositionVisual IDCompositionVisual;
  *
  * @return New graphics context, or NULL on failure.
  */
-FluxGraphics                      *flux_graphics_create(void);
+XENT_NODISCARD FluxGraphics *flux_graphics_create(void);
 
 /**
  * @brief Destroy a graphics context and release all resources.

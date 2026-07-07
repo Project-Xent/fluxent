@@ -526,6 +526,24 @@ void flux_combo_box_set_selected(FluxNodeStore *store, XentNodeId id, int index)
 	combo_update_layout_text(rt);
 }
 
+/* Reserve the widest item's width as the closed box's minimum so its width stays
+ * constant across selection (WinUI-style) instead of shrinking to the selected text. */
+static void combo_apply_min_width(FluxComboRuntime *rt) {
+	if (!rt->text || rt->node == XENT_NODE_INVALID) return;
+	FluxTextStyle ts;
+	memset(&ts, 0, sizeof(ts));
+	ts.font_size   = FLUX_FONT_SIZE_DEFAULT;
+	ts.font_weight = FLUX_FONT_REGULAR;
+	float pad = 12.0f + 32.0f; /* closed-box padding: 12 text inset + 32 chevron column */
+	float w   = 80.0f;         /* keep the existing floor */
+	for (int i = 0; i < rt->model.item_count; i++) {
+		if (!rt->model.items [i]) continue;
+		float iw = flux_text_measure(rt->text, rt->model.items [i], &ts, 0).w + pad;
+		if (iw > w) w = iw;
+	}
+	xent_set_min_size(rt->ctx, rt->node, (XentSize) {w, 32.0f});
+}
+
 void flux_combo_box_set_items(FluxNodeStore *store, XentNodeId id, char const *const *items, int count) {
 	FluxComboRuntime *rt = combo_runtime(store, id);
 	if (!rt) return;
@@ -541,6 +559,7 @@ void flux_combo_box_set_items(FluxNodeStore *store, XentNodeId id, char const *c
 	rt->content_h = ( float ) rt->model.item_count * rt->row_h;
 	combo_clamp_scroll(rt);
 	combo_update_layout_text(rt);
+	combo_apply_min_width(rt);
 }
 
 static void combo_dismissed(void *ctx) {
@@ -601,5 +620,6 @@ XentNodeId flux_create_combo_box(FluxComboBoxCreateInfo const *info) {
 	xent_set_min_size(info->ctx, node, (XentSize) {80.0f, 32.0f});
 	xent_set_padding(info->ctx, node, (XentInsets) {12.0f, 0, 32.0f, 0});
 	combo_update_layout_text(rt);
+	combo_apply_min_width(rt);
 	return node;
 }

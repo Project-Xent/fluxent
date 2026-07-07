@@ -102,12 +102,26 @@ static void tooltip_schedule_show(FluxTooltip *tt, bool quick) {
 	else tooltip_start_timer(tt, FLUX_TOOLTIP_DELAY_MS);
 }
 
+static bool tooltip_str_eq(char const *a, char const *b) {
+	if (a == b) return true;
+	if (!a || !b) return false;
+	return strcmp(a, b) == 0;
+}
+
 void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const *nd, FluxRect const *screen_bounds) {
 	if (!tt) return;
 
-	char const *new_text = (nd && nd->tooltip_text && nd->tooltip_text [0]) ? nd->tooltip_text : NULL;
+	/* Region-aware nodes (e.g. a title bar's caption buttons) resolve tooltip text per
+	 * sub-region and re-evaluate on every hover update; plain nodes use tooltip_text. */
+	char const *new_text = NULL;
+	if (nd) {
+		if (nd->behavior.tooltip_at)
+			new_text = nd->behavior.tooltip_at(nd->behavior.tooltip_at_ctx, nd->hover_local_x, nd->hover_local_y);
+		else if (nd->tooltip_text && nd->tooltip_text [0])
+			new_text = nd->tooltip_text;
+	}
 
-	if (hovered == tt->hovered_node && hovered != XENT_NODE_INVALID) {
+	if (hovered == tt->hovered_node && hovered != XENT_NODE_INVALID && tooltip_str_eq(new_text, tt->tooltip_text)) {
 		if (screen_bounds && !tt->is_visible) tt->anchor_screen = *screen_bounds;
 		return;
 	}

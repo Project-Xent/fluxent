@@ -126,6 +126,12 @@ typedef struct FluxNodeBehavior {
 	 * toggles that must outlive the paint pass (e.g. TabViewItem's close button). */
 	void  (*on_hover_changed)(void *ctx, bool hovered);
 	void *on_hover_changed_ctx;
+
+	/** @brief Resolve tooltip text for the node-local point (e.g. a title bar's
+	 * caption buttons). Nodes with this get per-sub-region tooltips that
+	 * re-evaluate as the pointer moves within them; NULL result = no tooltip. */
+	char const *(*tooltip_at)(void *ctx, float local_x, float local_y);
+	void        *tooltip_at_ctx;
 } FluxNodeBehavior;
 
 /**

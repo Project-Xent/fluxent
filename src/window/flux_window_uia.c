@@ -11,6 +11,13 @@
 #include "flux_window_internal.h"
 
 #include <windows.h>
+/* WIN32_LEAN_AND_MEAN keeps windows.h from pulling the COM headers, so `interface`
+ * (used by the UIA C headers) is undefined under MSVC; pull it in explicitly. */
+#include <objbase.h>
+/* uiautomationcore.h defines UIA_ScrollPatternNoScroll as a file-scope const double,
+ * which has external linkage in C and collides with flux_uia.c's copy at link
+ * (LNK2005 under MSVC). This bridge never uses it; give this TU's copy a private name. */
+#define UIA_ScrollPatternNoScroll flux_uia_ignored_scroll_no_scroll
 #include <uiautomationcore.h>
 #include <uiautomationcoreapi.h>
 

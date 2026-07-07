@@ -13,10 +13,6 @@
 #include <stdbool.h>
 #include <xtk/xtk_types.h>
 
-#if defined(_MSC_VER) && !defined(__attribute__)
-  #define __attribute__(x)
-#endif
-
 /** @brief RGBA color — alias of XtkColor for API compatibility. */
 typedef XtkColor FluxColor;
 

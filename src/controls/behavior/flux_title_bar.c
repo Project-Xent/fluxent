@@ -66,6 +66,18 @@ static int titlebar_hit(FluxTitleBarData const *d, float x, float y) {
 	return FLUX_TB_REGION_NONE;
 }
 
+/* Per-region tooltip text for the caption buttons (the custom frame removes the OS
+ * ones). NULL elsewhere so the drag band shows no tooltip. */
+static char const *titlebar_tooltip_at(void *ctx, float x, float y) {
+	FluxTitleBarData *d = ( FluxTitleBarData * ) ctx;
+	switch (titlebar_hit(d, x, y)) {
+	case FLUX_TB_REGION_MIN  : return "Minimize";
+	case FLUX_TB_REGION_MAX  : return d->maximized ? "Restore" : "Maximize";
+	case FLUX_TB_REGION_CLOSE: return "Close";
+	default                  : return NULL;
+	}
+}
+
 static void titlebar_pointer_down(void *ctx, float x, float y, int clicks) {
 	( void ) clicks;
 	FluxTitleBarData *d = ( FluxTitleBarData * ) ctx;
@@ -145,6 +157,8 @@ XentNodeId flux_create_title_bar(FluxTitleBarCreateInfo const *info) {
 	nd->behavior.on_pointer_down_ctx = d;
 	nd->behavior.on_click            = titlebar_click;
 	nd->behavior.on_click_ctx        = d;
+	nd->behavior.tooltip_at          = titlebar_tooltip_at;
+	nd->behavior.tooltip_at_ctx      = d;
 	nd->behavior.on_cancel           = titlebar_cancel;
 	nd->behavior.on_cancel_ctx       = d;
 

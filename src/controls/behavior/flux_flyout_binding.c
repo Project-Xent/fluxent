@@ -19,8 +19,8 @@ static void compute_scroll_offset(XentContext *ctx, FluxNodeStore *store, XentNo
 		FluxNodeData   *pnd = flux_node_store_get(store, p);
 		FluxScrollData *sd  = pnd ? ( FluxScrollData * ) pnd->component_data : NULL;
 		if (sd) {
-			*out_x += sd->scroll_x;
-			*out_y += sd->scroll_y;
+			*out_x += flux_scroll_off_x(sd);
+			*out_y += flux_scroll_off_y(sd);
 		}
 		p = xent_get_parent(ctx, p);
 	}

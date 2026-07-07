@@ -96,8 +96,8 @@ static void tree_node_scroll(FluxVisualTree const *vt, XentNodeId node, float *s
 	FluxNodeData   *nd = flux_node_store_get(vt->store, node);
 	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
 	if (!sd) return;
-	*sx = sd->scroll_x;
-	*sy = sd->scroll_y;
+	*sx = flux_scroll_off_x(sd);
+	*sy = flux_scroll_off_y(sd);
 }
 
 /* Install a zero-inset clip so the container crops its children to its own size

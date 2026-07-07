@@ -110,6 +110,8 @@ static void snapshot_slider(FluxRenderSnapshot *snap, FluxSliderData const *s) {
 static void snapshot_scroll(FluxRenderSnapshot *snap, FluxScrollData const *sc) {
 	snap->u.scroll.x                  = sc->scroll_x;
 	snap->u.scroll.y                  = sc->scroll_y;
+	snap->u.scroll.origin_x           = sc->origin_x;
+	snap->u.scroll.origin_y           = sc->origin_y;
 	snap->u.scroll.content_w          = sc->content_w;
 	snap->u.scroll.content_h          = sc->content_h;
 	snap->u.scroll.h_vis              = sc->h_vis;
@@ -238,7 +240,8 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	 * visually translated item rows. */
 	float scroll = 0.0f;
 	if (d->ind_in_scroll && d->items_scroll_data)
-		scroll = (d->mode == FLUX_NAV_TOP) ? d->items_scroll_data->scroll_x : d->items_scroll_data->scroll_y;
+		scroll = (d->mode == FLUX_NAV_TOP) ? flux_scroll_off_x(d->items_scroll_data)
+		                                   : flux_scroll_off_y(d->items_scroll_data);
 	ctx->snap->u.nav.nav_ind_top        = d->ind_top.current - scroll;
 	ctx->snap->u.nav.nav_ind_bottom     = d->ind_bot.current - scroll;
 	ctx->snap->u.nav.nav_ind_opacity    = d->ind_op.current;

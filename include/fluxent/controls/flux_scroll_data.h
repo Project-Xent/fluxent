@@ -45,6 +45,17 @@ typedef struct FluxScrollData {
 	 */
 	uint8_t          content_manual;
 
+	/**
+	 * Virtualized items host. The logical position lives only in scroll_x/y +
+	 * content_w/h (scrollbar, clamping, window math); child layout stays
+	 * rebased near the origin so the compositor / D2D / hit paths never see
+	 * deep-scroll coordinates (float32 breaks down at ~4e6). Consumers that
+	 * walk physical child coordinates must use flux_scroll_off_x/y.
+	 */
+	uint8_t          virtualized;
+	float            origin_x;           /**< Logical X mapped to physical child x=0 (0 = identity). */
+	float            origin_y;           /**< Logical Y mapped to physical child y=0 (0 = identity). */
+
 	uint8_t          mouse_over;         /**< 1 if cursor inside viewport */
 	float            mouse_local_x;      /**< Cursor X in viewport-local coords */
 	float            mouse_local_y;      /**< Cursor Y in viewport-local coords */
@@ -57,6 +68,10 @@ typedef struct FluxScrollData {
 
 	void            *dmanip_viewport;    /**< Opaque DirectManipulation viewport owned by the input boundary. */
 } FluxScrollData;
+
+/** @brief Residual render offset: scroll position rebased against the physical origin. */
+static inline float flux_scroll_off_x(FluxScrollData const *sd) { return sd->scroll_x - sd->origin_x; }
+static inline float flux_scroll_off_y(FluxScrollData const *sd) { return sd->scroll_y - sd->origin_y; }
 
 #ifdef __cplusplus
 }

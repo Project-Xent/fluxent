@@ -359,12 +359,18 @@ static void content_scroll_sync(
 	WUC_Visual  *holder = flux_visual_tree_node_scroll_holder(r->vt, node);
 	if (!holder) return;
 
-	content_bind_scroll_tracker(r, node, holder);
-	if (!cn->scroll_bound) return;
-
 	FluxNodeData   *nd = flux_node_store_get(store, node);
 	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
 	if (!sd) return;
+
+	/* Virtualized hosts scroll by UI-thread rebase (small residual offsets
+	 * folded by the visual tree); a compositor-side tracker would replay the
+	 * full logical position into visual offsets, where float32 breaks down at
+	 * deep scroll — and re-realization has to run on the UI thread anyway. */
+	if (sd->virtualized) return;
+
+	content_bind_scroll_tracker(r, node, holder);
+	if (!cn->scroll_bound) return;
 
 	flux_interaction_set_extent(cn->tracker, (sd->content_w - rect->w) * scale, (sd->content_h - rect->h) * scale);
 

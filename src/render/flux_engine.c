@@ -94,10 +94,13 @@ static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentR
 	cmd.bounds.h        = rect->h;
 	cmd.phase           = FLUX_PHASE_MAIN;
 	cmd.clip_action     = FLUX_CLIP_PUSH;
-	cmd.scroll_x        = frame->snapshot.u.scroll.x;
-	cmd.scroll_y        = frame->snapshot.u.scroll.y;
-	frame->scroll_off_x = frame->snapshot.u.scroll.x;
-	frame->scroll_off_y = frame->snapshot.u.scroll.y;
+	/* Children are laid out in rebased physical space; translate and cull by
+	 * the residual, not the logical position (virtualized rebase; origin=0
+	 * for plain scrolls). */
+	cmd.scroll_x        = frame->snapshot.u.scroll.x - frame->snapshot.u.scroll.origin_x;
+	cmd.scroll_y        = frame->snapshot.u.scroll.y - frame->snapshot.u.scroll.origin_y;
+	frame->scroll_off_x = cmd.scroll_x;
+	frame->scroll_off_y = cmd.scroll_y;
 	frame->viewport_w   = rect->w;
 	frame->viewport_h   = rect->h;
 	flux_command_buffer_push(&eng->commands, &cmd);

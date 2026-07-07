@@ -91,6 +91,8 @@ typedef struct FluxListViewData {
 typedef struct FluxListItemData {
 	FluxListViewData *owner; /**< Owning items host (never NULL after create). */
 	int               index; /**< Item index this node currently presents. */
+	float             logical_x; /**< Content-space slot (full logical range); layout gets it rebased. */
+	float             logical_y;
 	bool              selected; /**< Draw the selection visual (single mode mirror). */
 	bool              multi;    /**< Multiple mode: draw the checkbox + content shift. */
 } FluxListItemData;

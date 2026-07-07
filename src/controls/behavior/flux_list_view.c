@@ -416,9 +416,9 @@ XentNodeId flux_create_list_view(FluxListViewCreateInfo const *info) {
 	}
 
 	/* The scroll viewport fills the list; the host is the scrolled content:
-	 * absolutely-positioned recycled cells over a rows × item_height canvas.
-	 * The engine derives the scroll extent from the host's laid-out size,
-	 * and the host must never flex-shrink to the (much shorter) viewport. */
+	 * absolutely-positioned recycled cells over a small rebased canvas. The
+	 * logical extent is pushed manually onto the scroll (list_apply_host_extent);
+	 * the host must never flex-shrink to the viewport. */
 	xent_set_flex_grow(info->ctx, scroll, 1.0f);
 	xent_set_flex_basis(info->ctx, scroll, 0.0f);
 	xent_set_protocol(info->ctx, host, XENT_PROTOCOL_ABSOLUTE);
@@ -512,10 +512,24 @@ XentNodeId flux_list_view_content_node(FluxNodeStore *store, XentNodeId list) {
 	return ld ? ld->host : XENT_NODE_INVALID;
 }
 
+static FluxScrollData *list_scroll_data(FluxListViewData const *ld) {
+	FluxNodeData *snd = flux_node_store_get(ld->store, ld->scroll);
+	return snd ? ( FluxScrollData * ) snd->component_data : NULL;
+}
+
+/* Virtual extent: the rows × item_height content exists only as the scroll's
+ * manual logical extent (scrollbar + clamping). The host stays a small
+ * physical canvas spanning just the realized window (set_realized), so the
+ * compositor / hit paths never see deep-scroll coordinates. */
 static void list_apply_host_extent(FluxListViewData *ld) {
 	int cols = ld->cols > 0 ? ld->cols : 1;
 	int rows = cols > 0 ? (ld->count + cols - 1) / cols : ld->count;
-	xent_set_height(ld->ctx, ld->host, ( float ) rows * ld->item_height);
+	FluxScrollData *sd = list_scroll_data(ld);
+	if (!sd) return;
+	sd->content_manual = 1;
+	sd->virtualized    = 1;
+	sd->content_w      = 0.0f;
+	sd->content_h      = ( float ) rows * ld->item_height;
 }
 
 void flux_list_view_set_extent(
@@ -572,6 +586,29 @@ void flux_list_view_set_realized(FluxNodeStore *store, XentNodeId list, int firs
 		ld->cols = cols;
 		list_apply_host_extent(ld);
 	}
+
+	/* Rebase the physical window: origin = first realized row's logical y, host
+	 * spans just the realized rows. Retained cells that kept their logical slot
+	 * are re-anchored (the reconciler only re-places changed ones), so physical
+	 * coordinates never grow with scroll depth. */
+	int   c         = ld->cols > 0 ? ld->cols : 1;
+	int   row_first = first / c;
+	float span      = last >= first ? ( float ) (last / c - row_first + 1) * ld->item_height : 0.0f;
+	float origin    = ( float ) row_first * ld->item_height;
+	xent_set_height(ld->ctx, ld->host, span);
+
+	FluxScrollData *sd = list_scroll_data(ld);
+	if (!sd || sd->origin_y == origin) return;
+	sd->origin_y = origin;
+	for (XentNodeId child = xent_get_first_child(ld->ctx, ld->host); child != XENT_NODE_INVALID;
+	  child               = xent_get_next_sibling(ld->ctx, child))
+	{
+		FluxListItemData *it = item_data(store, child);
+		if (it && it->index >= 0)
+			xent_set_absolute_position(
+			  ld->ctx, child, (XentPoint) {it->logical_x - sd->origin_x, it->logical_y - origin}
+			);
+	}
 }
 
 void flux_list_view_set_stale_callback(FluxNodeStore *store, XentNodeId list, void (*on_stale)(void *), void *ctx) {
@@ -625,8 +662,14 @@ void flux_list_view_update_window(XentContext *ctx, XentNodeId list, struct Flux
 void flux_list_item_set_place(FluxNodeStore *store, XentNodeId item, int index, float x, float y) {
 	FluxListItemData *it = item_data(store, item);
 	if (!it) return;
-	it->index = index;
-	xent_set_absolute_position(flux_node_store_context(store), item, (XentPoint) {x, y});
+	it->index     = index;
+	it->logical_x = x;
+	it->logical_y = y;
+	FluxScrollData *sd = it->owner ? list_scroll_data(it->owner) : NULL;
+	xent_set_absolute_position(
+	  flux_node_store_context(store), item,
+	  (XentPoint) {x - (sd ? sd->origin_x : 0.0f), y - (sd ? sd->origin_y : 0.0f)}
+	);
 
 	/* Complete a keyboard focus move that targeted a not-yet-realized cell. */
 	FluxListViewData *ld = it->owner;

@@ -61,8 +61,8 @@ static void input_apply_parent_scroll_offset(FluxInput *input, XentNodeId parent
 	FluxScrollData *sd = input_scroll_data(input, parent);
 	if (!sd) return;
 
-	*ox -= sd->scroll_x;
-	*oy -= sd->scroll_y;
+	*ox -= flux_scroll_off_x(sd);
+	*oy -= flux_scroll_off_y(sd);
 }
 
 static void flux_node_abs_rect(FluxInput *input, XentNodeId node, FluxRect *out) {

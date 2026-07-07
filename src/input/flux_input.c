@@ -33,8 +33,8 @@ static FluxPoint hit_test_child_scroll_offset(InputHitQuery const *query, FluxNo
 	FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
 	if (!sd) return scroll;
 
-	scroll.x += sd->scroll_x;
-	scroll.y += sd->scroll_y;
+	scroll.x += flux_scroll_off_x(sd);
+	scroll.y += flux_scroll_off_y(sd);
 	return scroll;
 }
 

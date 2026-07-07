@@ -106,11 +106,17 @@ int main(void) {
 	EXPECT(lnd && lnd->component_type == FLUX_CONTROL_LIST && lnd->component_data, "list data attached");
 	FluxListViewData *ld = ( FluxListViewData * ) lnd->component_data;
 
-	/* Spine + extent. */
+	/* Spine + extent: the logical extent lives on the scroll (manual +
+	 * virtualized); the host is a small rebased canvas spanning just the
+	 * realized window, so physical coordinates never reach 4e6. */
 	EXPECT(ld->scroll != XENT_NODE_INVALID && ld->host != XENT_NODE_INVALID, "scroll + host exist");
+	FluxNodeData   *snd = flux_node_store_get(store, ld->scroll);
+	FluxScrollData *sd  = ( FluxScrollData * ) snd->component_data;
+	EXPECT(sd->content_manual && sd->virtualized, "virtual extent is manual + rebased");
+	EXPECT(sd->content_h == ( float ) ROWS * 40.0f, "logical extent = count * item_height");
 	XentRect host_rect = {0};
 	xent_get_layout_rect(ctx, ld->host, &host_rect);
-	EXPECT(host_rect.h == ( float ) ROWS * 40.0f, "items host spans count * item_height");
+	EXPECT(host_rect.h == 19.0f * 40.0f, "items host spans the realized window only");
 	EXPECT(host_rect.w == 800.0f, "items host fills the list width");
 
 	/* Mount realized the fallback window (list height 600 → rows 0..18). */
@@ -132,9 +138,9 @@ int main(void) {
 
 	/* Scroll far outside the window: watch fires exactly once, the next
 	 * frame re-realizes around the new offset. */
-	FluxNodeData   *snd = flux_node_store_get(store, ld->scroll);
-	FluxScrollData *sd  = ( FluxScrollData * ) snd->component_data;
-	sd->scroll_y        = 4000.0f;
+	snd          = flux_node_store_get(store, ld->scroll);
+	sd           = ( FluxScrollData * ) snd->component_data;
+	sd->scroll_y = 4000.0f;
 	flux_list_view_update_window(ctx, list, lnd);
 	EXPECT(rt->force, "uncovered viewport invalidates the runtime");
 	flux_list_view_update_window(ctx, list, lnd);
@@ -147,9 +153,20 @@ int main(void) {
 	/* offset 4000, extent 600: first floor(100)-4 = 96, last ceil(4600/40)-1+4 = 118. */
 	EXPECT(ld->realized_first == 96 && ld->realized_last == 118, "window re-realizes to 96..118");
 
+	/* Rebase followed the window: origin = slot 96, rows sit near the host top. */
+	snd = flux_node_store_get(store, ld->scroll);
+	sd  = ( FluxScrollData * ) snd->component_data;
+	EXPECT(sd->origin_y == 96.0f * 40.0f, "origin rebased to the first realized row");
+	xent_get_layout_rect(ctx, ld->host, &host_rect);
+	EXPECT(host_rect.h == 23.0f * 40.0f, "host tracks the realized span");
 	XentRect first_rect = {0};
 	xent_get_layout_rect(ctx, rt->root->children [0]->node, &first_rect);
-	EXPECT(first_rect.y == host_rect.y + 96.0f * 40.0f, "first realized row sits at slot 96");
+	EXPECT(first_rect.y == host_rect.y, "first realized row rebased to the host origin");
+	/* Screen math is unchanged: physical − residual == logical − scroll. */
+	EXPECT(
+	  first_rect.y - flux_scroll_off_y(sd) == host_rect.y + 96.0f * 40.0f - sd->scroll_y,
+	  "rebased screen position matches the logical position"
+	);
 
 	/* Same-size shift: every xent node survives (pure recycling). */
 	XentNodeId before [64];
@@ -215,6 +232,38 @@ int main(void) {
 	row0->behavior.on_click(row0->behavior.on_click_ctx);
 	xtk_runtime_frame(rt);
 	EXPECT(m.selected == 5, "click selects row 5");
+
+	/* Deep scroll (row 99000, logical y ≈ 3.96e6): the rebase keeps every
+	 * physical coordinate viewport-sized while row pitch stays exact (integer
+	 * multiples of 40 are exact in float32 below 2^24). This is the guarantee
+	 * that kills the compositor float-precision drift. */
+	snd          = flux_node_store_get(store, ld->scroll);
+	sd           = ( FluxScrollData * ) snd->component_data;
+	sd->scroll_y = 99000.0f * 40.0f;
+	flux_list_view_update_window(ctx, list, lnd);
+	EXPECT(rt->force, "deep offset invalidates the runtime");
+	xtk_runtime_frame(rt);
+	xent_layout(ctx, host, 800.0f, 600.0f);
+	flux_node_store_attach_userdata(store, ctx);
+	lnd = flux_node_store_get(store, list);
+	ld  = ( FluxListViewData * ) lnd->component_data;
+	snd = flux_node_store_get(store, ld->scroll);
+	sd  = ( FluxScrollData * ) snd->component_data;
+	EXPECT(ld->realized_first == 98996 && ld->realized_last == 99018, "deep window 98996..99018");
+	EXPECT(sd->origin_y == 98996.0f * 40.0f, "origin rebased to the deep window");
+	EXPECT(sd->content_h == ( float ) ROWS * 40.0f, "logical extent intact for the scrollbar");
+	xent_get_layout_rect(ctx, ld->host, &host_rect);
+	for (int i = 0; i < rt->root->child_count; i++) {
+		XentRect r = {0};
+		xent_get_layout_rect(ctx, rt->root->children [i]->node, &r);
+		FluxNodeData     *ind = flux_node_store_get(store, rt->root->children [i]->node);
+		FluxListItemData *it  = ( FluxListItemData * ) ind->component_data;
+		EXPECT(r.y - host_rect.y >= 0.0f && r.y - host_rect.y <= 22.0f * 40.0f, "physical slot stays viewport-sized");
+		EXPECT(
+		  r.y - flux_scroll_off_y(sd) == host_rect.y + ( float ) it->index * 40.0f - sd->scroll_y,
+		  "deep rebased screen position is exact"
+		);
+	}
 
 	xtk_runtime_destroy(rt);
 

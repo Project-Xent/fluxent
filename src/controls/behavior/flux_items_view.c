@@ -60,8 +60,8 @@ XentNodeId flux_create_items_view(FluxItemsViewCreateInfo const *info) {
 	}
 
 	/* Identical layout contract to flux_create_list_view: the scroll fills the
-	 * root, the host is the ABSOLUTE scrolled canvas (rows x item_height) and
-	 * must never flex-shrink to the viewport. */
+	 * root, the host is the ABSOLUTE rebased canvas (logical extent lives on
+	 * the scroll) and must never flex-shrink to the viewport. */
 	xent_set_flex_grow(info->ctx, scroll, 1.0f);
 	xent_set_flex_basis(info->ctx, scroll, 0.0f);
 	xent_set_protocol(info->ctx, host, XENT_PROTOCOL_ABSOLUTE);

@@ -65,8 +65,8 @@ static void sync_scroll_node(DManipSyncContext const *sync, DManipNodeState *sta
 	if (!sd) return;
 
 	sync_scroll_viewport(sync, sd, &state->viewport);
-	state->child_ax -= sd->scroll_x;
-	state->child_ay -= sd->scroll_y;
+	state->child_ax -= flux_scroll_off_x(sd);
+	state->child_ay -= flux_scroll_off_y(sd);
 }
 
 static void sync_node(DManipSyncContext const *sync, XentNodeId node, float ax_dip, float ay_dip) {

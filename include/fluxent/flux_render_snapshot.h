@@ -140,7 +140,8 @@ typedef struct FluxComboSnapshot {
  * weight in every other control's snapshot.
  */
 typedef struct FluxScrollSnapshot {
-	float            x, y;                         /**< Scroll offset (DIPs). */
+	float            x, y;                         /**< Logical scroll offset (DIPs; scrollbar space). */
+	float            origin_x, origin_y;           /**< Physical rebase anchor (virtualized; 0 = identity). */
 	float            content_w, content_h;         /**< Scrollable content extent (DIPs). */
 	FluxScrollBarVis h_vis, v_vis;                 /**< Per-axis scrollbar visibility policy. */
 	uint8_t          mouse_over;                   /**< Pointer is over the scroll surface. */

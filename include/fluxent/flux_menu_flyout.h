@@ -101,7 +101,7 @@ typedef struct FluxMenuFlyout FluxMenuFlyout;
  * and re-shown any number of times.  Items survive across show/dismiss cycles
  * until explicitly cleared.
  */
-FluxMenuFlyout               *flux_menu_flyout_create(FluxWindow *owner);
+XENT_NODISCARD FluxMenuFlyout *flux_menu_flyout_create(FluxWindow *owner);
 
 /**
  * @brief Destroy the menu flyout and all owned resources.
@@ -134,6 +134,14 @@ void flux_menu_flyout_set_text_renderer(FluxMenuFlyout *menu, FluxTextRenderer *
  * 4px button margin) so its rows match the pane's, not a dense context menu.
  */
 void flux_menu_flyout_set_min_item_height(FluxMenuFlyout *menu, float height);
+
+/**
+ * @brief Override the popup entrance animation. Menu flyouts default to the vertical
+ * MenuPopupThemeTransition (MENU); NavigationView's children flyout is a plain WinUI
+ * Flyout (Placement RightEdgeAlignedTop), so it sets FLUX_POPUP_ANIM_FLYOUT to get the
+ * PopupThemeTransition directional slide + fade (emerges from the anchor edge).
+ */
+void flux_menu_flyout_set_anim_style(FluxMenuFlyout *menu, FluxPopupAnimStyle style);
 
 /**
  * @brief Append a menu item. The definition is deep-copied.

@@ -14,6 +14,11 @@
 #define FLUX_FORMAT_CACHE_SIZE 16
 #define FLUX_LAYOUT_CACHE_SIZE 64
 
+/* The one default UI font family. Layout-time measure and paint-time draw MUST use
+ * the same family or box widths disagree (text is measured narrow, drawn wide, and
+ * clips). Both dwrite_create_measure_format and create_styled_format resolve to this. */
+#define FLUX_DEFAULT_FONT_FAMILY L"Segoe UI Variable"
+
 typedef struct FluxFormatCacheKey {
 	uint32_t family_hash;
 	uint32_t size_bits;
@@ -176,7 +181,7 @@ static DWRITE_PARAGRAPH_ALIGNMENT to_dw_para(FluxTextVAlign a) {
 }
 
 static IDWriteTextFormat *create_styled_format(FluxTextRenderer *tr, FluxTextStyle const *s) {
-	wchar_t const *family = L"Segoe UI Variable";
+	wchar_t const *family = FLUX_DEFAULT_FONT_FAMILY;
 	wchar_t        fam_buf [128];
 	if (s->font_family && s->font_family [0]) {
 		int n = flux_utf8_to_wchar(s->font_family, fam_buf, 128);
@@ -296,7 +301,7 @@ static IDWriteTextFormat *dwrite_create_measure_format(
 	DWRITE_FONT_WEIGHT weight = ( DWRITE_FONT_WEIGHT ) (font_weight ? font_weight : 400);
 	IDWriteTextFormat *fmt    = NULL;
 	HRESULT            hr     = IDWriteFactory_CreateTextFormat(
-	  tr->factory, tr->default_font ? tr->default_font : L"Segoe UI", NULL, weight, DWRITE_FONT_STYLE_NORMAL,
+	  tr->factory, tr->default_font ? tr->default_font : FLUX_DEFAULT_FONT_FAMILY, NULL, weight, DWRITE_FONT_STYLE_NORMAL,
 	  DWRITE_FONT_STRETCH_NORMAL, font_size, L"", &fmt
 	);
 	if (FAILED(hr)) return NULL;

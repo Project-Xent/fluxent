@@ -430,7 +430,7 @@ typedef struct FluxNavViewCreateInfo {
 } FluxNavViewCreateInfo;
 
 /** @brief Create a Fluxent application, or NULL on failure. */
-FluxApp          *flux_app_create(FluxAppConfig const *cfg);
+XENT_NODISCARD FluxApp *flux_app_create(FluxAppConfig const *cfg);
 /** @brief Destroy a Fluxent application. */
 void              flux_app_destroy(FluxApp *app);
 /** @brief Set the layout root and node store rendered by the app. */

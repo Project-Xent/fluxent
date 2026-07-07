@@ -40,7 +40,7 @@ typedef struct FluxPopup FluxPopup;
  * @brief Create a popup owned by the given window.
  * The popup creates a WS_POPUP child HWND with its own D2D render target.
  */
-FluxPopup               *flux_popup_create(FluxWindow *owner);
+XENT_NODISCARD FluxPopup *flux_popup_create(FluxWindow *owner);
 
 /**
  * @brief Destroy the popup and its associated resources.

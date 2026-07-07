@@ -514,6 +514,8 @@ FluxPopupMenuTransition flux_popup_get_menu_transition(FluxPopup const *popup, f
 	  .clip_translate_y    = 0.0f,
 	};
 	if (!popup || !popup->anim.active || popup->anim.style != FLUX_POPUP_ANIM_MENU) return tr;
+	/* MenuPopupThemeTransition is vertical-only (WinUI asserts Top/Bottom). Side-anchored
+	 * cascading menus that want a directional slide use FLUX_POPUP_ANIM_FLYOUT instead. */
 	if (popup->anim.final_placement != FLUX_PLACEMENT_TOP && popup->anim.final_placement != FLUX_PLACEMENT_BOTTOM)
 		return tr;
 

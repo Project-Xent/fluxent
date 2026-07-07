@@ -51,7 +51,7 @@ typedef struct FluxWindowConfig {
 } FluxWindowConfig;
 
 /** @brief Create a window from the provided configuration. */
-HRESULT         flux_window_create(FluxWindowConfig const *cfg, FluxWindow **out);
+XENT_NODISCARD HRESULT flux_window_create(FluxWindowConfig const *cfg, FluxWindow **out);
 /** @brief Destroy a window and release its resources. */
 void            flux_window_destroy(FluxWindow *win);
 

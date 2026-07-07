@@ -40,7 +40,7 @@ typedef void              (*FluxFlyoutPaintCallback)(void *user_ctx, FluxFlyout 
  * @brief Create a flyout owned by @p owner.
  * The flyout creates an internal FluxPopup with dismiss_on_outside = true.
  */
-FluxFlyout               *flux_flyout_create(FluxWindow *owner);
+XENT_NODISCARD FluxFlyout *flux_flyout_create(FluxWindow *owner);
 
 /**
  * @brief Destroy the flyout and release all resources.

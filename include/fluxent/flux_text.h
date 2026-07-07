@@ -104,7 +104,7 @@ typedef struct FluxTextClusterQuery {
  *
  * @return New text renderer, or NULL on failure.
  */
-FluxTextRenderer *flux_text_renderer_create(void);
+XENT_NODISCARD FluxTextRenderer *flux_text_renderer_create(void);
 
 /**
  * @brief Destroy a text renderer.

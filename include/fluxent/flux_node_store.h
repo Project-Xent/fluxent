@@ -177,7 +177,7 @@ typedef struct FluxNodeStore FluxNodeStore;
  * @param initial_capacity Initial hash table capacity (will grow as needed).
  * @return New store, or NULL on allocation failure.
  */
-FluxNodeStore               *flux_node_store_create(uint32_t initial_capacity);
+XENT_NODISCARD FluxNodeStore *flux_node_store_create(uint32_t initial_capacity);
 
 /**
  * @brief Bind the XentContext this store's nodes live in.

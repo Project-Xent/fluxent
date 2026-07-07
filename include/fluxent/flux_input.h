@@ -31,7 +31,7 @@ typedef struct FluxHitResult {
 typedef struct FluxInput FluxInput;
 
 /** @brief Create an input router for a layout context and node store. */
-FluxInput               *flux_input_create(XentContext *ctx, FluxNodeStore *store);
+XENT_NODISCARD FluxInput *flux_input_create(XentContext *ctx, FluxNodeStore *store);
 /** @brief Destroy an input router. */
 void                     flux_input_destroy(FluxInput *input);
 

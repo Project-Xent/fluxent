@@ -34,7 +34,7 @@ typedef struct FluxControlRenderer {
 typedef struct FluxControlRegistry FluxControlRegistry;
 
 /** @brief Create an empty registry (all types unregistered). */
-FluxControlRegistry               *flux_control_registry_create(void);
+XENT_NODISCARD FluxControlRegistry *flux_control_registry_create(void);
 
 /** @brief Destroy a registry (NULL is safe). */
 void                               flux_control_registry_destroy(FluxControlRegistry *reg);

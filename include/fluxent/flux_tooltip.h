@@ -40,7 +40,7 @@ typedef struct FluxTooltip FluxTooltip;
  * @brief Create the app-level tooltip system.
  * Only one instance should exist per application.
  */
-FluxTooltip               *flux_tooltip_create(FluxWindow *owner);
+XENT_NODISCARD FluxTooltip *flux_tooltip_create(FluxWindow *owner);
 
 /**
  * @brief Destroy the tooltip system and release all resources.

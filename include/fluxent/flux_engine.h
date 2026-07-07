@@ -106,7 +106,7 @@ typedef struct FluxRenderCommand {
  * @param store Node store containing control metadata.
  * @return New engine instance, or NULL on failure.
  */
-FluxEngine              *flux_engine_create(FluxNodeStore *store, FluxControlRegistry const *registry);
+XENT_NODISCARD FluxEngine *flux_engine_create(FluxNodeStore *store, FluxControlRegistry const *registry);
 
 /**
  * @brief Destroy a render engine.

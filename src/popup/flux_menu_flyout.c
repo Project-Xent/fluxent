@@ -355,6 +355,10 @@ void flux_menu_flyout_set_min_item_height(FluxMenuFlyout *m, float height) {
 	if (m) m->min_item_height = height > 0.0f ? height : 0.0f;
 }
 
+void flux_menu_flyout_set_anim_style(FluxMenuFlyout *m, FluxPopupAnimStyle style) {
+	if (m && m->popup) flux_popup_set_anim_style(m->popup, style);
+}
+
 int flux_menu_flyout_add_item(FluxMenuFlyout *m, FluxMenuItemDef const *def) {
 	if (!m || !def || m->item_count >= FLUX_MENU_MAX_ITEMS) return -1;
 

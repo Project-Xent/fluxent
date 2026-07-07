@@ -18,9 +18,9 @@ static XtkEl *list_row(XtkUi *ui, void *env, int index) {
 	char const *last  = kLast [(index / 7) % (sizeof(kLast) / sizeof(kLast [0]))];
 	return xtk_row(
 	  ui, (XtkStackDesc) {.gap = 12},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		xtk_sized(xtk_text(ui, xtk_fmt(ui, "%d", index), (XtkTextDesc) {.size = 12}), 64, NAN),
-		xtk_text(ui, xtk_fmt(ui, "%s %s", first, last), (XtkTextDesc) {0}), XTK_END}
+		xtk_text(ui, xtk_fmt(ui, "%s %s", first, last), (XtkTextDesc) {0}))
 	);
 }
 
@@ -28,7 +28,7 @@ XtkEl *page_listview(XtkUi *ui, Model const *m) {
 	char const *status = m->list_sel >= 0 ? xtk_fmt(ui, "Selected row: %d", m->list_sel) : "Nothing selected yet.";
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
-	  (XtkEl *[]) {
+	  xtk_kids(
 		page_header(
 		  ui, "ListView",
 		  "A virtualized list: 100,000 rows, but only the viewport's worth of controls exist. "
@@ -38,7 +38,7 @@ XtkEl *page_listview(XtkUi *ui, Model const *m) {
 		  ui, "Click a row to select it.",
 		  xtk_column(
 			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_sized(
 				xtk_list_view(
 				  ui, (XtkListDesc) {
@@ -51,14 +51,14 @@ XtkEl *page_listview(XtkUi *ui, Model const *m) {
 				),
 				NAN, 420.0f
 			  ),
-			  xtk_text(ui, status, (XtkTextDesc) {.size = 13}), XTK_END}
+			  xtk_text(ui, status, (XtkTextDesc) {.size = 13}))
 		  )
 		),
 		example(
 		  ui, "SelectionMode Extended: Ctrl+click toggles, Shift+click ranges, Ctrl+A selects all.",
 		  xtk_column(
 			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_STRETCH},
-			(XtkEl *[]) {
+			xtk_kids(
 			  xtk_sized(
 				xtk_keyed(
 				  ui, "multi-list",
@@ -79,10 +79,8 @@ XtkEl *page_listview(XtkUi *ui, Model const *m) {
 				m->multi_lead >= 0 ? xtk_fmt(ui, "Lead selection: row %d", m->multi_lead)
 				                   : "Selection is control-retained; the lead index posts here.",
 				(XtkTextDesc) {.size = 13}
-			  ),
-			  XTK_END}
+			  ))
 		  )
-		),
-		XTK_END}
+		))
 	);
 }

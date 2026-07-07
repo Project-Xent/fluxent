@@ -5,7 +5,7 @@ name: release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -18,10 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: msvc-x86_64,   toolchain: msvc,  plat: windows, xarch: x64 }
-          - { name: msvc-aarch64,  toolchain: msvc,  plat: windows, xarch: arm64 }
-          - { name: mingw-x86_64,  toolchain: mingw, plat: mingw,   xarch: x86_64 }
-          - { name: mingw-aarch64, toolchain: mingw, plat: mingw,   xarch: arm64 }
+          - { name: msvc-x86_64, toolchain: msvc, plat: windows, xarch: x64 }
+          - { name: msvc-aarch64, toolchain: msvc, plat: windows, xarch: arm64 }
+          - { name: mingw-x86_64, toolchain: mingw, plat: mingw, xarch: x86_64 }
+          - { name: mingw-aarch64, toolchain: mingw, plat: mingw, xarch: arm64 }
     steps:
       - uses: actions/checkout@v4
 
@@ -32,9 +32,13 @@ jobs:
 
       - name: Setup llvm-mingw (clang + mingw runtime, x64 & arm64 targets)
         if: matrix.toolchain == 'mingw'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $rel = Invoke-RestMethod https://api.github.com/repos/mstorsjo/llvm-mingw/releases/latest
+          $headers = @{ Authorization = "Bearer $env:GITHUB_TOKEN" }
+          $rel = Invoke-RestMethod https://api.github.com/repos/mstorsjo/llvm-mingw/releases/latest -Headers $headers
+
           $asset = $rel.assets | Where-Object { $_.name -like 'llvm-mingw-*-ucrt-x86_64.zip' } | Select-Object -First 1
           Invoke-WebRequest $asset.browser_download_url -OutFile llvm-mingw.zip
           Expand-Archive llvm-mingw.zip -DestinationPath C:\ -Force

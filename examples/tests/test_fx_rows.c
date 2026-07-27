@@ -8,6 +8,8 @@
  */
 #include "flux_internal.h"
 
+#include <fluxent/flux_host.h>
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -39,7 +41,7 @@ static void update(void *model, XtkMsg msg) {
 }
 
 static XtkEl *view(XtkUi *ui, void *model) {
-	Model   *m    = ( Model * ) model;
+	Model  *m    = ( Model * ) model;
 	XtkEl **rows = xtk_children_alloc(ui, m->row_count);
 	for (int i = 0; i < m->row_count; i++) {
 		int id   = m->row_ids [i];
@@ -49,7 +51,7 @@ static XtkEl *view(XtkUi *ui, void *model) {
 			ui, (XtkStackDesc) {.gap = 12, .align = XENT_FLEX_ALIGN_CENTER},
 			(XtkEl *[]) {
 			  xtk_text(ui, xtk_fmt(ui, "Row #%d", id), (XtkTextDesc) {0}),
-			  xtk_button(ui, "Remove", (XtkButtonDesc) {.on_click = xtk_msg_i(MSG_REMOVE, id)}), XTK_END}
+			  xtk_button(ui, "Remove", (XtkButtonDesc) {.click = xtk_msg_i(MSG_REMOVE, id)}), XTK_END}
 		  )
 		);
 	}
@@ -72,59 +74,62 @@ static XtkEl *view(XtkUi *ui, void *model) {
 	while (0)
 
 int main(void) {
-	XentConfig     config = {0};
-	XentContext   *ctx    = xent_create_context(&config);
-	FluxNodeStore *store  = flux_node_store_create(64);
-	flux_node_store_bind_context(store, ctx);
+	XentCfg    config = {0};
+	XentCtx   *ctx    = xent_ctx_create(&config);
+	FluxStore *store  = flux_store_create(64);
+	flux_store_bind(store, ctx);
 
-	XentNodeId host = xent_create_node(ctx);
-	xent_set_protocol(ctx, host, XENT_PROTOCOL_FLEX);
+	XentNodeId host = xent_node_create(ctx);
+	xent_setproto(ctx, host, XENT_PROTOCOL_FLEX);
 
-	Model      m  = {0};
-	FluxBackendCtx bctx = {.ctx = ctx, .store = store, .app = NULL, .runtime = NULL};
-	XtkBackend be = flux_xtk_backend(&bctx);
-	XtkRuntime *rt = xtk_runtime_create(ctx, &be, host, &m, update, view);
+	Model          m       = {0};
+	FluxBackendCtx bctx    = {.ctx = ctx, .store = store, .app = NULL, .runtime = NULL};
+	XtkHost       *xtkhost = flux_host_adopt(ctx, store, host);
+	EXPECT(xtkhost, "host adopt");
+	bctx.host    = xtkhost;
+	XtkRtCfg cfg = flux_xtk_runtime_config(&bctx);
+	XtkRt   *rt  = xtk_rt_create(xtkhost, &cfg, host, &m, update, view);
 	if (rt) bctx.runtime = rt;
 	EXPECT(rt, "runtime");
 
 	/* Interleave adds and removals so later rows mount on recycled node ids:
 	 * a recycled id must not inherit its previous occupant's style. */
 	for (int i = 0; i < 6; i++) {
-		xtk_runtime_post(rt, xtk_msg(MSG_ADD));
-		xtk_runtime_frame(rt);
+		xtk_rt_post(rt, xtk_msg(MSG_ADD));
+		xtk_rt_frame(rt);
 		xent_layout(ctx, host, 640.0f, 720.0f);
 	}
 	int removals [] = {0, 1, 2};
 	for (int i = 0; i < 3; i++) {
-		xtk_runtime_post(rt, xtk_msg_i(MSG_REMOVE, removals [i]));
-		xtk_runtime_frame(rt);
+		xtk_rt_post(rt, xtk_msg_i(MSG_REMOVE, removals [i]));
+		xtk_rt_frame(rt);
 		xent_layout(ctx, host, 640.0f, 720.0f);
 	}
 	for (int i = 0; i < 3; i++) {
-		xtk_runtime_post(rt, xtk_msg(MSG_ADD));
-		xtk_runtime_frame(rt);
+		xtk_rt_post(rt, xtk_msg(MSG_ADD));
+		xtk_rt_frame(rt);
 		xent_layout(ctx, host, 640.0f, 720.0f);
 	}
-	xtk_runtime_post(rt, xtk_msg_i(MSG_REMOVE, 5));
-	xtk_runtime_frame(rt);
+	xtk_rt_post(rt, xtk_msg_i(MSG_REMOVE, 5));
+	xtk_rt_frame(rt);
 	xent_layout(ctx, host, 640.0f, 720.0f);
 
-	EXPECT(rt->root->child_count == 5, "five rows survive");
+	EXPECT(xtk_node_nchild(xtk_rt_root(rt)) == 5, "five rows survive");
 
 	float    text_w = NAN, btn_x_off = NAN, row_h = NAN;
 	XentRect first_row = {0};
 	bool     ok        = true;
-	for (int i = 0; i < rt->root->child_count; i++) {
-		XtkNode *row = rt->root->children [i];
-		XentRect rr = {0}, tr = {0}, br = {0};
-		xent_get_layout_rect(ctx, row->node, &rr);
-		xent_get_layout_rect(ctx, row->children [0]->node, &tr);
-		xent_get_layout_rect(ctx, row->children [1]->node, &br);
+	for (int i = 0; i < xtk_node_nchild(xtk_rt_root(rt)); i++) {
+		XtkNode const *row = xtk_node_child(xtk_rt_root(rt), i);
+		XentRect       rr = {0}, tr = {0}, br = {0};
+		xent_layout_rect(ctx, xtk_node_id(row), &rr);
+		xent_layout_rect(ctx, xtk_node_id(xtk_node_child(row, 0)), &tr);
+		xent_layout_rect(ctx, xtk_node_id(xtk_node_child(row, 1)), &br);
 		if (i == 0) first_row = rr;
 
 		printf(
-		  "row[%d] node=%u rect={%.1f,%.1f %.1fx%.1f} text_w=%.1f btn_off=%.1f btn={%.1fx%.1f}\n", i, row->node, rr.x,
-		  rr.y, rr.w, rr.h, tr.w, br.x - rr.x, br.w, br.h
+		  "row[%d] node=%llu rect={%.1f,%.1f %.1fx%.1f} text_w=%.1f btn_off=%.1f btn={%.1fx%.1f}\n", i,
+		  ( unsigned long long ) xtk_node_id(row), rr.x, rr.y, rr.w, rr.h, tr.w, br.x - rr.x, br.w, br.h
 		);
 
 		if (i == 0) {
@@ -139,9 +144,10 @@ int main(void) {
 	EXPECT(ok, "all rows share identical geometry");
 	( void ) first_row;
 
-	xtk_runtime_destroy(rt);
-	flux_node_store_destroy(store);
-	xent_destroy_context(ctx);
+	xtk_rt_destroy(rt);
+	flux_host_destroy(xtkhost);
+	flux_store_destroy(store);
+	xent_ctx_destroy(ctx);
 	printf("PASS: xtk rows geometry\n");
 	return 0;
 }

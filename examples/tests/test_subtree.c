@@ -1,12 +1,18 @@
 /**
  * @file test_subtree.c
- * @brief Headless test for flux_subtree_destroy and the node-removed listener.
+ * @brief Headless test for flux_tree_drop and the node-removed listener.
  *
- * Builds a controls subtree (no window, no GPU), destroys it, and asserts the
- * store drained, the layout nodes died, and the listener saw every node.
- * Repeats the cycle many times as a crash/leak smoke test.
+ * Builds a controls subtree via Host CREATE + SET_PROP batches, destroys it,
+ * and asserts the store drained and the listener saw every node.
  */
-#include <fluxent/fluxent.h>
+#include <fluxent/flux_host.h>
+#include "controls/data/flux_component_data.h"
+#include "store/flux_node_data.h"
+#include <fluxent/flux_input.h>
+#include <fluxent/flux_node_store.h>
+#include <xtk/xtk_batch.h>
+#include <xtk/xtk_catalog.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,27 +20,69 @@
 static int  g_removed_count;
 
 static void count_removed(void *userdata, XentNodeId id) {
-	( void ) id;
 	FluxInput *input = ( FluxInput * ) userdata;
-	flux_input_node_destroyed(input, id);
+	flux_input_dropnode(input, id);
 	g_removed_count++;
 }
 
-static XentNodeId build_page(XentContext *ctx, FluxNodeStore *store, XentNodeId root) {
-	XentNodeId page = flux_create_scroll(&(FluxContainerCreateInfo) {ctx, store, root});
+static bool value_string(XtkBatch *batch, XtkNodeRef target, XtkPropertyId id, char const *text) {
+	if (!text) return true;
+	XtkValue v = {
+	  .kind = XTK_VALUE_STRING, .u.string = {.data = ( char * ) text, .len = ( uint32_t ) strlen(text)}
+    };
+	return xtk_batch_set(batch, target, id, v, (XtkChangeStamp) {0});
+}
 
-	flux_create_text(&(FluxTextCreateInfo) {ctx, store, page, "Title", 24.0f});
-	flux_create_button(&(FluxButtonCreateInfo) {ctx, store, page, "Button", NULL, NULL});
-	flux_create_checkbox(&(FluxToggleCreateInfo) {ctx, store, page, "Check", false, NULL, NULL});
-	flux_create_slider(&(FluxSliderCreateInfo) {ctx, store, page, 0.0f, 1.0f, 0.5f, NULL, NULL});
-	flux_create_textbox(&(FluxTextBoxCreateInfo) {ctx, store, page, "...", NULL, NULL});
-	flux_create_progress(&(FluxProgressCreateInfo) {ctx, store, page, 1.0f, 2.0f});
+static XtkBatchResult *commit_batch(XtkHost *host, XtkBatch *batch) {
+	XtkPrepare  *prepare = NULL;
+	XtkBatchDiag diagnostic;
+	if (host->vt->prepare(host, batch, &prepare, &diagnostic) != XTK_BATCH_OK || !prepare) return NULL;
+	return host->vt->commit(host, prepare, &diagnostic);
+}
 
-	XentNodeId card = flux_create_card(&(FluxContainerCreateInfo) {ctx, store, page});
-	flux_create_text(&(FluxTextCreateInfo) {ctx, store, card, "Nested", 13.0f});
-	flux_create_button(&(FluxButtonCreateInfo) {ctx, store, card, "Nested button", NULL, NULL});
+static XentNodeId as_node(XtkCtrl c) { return ( XentNodeId ) c; }
 
-	return page;
+static XentNodeId build_page(XtkHost *host, XentNodeId root) {
+	XtkBatch  *batch  = xtk_batch_alloc(host->vt->revision(host));
+	XtkNodeRef parent = xtk_ref_existing(( XtkCtrl ) root);
+
+	XtkLocalId scroll = xtk_batch_create(batch, XTK_CTRL_SCROLL, parent, xtk_ref_none(), NULL, 0);
+	XtkNodeRef page   = xtk_ref_local(scroll);
+
+	XtkLocalId title  = xtk_batch_create(batch, XTK_CTRL_TEXT, page, xtk_ref_none(), NULL, 0);
+	( void ) value_string(batch, xtk_ref_local(title), XTK_PROP_TEXT, "Title");
+	{
+		XtkValue sz = {.kind = XTK_VALUE_F32, .u.f32 = 24.0f};
+		( void ) xtk_batch_set(batch, xtk_ref_local(title), XTK_PROP_FONT_SIZE, sz, (XtkChangeStamp) {0});
+	}
+
+	XtkLocalId button = xtk_batch_create(batch, XTK_CTRL_BUTTON, page, xtk_ref_none(), NULL, 0);
+	( void ) value_string(batch, xtk_ref_local(button), XTK_PROP_TEXT, "Button");
+
+	XtkLocalId check = xtk_batch_create(batch, XTK_CTRL_CHECKBOX, page, xtk_ref_none(), NULL, 0);
+	( void ) value_string(batch, xtk_ref_local(check), XTK_PROP_TEXT, "Check");
+
+	XtkLocalId slider = xtk_batch_create(batch, XTK_CTRL_SLIDER, page, xtk_ref_none(), NULL, 0);
+	{
+		XtkValue v = {.kind = XTK_VALUE_F32, .u.f32 = 0.5f};
+		( void ) xtk_batch_set(batch, xtk_ref_local(slider), XTK_PROP_VALUE_F32, v, (XtkChangeStamp) {0});
+	}
+
+	( void ) xtk_batch_create(batch, XTK_CTRL_TEXTBOX, page, xtk_ref_none(), NULL, 0);
+	( void ) xtk_batch_create(batch, XTK_CTRL_PROGRESS, page, xtk_ref_none(), NULL, 0);
+
+	XtkLocalId card = xtk_batch_create(batch, XTK_CTRL_CARD, page, xtk_ref_none(), NULL, 0);
+	XtkLocalId nest = xtk_batch_create(batch, XTK_CTRL_TEXT, xtk_ref_local(card), xtk_ref_none(), NULL, 0);
+	( void ) value_string(batch, xtk_ref_local(nest), XTK_PROP_TEXT, "Nested");
+	XtkLocalId nest_btn = xtk_batch_create(batch, XTK_CTRL_BUTTON, xtk_ref_local(card), xtk_ref_none(), NULL, 0);
+	( void ) value_string(batch, xtk_ref_local(nest_btn), XTK_PROP_TEXT, "Nested button");
+
+	XtkBatchResult *result  = commit_batch(host, batch);
+	XentNodeId      page_id = XENT_NODE_INVALID;
+	if (result && result->control_count > 0) page_id = as_node(result->controls [0].control);
+	if (result) xtk_batch_result_destroy(result);
+	xtk_batch_free(batch);
+	return page_id;
 }
 
 #define EXPECT(cond, msg)              \
@@ -47,55 +95,63 @@ static XentNodeId build_page(XentContext *ctx, FluxNodeStore *store, XentNodeId 
 	while (0)
 
 int main(void) {
-	XentConfig     config = {0};
-	XentContext   *ctx    = xent_create_context(&config);
-	FluxNodeStore *store  = flux_node_store_create(64);
-	EXPECT(ctx && store, "context/store creation");
-
-	flux_node_store_bind_context(store, ctx);
+	XtkHost *host = flux_host_create();
+	EXPECT(host, "host creation");
+	XentCtx   *ctx   = flux_host_context(host);
+	FluxStore *store = flux_host_store(host);
+	EXPECT(ctx && store, "context/store");
 
 	FluxInput *input = flux_input_create(ctx, store);
 	EXPECT(input, "input creation");
-	flux_node_store_set_remove_listener(store, count_removed, input);
+	flux_store_ondel(store, count_removed, input);
 
-	XentNodeId root     = xent_create_node(ctx);
-
-	uint32_t   baseline = flux_node_store_count(store);
-	XentNodeId page     = build_page(ctx, store, root);
-	uint32_t   built    = flux_node_store_count(store);
+	XentNodeId root = as_node(host->vt->root(host));
+	EXPECT(root != XENT_NODE_INVALID, "scene root");
+	uint32_t   baseline = flux_store_n(store);
+	XentNodeId page     = build_page(host, root);
+	EXPECT(page != XENT_NODE_INVALID, "page created");
+	uint32_t built = flux_store_n(store);
 	EXPECT(built > baseline, "store grew while building");
 
-	XentNodeId inner_button = xent_get_first_child(ctx, page);
-	flux_input_set_focus(input, inner_button);
+	XentNodeId inner_button = xent_node_first(ctx, page);
+	flux_input_setfocus(input, inner_button);
 
 	g_removed_count = 0;
-	flux_subtree_destroy(store, page);
+	flux_tree_drop(store, page);
 
-	EXPECT(flux_node_store_count(store) == baseline, "store drained back to baseline");
-	EXPECT(!xent_is_valid_node(ctx, page), "page node freed in xent");
+	EXPECT(flux_store_n(store) == baseline, "store drained back to baseline");
+	EXPECT(!xent_node_valid(ctx, page), "page node freed in xent");
 	EXPECT(( uint32_t ) g_removed_count == built - baseline, "listener saw every node");
-	EXPECT(flux_input_get_focused(input) == XENT_NODE_INVALID, "focus reference dropped");
-	EXPECT(xent_get_child_count(ctx, root) == 0, "root detached from destroyed child");
+	EXPECT(flux_input_focus(input) == XENT_NODE_INVALID, "focus reference dropped");
+	EXPECT(xent_node_nchild(ctx, root) == 0, "root detached from destroyed child");
 
 	for (int i = 0; i < 1000; i++) {
-		XentNodeId p = build_page(ctx, store, root);
-		flux_subtree_destroy(store, p);
+		XentNodeId p = build_page(host, root);
+		EXPECT(p != XENT_NODE_INVALID, "cycle page");
+		flux_tree_drop(store, p);
 	}
-	EXPECT(flux_node_store_count(store) == baseline, "1000 cycles leave store clean");
+	EXPECT(flux_store_n(store) == baseline, "1000 cycles leave store clean");
 
 	char volatile_label [32];
 	snprintf(volatile_label, sizeof(volatile_label), "Transient %d", 42);
-	XentNodeId btn = flux_create_button(&(FluxButtonCreateInfo) {ctx, store, root, volatile_label, NULL, NULL});
+	XtkBatch  *batch = xtk_batch_alloc(host->vt->revision(host));
+	XtkLocalId btn_local
+	  = xtk_batch_create(batch, XTK_CTRL_BUTTON, xtk_ref_existing(( XtkCtrl ) root), xtk_ref_none(), NULL, 0);
+	( void ) value_string(batch, xtk_ref_local(btn_local), XTK_PROP_TEXT, volatile_label);
+	XtkBatchResult *result = commit_batch(host, batch);
+	EXPECT(result && result->control_count == 1u, "transient button");
+	XentNodeId btn = as_node(result->controls [0].control);
+	xtk_batch_result_destroy(result);
+	xtk_batch_free(batch);
 	memset(volatile_label, 'X', sizeof(volatile_label) - 1);
 
-	FluxNodeData   *bnd = flux_node_store_get(store, btn);
+	FluxNodeData   *bnd = flux_store_find(store, btn);
 	FluxButtonData *bd  = bnd ? ( FluxButtonData * ) bnd->component_data : NULL;
 	EXPECT(bd && bd->label && strcmp(bd->label, "Transient 42") == 0, "control owns a copy of its label");
-	flux_subtree_destroy(store, btn);
+	flux_tree_drop(store, btn);
 
 	flux_input_destroy(input);
-	flux_node_store_destroy(store);
-	xent_destroy_context(ctx);
+	flux_host_destroy(host);
 	printf("PASS: subtree destroy (%d total node removals across 1001 cycles)\n", g_removed_count);
 	return 0;
 }

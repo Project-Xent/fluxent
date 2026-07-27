@@ -33,9 +33,12 @@ static XtkEl *view(XtkUi *ui, void *model) {
 	/* The scene root sizes children to content, so a fixed-width body pins the
 	 * whole column (and thus the stretched title bar) to the window's width. */
 	return xtk_column(
-	  ui, (XtkStackDesc) {.align = XENT_FLEX_ALIGN_STRETCH},
+	  ui,
+	  (XtkStackDesc) {
+		.align = XENT_FLEX_ALIGN_STRETCH
+    },
 	  (XtkEl *[]) {
-		xtk_title_bar(
+		xtk_titlebar(
 		  ui, "Fluxent TitleBar Demo",
 		  (XtkTitleBarDesc) {
 			.subtitle         = "Preview",
@@ -73,12 +76,12 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	( void ) showCmd;
 
 	static DemoModel model = {0};
-	FluxAppConfig    cfg    = {
-	     .title     = L"Fluxent TitleBar Demo",
-	     .width     = 900,
-	     .height    = 600,
-	     .dark_mode = flux_theme_system_is_dark(),
-	     .backdrop  = FLUX_BACKDROP_MICA,
+	FluxAppCfg       cfg   = {
+	  .title     = L"Fluxent TitleBar Demo",
+	  .width     = 900,
+	  .height    = 600,
+	  .dark_mode = flux_theme_systemdark(),
+	  .backdrop  = FLUX_BACKDROP_MICA,
 	};
 	return flux_run(&cfg, &model, update, view);
 }

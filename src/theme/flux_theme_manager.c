@@ -16,7 +16,7 @@
 #include <cwinrt/event.h>
 #include <cwinrt/Windows.UI.ViewManagement.h>
 
-struct FluxThemeManager {
+struct FluxTheme {
 	FluxThemeMode     mode;
 	FluxThemeColors   light;
 	FluxThemeColors   dark;
@@ -174,17 +174,17 @@ static bool theme_read_system_accent(WUIVI_UISettings *settings, WUI_Color *out)
 	return SUCCEEDED(wuivi_u_i_settings_get_color_value(settings, WUIVI_UIColorType_Accent, out));
 }
 
-static void resolve_current(FluxThemeManager *tm) {
+static void resolve_current(FluxTheme *tm) {
 	bool dark = false;
 	switch (tm->mode) {
 	case FLUX_THEME_LIGHT  : dark = false; break;
 	case FLUX_THEME_DARK   : dark = true; break;
-	case FLUX_THEME_SYSTEM : dark = flux_theme_system_is_dark(); break;
+	case FLUX_THEME_SYSTEM : dark = flux_theme_systemdark(); break;
 	}
 	memcpy(&tm->current, dark ? &tm->dark : &tm->light, sizeof(FluxThemeColors));
 }
 
-static void theme_rebuild(FluxThemeManager *tm) {
+static void theme_rebuild(FluxTheme *tm) {
 	init_light_palette(&tm->light);
 	init_dark_palette(&tm->dark);
 
@@ -198,14 +198,14 @@ static void theme_rebuild(FluxThemeManager *tm) {
 }
 
 static void theme_on_color_values_changed(void *sender, void *args, void *ctx) {
-	FluxThemeManager *tm = ( FluxThemeManager * ) ctx;
+	FluxTheme *tm = ( FluxTheme * ) ctx;
 	( void ) sender;
 	( void ) args;
 	if (tm) InterlockedExchange(&tm->accent_dirty, 1);
 }
 
-FluxThemeManager *flux_theme_create(void) {
-	FluxThemeManager *tm = calloc(1, sizeof(FluxThemeManager));
+FluxTheme *flux_theme_create(void) {
+	FluxTheme *tm = calloc(1, sizeof(FluxTheme));
 	if (!tm) return NULL;
 
 	tm->mode    = FLUX_THEME_LIGHT;
@@ -218,7 +218,7 @@ FluxThemeManager *flux_theme_create(void) {
 	return tm;
 }
 
-void flux_theme_destroy(FluxThemeManager *tm) {
+void flux_theme_destroy(FluxTheme *tm) {
 	if (!tm) return;
 	if (tm->settings) {
 		if (tm->accent_token.value) wuivi_u_i_settings_off_color_values_changed(tm->settings, tm->accent_token);
@@ -227,25 +227,25 @@ void flux_theme_destroy(FluxThemeManager *tm) {
 	free(tm);
 }
 
-void flux_theme_set_mode(FluxThemeManager *tm, FluxThemeMode mode) {
+void flux_theme_setmode(FluxTheme *tm, FluxThemeMode mode) {
 	if (!tm) return;
 	tm->mode = mode;
 	resolve_current(tm);
 	tm->version++;
 }
 
-FluxThemeMode flux_theme_get_mode(FluxThemeManager const *tm) {
+FluxThemeMode flux_theme_mode(FluxTheme const *tm) {
 	if (!tm) return FLUX_THEME_LIGHT;
 	return tm->mode;
 }
 
-FluxThemeColors const *flux_theme_colors(FluxThemeManager *tm) {
+FluxThemeColors const *flux_theme_colors(FluxTheme *tm) {
 	if (!tm) return NULL;
 	if (InterlockedExchange(&tm->accent_dirty, 0)) theme_rebuild(tm);
 	return &tm->current;
 }
 
-FluxThemeColors const *flux_theme_default_colors(void) {
+FluxThemeColors const *flux_theme_defaults(void) {
 	static FluxThemeColors c;
 	static bool            ready = false;
 	if (!ready) {
@@ -255,12 +255,12 @@ FluxThemeColors const *flux_theme_default_colors(void) {
 	return &c;
 }
 
-uint32_t flux_theme_version(FluxThemeManager const *tm) {
+uint32_t flux_theme_ver(FluxTheme const *tm) {
 	if (!tm) return 0;
 	return tm->version;
 }
 
-bool flux_theme_system_is_dark(void) {
+bool flux_theme_systemdark(void) {
 #ifdef _WIN32
 	DWORD   value  = 1;
 	DWORD   size   = sizeof(value);

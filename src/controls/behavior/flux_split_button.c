@@ -1,10 +1,13 @@
 #include "controls/factory/flux_factory.h"
+#include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
 #include "runtime/flux_str.h"
 
-#include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_basic.h"
 #include "fluxent/flux_flyout.h"
-#include "fluxent/flux_menu_flyout.h"
+#include "fluxent/flux_host.h"
+#include "fluxent/flux_menu.h"
+#include <xtk/xtk_catalog.h>
 
 #include <math.h>
 #include <stdlib.h>
@@ -13,38 +16,67 @@
 /* SplitButton routes a pointer-down by zone: the left primary zone fires the
  * action callback; the right secondary zone (last 36px) toggles the flyout. The
  * binding is allocated at create time so the primary action works before any
- * flyout is attached, and flux_split_button_set_flyout_ex fills in the popup. */
+ * flyout is attached, and flux_prop_split_flyout_ex fills in the popup. */
 typedef struct FluxSplitButtonBinding {
-	FluxFlyout     *flyout;
-	FluxMenuFlyout *menu; /**< WinUI SplitButton typically hosts a MenuFlyout; if set it wins. */
-	FluxPlacement   placement;
-	FluxNodeStore  *store;
-	XentNodeId      node;
-	FluxWindow     *window;
-	XentContext    *ctx;
-	bool            pressed_secondary; /**< Which zone the active press landed in. */
-	bool            toggle;            /**< ToggleSplitButton: primary click flips is_checked. */
+	FluxFlyout   *flyout;
+	FluxMenu     *menu; /**< WinUI SplitButton typically hosts a MenuFlyout; if set it wins. */
+	FluxPlacement placement;
+	FluxStore    *store;
+	XentNodeId    node;
+	FluxWindow   *window;
+	XentCtx      *ctx;
+	bool          pressed_secondary; /**< Which zone the active press landed in. */
+	bool          toggle;            /**< ToggleSplitButton: primary click flips is_checked. */
 } FluxSplitButtonBinding;
+
+typedef struct FluxSplitButtonState {
+	FluxButtonData         button;
+	FluxSplitButtonBinding binding;
+} FluxSplitButtonState;
 
 static bool split_secondary_zone(FluxSplitButtonBinding const *b, float local_x) {
 	XentRect r = {0};
-	xent_get_layout_rect(b->ctx, b->node, &r);
+	xent_layout_rect(b->ctx, b->node, &r);
 	return local_x >= r.w - (FLUX_SPLIT_SECONDARY_W + FLUX_SPLIT_DIVIDER_W);
 }
 
+static void split_route(FluxSplitButtonBinding const *b, XtkEventId id, XtkEventPayload payload) {
+	XtkHost *host = flux_store_host(b->store);
+	if (!host) return;
+	XtkEvent event = {
+	  .id             = id,
+	  .target         = ( XtkCtrl ) b->node,
+	  .source         = ( XtkCtrl ) b->node,
+	  .current_target = ( XtkCtrl ) b->node,
+	  .phase          = XTK_EVENT_PHASE_TARGET,
+	  .cause          = XTK_EVENT_CAUSE_USER,
+	  .payload        = payload,
+	};
+	flux_host_route(host, &event);
+}
+
 static void split_invoke_primary(FluxSplitButtonBinding const *b) {
-	FluxNodeData   *nd = flux_node_store_get(b->store, b->node);
+	FluxNodeData   *nd = flux_store_find(b->store, b->node);
 	FluxButtonData *bd = nd ? ( FluxButtonData * ) nd->component_data : NULL;
 	if (!bd) return;
 	/* ToggleSplitButton (ToggleSplitButton.cpp OnClickPrimary): flip IsChecked
 	 * FIRST, then notify — the checked visual is optimistic; the app re-sets the
 	 * same value from on_toggle on the next frame. */
 	if (b->toggle) {
-		bd->is_checked = !bd->is_checked;
-		if (bd->on_toggle) bd->on_toggle(bd->on_toggle_ctx, bd->is_checked);
+		bd->is_checked                = !bd->is_checked;
+		bool  checked                 = bd->is_checked;
+		void  (*toggle)(void *, bool) = bd->on_toggle;
+		void  (*click)(void *)        = bd->on_click;
+		void *toggle_ctx              = bd->on_toggle_ctx;
+		void *click_ctx               = bd->on_click_ctx;
+		if (toggle) toggle(toggle_ctx, checked);
+		if (click) click(click_ctx);
+		split_route(b, XTK_EVENT_CHANGE_BOOL, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_BOOL, .u.b = checked});
+		split_route(b, XTK_EVENT_INVOKE, (XtkEventPayload) {0});
 		return;
 	}
 	if (bd->on_click) bd->on_click(bd->on_click_ctx);
+	split_route(b, XTK_EVENT_INVOKE, (XtkEventPayload) {0});
 }
 
 /* Open the secondary flyout. A hosted MenuFlyout opens with the right input kind (so a
@@ -52,14 +84,14 @@ static void split_invoke_primary(FluxSplitButtonBinding const *b) {
  * a generic flyout toggles. */
 static void split_toggle_flyout(FluxSplitButtonBinding const *b, FluxMenuInputKind kind) {
 	if (b->menu) {
-		if (!flux_menu_flyout_is_visible(b->menu)) {
+		if (!flux_menu_visible(b->menu)) {
 			FluxRect anchor = flux_binding_screen_anchor(b->window, b->ctx, b->store, b->node);
-			flux_menu_flyout_show_for_input(b->menu, anchor, FLUX_PLACEMENT_BOTTOM, kind);
+			flux_menu_showinput(b->menu, anchor, FLUX_PLACEMENT_BOTTOM, kind);
 		}
 		return;
 	}
 	if (!b->flyout) return;
-	if (flux_flyout_is_visible(b->flyout)) {
+	if (flux_flyout_visible(b->flyout)) {
 		flux_flyout_dismiss(b->flyout);
 		return;
 	}
@@ -86,43 +118,43 @@ static void split_on_click(void *ctx) {
 
 /* Keyboard parity with WinUI SplitButton: Space/Enter invokes the primary action;
  * Alt+Down or F4 opens the flyout; Escape dismisses it. */
-static bool split_on_key(void *ctx, unsigned int vk, bool down) {
+static bool split_on_key(void *ctx, FluxKey key, bool down) {
 	if (!down) return false;
 	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) ctx;
 	if (!b) return false;
 
-	if (vk == VK_RETURN || vk == VK_SPACE) {
+	if (key == FLUX_KEY_ENTER || key == FLUX_KEY_SPACE) {
 		split_invoke_primary(b);
 		return true;
 	}
-	bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-	if ((vk == VK_DOWN && alt) || vk == VK_F4) {
+	bool alt = flux_key_held(FLUX_KEY_ALT);
+	if ((key == FLUX_KEY_DOWN && alt) || key == FLUX_KEY_F4) {
 		split_toggle_flyout(b, FLUX_MENU_INPUT_KEYBOARD);
 		return true;
 	}
 	/* A hosted MenuFlyout handles Escape via the active-menu key routing; only the
 	 * generic flyout needs an explicit Escape-to-dismiss here. */
-	if (vk == VK_ESCAPE && !b->menu && b->flyout && flux_flyout_is_visible(b->flyout)) {
+	if (key == FLUX_KEY_ESCAPE && !b->menu && b->flyout && flux_flyout_visible(b->flyout)) {
 		flux_flyout_dismiss(b->flyout);
 		return true;
 	}
 	return false;
 }
 
-XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
+XentNodeId flux_split_init(FluxSplitButtonDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
 	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_SPLIT_BUTTON);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData           *nd = flux_node_store_get(info->store, node);
-	FluxButtonData         *bd = nd ? ( FluxButtonData * ) calloc(1, sizeof(FluxButtonData)) : NULL;
-	FluxSplitButtonBinding *b  = nd ? ( FluxSplitButtonBinding * ) calloc(1, sizeof(*b)) : NULL;
-	if (!nd || !bd || !b) {
-		free(bd);
-		free(b);
+	FluxNodeData         *nd = flux_store_find(info->store, node);
+	FluxSplitButtonState *s  = nd ? ( FluxSplitButtonState * ) calloc(1, sizeof(*s)) : NULL;
+	if (!nd || !s) {
+		free(s);
 		return node;
 	}
+	FluxButtonData         *bd       = &s->button;
+	FluxSplitButtonBinding *b        = &s->binding;
 	bd->label                        = flux_str_dup(info->label);
 	bd->icon_name                    = flux_str_dup(info->icon_name);
 	bd->font_size                    = 14.0f;
@@ -144,8 +176,8 @@ XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
 	nd->behavior.on_key              = split_on_key;
 	nd->behavior.on_key_ctx          = b;
 
-	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
-	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
+	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_BUTTON);
+	if (info->label) xent_sem_setlabel(info->ctx, node, info->label);
 	xent_set_focusable(info->ctx, node, true);
 
 	/* Right inset reserves the divider + secondary chevron zone after the label. */
@@ -162,27 +194,29 @@ XentNodeId flux_create_split_button(FluxSplitButtonCreateInfo const *info) {
  * spine, flyout, keyboard, and draw (the split-button draw is already
  * checked-aware); only the primary-click semantics differ (toggle, see
  * split_invoke_primary) and the initial checked state is seeded here. */
-XentNodeId flux_create_toggle_split_button(FluxToggleSplitButtonCreateInfo const *info) {
+XentNodeId flux_togglesplit_init(FluxToggleSplitButtonDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
 	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_TOGGLE_SPLIT_BUTTON);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData           *nd = flux_node_store_get(info->store, node);
-	FluxButtonData         *bd = nd ? ( FluxButtonData * ) calloc(1, sizeof(FluxButtonData)) : NULL;
-	FluxSplitButtonBinding *b  = nd ? ( FluxSplitButtonBinding * ) calloc(1, sizeof(*b)) : NULL;
-	if (!nd || !bd || !b) {
-		free(bd);
-		free(b);
+	FluxNodeData         *nd = flux_store_find(info->store, node);
+	FluxSplitButtonState *s  = nd ? ( FluxSplitButtonState * ) calloc(1, sizeof(*s)) : NULL;
+	if (!nd || !s) {
+		free(s);
 		return node;
 	}
+	FluxButtonData         *bd       = &s->button;
+	FluxSplitButtonBinding *b        = &s->binding;
 	bd->label                        = flux_str_dup(info->label);
 	bd->icon_name                    = flux_str_dup(info->icon_name);
 	bd->font_size                    = 14.0f;
 	bd->style                        = FLUX_BUTTON_STANDARD;
 	bd->is_checked                   = info->checked;
 	bd->on_toggle                    = info->on_toggle;
-	bd->on_toggle_ctx                = info->userdata;
+	bd->on_toggle_ctx                = info->on_toggle_ctx;
+	bd->on_click                     = info->on_click;
+	bd->on_click_ctx                 = info->on_click_ctx;
 
 	b->placement                     = FLUX_PLACEMENT_BOTTOM;
 	b->store                         = info->store;
@@ -199,28 +233,37 @@ XentNodeId flux_create_toggle_split_button(FluxToggleSplitButtonCreateInfo const
 	nd->behavior.on_key              = split_on_key;
 	nd->behavior.on_key_ctx          = b;
 
-	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_BUTTON);
-	if (info->label) xent_set_semantic_label(info->ctx, node, info->label);
+	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_BUTTON);
+	if (info->label) xent_sem_setlabel(info->ctx, node, info->label);
 	xent_set_focusable(info->ctx, node, true);
 
 	flux_leaf_default_metrics(&(FluxLeafMetrics) {
 	  info->ctx, node, info->label, {11.0f, 5.0f, 11.0f + FLUX_SPLIT_DIVIDER_W + FLUX_SPLIT_SECONDARY_W, 6.0f},
 	  {0.0f, 32.0f},
-	         {68.0f, 32.0f}
+         {68.0f, 32.0f}
     });
 
 	return node;
 }
 
-void flux_toggle_split_button_set_checked(FluxNodeStore *store, XentNodeId id, bool checked) {
-	FluxNodeData *nd = flux_node_store_get(store, id);
+void flux_togglesplit_set_checked(FluxStore *store, XentNodeId id, bool checked) {
+	FluxNodeData *nd = flux_store_find(store, id);
 	if (nd && nd->component_type == FLUX_CONTROL_TOGGLE_SPLIT_BUTTON && nd->component_data)
 		(( FluxButtonData * ) nd->component_data)->is_checked = checked;
 }
 
-void flux_split_button_set_flyout_ex(FluxFlyoutBindingInfo const *info) {
+void flux_split_retarget(FluxStore *store, XentNodeId id) {
+	FluxNodeData *nd = flux_store_find(store, id);
+	if (!nd || !nd->behavior.on_pointer_down_ctx) return;
+	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) nd->behavior.on_pointer_down_ctx;
+	b->store                  = store;
+	b->node                   = id;
+	b->ctx                    = flux_store_ctx(store);
+}
+
+void flux_prop_split_flyout_ex(FluxFlyoutBindingInfo const *info) {
 	if (!info || !info->store || !info->flyout) return;
-	FluxNodeData *nd = flux_node_store_get(info->store, info->id);
+	FluxNodeData *nd = flux_store_find(info->store, info->id);
 	if (!nd || nd->behavior.on_pointer_down != split_on_pointer_down) return;
 
 	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) nd->behavior.on_pointer_down_ctx;
@@ -231,9 +274,9 @@ void flux_split_button_set_flyout_ex(FluxFlyoutBindingInfo const *info) {
 	if (info->xctx) b->ctx = info->xctx;
 }
 
-void flux_split_button_set_menu_flyout_ex(FluxContextFlyoutBindingInfo const *info) {
+void flux_prop_split_menu_ex(FluxContextFlyoutBindingInfo const *info) {
 	if (!info || !info->store || !info->menu) return;
-	FluxNodeData *nd = flux_node_store_get(info->store, info->id);
+	FluxNodeData *nd = flux_store_find(info->store, info->id);
 	if (!nd || nd->behavior.on_pointer_down != split_on_pointer_down) return;
 
 	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) nd->behavior.on_pointer_down_ctx;
@@ -241,4 +284,11 @@ void flux_split_button_set_menu_flyout_ex(FluxContextFlyoutBindingInfo const *in
 	b->menu   = info->menu;
 	b->window = info->window;
 	if (info->xctx) b->ctx = info->xctx;
+}
+
+void flux_split_clear_menu(FluxStore *store, XentNodeId id, FluxMenu *menu) {
+	FluxNodeData *nd = flux_store_find(store, id);
+	if (!nd || nd->behavior.on_pointer_down != split_on_pointer_down) return;
+	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) nd->behavior.on_pointer_down_ctx;
+	if (b && b->menu == menu) b->menu = NULL;
 }

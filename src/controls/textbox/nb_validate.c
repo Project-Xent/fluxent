@@ -3,6 +3,7 @@
 #endif
 
 #include "tb_internal.h"
+#include "bridge/flux_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -140,10 +141,8 @@ void nb_coerce_value(FluxTextBoxInputData *tb) {
 }
 
 void nb_sync_semantics(FluxTextBoxInputData *tb) {
-	xent_set_semantic_value(
-	  tb->ctx, tb->node, ( float ) tb->nb->value, ( float ) tb->nb->minimum, ( float ) tb->nb->maximum
-	);
-	xent_set_semantic_expanded(tb->ctx, tb->node, tb->nb->spin_placement == 2);
+	xent_sem_setvalue(tb->ctx, tb->node, ( float ) tb->nb->value, ( float ) tb->nb->minimum, ( float ) tb->nb->maximum);
+	xent_sem_setexpanded(tb->ctx, tb->node, tb->nb->spin_placement == 2);
 }
 
 void nb_update_text_to_value(FluxTextBoxInputData *tb) {
@@ -159,22 +158,38 @@ void nb_update_text_to_value(FluxTextBoxInputData *tb) {
 	tb->nb->text_updating = false;
 }
 
-void nb_set_value(FluxTextBoxInputData *tb, double new_value) {
-	if (tb->nb->value_updating) return;
+static bool nb_apply_value(FluxTextBoxInputData *tb, double new_value, double *applied) {
+	if (tb->nb->value_updating) return false;
 	double old             = tb->nb->value;
 	tb->nb->value_updating = true;
 
 	tb->nb->value          = new_value;
 	nb_coerce_value(tb);
-	new_value    = tb->nb->value;
-
-	bool changed = (new_value != old) && !(isnan(new_value) && isnan(old));
-	if (changed && tb->nb->on_value_change) tb->nb->on_value_change(tb->nb->on_value_change_ctx, new_value);
-
 	nb_update_text_to_value(tb);
 	nb_sync_semantics(tb);
 	tb->nb->value_updating = false;
+
+	new_value              = tb->nb->value;
+	if (applied) *applied = new_value;
+	return (new_value != old) && !(isnan(new_value) && isnan(old));
 }
+
+static void nb_notify_value(FluxTextBoxInputData *tb, double value) {
+	void  (*notify)(void *, double) = tb->nb->on_value_change;
+	void *notify_ctx                = tb->nb->on_value_change_ctx;
+	flux_input_route_event(
+	  flux_store_host(tb->store), tb->node, XTK_EVENT_CHANGE_F64,
+	  (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_F64, .u.f64 = value}, XTK_EVENT_CAUSE_USER
+	);
+	if (notify) notify(notify_ctx, value);
+}
+
+void nb_set_value(FluxTextBoxInputData *tb, double new_value) {
+	double applied;
+	if (nb_apply_value(tb, new_value, &applied)) nb_notify_value(tb, applied);
+}
+
+void nb_project_value(FluxTextBoxInputData *tb, double new_value) { ( void ) nb_apply_value(tb, new_value, NULL); }
 
 /* INumberParser.ParseDouble yields a Windows.Foundation.IReference<double>*, which
  * cwinrt surfaces untyped; its Value() accessor is vtable slot 6 (after IInspectable's
@@ -210,19 +225,22 @@ static bool nb_parse(char const *s, double *out) {
 	return nb_parse_strtod(s, out);
 }
 
-void nb_validate_input(FluxTextBoxInputData *tb) {
-	if (!tb->buffer || tb->buf_len == 0) {
-		nb_set_value(tb, NAN);
-		return;
-	}
+static bool nb_apply_input(FluxTextBoxInputData *tb, double *applied) {
+	if (!tb->buffer || tb->buf_len == 0) return nb_apply_value(tb, NAN, applied);
 
 	double parsed;
 	if (!nb_parse(tb_sync_content(tb), &parsed)) {
 		if (tb->nb->validation == 0) nb_update_text_to_value(tb);
-		return;
+		return false;
 	}
-	if (parsed == tb->nb->value) nb_update_text_to_value(tb);
-	else nb_set_value(tb, parsed);
+	if (parsed != tb->nb->value) return nb_apply_value(tb, parsed, applied);
+	nb_update_text_to_value(tb);
+	return false;
+}
+
+void nb_validate_input(FluxTextBoxInputData *tb) {
+	double applied;
+	if (nb_apply_input(tb, &applied)) nb_notify_value(tb, applied);
 }
 
 /* Wrap a stepped value around the [min, max] range (WinUI NumberBox wrap behavior). */
@@ -233,13 +251,18 @@ static double nb_wrap(double v, double min, double max) {
 }
 
 void nb_step_value(FluxTextBoxInputData *tb, double change) {
-	nb_validate_input(tb);
+	double applied;
+	bool   changed = nb_apply_input(tb, &applied);
 
-	double v = tb->nb->value;
-	if (isnan(v)) return;
+	double v       = tb->nb->value;
+	if (isnan(v)) {
+		if (changed) nb_notify_value(tb, applied);
+		return;
+	}
 
 	v += change;
 	if (tb->nb->is_wrap_enabled) v = nb_wrap(v, tb->nb->minimum, tb->nb->maximum);
 
-	nb_set_value(tb, v);
+	if (nb_apply_value(tb, v, &applied)) changed = true;
+	if (changed) nb_notify_value(tb, applied);
 }

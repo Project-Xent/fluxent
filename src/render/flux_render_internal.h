@@ -2,7 +2,7 @@
  * @file flux_render_internal.h
  * @brief Internal render context and D2D helper utilities.
  *
- * Defines FluxRenderContext passed to control render functions and
+ * Defines FluxRenderCtx passed to control render functions and
  * provides inline helpers for D2D color/rect conversion.
  * @note This is an internal header; do not include from public API.
  */
@@ -17,8 +17,9 @@
 #include <cd2d.h>
 #include <stdbool.h>
 
-#include "fluxent/flux_engine.h"
-#include "fluxent/flux_render_snapshot.h"
+#include "render/flux_engine.h"
+#include "controls/factory/flux_control_registry.h"
+#include "render/flux_render_snapshot.h"
 #include "flux_render_cache.h"
 #include "fluxent/flux_text.h"
 #include "fluxent/flux_theme.h"
@@ -51,12 +52,14 @@ typedef struct FluxFillSink {
 	bool      written;       /**< Set by the control when it deferred its fill. */
 } FluxFillSink;
 
-struct FluxRenderContext {
+void flux_engine_bind(FluxEngine *eng, FluxControlRegistry const *registry, XtkBackend *backend);
+
+struct FluxRenderCtx {
 	ID2D1DeviceContext    *d2d;
 	ID2D1SolidColorBrush  *brush;
 	FluxRenderCache       *cache;
-	FluxTextRenderer      *text;
-	FluxDpiInfo            dpi;
+	FluxText              *text;
+	FluxDpi                dpi;
 	FluxThemeColors const *theme;
 	double                 now;               /**< Monotonic time in seconds. */
 	float                  dt;                /**< Seconds since last frame. */
@@ -88,7 +91,7 @@ static inline D2D1_COLOR_F flux_d2d_color(FluxColor c) {
 	return d;
 }
 
-static void inline flux_set_brush(FluxRenderContext const *rc, FluxColor c) {
+static void inline flux_set_brush(FluxRenderCtx const *rc, FluxColor c) {
 	D2D1_COLOR_F cf = flux_d2d_color(c);
 	ID2D1SolidColorBrush_SetColor(rc->brush, &cf);
 }
@@ -142,9 +145,7 @@ static inline D2D1_POINT_2F flux_point(float x, float y) {
 
 #define FLUX_RT(rc) (( ID2D1RenderTarget * ) (rc)->d2d)
 
-static void inline flux_fill_rounded_rect(
-  FluxRenderContext const *rc, FluxRect const *r, float radius, FluxColor color
-) {
+static void inline flux_fill_rounded_rect(FluxRenderCtx const *rc, FluxRect const *r, float radius, FluxColor color) {
 	D2D1_ROUNDED_RECT  rr = flux_rounded_rect(r, radius);
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
 	flux_set_brush(rc, color);
@@ -152,7 +153,7 @@ static void inline flux_fill_rounded_rect(
 }
 
 static void inline flux_draw_rounded_rect(
-  FluxRenderContext const *rc, FluxRect const *r, float radius, FluxColor color, float width
+  FluxRenderCtx const *rc, FluxRect const *r, float radius, FluxColor color, float width
 ) {
 	D2D1_ROUNDED_RECT  rr = flux_rounded_rect(r, radius);
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
@@ -160,7 +161,7 @@ static void inline flux_draw_rounded_rect(
 	ID2D1RenderTarget_DrawRoundedRectangle(rt, &rr, ( ID2D1Brush * ) rc->brush, width, NULL);
 }
 
-static void inline flux_fill_rect(FluxRenderContext const *rc, FluxRect const *r, FluxColor color) {
+static void inline flux_fill_rect(FluxRenderCtx const *rc, FluxRect const *r, FluxColor color) {
 	D2D1_RECT_F        dr = flux_d2d_rect(r);
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
 	flux_set_brush(rc, color);
@@ -168,9 +169,7 @@ static void inline flux_fill_rect(FluxRenderContext const *rc, FluxRect const *r
 }
 
 /** @brief Fill a rect with a left→right linear gradient between two colors. */
-static void inline flux_fill_h_gradient(
-  FluxRenderContext const *rc, FluxRect const *r, FluxColor left, FluxColor right
-) {
+static void inline flux_fill_h_gradient(FluxRenderCtx const *rc, FluxRect const *r, FluxColor left, FluxColor right) {
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
 	D2D1_GRADIENT_STOP stops [2];
 	stops [0].position                      = 0.0f;
@@ -182,8 +181,8 @@ static void inline flux_fill_h_gradient(
 	ID2D1RenderTarget_CreateGradientStopCollection(rt, stops, 2, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &collection);
 	if (!collection) return;
 
-	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp = {flux_point(r->x, r->y), flux_point(r->x + r->w, r->y)};
-	ID2D1LinearGradientBrush *grad = NULL;
+	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp   = {flux_point(r->x, r->y), flux_point(r->x + r->w, r->y)};
+	ID2D1LinearGradientBrush             *grad = NULL;
 	/* NULL brush properties = identity transform + opacity 1.0. */
 	ID2D1RenderTarget_CreateLinearGradientBrush(rt, &gp, NULL, collection, &grad);
 	ID2D1GradientStopCollection_Release(collection);
@@ -194,7 +193,7 @@ static void inline flux_fill_h_gradient(
 	ID2D1LinearGradientBrush_Release(grad);
 }
 
-static void inline flux_fill_ellipse(FluxRenderContext const *rc, FluxEllipseSpec const *spec, FluxColor color) {
+static void inline flux_fill_ellipse(FluxRenderCtx const *rc, FluxEllipseSpec const *spec, FluxColor color) {
 	D2D1_ELLIPSE       e  = flux_ellipse(spec);
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
 	flux_set_brush(rc, color);
@@ -202,7 +201,7 @@ static void inline flux_fill_ellipse(FluxRenderContext const *rc, FluxEllipseSpe
 }
 
 static void inline flux_stroke_ellipse(
-  FluxRenderContext const *rc, FluxEllipseSpec const *spec, FluxColor color, float width
+  FluxRenderCtx const *rc, FluxEllipseSpec const *spec, FluxColor color, float width
 ) {
 	D2D1_ELLIPSE       e  = flux_ellipse(spec);
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
@@ -210,7 +209,7 @@ static void inline flux_stroke_ellipse(
 	ID2D1RenderTarget_DrawEllipse(rt, &e, ( ID2D1Brush * ) rc->brush, width, NULL);
 }
 
-static void inline flux_draw_line(FluxRenderContext const *rc, FluxLineSpec const *line, FluxColor color, float width) {
+static void inline flux_draw_line(FluxRenderCtx const *rc, FluxLineSpec const *line, FluxColor color, float width) {
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
 	flux_set_brush(rc, color);
 	ID2D1RenderTarget_DrawLine(
@@ -218,17 +217,13 @@ static void inline flux_draw_line(FluxRenderContext const *rc, FluxLineSpec cons
 	);
 }
 
-static void inline flux_fill_background(
-  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds
-) {
+static void inline flux_fill_background(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
 	if (flux_color_af(snap->background) <= 0.0f) return;
 	if (snap->corner_radius > 0.0f) flux_fill_rounded_rect(rc, bounds, snap->corner_radius, snap->background);
 	else flux_fill_rect(rc, bounds, snap->background);
 }
 
-static void inline flux_stroke_border(
-  FluxRenderContext const *rc, FluxRenderSnapshot const *snap, FluxRect const *bounds
-) {
+static void inline flux_stroke_border(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
 	if (snap->border_width <= 0.0f || flux_color_af(snap->border_color) <= 0.0f) return;
 	float    half  = snap->border_width * 0.5f;
 	FluxRect inset = {bounds->x + half, bounds->y + half, bounds->w - half * 2.0f, bounds->h - half * 2.0f};

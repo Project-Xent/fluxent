@@ -49,7 +49,7 @@ static float inline flux_anim_mixf_clamped(float a, float b, float t) {
 	return a + (b - a) * t;
 }
 
-static uint8_t inline flux_quantize_unit_to_byte(float v) {
+static uint8_t inline flux_quantize_byte(float v) {
 	if (v <= 0.0f) return 0;
 	if (v >= 1.0f) return 255;
 	return ( uint8_t ) (v * 255.0f + 0.5f);
@@ -70,14 +70,17 @@ static FluxColor inline flux_anim_lerp_color(FluxColor c0, FluxColor c1, float t
 	float a1 = flux_color_af(c1);
 	float la = flux_anim_mixf(a0, a1, t);
 
-	float pr = flux_anim_mixf(flux_srgb_to_linear(flux_color_rf(c0)) * a0, flux_srgb_to_linear(flux_color_rf(c1)) * a1, t);
-	float pg = flux_anim_mixf(flux_srgb_to_linear(flux_color_gf(c0)) * a0, flux_srgb_to_linear(flux_color_gf(c1)) * a1, t);
-	float pb = flux_anim_mixf(flux_srgb_to_linear(flux_color_bf(c0)) * a0, flux_srgb_to_linear(flux_color_bf(c1)) * a1, t);
+	float pr
+	  = flux_anim_mixf(flux_srgb_to_linear(flux_color_rf(c0)) * a0, flux_srgb_to_linear(flux_color_rf(c1)) * a1, t);
+	float pg
+	  = flux_anim_mixf(flux_srgb_to_linear(flux_color_gf(c0)) * a0, flux_srgb_to_linear(flux_color_gf(c1)) * a1, t);
+	float pb
+	  = flux_anim_mixf(flux_srgb_to_linear(flux_color_bf(c0)) * a0, flux_srgb_to_linear(flux_color_bf(c1)) * a1, t);
 
 	float inv = la > 0.0001f ? 1.0f / la : 0.0f; /* un-premultiply to straight RGB */
 	return flux_color_rgba(
-	  flux_quantize_unit_to_byte(flux_linear_to_srgb(pr * inv)), flux_quantize_unit_to_byte(flux_linear_to_srgb(pg * inv)),
-	  flux_quantize_unit_to_byte(flux_linear_to_srgb(pb * inv)), flux_quantize_unit_to_byte(la)
+	  flux_quantize_byte(flux_linear_to_srgb(pr * inv)), flux_quantize_byte(flux_linear_to_srgb(pg * inv)),
+	  flux_quantize_byte(flux_linear_to_srgb(pb * inv)), flux_quantize_byte(la)
 	);
 }
 
@@ -104,7 +107,7 @@ static float inline flux_ease_out_cubic(float t) {
 }
 
 /** @brief Cubic ease-in-out: smooth acceleration and deceleration. */
-static float inline flux_ease_in_out_cubic(float t) {
+static float inline flux_ease_cubic(float t) {
 	if (t < 0.5f) return 4.0f * t * t * t;
 	float f = 2.0f * t - 2.0f;
 	return 0.5f * f * f * f + 1.0f;

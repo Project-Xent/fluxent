@@ -22,10 +22,6 @@
 
 #include <cwinrt/Windows.UI.Composition.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 typedef struct FluxCompositor   FluxCompositor;
 typedef struct FluxWindowTarget FluxWindowTarget;
@@ -68,24 +64,24 @@ WUC_Visual                     *flux_compose_as_visual(void *composition_object)
  * @brief Create a CompositionGraphicsDevice backed by a Direct2D device.
  *
  * Required for drawing surfaces (Phase B text bridge). The graphics device is
- * owned by the caller and released with flux_compositor_graphics_device_release().
+ * owned by the caller and released with flux_compositor_dev_destroy().
  *
  * @param c          Shared compositor.
  * @param d2d_device The ID2D1Device the surfaces will render through.
  * @return New graphics device, or NULL on failure.
  */
-WUC_CompositionGraphicsDevice  *flux_compositor_create_graphics_device(FluxCompositor *c, IUnknown *d2d_device);
+WUC_CompositionGraphicsDevice  *flux_compositor_dev_create(FluxCompositor *c, IUnknown *d2d_device);
 
 /**
- * @brief Release a graphics device created by flux_compositor_create_graphics_device().
+ * @brief Release a graphics device created by flux_compositor_dev_create().
  */
-void                            flux_compositor_graphics_device_release(WUC_CompositionGraphicsDevice *device);
+void                            flux_compositor_dev_destroy(WUC_CompositionGraphicsDevice *device);
 
 /**
  * @brief Create a composition target bound to an HWND.
  *
  * The target owns a root SpriteVisual. Bind content with
- * flux_window_target_set_swapchain(). One target per HWND.
+ * flux_wintarget_setswapchain(). One target per HWND.
  *
  * @param c    Shared compositor.
  * @param hwnd Window to host the visual tree.
@@ -109,15 +105,15 @@ void                            flux_window_target_destroy(FluxWindowTarget *t);
  * @param swapchain The IDXGISwapChain to display.
  * @return S_OK on success, or an HRESULT error.
  */
-HRESULT                         flux_window_target_set_swapchain(FluxWindowTarget *t, IUnknown *swapchain);
+HRESULT                         flux_wintarget_setswapchain(FluxWindowTarget *t, IUnknown *swapchain);
 
 /**
  * @brief Present a swap chain in a content child sprite over an acrylic root.
  *
- * Unlike flux_window_target_set_swapchain (which makes the swap chain the root
+ * Unlike flux_wintarget_setswapchain (which makes the swap chain the root
  * visual's own brush), this hosts the swap chain in a *child* sprite composed
  * on top of the root. The root's brush is then free to carry a backdrop /
- * acrylic material (see flux_window_target_set_backdrop_brush) that shows
+ * acrylic material (see flux_wintarget_setbackdrop) that shows
  * through wherever the swap chain content is translucent. Idempotent — rebinds
  * the existing child on device loss. Used by standalone popup windows.
  *
@@ -125,29 +121,26 @@ HRESULT                         flux_window_target_set_swapchain(FluxWindowTarge
  * @param swapchain The IDXGISwapChain to display.
  * @return S_OK on success, or an HRESULT error.
  */
-HRESULT                         flux_window_target_present_swapchain_child(FluxWindowTarget *t, IUnknown *swapchain);
+HRESULT                         flux_wintarget_presentchild(FluxWindowTarget *t, IUnknown *swapchain);
 
 /**
  * @brief Set the root visual's brush to an arbitrary backdrop material.
  *
- * Pairs with flux_window_target_present_swapchain_child: the brush (e.g. a host
+ * Pairs with flux_wintarget_presentchild: the brush (e.g. a host
  * backdrop blur from flux_effect) becomes the backplate behind the swap chain
  * content child. The target takes its own reference. NULL clears it.
  */
-void                            flux_window_target_set_backdrop_brush(FluxWindowTarget *t, WUC_Brush *brush);
+void                            flux_wintarget_setbackdrop(FluxWindowTarget *t, WUC_Brush *brush);
 
 /**
  * @brief Set the root visual size in DIPs (call on resize).
  */
-void                            flux_window_target_set_size(FluxWindowTarget *t, float w, float h);
+void                            flux_wintarget_setsize(FluxWindowTarget *t, float w, float h);
 
 /**
  * @brief The root visual of the target (not owned). Children attach here.
  */
 WUC_Visual                     *flux_window_target_root(FluxWindowTarget *t);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_H */

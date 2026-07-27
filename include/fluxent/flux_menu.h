@@ -1,0 +1,217 @@
+/**
+ * @file flux_menu.h
+ * @brief Menu flyout control (WinUI 3 MenuFlyout equivalent).
+ *
+ * Displays a context menu with items, separators, and nested submenus.
+ * Supports keyboard navigation and light-dismiss.
+ */
+
+#ifndef FLUX_MENU_FLYOUT_H
+#define FLUX_MENU_FLYOUT_H
+
+#include "flux_types.h"
+#include "flux_popup.h"
+#include "flux_text.h"
+#include "flux_theme.h"
+#include "flux_window.h"
+
+
+#define FLUX_MENU_PRESENTER_PAD_TOP     2.0f
+#define FLUX_MENU_PRESENTER_PAD_BOTTOM  2.0f
+#define FLUX_MENU_PRESENTER_CORNER      8.0f
+#define FLUX_MENU_PRESENTER_BORDER      1.0f
+
+#define FLUX_MENU_ITEM_PAD_LEFT         11.0f
+#define FLUX_MENU_ITEM_PAD_RIGHT        11.0f
+#define FLUX_MENU_ITEM_PAD_TOP_NARROW   4.0f
+#define FLUX_MENU_ITEM_PAD_BOT_NARROW   5.0f
+#define FLUX_MENU_ITEM_PAD_TOP_TOUCH    8.0f
+#define FLUX_MENU_ITEM_PAD_BOT_TOUCH    9.0f
+#define FLUX_MENU_ITEM_PAD_TOP          FLUX_MENU_ITEM_PAD_TOP_NARROW
+#define FLUX_MENU_ITEM_PAD_BOTTOM       FLUX_MENU_ITEM_PAD_BOT_NARROW
+
+#define FLUX_MENU_ITEM_MARGIN_H         4.0f
+#define FLUX_MENU_ITEM_MARGIN_V         2.0f
+#define FLUX_MENU_ITEM_CORNER           4.0f
+#define FLUX_MENU_ITEM_ICON_SIZE        16.0f
+#define FLUX_MENU_ITEM_ICON_GAP         12.0f
+#define FLUX_MENU_ITEM_CHECK_WIDTH      28.0f
+#define FLUX_MENU_ITEM_CHECK_GLYPH_SIZE 12.0f
+#define FLUX_MENU_ITEM_ACCEL_GAP        24.0f
+#define FLUX_MENU_ITEM_ACCEL_FONT_SIZE  12.0f
+#define FLUX_MENU_ITEM_CHEVRON_GAP      24.0f
+#define FLUX_MENU_ITEM_CHEVRON_SIZE     12.0f
+#define FLUX_MENU_SEP_HEIGHT            1.0f
+#define FLUX_MENU_SEP_PAD_TOP           1.0f
+#define FLUX_MENU_SEP_PAD_BOTTOM        1.0f
+#define FLUX_MENU_ITEM_FONT_SIZE        14.0f
+#define FLUX_MENU_THEME_MIN_HEIGHT      32.0f
+#define FLUX_MENU_MAX_ITEMS             64
+
+/** @brief Menu item kind. */
+typedef enum FluxMenuItemType
+{
+	FLUX_MENU_ITEM_NORMAL    = 0,
+	FLUX_MENU_ITEM_SEPARATOR = 1,
+	FLUX_MENU_ITEM_TOGGLE    = 2,
+	FLUX_MENU_ITEM_SUBMENU   = 3,
+	FLUX_MENU_ITEM_RADIO     = 4,
+} FluxMenuItemType;
+
+/** @brief Input modality used to choose menu item padding. */
+typedef enum FluxMenuInputKind
+{
+	FLUX_MENU_INPUT_MOUSE    = 0, /**< Mouse-invoked menu. */
+	FLUX_MENU_INPUT_KEYBOARD = 1, /**< Keyboard-invoked menu. */
+	FLUX_MENU_INPUT_PEN      = 2, /**< Pen-invoked menu. */
+	FLUX_MENU_INPUT_TOUCH    = 3, /**< Touch-invoked menu. */
+} FluxMenuInputKind;
+
+/**
+ * Describes a single menu item to be added via flux_menu_additem().
+ * The strings are copied internally — callers need not keep them alive.
+ */
+typedef struct FluxMenuItemDef {
+	FluxMenuItemType type;
+
+	char const      *label;                  /**< Display text (UTF-8). */
+	char const      *icon_glyph;             /**< Single Segoe Fluent Icons glyph, or NULL. */
+	char const      *accelerator_text;       /**< Accelerator text, or NULL. */
+
+	bool             enabled;                /**< Whether the item can be invoked. */
+	bool             checked;                /**< State for toggle and radio items. */
+
+	void             (*on_click)(void *ctx); /**< Callback invoked when the item is selected. */
+	void            *on_click_ctx;
+
+	struct FluxMenu *submenu;     /**< Nested submenu for submenu items; not owned. */
+
+	char const      *radio_group; /**< Radio group name copied by the menu, or NULL. */
+} FluxMenuItemDef;
+
+/** @brief Opaque menu flyout handle. */
+typedef struct FluxMenu  FluxMenu;
+
+/**
+ * @brief Create a menu flyout. One FluxMenu instance can be shown, dismissed,
+ * and re-shown any number of times.  Items survive across show/dismiss cycles
+ * until explicitly cleared.
+ */
+XENT_NODISCARD FluxMenu *flux_menu_create(FluxWindow *owner);
+
+/**
+ * @brief Destroy the menu flyout and all owned resources.
+ */
+void                     flux_menu_destroy(FluxMenu *menu);
+
+/**
+ * @brief Set the theme colours used when painting.
+ * @deprecated Use flux_menu_setthememanager() instead for automatic theme updates.
+ */
+void                     flux_menu_settheme(FluxMenu *menu, FluxThemeColors const *theme, bool is_dark);
+
+/**
+ * @brief Set the theme manager for automatic theme synchronization.
+ * The menu will query the manager on each show/paint to stay in sync
+ * with theme changes (including system dark/light mode switches).
+ * Pass NULL to disable automatic theme management.
+ */
+void                     flux_menu_setthememanager(FluxMenu *menu, FluxTheme *tm);
+
+/**
+ * @brief Set the shared text renderer for measuring and drawing item text.
+ */
+void                     flux_menu_settext(FluxMenu *menu, FluxText *tr);
+
+/**
+ * @brief Floor the per-item slot height (DIPs); 0 (default) uses the intrinsic
+ * text-driven height. NavigationView's compact/overflow child flyout sets this
+ * to the 40px WinUI nav-row pitch (NavigationViewItemOnLeftMinHeight 36 + the
+ * 4px button margin) so its rows match the pane's, not a dense context menu.
+ */
+void                     flux_menu_setminh(FluxMenu *menu, float height);
+
+/**
+ * @brief Override the popup entrance animation. Menu flyouts default to the vertical
+ * MenuPopupThemeTransition (MENU); NavigationView's children flyout is a plain WinUI
+ * Flyout (Placement RightEdgeAlignedTop), so it sets FLUX_POPUP_ANIM_FLYOUT to get the
+ * PopupThemeTransition directional slide + fade (emerges from the anchor edge).
+ */
+void                     flux_menu_setanim(FluxMenu *menu, FluxPopupAnimStyle style);
+
+/**
+ * @brief Append a menu item. The definition is deep-copied.
+ * Returns the 0-based index of the new item, or -1 on failure.
+ */
+int                      flux_menu_additem(FluxMenu *menu, FluxMenuItemDef const *item);
+
+/**
+ * @brief Append a separator line.
+ * Returns the index or -1.
+ */
+int                      flux_menu_addsep(FluxMenu *menu);
+
+/**
+ * @brief Remove all items while keeping the menu object alive.
+ */
+void                     flux_menu_clear(FluxMenu *menu);
+
+/**
+ * @brief Return the number of items, including separators.
+ */
+int                      flux_menu_nitem(FluxMenu const *menu);
+
+/**
+ * @brief Show the menu anchored to `anchor` in screen coordinates.
+ * `placement` is the preferred direction; the popup will flip if there
+ * is not enough room.
+ */
+void                     flux_menu_show(FluxMenu *menu, FluxRect anchor, FluxPlacement placement);
+
+/**
+ * @brief Show the menu with an explicit input modality.
+ */
+void      flux_menu_showinput(FluxMenu *menu, FluxRect anchor, FluxPlacement placement, FluxMenuInputKind input_kind);
+
+/**
+ * @brief Programmatically dismiss the menu and any open submenus.
+ */
+void      flux_menu_dismiss(FluxMenu *menu);
+
+/**
+ * @brief Dismiss the entire visible menu chain starting from this menu's root.
+ */
+void      flux_menu_dismissall(FluxMenu *menu);
+
+/**
+ * @brief Returns true while the menu popup is on screen.
+ */
+bool      flux_menu_visible(FluxMenu const *menu);
+
+/** @brief Forward keyboard input to a visible menu flyout; returns true when consumed. */
+bool      flux_menu_onkey(FluxMenu *menu, FluxKey key);
+
+/** @brief Set the callback fired when the menu is dismissed. */
+void      flux_menu_ondismiss(FluxMenu *menu, FluxPopupDismissFn cb, void *ctx);
+
+/**
+ * @brief Returns the currently open child submenu of this menu, or NULL.
+ */
+FluxMenu *flux_menu_submenu(FluxMenu *menu);
+
+/**
+ * @brief Returns the parent menu of this submenu, or NULL if this is a root menu.
+ */
+FluxMenu *flux_menu_parent(FluxMenu *menu);
+
+/**
+ * @brief Returns the item index in the parent menu that owns this submenu,
+ * or -1 if this menu is not currently attached to a parent item.
+ */
+int       flux_menu_parentidx(FluxMenu *menu);
+
+/** @brief Deepest visible FluxMenu for a window, or NULL (use flux_app_menu with FluxApp). */
+FluxMenu *flux_menu_active(FluxWindow *owner);
+
+
+#endif

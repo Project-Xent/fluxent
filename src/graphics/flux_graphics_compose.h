@@ -1,6 +1,6 @@
 /**
  * @file flux_graphics_compose.h
- * @brief Composition-mode accessors on FluxGraphics (internal).
+ * @brief Composition-mode accessors on FluxGfx (internal).
  *
  * Kept out of the public `flux_graphics.h` so that header stays free of cwinrt /
  * Windows.UI.Composition types. Used by the app to drive the retained
@@ -14,22 +14,18 @@
 
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /** @brief True when the retained-composition path is active for this context. */
-bool                           flux_graphics_composition_enabled(FluxGraphics const *gfx);
+bool                           flux_graphics_composition_enabled(FluxGfx const *gfx);
 
 /** @brief The thread-shared compositor (not owned). */
-FluxCompositor                *flux_graphics_compositor(FluxGraphics *gfx);
+FluxCompositor                *flux_graphics_compositor(FluxGfx *gfx);
 
 /** @brief The root visual hosting the reconciled tree in composition mode (not owned). */
-WUC_Visual                    *flux_graphics_composition_root(FluxGraphics *gfx);
+WUC_Visual                    *flux_graphics_composition_root(FluxGfx *gfx);
 
 /** @brief The graphics device for per-node surfaces, created lazily (not owned). */
-WUC_CompositionGraphicsDevice *flux_graphics_graphics_device(FluxGraphics *gfx);
+WUC_CompositionGraphicsDevice *flux_graphics_graphics_device(FluxGfx *gfx);
 
 /**
  * @brief Give a top-level window a host-backdrop acrylic backplate (popup mode).
@@ -44,10 +40,7 @@ WUC_CompositionGraphicsDevice *flux_graphics_graphics_device(FluxGraphics *gfx);
  * @param blur Gaussian standard deviation (DIPs).
  * @return true when the acrylic backplate is active.
  */
-bool                           flux_graphics_enable_window_acrylic(FluxGraphics *gfx, float blur);
+bool                           flux_gfx_enable_acrylic(FluxGfx *gfx, float blur);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_GRAPHICS_COMPOSE_H */

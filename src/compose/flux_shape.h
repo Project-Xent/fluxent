@@ -14,10 +14,6 @@
 #include "compose/flux_compose.h"
 #include "fluxent/flux_types.h"
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 typedef struct FluxShapeRect FluxShapeRect;
 
@@ -31,13 +27,13 @@ FluxShapeRect               *flux_shape_rect_create(FluxCompositor *c, float w, 
 void                         flux_shape_rect_destroy(FluxShapeRect *s);
 
 /** @brief Set the rectangle extent (DIPs). */
-void                         flux_shape_rect_set_size(FluxShapeRect *s, float w, float h);
+void                         flux_shape_setsize(FluxShapeRect *s, float w, float h);
 
 /** @brief Set the corner radius (DIPs). */
-void                         flux_shape_rect_set_corner_radius(FluxShapeRect *s, float radius);
+void                         flux_shape_setradius(FluxShapeRect *s, float radius);
 
 /** @brief Set the fill color (use the fill brush directly to animate it). */
-void                         flux_shape_rect_set_fill(FluxShapeRect *s, FluxColor fill);
+void                         flux_shape_setfill(FluxShapeRect *s, FluxColor fill);
 
 /**
  * @brief Fill the shape with an arbitrary composition brush.
@@ -47,19 +43,16 @@ void                         flux_shape_rect_set_fill(FluxShapeRect *s, FluxColo
  * corner-clipped acrylic material layer. The shape takes its own reference; the
  * caller may release theirs after this returns.
  */
-void                         flux_shape_rect_set_fill_brush(FluxShapeRect *s, WUC_Brush *brush);
+void                         flux_shape_setfillbrush(FluxShapeRect *s, WUC_Brush *brush);
 
 /** @brief Set (or update) the stroke color and thickness; thickness 0 clears it visually. */
-void                         flux_shape_rect_set_stroke(FluxShapeRect *s, FluxColor stroke, float thickness);
+void                         flux_shape_setstroke(FluxShapeRect *s, FluxColor stroke, float thickness);
 
 /** @brief The visual to parent into the tree (not owned). */
 WUC_Visual                  *flux_shape_rect_visual(FluxShapeRect *s);
 
 /** @brief The fill color brush (not owned) — animate its `L"Color"` property. */
-WUC_CompositionColorBrush   *flux_shape_rect_fill_brush(FluxShapeRect *s);
+WUC_CompositionColorBrush   *flux_shape_fillbrush(FluxShapeRect *s);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_SHAPE_H */

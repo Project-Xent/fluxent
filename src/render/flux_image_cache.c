@@ -95,7 +95,7 @@ static FluxImageEntry *image_find(char const *source) {
 	return NULL;
 }
 
-void flux_image_cache_release_all(void) {
+void flux_image_cache_clear(void) {
 	for (int i = 0; i < g_count; i++) {
 		if (g_entries [i].bitmap) ID2D1Bitmap1_Release(g_entries [i].bitmap);
 		free(g_entries [i].source);
@@ -108,7 +108,7 @@ void *flux_image_cache_acquire(void *device_context, char const *source, float *
 	if (!device_context || !source || !source [0]) return NULL;
 
 	if (device_context != g_device_context) {
-		flux_image_cache_release_all();
+		flux_image_cache_clear();
 		g_device_context = device_context;
 	}
 

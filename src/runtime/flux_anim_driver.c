@@ -16,11 +16,11 @@ static int            g_count;
 static int            g_cap;
 static UINT_PTR       g_timer;
 
-static void CALLBACK flux_anim_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD systime) {
-	(void) hwnd;
-	(void) msg;
-	(void) id;
-	(void) systime;
+static void CALLBACK  anim_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD systime) {
+	( void ) hwnd;
+	( void ) msg;
+	( void ) id;
+	( void ) systime;
 
 	unsigned long now = GetTickCount();
 	/* Iterate downward so a step that unregisters itself (swap-from-end) is safe;
@@ -42,7 +42,7 @@ void flux_anim_register(void *ctx, FluxAnimStep step) {
 	}
 
 	if (g_count == g_cap) {
-		int            ncap = g_cap ? g_cap * 2 : 8;
+		int            ncap  = g_cap ? g_cap * 2 : 8;
 		FluxAnimEntry *grown = ( FluxAnimEntry * ) realloc(g_entries, ( size_t ) ncap * sizeof(*grown));
 		if (!grown) return; /* drop the registration rather than corrupt the live list */
 		g_entries = grown;
@@ -53,7 +53,7 @@ void flux_anim_register(void *ctx, FluxAnimStep step) {
 	g_entries [g_count].step = step;
 	g_count++;
 
-	if (!g_timer) g_timer = SetTimer(NULL, 0, 16, flux_anim_timer_proc);
+	if (!g_timer) g_timer = SetTimer(NULL, 0, 16, anim_timer_proc);
 }
 
 void flux_anim_unregister(void *ctx) {

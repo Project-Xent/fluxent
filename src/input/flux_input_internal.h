@@ -2,7 +2,10 @@
 #define FLUX_INPUT_INTERNAL_H
 
 #include "fluxent/flux_input.h"
+#include "store/flux_node_data.h"
 #include "render/flux_scroll_geom.h"
+
+#include <windows.h>
 
 /** @brief Mouse scrollbar thumb-drag session (active when axis != 0). */
 typedef struct FluxScrollDrag {
@@ -24,6 +27,15 @@ typedef struct FluxTouchPan {
 	bool       just_promoted;        /**< Set the frame the pan promoted (suppresses the click). */
 } FluxTouchPan;
 
+/** @brief Mouse over-pull session for a RefreshContainer descendant scroller. */
+typedef struct FluxRefreshPull {
+	XentNodeId refresh;
+	XentNodeId scroll;
+	float      start_x, start_y;
+	float      origin_sx, origin_sy;
+	bool       active;
+} FluxRefreshPull;
+
 /**
  * @brief Mutually-exclusive scroll interaction phases.
  *
@@ -40,8 +52,8 @@ typedef enum FluxScrollPhase
 } FluxScrollPhase;
 
 struct FluxInput {
-	XentContext    *ctx;
-	FluxNodeStore  *store;
+	XentCtx        *ctx;
+	FluxStore      *store;
 	XentNodeId      hovered;
 	XentNodeId      pressed;
 	XentNodeId      focused;
@@ -53,8 +65,11 @@ struct FluxInput {
 	XentNodeId      last_click_node;
 	FluxPointerType pointer_type;
 	uint32_t        pointer_id;
+	FluxPoint       pointer;
+	bool            pointer_valid;
 	FluxScrollDrag  scroll_drag;         /**< Mouse scrollbar thumb-drag session. */
 	FluxTouchPan    touch;               /**< Touch content-pan session. */
+	FluxRefreshPull refresh_pull;        /**< Mouse pull recognized through a RefreshContainer ancestor. */
 	XentNodeId      scroll_hover_target; /**< Scroll node currently under the pointer. */
 
 	/* Modal focus trap (ContentDialog): when modal_root is set, Tab navigation is
@@ -72,6 +87,10 @@ bool            input_update_scroll_drag(FluxInput *input, float px, float py);
 bool            input_drive_touch_pan(FluxInput *input, float px, float py);
 bool            input_press_scroll_overlay(FluxInput *input, FluxHitResult const *hit, float px, float py);
 bool            input_setup_touch_pan(FluxInput *input, FluxHitResult const *hit, float px, float py);
+bool            input_setup_refresh_pull(FluxInput *input, FluxHitResult const *hit, float px, float py);
+bool            input_drive_refresh_pull(FluxInput *input, float px, float py);
+bool            input_finish_refresh_pull(FluxInput *input);
+void            input_cancel_refresh_pull(FluxInput *input);
 bool            input_finish_scroll_drag(FluxInput *input);
 bool            input_release_scroll_buttons(FluxInput *input);
 bool            input_finish_touch_pan(FluxInput *input);

@@ -117,19 +117,19 @@ static void tb_set_restored_selection(FluxTextBoxInputData *tb, uint32_t start, 
 	tb->base.cursor_position = end;
 }
 
-static void tb_history_apply(FluxTextBoxInputData *tb, TbEditHistory *entry, bool redo) {
+static bool tb_history_apply(FluxTextBoxInputData *tb, TbEditHistory *entry, bool redo) {
 	uint32_t remove_len  = redo ? entry->deleted_len : entry->inserted_len;
 	char    *insert      = redo ? entry->inserted : entry->deleted;
 	uint32_t insert_len  = redo ? entry->inserted_len : entry->deleted_len;
 
 	tb->applying_history = true;
-	if (tb_replace_span(tb, entry->pos, remove_len, insert, insert_len)) {
+	bool applied         = tb_replace_span(tb, entry->pos, remove_len, insert, insert_len);
+	if (applied) {
 		if (redo) tb_set_restored_selection(tb, entry->after_sel_start, entry->after_sel_end);
 		else tb_set_restored_selection(tb, entry->before_sel_start, entry->before_sel_end);
-		tb_update_scroll(tb);
-		tb_notify_change(tb);
 	}
 	tb->applying_history = false;
+	return applied;
 }
 
 void tb_push_undo(FluxTextBoxInputData *tb) {
@@ -167,8 +167,11 @@ void tb_undo(FluxTextBoxInputData *tb) {
 
 	TbEditHistory entry;
 	if (!tb_history_pop(tb->undo_stack, tb->undo_start, &tb->undo_top, &entry)) return;
-	tb_history_apply(tb, &entry, false);
+	if (!tb_history_apply(tb, &entry, false)) return;
 	tb_history_push_entry(tb->redo_stack, &tb->redo_start, &tb->redo_top, &entry);
+	tb_update_scroll(tb);
+	tb_update_ime_position(tb);
+	tb_notify_change(tb);
 }
 
 void tb_redo(FluxTextBoxInputData *tb) {
@@ -178,8 +181,11 @@ void tb_redo(FluxTextBoxInputData *tb) {
 
 	TbEditHistory entry;
 	if (!tb_history_pop(tb->redo_stack, tb->redo_start, &tb->redo_top, &entry)) return;
-	tb_history_apply(tb, &entry, true);
+	if (!tb_history_apply(tb, &entry, true)) return;
 	tb_history_push_entry(tb->undo_stack, &tb->undo_start, &tb->undo_top, &entry);
+	tb_update_scroll(tb);
+	tb_update_ime_position(tb);
+	tb_notify_change(tb);
 }
 
 void tb_free_undo_redo(FluxTextBoxInputData *tb) {

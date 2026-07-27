@@ -25,10 +25,6 @@
 #include "compose/flux_compose.h"
 #include "fluxent/flux_node_store.h"
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 typedef struct FluxVisualTree FluxVisualTree;
 
@@ -71,16 +67,14 @@ void                          flux_visual_tree_destroy(FluxVisualTree *vt);
  * @param root  Subtree root to reconcile.
  * @param scale DIP-to-pixel factor (dpi/96); values <= 0 are treated as 1.
  */
-void flux_visual_tree_reconcile(
-  FluxVisualTree *vt, XentContext *ctx, FluxNodeStore *store, XentNodeId root, float scale
-);
+void flux_visual_tree_reconcile(FluxVisualTree *vt, XentCtx *ctx, FluxStore *store, XentNodeId root, float scale);
 
 /**
  * @brief The container visual mirroring a layout node, or NULL if absent.
  *
  * Control payload builders attach shapes/surfaces to this container.
  */
-WUC_Container                *flux_visual_tree_node_visual(FluxVisualTree *vt, XentNodeId node);
+WUC_Container *flux_vtree_visual(FluxVisualTree *vt, XentNodeId node);
 
 /**
  * @brief The scroll content holder visual for a scroll node, or NULL.
@@ -89,7 +83,7 @@ WUC_Container                *flux_visual_tree_node_visual(FluxVisualTree *vt, X
  * Offset to an InteractionTracker's -Position scrolls the content on the
  * compositor thread. Returns NULL for non-scroll nodes or unknown ids.
  */
-WUC_Visual                   *flux_visual_tree_node_scroll_holder(FluxVisualTree *vt, XentNodeId node);
+WUC_Visual    *flux_vtree_scrollholder(FluxVisualTree *vt, XentNodeId node);
 
 /**
  * @brief Mark whether a scroll node's holder Offset is tracker-driven.
@@ -97,10 +91,7 @@ WUC_Visual                   *flux_visual_tree_node_scroll_holder(FluxVisualTree
  * When set, the reconciler stops folding the scroll offset into child positions
  * (the tracker-bound holder owns the offset instead). NULL/unknown id is a no-op.
  */
-void                          flux_visual_tree_set_tracker_bound(FluxVisualTree *vt, XentNodeId node, bool bound);
+void           flux_vtree_bindtracker(FluxVisualTree *vt, XentNodeId node, bool bound);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_VISUAL_TREE_H */

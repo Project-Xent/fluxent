@@ -16,7 +16,7 @@ static float anim_clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f :
 /* Unit cubic-bezier ease (P0=0, P3=1): for input x in [0,1], Newton-solve the
  * parameter t such that bezier_x(t)=x, then return bezier_y(t). Six iterations
  * converge well within sub-pixel tolerance for UI timing curves. */
-float flux_cubic_bezier(float x, float x1, float y1, float x2, float y2) {
+float        flux_cubic_bezier(float x, float x1, float y1, float x2, float y2) {
 	float t = anim_clamp01(x);
 	for (int i = 0; i < 6; i++) {
 		float u  = 1.0f - t;

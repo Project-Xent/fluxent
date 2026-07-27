@@ -119,7 +119,7 @@ void flux_compositor_release(FluxCompositor *c) {
 
 WUC_Comp                      *flux_compositor_comp(FluxCompositor *c) { return c ? c->comp : NULL; }
 
-WUC_CompositionGraphicsDevice *flux_compositor_create_graphics_device(FluxCompositor *c, IUnknown *d2d_device) {
+WUC_CompositionGraphicsDevice *flux_compositor_dev_create(FluxCompositor *c, IUnknown *d2d_device) {
 	if (!c || !c->comp || !d2d_device) return NULL;
 
 	FluxICompositorInterop *interop = NULL;
@@ -134,7 +134,7 @@ WUC_CompositionGraphicsDevice *flux_compositor_create_graphics_device(FluxCompos
 	return ( WUC_CompositionGraphicsDevice * ) device;
 }
 
-void flux_compositor_graphics_device_release(WUC_CompositionGraphicsDevice *device) {
+void flux_compositor_dev_destroy(WUC_CompositionGraphicsDevice *device) {
 	if (device) (( IUnknown * ) device)->lpVtbl->Release(( IUnknown * ) device);
 }
 
@@ -209,7 +209,7 @@ static WUC_CompositionSurfaceBrush *swapchain_surface_brush(FluxWindowTarget *t,
 	return brush;
 }
 
-HRESULT flux_window_target_set_swapchain(FluxWindowTarget *t, IUnknown *swapchain) {
+HRESULT flux_wintarget_setswapchain(FluxWindowTarget *t, IUnknown *swapchain) {
 	if (!t || !t->owner || !t->owner->comp || !swapchain) return E_INVALIDARG;
 
 	WUC_CompositionSurfaceBrush *brush = swapchain_surface_brush(t, swapchain);
@@ -253,7 +253,7 @@ static HRESULT swapchain_ensure_content(FluxWindowTarget *t) {
 	return S_OK;
 }
 
-HRESULT flux_window_target_present_swapchain_child(FluxWindowTarget *t, IUnknown *swapchain) {
+HRESULT flux_wintarget_presentchild(FluxWindowTarget *t, IUnknown *swapchain) {
 	if (!t || !t->owner || !t->owner->comp || !swapchain) return E_INVALIDARG;
 
 	WUC_CompositionSurfaceBrush *brush = swapchain_surface_brush(t, swapchain);
@@ -277,7 +277,7 @@ fail:
 	return hr;
 }
 
-void flux_window_target_set_backdrop_brush(FluxWindowTarget *t, WUC_Brush *brush) {
+void flux_wintarget_setbackdrop(FluxWindowTarget *t, WUC_Brush *brush) {
 	if (!t || !t->root) return;
 	( void ) wuc_sprite_put__brush(t->root, brush);
 	if (brush) (( IUnknown * ) brush)->lpVtbl->AddRef(( IUnknown * ) brush);
@@ -285,7 +285,7 @@ void flux_window_target_set_backdrop_brush(FluxWindowTarget *t, WUC_Brush *brush
 	t->backdrop = brush;
 }
 
-void flux_window_target_set_size(FluxWindowTarget *t, float w, float h) {
+void flux_wintarget_setsize(FluxWindowTarget *t, float w, float h) {
 	if (!t || !t->root_visual) return;
 	WFN_Vector_2 size = {w, h};
 	( void ) wuc_visual_put__size(t->root_visual, size);

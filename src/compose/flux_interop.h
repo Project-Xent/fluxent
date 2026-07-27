@@ -20,10 +20,6 @@
 #include <windows.h>
 #include <unknwn.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /* ICompositorInterop {25297D5C-3AD4-4C9C-B5CF-E36A38512330} */
 typedef struct FluxICompositorInterop FluxICompositorInterop;
@@ -170,8 +166,5 @@ static const GUID FluxIID_IVisualInteractionSourceInterop = {
   0x11f62cd1, 0x2f9d, 0x42d3, {0xb0, 0x5f, 0xd6, 0x79, 0x0d, 0x9e, 0x9f, 0x8e}
 };
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_INTEROP_H */

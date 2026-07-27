@@ -1,22 +1,25 @@
 #include "controls/factory/flux_factory.h"
+#include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
 #include "render/flux_anim.h"
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
 #include "runtime/flux_anim_driver.h"
 #include "runtime/flux_str.h"
+#include <fluxent/flux_nav_trace.h>
 
-#include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_container.h"
+#include "controls/factory/flux_init_nav.h"
 #include "fluxent/flux_window.h"
-#include "fluxent/flux_menu_flyout.h"
-#include "fluxent/controls/flux_nav_view_data.h"
-#include "fluxent/controls/flux_title_bar_data.h"
+#include "fluxent/flux_menu.h"
+#include "controls/data/flux_nav_view_data.h"
+#include "controls/data/flux_title_bar_data.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <windows.h>
 
-/* WinUI NavigationView (left nav). See flux_nav_view_data.h for the layout model.
+/* WinUI NavigationView (left nav). See flux_nav_data.h for the layout model.
  * Geometry (pane width, content offset, minimal slide, scrim) and the selection
  * indicator are recomputed on a shared 60fps timer while animating. */
 
@@ -50,7 +53,7 @@ static float nav_ease_trail(float t) {
 	return flux_cubic_bezier((t - 1.0f / 3.0f) * 1.5f, 0.1f, 0.9f, 0.2f, 1.0f);
 }
 
-static void  nav_tween_init(FluxNavTween *tw, float v) {
+static void nav_tween_init(FluxNavTween *tw, float v) {
 	tw->current = tw->start = tw->target = v;
 	tw->active                           = false;
 }
@@ -81,10 +84,21 @@ static bool nav_tween_tick(FluxNavTween *tw, DWORD now, float (*ease)(float)) {
 	return true;
 }
 
-static FluxNavViewData *nav_data(FluxNodeStore *store, XentNodeId nav) {
-	FluxNodeData *nd = flux_node_store_get(store, nav);
+static FluxNavViewData *nav_data(FluxStore *store, XentNodeId nav) {
+	FluxNodeData *nd = flux_store_find(store, nav);
 	if (!nd || nd->component_type != FLUX_CONTROL_NAV_VIEW) return NULL;
 	return ( FluxNavViewData * ) nd->component_data;
+}
+
+static void nav_trace(FluxNavViewData const *d, char const *action, int index) {
+	if (!d) return;
+	flux_nav_trace_log(
+	  "nav.action",
+	  "%s index=%d node=%llu count=%d selected=%d mode=%d minimal_open=%d "
+	  "flyout=%d revision=%llu",
+	  action, index, ( unsigned long long ) d->root, d->count, d->selected, d->mode, d->minimal_open, d->flyout_parent,
+	  ( unsigned long long ) d->selection_revision
+	);
 }
 
 static void nav_repaint(FluxNavViewData *d) {
@@ -93,7 +107,7 @@ static void nav_repaint(FluxNavViewData *d) {
 }
 
 static float nav_item_height(FluxNavItemKind kind);
-static void  nav_apply_selection(FluxNavViewData *d, int index);
+static void  nav_apply_selection(FluxNavViewData *d, int index, bool notify);
 static bool  nav_children_inline(FluxNavViewData const *d);
 static bool  nav_tick_expand(FluxNavViewData *d, DWORD now);
 static void  nav_snap_children(FluxNavViewData *d);
@@ -101,26 +115,25 @@ static void  nav_show_child_flyout(FluxNavViewData *d, int parent);
 static void  nav_toggle_expand(FluxNavViewData *d, int idx);
 
 static void  nav_set_abs(FluxNavViewData *d, XentNodeId node, float x, float y, float w, float h) {
-	xent_set_absolute_position(d->ctx, node, (XentPoint) {x, y});
-	xent_set_size(d->ctx, node, (XentSize) {w, h});
+	xent_setpos(d->ctx, node, (XentPoint) {x, y});
+	xent_setsize(d->ctx, node, (XentSize) {w, h});
 }
 
 /* Update section header heights when label visibility changes. */
 static void nav_sync_header_heights(FluxNavViewData *d) {
 	float h = d->labels_visible ? FLUX_NAV_HEADER_H : 0.0f;
 	for (int i = 0; i < d->count; i++)
-		if (d->items [i].kind == FLUX_NAV_ITEM_HEADER)
-			xent_set_size(d->ctx, d->items [i].node, (XentSize) {NAN, h});
+		if (d->items [i].kind == FLUX_NAV_ITEM_HEADER) xent_setsize(d->ctx, d->items [i].node, (XentSize) {NAN, h});
 }
 
 static void nav_set_scrim_alpha(FluxNavViewData *d, int alpha) {
-	FluxNodeData *sn = flux_node_store_get(d->store, d->scrim);
+	FluxNodeData *sn = flux_store_find(d->store, d->scrim);
 	if (sn) sn->visuals.background = flux_color_rgba(0, 0, 0, alpha);
 }
 
 static void nav_apply_geometry_top(FluxNavViewData *d) {
 	d->labels_visible = true;
-	xent_set_size(d->ctx, d->toggle, (XentSize) {0.0f, 0.0f});
+	xent_setsize(d->ctx, d->toggle, (XentSize) {0.0f, 0.0f});
 	nav_set_abs(d, d->pane, 0.0f, 0.0f, d->width, FLUX_NAV_TOP_H);
 	nav_set_abs(d, d->content, 0.0f, FLUX_NAV_TOP_H, d->width, flux_maxf(0.0f, d->height - FLUX_NAV_TOP_H));
 	nav_set_abs(d, d->scrim, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -130,12 +143,12 @@ static void nav_apply_geometry_top(FluxNavViewData *d) {
 static void nav_apply_geometry_minimal(FluxNavViewData *d) {
 	/* Content clears the integrated caption row (48) or the built-in toggle (40) —
 	 * same rule as inline mode and the pane top-pad at nav_build_tree. */
-	float top    = d->window_title_bar ? FLUX_TB_HEIGHT : (FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD);
-	float pane_x = -(1.0f - d->minimal_t.current) * FLUX_NAV_PANE_EXPANDED;
+	float top      = d->window_title_bar ? FLUX_TB_HEIGHT : (FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD);
+	float pane_x   = -(1.0f - d->minimal_t.current) * FLUX_NAV_PANE_EXPANDED;
 	/* The scrim is an interactive (on_click) full-window overlay used to light-dismiss
 	 * the open flyout. Only size it while the flyout is actually open — a closed,
 	 * alpha-0 but full-window scrim still hit-tests and would eat every content click. */
-	bool scrim_on = d->minimal_t.current > 0.01f;
+	bool  scrim_on = d->minimal_t.current > 0.01f;
 	nav_set_abs(d, d->content, 0.0f, top, d->width, flux_maxf(0.0f, d->height - top));
 	nav_set_abs(d, d->pane, pane_x, 0.0f, FLUX_NAV_PANE_EXPANDED, d->height);
 	nav_set_abs(d, d->scrim, 0.0f, 0.0f, scrim_on ? d->width : 0.0f, scrim_on ? d->height : 0.0f);
@@ -143,7 +156,7 @@ static void nav_apply_geometry_minimal(FluxNavViewData *d) {
 }
 
 static void nav_apply_geometry_inline(FluxNavViewData *d) {
-	float flow = d->pane_w.current; /* animates between 320 and 48 */
+	float flow = d->pane_w.current;                           /* animates between 320 and 48 */
 	float tb   = d->window_title_bar ? FLUX_TB_HEIGHT : 0.0f; /* content clears the caption row */
 	nav_set_abs(d, d->pane, 0.0f, 0.0f, flow, d->height);
 	nav_set_abs(d, d->content, flow, tb, flux_maxf(0.0f, d->width - flow), flux_maxf(0.0f, d->height - tb));
@@ -158,19 +171,30 @@ static void nav_apply_geometry(FluxNavViewData *d) {
 	 * mode blanks them while the pane is still wide (wide-rail-no-labels). */
 	bool labels_was   = d->labels_visible;
 	d->labels_visible = d->pane_w.current > (FLUX_NAV_PANE_COMPACT + FLUX_NAV_ICON_BOX);
-	if (d->labels_visible != labels_was && d->mode != FLUX_NAV_TOP)
+	if (d->labels_visible != labels_was && d->mode != FLUX_NAV_TOP) {
 		nav_sync_header_heights(d);
+		nav_snap_children(d);
+		d->ind_index  = -1;
+		d->ind_primed = false;
+	}
 
-	if (d->mode == FLUX_NAV_TOP) { nav_apply_geometry_top(d); return; }
+	if (d->mode == FLUX_NAV_TOP) {
+		nav_apply_geometry_top(d);
+		return;
+	}
 
 	/* The integrated title bar owns the hamburger, so hide the built-in one and
 	 * park the strip full-width across the top (drawn last => over pane/content). */
 	if (d->title_bar != XENT_NODE_INVALID) nav_set_abs(d, d->title_bar, 0.0f, 0.0f, d->width, FLUX_TB_HEIGHT);
-	xent_set_size(
-	  d->ctx, d->toggle, d->window_title_bar ? (XentSize) {0.0f, 0.0f} : (XentSize) {FLUX_NAV_TOGGLE_W, FLUX_NAV_TOGGLE_H}
+	xent_setsize(
+	  d->ctx, d->toggle,
+	  d->window_title_bar ? (XentSize) {0.0f, 0.0f} : (XentSize) {FLUX_NAV_TOGGLE_W, FLUX_NAV_TOGGLE_H}
 	);
 
-	if (d->mode == FLUX_NAV_MINIMAL) { nav_apply_geometry_minimal(d); return; }
+	if (d->mode == FLUX_NAV_MINIMAL) {
+		nav_apply_geometry_minimal(d);
+		return;
+	}
 
 	nav_apply_geometry_inline(d);
 }
@@ -192,8 +216,8 @@ static float nav_selected_center(FluxNavViewData *d) {
 	int      ind = nav_indicator_item(d);
 	XentRect ir  = {0};
 	XentRect pr  = {0};
-	if (!xent_get_layout_rect(d->ctx, d->items [ind].node, &ir)) return -1.0f;
-	if (!xent_get_layout_rect(d->ctx, d->pane, &pr)) return -1.0f;
+	if (!xent_layout_rect(d->ctx, d->items [ind].node, &ir)) return -1.0f;
+	if (!xent_layout_rect(d->ctx, d->pane, &pr)) return -1.0f;
 	if (ir.h <= 0.0f) return -1.0f;
 	/* Layout rects are scroll-agnostic; the snapshot shifts the pill by the live
 	 * viewport offset for menu items (footer items sit outside the viewport). */
@@ -276,6 +300,7 @@ static void nav_anim_start(FluxNavViewData *d) {
 }
 
 static void nav_set_mode(FluxNavViewData *d, FluxNavDisplayMode mode) {
+	nav_trace(d, "set-mode.request", mode);
 	if (d->mode == mode || mode == FLUX_NAV_TOP || d->mode == FLUX_NAV_TOP)
 		return; /* Top transitions via the pane-display API */
 	FluxNavDisplayMode prev = d->mode;
@@ -294,10 +319,12 @@ static void nav_set_mode(FluxNavViewData *d, FluxNavDisplayMode mode) {
 	nav_snap_children(d);
 	nav_apply_geometry(d);
 	nav_anim_start(d);
+	nav_trace(d, "set-mode.applied", mode);
 }
 
 static void nav_toggle_click(void *ctx) {
 	FluxNavViewData *d = ( FluxNavViewData * ) ctx;
+	nav_trace(d, "toggle.click", -1);
 	if (d->mode == FLUX_NAV_TOP) return;
 	if (d->mode == FLUX_NAV_MINIMAL) {
 		d->minimal_open = !d->minimal_open;
@@ -305,6 +332,7 @@ static void nav_toggle_click(void *ctx) {
 		  &d->minimal_t, d->minimal_open ? 1.0f : 0.0f, d->minimal_open ? NAV_MINIMAL_OPEN_MS : NAV_MINIMAL_CLOSE_MS
 		);
 		nav_anim_start(d);
+		nav_trace(d, "toggle.minimal", -1);
 		return;
 	}
 	nav_set_mode(d, d->mode == FLUX_NAV_EXPANDED ? FLUX_NAV_COMPACT : FLUX_NAV_EXPANDED);
@@ -314,20 +342,24 @@ static void nav_toggle_click(void *ctx) {
  * OnKeyDown, DisplayMode==Minimal && IsPaneOpen). Reaches us because clicking or
  * keyboard-activating the toggle/item focuses it, so the framework routes the key
  * to the focused node's on_key. ctx is the owning FluxNavViewData. */
-static bool nav_escape_key(void *ctx, unsigned int vk, bool down) {
-	if (!down || vk != VK_ESCAPE) return false;
+static bool nav_escape_key(void *ctx, FluxKey key, bool down) {
+	if (!down || key != FLUX_KEY_ESCAPE) return false;
 	FluxNavViewData *d = ( FluxNavViewData * ) ctx;
 	if (d->mode != FLUX_NAV_MINIMAL || !d->minimal_open) return false;
 	d->minimal_open = false;
 	nav_tween_to(&d->minimal_t, 0.0f, NAV_MINIMAL_CLOSE_MS);
 	nav_anim_start(d);
+	nav_trace(d, "escape.close", -1);
 	return true;
 }
 
-static void nav_apply_selection(FluxNavViewData *d, int index) {
+static void nav_apply_selection(FluxNavViewData *d, int index, bool notify) {
+	nav_trace(d, notify ? "select.user.request" : "select.model.request", index);
 	if (index < 0 || index >= d->count) return;
+	if (d->selected == index) return;
+	if (d->selected >= 0) xent_sem_setselected(d->ctx, d->items [d->selected].node, false);
 	d->selected = index;
-	xent_set_semantic_selected(d->ctx, d->items [index].node, true);
+	xent_sem_setselected(d->ctx, d->items [index].node, true);
 	/* Light-dismiss the overlay pane only for leaf items: parents expand in place
 	 * so a child can be picked (WinUI ClosePaneIfNeccessaryAfterItemIsClicked
 	 * requires !DoesNavigationViewItemHaveChildren). */
@@ -336,12 +368,15 @@ static void nav_apply_selection(FluxNavViewData *d, int index) {
 		nav_tween_to(&d->minimal_t, 0.0f, NAV_MINIMAL_CLOSE_MS);
 	}
 	nav_anim_start(d);
-	if (d->on_selection_changed) d->on_selection_changed(d->on_sel_ctx, index);
+	d->selection_revision++;
+	nav_trace(d, notify ? "select.user.applied" : "select.model.applied", index);
+	if (notify && d->on_selection_changed) d->on_selection_changed(d->on_sel_ctx, index);
 }
 
 static void nav_item_click(void *ctx) {
 	FluxNavViewItem *it = ( FluxNavViewItem * ) ctx;
 	FluxNavViewData *d  = it->nav;
+	nav_trace(d, "item.click", it->index);
 	if (it->has_children) {
 		bool chevron         = it->press_on_chevron;
 		it->press_on_chevron = false;
@@ -352,7 +387,7 @@ static void nav_item_click(void *ctx) {
 		nav_toggle_expand(d, it->index);
 		if (chevron) return; /* chevron press toggles without selecting */
 	}
-	nav_apply_selection(d, it->index);
+	nav_apply_selection(d, it->index, true);
 }
 
 static void nav_item_down(void *ctx, float x, float y, int clicks) {
@@ -360,7 +395,7 @@ static void nav_item_down(void *ctx, float x, float y, int clicks) {
 	( void ) clicks;
 	FluxNavViewItem *it = ( FluxNavViewItem * ) ctx;
 	XentRect         r  = {0};
-	if (!it->has_children || !xent_get_layout_rect(it->nav->ctx, it->node, &r)) return;
+	if (!it->has_children || !xent_layout_rect(it->nav->ctx, it->node, &r)) return;
 	it->press_on_chevron = x >= r.w - NAV_CHEVRON_ZONE;
 }
 
@@ -370,12 +405,14 @@ static void nav_scrim_click(void *ctx) {
 	d->minimal_open = false;
 	nav_tween_to(&d->minimal_t, 0.0f, NAV_MINIMAL_CLOSE_MS);
 	nav_anim_start(d);
+	nav_trace(d, "scrim.close", -1);
 }
 
 /* Children render inline only where the full pane is visible; Compact rails and
  * the Top bar show them in a flyout (TabViewItem::ShouldRepeaterShowInFlyout). */
 static bool nav_children_inline(FluxNavViewData const *d) {
-	return d->mode == FLUX_NAV_EXPANDED || d->mode == FLUX_NAV_MINIMAL;
+	if (d->mode == FLUX_NAV_MINIMAL) return true;
+	return d->mode != FLUX_NAV_TOP && d->labels_visible;
 }
 
 static float nav_children_content_h(FluxNavViewData *d, int parent) {
@@ -402,26 +439,26 @@ static void nav_items_restack(FluxNavViewData *d) {
 	for (int i = 0; i < d->count; i++) {
 		FluxNavViewItem *it = &d->items [i];
 		if (!nav_in_items_host(it)) continue;
-		xent_remove_child(d->ctx, d->items_host, it->node);
-		if (it->children_host != XENT_NODE_INVALID) xent_remove_child(d->ctx, d->items_host, it->children_host);
+		xent_node_remove(d->ctx, d->items_host, it->node);
+		if (it->children_host != XENT_NODE_INVALID) xent_node_remove(d->ctx, d->items_host, it->children_host);
 	}
 	for (int i = 0; i < d->count; i++) {
 		FluxNavViewItem *it = &d->items [i];
 		if (!nav_in_items_host(it)) continue;
-		xent_append_child(d->ctx, d->items_host, it->node);
-		if (nav_host_shown(d, it)) xent_append_child(d->ctx, d->items_host, it->children_host);
+		xent_node_append(d->ctx, d->items_host, it->node);
+		if (nav_host_shown(d, it)) xent_node_append(d->ctx, d->items_host, it->children_host);
 	}
 }
 
 static void nav_make_children_host(FluxNavViewData *d, FluxNavViewItem *par) {
 	par->children_host = flux_factory_create_node(d->ctx, d->store, d->items_host, FLUX_CONTROL_CONTAINER);
-	xent_set_protocol(d->ctx, par->children_host, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(d->ctx, par->children_host, XENT_FLEX_COLUMN);
-	xent_set_flex_align_items(d->ctx, par->children_host, XENT_FLEX_ALIGN_STRETCH);
-	xent_set_gap(d->ctx, par->children_host, FLUX_NAV_ITEM_GAP);
-	xent_set_flex_shrink(d->ctx, par->children_host, 0.0f);
-	xent_set_size(d->ctx, par->children_host, (XentSize) {NAN, 0.0f});
-	FluxNodeData *hn = flux_node_store_get(d->store, par->children_host);
+	xent_setproto(d->ctx, par->children_host, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(d->ctx, par->children_host, XENT_FLEX_COLUMN);
+	xent_setitems(d->ctx, par->children_host, XENT_FLEX_ALIGN_STRETCH);
+	xent_setgap(d->ctx, par->children_host, FLUX_NAV_ITEM_GAP);
+	xent_setshrink(d->ctx, par->children_host, 0.0f);
+	xent_setsize(d->ctx, par->children_host, (XentSize) {NAN, 0.0f});
+	FluxNodeData *hn = flux_store_find(d->store, par->children_host);
 	if (hn) hn->clips_children = true; /* the reveal animation clips children */
 	nav_tween_init(&par->expand_t, 0.0f);
 	nav_items_restack(d);
@@ -436,16 +473,18 @@ static void nav_snap_children(FluxNavViewData *d) {
 		bool open = inline_ok && it->expanded;
 		nav_tween_snap(&it->expand_t, open ? 1.0f : 0.0f);
 		float w = (d->mode == FLUX_NAV_TOP) ? 0.0f : NAN;
-		xent_set_size(d->ctx, it->children_host, (XentSize) {w, open ? nav_children_content_h(d, i) : 0.0f});
+		xent_setsize(d->ctx, it->children_host, (XentSize) {w, open ? nav_children_content_h(d, i) : 0.0f});
 	}
 	nav_items_restack(d);
 }
 
 static bool nav_tick_expand_item(FluxNavViewData *d, FluxNavViewItem *it, int index, DWORD now) {
-	bool was = it->expand_t.active;
+	bool was     = it->expand_t.active;
 	bool running = nav_tween_tick(&it->expand_t, now, nav_ease_lead);
 	if (was)
-		xent_set_size(d->ctx, it->children_host, (XentSize) {NAN, it->expand_t.current * nav_children_content_h(d, index)});
+		xent_setsize(
+		  d->ctx, it->children_host, (XentSize) {NAN, it->expand_t.current * nav_children_content_h(d, index)}
+		);
 	return running;
 }
 
@@ -476,8 +515,8 @@ static char const *nav_glyph_utf8(char const *icon_name, char buf [4]) {
 
 static void nav_flyout_child_click(void *ctx) {
 	FluxNavViewItem *it = ( FluxNavViewItem * ) ctx;
-	nav_apply_selection(it->nav, it->index);
 	nav_repaint(it->nav);
+	nav_apply_selection(it->nav, it->index, true);
 }
 
 /* Compact/Top: children open in a flyout beside (rail) or under (bar) the parent. */
@@ -487,25 +526,26 @@ static void nav_child_flyout_dismissed(void *ctx) {
 	FluxNavViewData *d = ( FluxNavViewData * ) ctx;
 	if (d->flyout_parent >= 0 && d->flyout_parent < d->count) d->items [d->flyout_parent].expanded = false;
 	d->flyout_parent = -1;
+	nav_trace(d, "child-flyout.dismiss", -1);
 	nav_repaint(d);
 }
 
 static void nav_show_child_flyout(FluxNavViewData *d, int parent) {
 	if (!d->child_flyout) {
-		d->child_flyout = flux_menu_flyout_create(d->window);
+		d->child_flyout = flux_menu_create(d->window);
 		if (!d->child_flyout) return;
-		flux_menu_flyout_set_theme_manager(d->child_flyout, d->theme);
-		flux_menu_flyout_set_text_renderer(d->child_flyout, d->text);
-		flux_menu_flyout_set_dismiss_callback(d->child_flyout, nav_child_flyout_dismissed, d);
+		flux_menu_setthememanager(d->child_flyout, d->theme);
+		flux_menu_settext(d->child_flyout, d->text);
+		flux_menu_ondismiss(d->child_flyout, nav_child_flyout_dismissed, d);
 		/* WinUI shows these children as NavigationViewItems, not dense menu rows:
 		 * pin the slot to the pane's row pitch (36 min-height + 4 button margin). */
-		flux_menu_flyout_set_min_item_height(d->child_flyout, FLUX_NAV_ITEM_HEIGHT + FLUX_NAV_ITEM_GAP);
+		flux_menu_setminh(d->child_flyout, FLUX_NAV_ITEM_HEIGHT + FLUX_NAV_ITEM_GAP);
 		/* WinUI's ChildrenFlyout is a plain Flyout (Placement RightEdgeAlignedTop), not a
 		 * MenuFlyout — it enters with the PopupThemeTransition directional slide + fade
 		 * (emerging from the left rail edge), not a vertical menu scale-reveal. */
-		flux_menu_flyout_set_anim_style(d->child_flyout, FLUX_POPUP_ANIM_FLYOUT);
+		flux_menu_setanim(d->child_flyout, FLUX_POPUP_ANIM_FLYOUT);
 	}
-	flux_menu_flyout_clear(d->child_flyout);
+	flux_menu_clear(d->child_flyout);
 	for (int i = 0; i < d->count; i++) {
 		FluxNavViewItem *it = &d->items [i];
 		if (it->parent != parent) continue;
@@ -519,14 +559,13 @@ static void nav_show_child_flyout(FluxNavViewData *d, int parent) {
 		  .on_click     = nav_flyout_child_click,
 		  .on_click_ctx = it,
 		};
-		flux_menu_flyout_add_item(d->child_flyout, &def);
+		flux_menu_additem(d->child_flyout, &def);
 	}
 	d->items [parent].expanded = true; /* chevron points open while the flyout is up */
 	d->flyout_parent           = parent;
-	FluxRect anchor            = flux_binding_screen_anchor(d->window, d->ctx, d->store, d->items [parent].node);
-	flux_menu_flyout_show(
-	  d->child_flyout, anchor, d->mode == FLUX_NAV_TOP ? FLUX_PLACEMENT_BOTTOM : FLUX_PLACEMENT_RIGHT
-	);
+	nav_trace(d, "child-flyout.show", parent);
+	FluxRect anchor = flux_binding_screen_anchor(d->window, d->ctx, d->store, d->items [parent].node);
+	flux_menu_show(d->child_flyout, anchor, d->mode == FLUX_NAV_TOP ? FLUX_PLACEMENT_BOTTOM : FLUX_PLACEMENT_RIGHT);
 	nav_repaint(d);
 }
 
@@ -538,6 +577,7 @@ static void nav_toggle_expand(FluxNavViewData *d, int idx) {
 		return;
 	}
 	it->expanded = !it->expanded;
+	nav_trace(d, it->expanded ? "child.expand" : "child.collapse", idx);
 	nav_items_restack(d); /* host enters the flow on open; tick detaches it after collapse */
 	nav_tween_to(&it->expand_t, it->expanded ? 1.0f : 0.0f, NAV_EXPAND_MS);
 	nav_anim_start(d);
@@ -545,16 +585,16 @@ static void nav_toggle_expand(FluxNavViewData *d, int idx) {
 
 static void nav_pane_axis(FluxNavViewData *d, XentFlexDirection dir, XentFlexAlign align) {
 	bool row = (dir == XENT_FLEX_ROW);
-	xent_set_flex_direction(d->ctx, d->pane, dir);
-	xent_set_flex_align_items(d->ctx, d->pane, align);
-	xent_set_flex_direction(d->ctx, d->items_scroll, dir);
-	xent_set_flex_align_items(d->ctx, d->items_scroll, align);
-	xent_set_flex_direction(d->ctx, d->items_host, dir);
-	xent_set_flex_align_items(d->ctx, d->items_host, align);
-	xent_set_wrap_content(d->ctx, d->items_host, row, !row); /* content-sized along the pane axis */
-	xent_set_flex_direction(d->ctx, d->footer_host, dir);
-	xent_set_flex_align_items(d->ctx, d->footer_host, align);
-	xent_set_wrap_content(d->ctx, d->footer_host, row, !row);
+	xent_setflexdir(d->ctx, d->pane, dir);
+	xent_setitems(d->ctx, d->pane, align);
+	xent_setflexdir(d->ctx, d->items_scroll, dir);
+	xent_setitems(d->ctx, d->items_scroll, align);
+	xent_setflexdir(d->ctx, d->items_host, dir);
+	xent_setitems(d->ctx, d->items_host, align);
+	xent_setfit(d->ctx, d->items_host, row, !row); /* content-sized along the pane axis */
+	xent_setflexdir(d->ctx, d->footer_host, dir);
+	xent_setitems(d->ctx, d->footer_host, align);
+	xent_setfit(d->ctx, d->footer_host, row, !row);
 }
 
 static float nav_top_item_width(FluxNavViewData *d, FluxNavViewItem const *it) {
@@ -575,13 +615,13 @@ static void nav_enter_top(FluxNavViewData *d) {
 	d->minimal_open = false;
 	nav_tween_snap(&d->minimal_t, 0.0f);
 	nav_pane_axis(d, XENT_FLEX_ROW, XENT_FLEX_ALIGN_CENTER);
-	xent_set_padding(d->ctx, d->pane, (XentInsets) {FLUX_NAV_TOP_ITEM_PAD_H, 0.0f, FLUX_NAV_TOP_ITEM_PAD_H, 0.0f});
+	xent_setp(d->ctx, d->pane, (XentInsets) {FLUX_NAV_TOP_ITEM_PAD_H, 0.0f, FLUX_NAV_TOP_ITEM_PAD_H, 0.0f});
 	for (int i = 0; i < d->count; i++) {
 		FluxNavViewItem *it = &d->items [i];
 		if (it->parent >= 0) continue; /* children live in collapsed hosts (flyout-only) */
 		if (it->kind == FLUX_NAV_ITEM_SEPARATOR)
-			xent_set_size(d->ctx, it->node, (XentSize) {FLUX_NAV_SEP_TOP_W, FLUX_NAV_SEP_TOP_LINE_H});
-		else xent_set_size(d->ctx, it->node, (XentSize) {nav_top_item_width(d, it), FLUX_NAV_TOP_ITEM_H});
+			xent_setsize(d->ctx, it->node, (XentSize) {FLUX_NAV_SEP_TOP_W, FLUX_NAV_SEP_TOP_LINE_H});
+		else xent_setsize(d->ctx, it->node, (XentSize) {nav_top_item_width(d, it), FLUX_NAV_TOP_ITEM_H});
 	}
 	d->ind_primed = false; /* re-prime the indicator along the new axis */
 	nav_snap_children(d);
@@ -592,13 +632,13 @@ static void nav_enter_top(FluxNavViewData *d) {
 static void nav_leave_top(FluxNavViewData *d) {
 	if (d->mode != FLUX_NAV_TOP) return;
 	nav_pane_axis(d, XENT_FLEX_COLUMN, XENT_FLEX_ALIGN_STRETCH);
-	xent_set_padding(
+	xent_setp(
 	  d->ctx, d->pane,
 	  (XentInsets) {FLUX_NAV_ITEM_MARGIN_H, FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD, FLUX_NAV_ITEM_MARGIN_H, 4.0f}
 	);
 	for (int i = 0; i < d->count; i++)
 		if (d->items [i].parent < 0)
-			xent_set_size(d->ctx, d->items [i].node, (XentSize) {NAN, nav_item_height(d->items [i].kind)});
+			xent_setsize(d->ctx, d->items [i].node, (XentSize) {NAN, nav_item_height(d->items [i].kind)});
 	d->ind_primed = false;
 	d->mode       = FLUX_NAV_EXPANDED; /* concrete left mode applied by the caller */
 	nav_tween_snap(&d->pane_w, FLUX_NAV_PANE_EXPANDED);
@@ -612,13 +652,13 @@ static FluxNavDisplayMode nav_mode_for_width(float w) {
 }
 
 static float nav_dip_scale(FluxNavViewData *d) {
-	FluxDpiInfo dpi = flux_window_dpi(d->window);
+	FluxDpi dpi = flux_window_dpi(d->window);
 	return dpi.dpi_x > 0.0f ? dpi.dpi_x / 96.0f : 1.0f;
 }
 
 /* Window client width in DIPs — the metric WinUI's adaptive thresholds use. */
 static float nav_window_dip_width(FluxNavViewData *d) {
-	FluxSize cs = flux_window_client_size(d->window);
+	FluxSize cs = flux_window_size(d->window);
 	return cs.w / nav_dip_scale(d);
 }
 
@@ -638,7 +678,7 @@ static void nav_apply_window(FluxNavViewData *d, float window_dip) {
 	float w = nav_fit_width(d, window_dip);
 	if (fabsf(w - d->width) > 0.5f) {
 		d->width = w;
-		xent_set_size(d->ctx, d->root, (XentSize) {d->width, d->height});
+		xent_setsize(d->ctx, d->root, (XentSize) {d->width, d->height});
 	}
 	if (d->adaptive && d->mode != FLUX_NAV_TOP) nav_set_mode(d, nav_mode_for_width(window_dip));
 	nav_apply_geometry(d);
@@ -652,7 +692,7 @@ static void nav_on_window_resize(void *ctx, int width_px, int height_px) {
 		float h = height_px / scale;
 		if (fabsf(h - d->height) > 0.5f) {
 			d->height = h;
-			xent_set_size(d->ctx, d->root, (XentSize) {d->width, d->height});
+			xent_setsize(d->ctx, d->root, (XentSize) {d->width, d->height});
 		}
 	}
 	nav_apply_window(d, width_px / scale);
@@ -661,9 +701,9 @@ static void nav_on_window_resize(void *ctx, int width_px, int height_px) {
 static void nav_destroy(void *component_data) {
 	FluxNavViewData *d = ( FluxNavViewData * ) component_data;
 	if (!d) return;
-	if (d->child_flyout) flux_menu_flyout_destroy(d->child_flyout);
+	if (d->child_flyout) flux_menu_destroy(d->child_flyout);
 	nav_anim_remove(d);
-	flux_window_remove_resize_observer(d->window, nav_on_window_resize, d);
+	flux_window_delresizeobs(d->window, nav_on_window_resize, d);
 	flux_str_free(d->app_title);
 	for (int i = 0; i < d->count; i++) {
 		flux_str_free(d->items [i].label);
@@ -672,50 +712,50 @@ static void nav_destroy(void *component_data) {
 	free(d);
 }
 
+static void nav_set_pane_padding(FluxNavViewData *d) {
+	float top_pad = d->window_title_bar ? FLUX_TB_HEIGHT : (FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD);
+	xent_setp(d->ctx, d->pane, (XentInsets) {FLUX_NAV_ITEM_MARGIN_H, top_pad, FLUX_NAV_ITEM_MARGIN_H, 4.0f});
+}
+
 /* The pane holds only the item list + footer; the hamburger lives at root level
  * (see nav_make_toggle) so it stays visible in Minimal when the pane is off-screen.
  * The top padding reserves the hamburger row so the first item clears it. */
 static void nav_setup_pane(FluxNavViewData *d) {
-	xent_set_protocol(d->ctx, d->pane, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(d->ctx, d->pane, XENT_FLEX_COLUMN);
-	xent_set_flex_align_items(d->ctx, d->pane, XENT_FLEX_ALIGN_STRETCH);
-	xent_set_gap(d->ctx, d->pane, FLUX_NAV_ITEM_GAP);
-	/* Reserve the hamburger row at the pane top — or the full title-bar height
-	 * when an integrated title bar owns that strip, so the first item clears it. */
-	float top_pad = d->window_title_bar ? FLUX_TB_HEIGHT : (FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD);
-	xent_set_padding(
-	  d->ctx, d->pane, (XentInsets) {FLUX_NAV_ITEM_MARGIN_H, top_pad, FLUX_NAV_ITEM_MARGIN_H, 4.0f}
-	);
+	xent_setproto(d->ctx, d->pane, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(d->ctx, d->pane, XENT_FLEX_COLUMN);
+	xent_setitems(d->ctx, d->pane, XENT_FLEX_ALIGN_STRETCH);
+	xent_setgap(d->ctx, d->pane, FLUX_NAV_ITEM_GAP);
+	nav_set_pane_padding(d);
 
 	/* The menu list lives inside a scroll viewport: a zero-base grow child that
 	 * eats the pane's free space (pinning the footer to the trailing edge) and
 	 * clips + scrolls the list when it outgrows the pane. Wheel/scrollbar input
 	 * and the auto-derived extent are the standard FLUX_CONTROL_SCROLL paths. */
-	d->items_scroll = flux_create_scroll(&(FluxContainerCreateInfo) {d->ctx, d->store, d->pane});
-	xent_set_flex_align_items(d->ctx, d->items_scroll, XENT_FLEX_ALIGN_STRETCH);
-	xent_set_flex_grow(d->ctx, d->items_scroll, 1.0f);
-	xent_set_flex_basis(d->ctx, d->items_scroll, 0.0f);
-	xent_set_flex_shrink(d->ctx, d->items_scroll, 0.0f);
-	FluxNodeData *sn     = flux_node_store_get(d->store, d->items_scroll);
+	d->items_scroll = flux_scroll_init(&(FluxContainerDesc) {d->ctx, d->store, d->pane});
+	xent_setitems(d->ctx, d->items_scroll, XENT_FLEX_ALIGN_STRETCH);
+	xent_setgrow(d->ctx, d->items_scroll, 1.0f);
+	xent_setbasis(d->ctx, d->items_scroll, 0.0f);
+	xent_setshrink(d->ctx, d->items_scroll, 0.0f);
+	FluxNodeData *sn     = flux_store_find(d->store, d->items_scroll);
 	d->items_scroll_data = sn ? ( struct FluxScrollData * ) sn->component_data : NULL;
 
 	d->items_host        = flux_factory_create_node(d->ctx, d->store, d->items_scroll, FLUX_CONTROL_CONTAINER);
-	xent_set_protocol(d->ctx, d->items_host, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(d->ctx, d->items_host, XENT_FLEX_COLUMN);
-	xent_set_flex_align_items(d->ctx, d->items_host, XENT_FLEX_ALIGN_STRETCH);
-	xent_set_gap(d->ctx, d->items_host, FLUX_NAV_ITEM_GAP);
+	xent_setproto(d->ctx, d->items_host, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(d->ctx, d->items_host, XENT_FLEX_COLUMN);
+	xent_setitems(d->ctx, d->items_host, XENT_FLEX_ALIGN_STRETCH);
+	xent_setgap(d->ctx, d->items_host, FLUX_NAV_ITEM_GAP);
 	/* Content-sized, never compressed: xent treats auto as fill-available and its
 	 * flex shrink compresses child POSITIONS while they draw full-size (overlap). */
-	xent_set_wrap_content(d->ctx, d->items_host, false, true);
-	xent_set_flex_shrink(d->ctx, d->items_host, 0.0f);
+	xent_setfit(d->ctx, d->items_host, false, true);
+	xent_setshrink(d->ctx, d->items_host, 0.0f);
 
 	d->footer_host = flux_factory_create_node(d->ctx, d->store, d->pane, FLUX_CONTROL_CONTAINER);
-	xent_set_protocol(d->ctx, d->footer_host, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(d->ctx, d->footer_host, XENT_FLEX_COLUMN);
-	xent_set_flex_align_items(d->ctx, d->footer_host, XENT_FLEX_ALIGN_STRETCH);
-	xent_set_gap(d->ctx, d->footer_host, FLUX_NAV_ITEM_GAP);
-	xent_set_wrap_content(d->ctx, d->footer_host, false, true);
-	xent_set_flex_shrink(d->ctx, d->footer_host, 0.0f);
+	xent_setproto(d->ctx, d->footer_host, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(d->ctx, d->footer_host, XENT_FLEX_COLUMN);
+	xent_setitems(d->ctx, d->footer_host, XENT_FLEX_ALIGN_STRETCH);
+	xent_setgap(d->ctx, d->footer_host, FLUX_NAV_ITEM_GAP);
+	xent_setfit(d->ctx, d->footer_host, false, true);
+	xent_setshrink(d->ctx, d->footer_host, 0.0f);
 }
 
 /* The pane-toggle (hamburger) is an absolutely-positioned root child drawn last,
@@ -723,10 +763,10 @@ static void nav_setup_pane(FluxNavViewData *d) {
  * is the only affordance to open the overlay pane. */
 static void nav_make_toggle(FluxNavViewData *d) {
 	d->toggle = flux_factory_create_node(d->ctx, d->store, d->root, FLUX_CONTROL_NAV_VIEW_ITEM);
-	xent_set_absolute_position(d->ctx, d->toggle, (XentPoint) {FLUX_NAV_ITEM_MARGIN_H, FLUX_NAV_PANE_TOP_PAD});
-	xent_set_size(d->ctx, d->toggle, (XentSize) {FLUX_NAV_TOGGLE_W, FLUX_NAV_TOGGLE_H});
+	xent_setpos(d->ctx, d->toggle, (XentPoint) {FLUX_NAV_ITEM_MARGIN_H, FLUX_NAV_PANE_TOP_PAD});
+	xent_setsize(d->ctx, d->toggle, (XentSize) {FLUX_NAV_TOGGLE_W, FLUX_NAV_TOGGLE_H});
 
-	FluxNodeData *tn = flux_node_store_get(d->store, d->toggle);
+	FluxNodeData *tn = flux_store_find(d->store, d->toggle);
 	if (tn) {
 		d->toggle_item            = (FluxNavViewItem) {d, d->toggle, NULL, "GlobalNavButton", FLUX_NAV_ITEM_TOGGLE, -1};
 		tn->component_data        = &d->toggle_item;
@@ -738,7 +778,20 @@ static void nav_make_toggle(FluxNavViewData *d) {
 	xent_set_focusable(d->ctx, d->toggle, true);
 }
 
-static void nav_init_data(FluxNavViewData *d, FluxNavViewCreateInfo const *info, XentNodeId root) {
+static XentNodeId nav_make_titlebar(FluxNavViewData *d, char const *title) {
+	return flux_titlebar_init(&(FluxTitleBarDesc) {
+	  .ctx              = d->ctx,
+	  .store            = d->store,
+	  .parent           = d->root,
+	  .window           = d->window,
+	  .title            = title,
+	  .show_pane_toggle = true,
+	  .integrate_window = true,
+	  .on_pane_toggle   = nav_toggle_click,
+	  .pane_toggle_ctx  = d});
+}
+
+static void nav_init_data(FluxNavViewData *d, FluxNavViewDesc const *info, XentNodeId root) {
 	d->ctx                  = info->ctx;
 	d->store                = info->store;
 	d->window               = info->window;
@@ -769,13 +822,13 @@ static void nav_init_data(FluxNavViewData *d, FluxNavViewCreateInfo const *info,
 
 /* Build the ABSOLUTE root with content (under), scrim, pane (on top), toggle. */
 static void nav_build_tree(FluxNavViewData *d) {
-	xent_set_protocol(d->ctx, d->root, XENT_PROTOCOL_ABSOLUTE);
-	xent_set_size(d->ctx, d->root, (XentSize) {d->width, d->height});
+	xent_setproto(d->ctx, d->root, XENT_PROTOCOL_ABSOLUTE);
+	xent_setsize(d->ctx, d->root, (XentSize) {d->width, d->height});
 
 	d->content        = flux_factory_create_node(d->ctx, d->store, d->root, FLUX_CONTROL_CONTAINER);
 
 	d->scrim          = flux_factory_create_node(d->ctx, d->store, d->root, FLUX_CONTROL_CONTAINER);
-	FluxNodeData *scn = flux_node_store_get(d->store, d->scrim);
+	FluxNodeData *scn = flux_store_find(d->store, d->scrim);
 	if (scn) {
 		scn->behavior.on_click     = nav_scrim_click;
 		scn->behavior.on_click_ctx = d;
@@ -785,7 +838,7 @@ static void nav_build_tree(FluxNavViewData *d) {
 	/* Borrowed (root owns d's lifetime): lets the selection-indicator snapshot run on
 	 * the pane, so the pill tracks the pane and slides off-screen with it in Minimal
 	 * instead of being drawn at the always-on-screen root's left edge. */
-	FluxNodeData *pn = flux_node_store_get(d->store, d->pane);
+	FluxNodeData *pn = flux_store_find(d->store, d->pane);
 	if (pn) pn->component_data = d;
 	nav_setup_pane(d);
 	nav_make_toggle(d); /* last root child: floats above pane + content in every mode */
@@ -793,42 +846,31 @@ static void nav_build_tree(FluxNavViewData *d) {
 	/* Integrated title bar: extends into the OS caption, owns the pane-toggle
 	 * (wired straight to nav_toggle_click) + app title, and draws the min/max/close
 	 * caption buttons. Created last so it draws over the pane/content top strip. */
-	if (d->window_title_bar) {
-		d->title_bar = flux_create_title_bar(&(FluxTitleBarCreateInfo) {
-		  .ctx              = d->ctx,
-		  .store            = d->store,
-		  .parent           = d->root,
-		  .window           = d->window,
-		  .title            = d->app_title,
-		  .show_pane_toggle = true,
-		  .integrate_window = true,
-		  .on_pane_toggle   = nav_toggle_click,
-		  .userdata         = d});
-	}
+	if (d->window_title_bar) d->title_bar = nav_make_titlebar(d, d->app_title);
 }
 
 /* Fit the nav view to the current window and apply initial geometry. */
 static void nav_apply_initial_window(FluxNavViewData *d) {
 	float win_dip = nav_window_dip_width(d);
 	if (d->fill_window) {
-		FluxSize cs = flux_window_client_size(d->window);
+		FluxSize cs = flux_window_size(d->window);
 		d->height   = cs.h / nav_dip_scale(d);
 	}
 	if (d->adaptive) d->mode = nav_mode_for_width(win_dip);
 	d->width = nav_fit_width(d, win_dip);
-	xent_set_size(d->ctx, d->root, (XentSize) {d->width, d->height});
+	xent_setsize(d->ctx, d->root, (XentSize) {d->width, d->height});
 	nav_tween_snap(&d->pane_w, d->mode == FLUX_NAV_COMPACT ? FLUX_NAV_PANE_COMPACT : FLUX_NAV_PANE_EXPANDED);
 	nav_apply_geometry(d);
-	flux_window_add_resize_observer(d->window, nav_on_window_resize, d);
+	flux_window_addresizeobs(d->window, nav_on_window_resize, d);
 }
 
-XentNodeId flux_create_nav_view(FluxNavViewCreateInfo const *info) {
+XentNodeId flux_nav_init(FluxNavViewDesc const *info) {
 	if (!info || !info->ctx || !info->store || !info->window) return XENT_NODE_INVALID;
 
 	XentNodeId root = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_NAV_VIEW);
 	if (root == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData    *nd = flux_node_store_get(info->store, root);
+	FluxNodeData    *nd = flux_store_find(info->store, root);
 	FluxNavViewData *d  = nd ? ( FluxNavViewData * ) calloc(1, sizeof(*d)) : NULL;
 	if (!nd || !d) {
 		free(d);
@@ -846,6 +888,32 @@ XentNodeId flux_create_nav_view(FluxNavViewCreateInfo const *info) {
 	return root;
 }
 
+bool flux_nav_set_chrome(FluxStore *store, XentNodeId nav, bool window_title_bar, char const *app_title) {
+	FluxNavViewData *d = nav_data(store, nav);
+	if (!d) return false;
+	char *title = app_title ? flux_str_dup(app_title) : NULL;
+	if (app_title && !title) return false;
+	if (window_title_bar && d->title_bar == XENT_NODE_INVALID) {
+		d->title_bar = nav_make_titlebar(d, title);
+		if (d->title_bar == XENT_NODE_INVALID) {
+			flux_str_free(title);
+			return false;
+		}
+	}
+	if (!window_title_bar && d->title_bar != XENT_NODE_INVALID) {
+		flux_tree_drop(store, d->title_bar);
+		d->title_bar = XENT_NODE_INVALID;
+		flux_window_extendtitlebar(d->window, false);
+	}
+	flux_str_free(d->app_title);
+	d->app_title        = title;
+	d->window_title_bar = window_title_bar;
+	if (d->title_bar != XENT_NODE_INVALID) flux_titlebar_set_title(store, d->title_bar, title, NULL);
+	nav_set_pane_padding(d);
+	nav_apply_geometry(d);
+	return true;
+}
+
 static float nav_item_height(FluxNavItemKind kind) {
 	if (kind == FLUX_NAV_ITEM_SEPARATOR) return FLUX_NAV_SEP_H;
 	if (kind == FLUX_NAV_ITEM_HEADER) return FLUX_NAV_HEADER_H;
@@ -861,15 +929,15 @@ static int nav_add(FluxNavViewData *d, XentNodeId host, char const *icon, char c
 	if (node == XENT_NODE_INVALID) return -1;
 	/* Width is auto (NAN) so the host's align-stretch sizes it to the pane content
 	 * width — 312 in Expanded, 40 in Compact — keeping labels visible when open. */
-	xent_set_size(d->ctx, node, (XentSize) {NAN, nav_item_height(kind)});
-	xent_set_flex_shrink(d->ctx, node, 0.0f);
+	xent_setsize(d->ctx, node, (XentSize) {NAN, nav_item_height(kind)});
+	xent_setshrink(d->ctx, node, 0.0f);
 
 	FluxNavViewItem *slot = &d->items [d->count];
 	*slot                 = (FluxNavViewItem) {d, node, flux_str_dup(label), flux_str_dup(icon), kind, d->count};
 	slot->parent          = -1;
 	slot->children_host   = XENT_NODE_INVALID;
 
-	FluxNodeData *in      = flux_node_store_get(d->store, node);
+	FluxNodeData *in      = flux_store_find(d->store, node);
 	bool          inert   = (kind == FLUX_NAV_ITEM_SEPARATOR || kind == FLUX_NAV_ITEM_HEADER);
 	if (in && !inert) {
 		in->component_data               = slot;
@@ -883,38 +951,68 @@ static int nav_add(FluxNavViewData *d, XentNodeId host, char const *icon, char c
 	else if (in) in->component_data = slot;
 	if (!inert) {
 		xent_set_focusable(d->ctx, node, true);
-		xent_set_semantic_role(d->ctx, node, XENT_SEMANTIC_BUTTON);
-		if (label) xent_set_semantic_label(d->ctx, node, label);
+		xent_sem_setrole(d->ctx, node, XENT_SEM_ROLE_BUTTON);
+		if (label) xent_sem_setlabel(d->ctx, node, label);
 	}
 
 	int index = d->count++;
-	if (d->selected < 0 && kind == FLUX_NAV_ITEM_MENU) nav_apply_selection(d, index);
+	nav_trace(d, "model.add-item", index);
+	if (d->selected < 0 && kind == FLUX_NAV_ITEM_MENU) nav_apply_selection(d, index, false);
 	return index;
 }
 
-int flux_nav_view_add_item(FluxNodeStore *store, XentNodeId nav, char const *icon_name, char const *label) {
+bool flux_nav_reset_items(FluxStore *store, XentNodeId nav) {
+	FluxNavViewData *d = nav_data(store, nav);
+	if (!d) return false;
+	nav_trace(d, "model.reset-items.begin", -1);
+	if (d->child_flyout) {
+		flux_menu_destroy(d->child_flyout);
+		d->child_flyout = NULL;
+	}
+	nav_anim_remove(d);
+	for (int i = 0; i < d->count; i++) {
+		flux_str_free(d->items [i].label);
+		flux_str_free(d->items [i].icon_name);
+		xent_node_destroy(d->ctx, d->items [i].node);
+	}
+	for (int i = 0; i < d->count; i++)
+		if (d->items [i].children_host != XENT_NODE_INVALID) xent_node_destroy(d->ctx, d->items [i].children_host);
+	memset(d->items, 0, sizeof(d->items));
+	d->count         = 0;
+	d->selected      = -1;
+	d->ind_index     = -1;
+	d->ind_visible   = -1;
+	d->flyout_parent = -1;
+	d->ind_in_scroll = false;
+	d->ind_primed    = false;
+	nav_tween_snap(&d->ind_top, 0.0f);
+	nav_tween_snap(&d->ind_bot, 0.0f);
+	nav_tween_snap(&d->ind_op, 0.0f);
+	nav_trace(d, "model.reset-items.end", -1);
+	return true;
+}
+
+int flux_nav_add_item(FluxStore *store, XentNodeId nav, char const *icon_name, char const *label) {
 	FluxNavViewData *d = nav_data(store, nav);
 	return d ? nav_add(d, d->items_host, icon_name, label, FLUX_NAV_ITEM_MENU) : -1;
 }
 
-int flux_nav_view_add_footer_item(FluxNodeStore *store, XentNodeId nav, char const *icon_name, char const *label) {
+int flux_nav_addfooter(FluxStore *store, XentNodeId nav, char const *icon_name, char const *label) {
 	FluxNavViewData *d = nav_data(store, nav);
 	return d ? nav_add(d, d->footer_host, icon_name, label, FLUX_NAV_ITEM_FOOTER) : -1;
 }
 
-int flux_nav_view_add_separator(FluxNodeStore *store, XentNodeId nav) {
+int flux_nav_add_separator(FluxStore *store, XentNodeId nav) {
 	FluxNavViewData *d = nav_data(store, nav);
 	return d ? nav_add(d, d->items_host, NULL, NULL, FLUX_NAV_ITEM_SEPARATOR) : -1;
 }
 
-int flux_nav_view_add_header(FluxNodeStore *store, XentNodeId nav, char const *label) {
+int flux_nav_add_header(FluxStore *store, XentNodeId nav, char const *label) {
 	FluxNavViewData *d = nav_data(store, nav);
 	return d ? nav_add(d, d->items_host, NULL, label, FLUX_NAV_ITEM_HEADER) : -1;
 }
 
-int flux_nav_view_add_child_item(
-  FluxNodeStore *store, XentNodeId nav, int parent_index, char const *icon_name, char const *label
-) {
+int flux_nav_addchild(FluxStore *store, XentNodeId nav, int parent_index, char const *icon_name, char const *label) {
 	FluxNavViewData *d = nav_data(store, nav);
 	if (!d || parent_index < 0 || parent_index >= d->count) return -1;
 	FluxNavViewItem *par = &d->items [parent_index];
@@ -928,29 +1026,37 @@ int flux_nav_view_add_child_item(
 	d->items [idx].parent = parent_index;
 	d->items [idx].depth  = par->depth + 1;
 	if (nav_children_inline(d) && par->expanded)
-		xent_set_size(d->ctx, par->children_host, (XentSize) {NAN, nav_children_content_h(d, parent_index)});
+		xent_setsize(d->ctx, par->children_host, (XentSize) {NAN, nav_children_content_h(d, parent_index)});
 	return idx;
 }
 
-char const *flux_nav_view_item_label(FluxNodeStore *store, XentNodeId nav, int index) {
+char const *flux_nav_item_label(FluxStore *store, XentNodeId nav, int index) {
 	FluxNavViewData *d = nav_data(store, nav);
 	if (!d || index < 0 || index >= d->count) return NULL;
 	return d->items [index].label;
 }
 
-void flux_nav_view_select(FluxNodeStore *store, XentNodeId nav, int index) {
+void flux_nav_select(FluxStore *store, XentNodeId nav, int index) {
 	FluxNavViewData *d = nav_data(store, nav);
-	if (d) nav_apply_selection(d, index);
+	nav_trace(d, "api.select", index);
+	if (d) nav_apply_selection(d, index, true);
 }
 
-XentNodeId flux_nav_view_content_node(FluxNodeStore *store, XentNodeId nav) {
+void flux_nav_set_selected(FluxStore *store, XentNodeId nav, int index) {
+	FluxNavViewData *d = nav_data(store, nav);
+	nav_trace(d, "host.set-selected", index);
+	if (d) nav_apply_selection(d, index, false);
+}
+
+XentNodeId flux_nav_content_node(FluxStore *store, XentNodeId nav) {
 	FluxNavViewData *d = nav_data(store, nav);
 	return d ? d->content : XENT_NODE_INVALID;
 }
 
-void flux_nav_view_set_pane_display_mode(FluxNodeStore *store, XentNodeId nav, int mode) {
+void flux_nav_setmode(FluxStore *store, XentNodeId nav, int mode) {
 	FluxNavViewData *d = nav_data(store, nav);
 	if (!d) return;
+	nav_trace(d, "host.set-pane-mode", mode);
 	if (mode == FLUX_NAV_PANE_TOP) {
 		d->adaptive = false;
 		if (d->mode != FLUX_NAV_TOP) nav_enter_top(d);

@@ -9,12 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FLUX_RC_EMPTY    0
-#define FLUX_RC_OCCUPIED 1
-#define FLUX_RC_DELETED  2
+#define FLUX_RC_EMPTY            0
+#define FLUX_RC_OCCUPIED         1
+#define FLUX_RC_DELETED          2
 
 /** @brief Frames-of-inactivity threshold beyond which entries are evicted on insert pressure. */
-#define FLUX_RC_EVICT_AGE_FRAMES    120
+#define FLUX_RC_EVICT_AGE_FRAMES 120
 
 typedef struct FluxCacheSlot {
 	uint8_t        tag;
@@ -117,7 +117,7 @@ void flux_render_cache_destroy(FluxRenderCache *cache) {
 	free(cache);
 }
 
-void flux_render_cache_begin_frame(FluxRenderCache *cache) {
+void flux_rcache_begin(FluxRenderCache *cache) {
 	if (cache) cache->frame++;
 }
 
@@ -132,7 +132,7 @@ FluxCacheEntry *flux_render_cache_get(FluxRenderCache *cache, uint64_t node_id) 
 }
 
 static bool rc_prepare_insert(FluxRenderCache *cache) {
-	if (cache->count >= cache->max_entries) flux_render_cache_evict_lru(cache, FLUX_RC_EVICT_AGE_FRAMES);
+	if (cache->count >= cache->max_entries) flux_rcache_evict(cache, FLUX_RC_EVICT_AGE_FRAMES);
 	if (!rc_needs_grow(cache)) return true;
 	return rc_grow(cache);
 }
@@ -156,7 +156,7 @@ static FluxCacheEntry *rc_insert_new_entry(FluxRenderCache *cache, uint64_t node
 	return &s->entry;
 }
 
-FluxCacheEntry *flux_render_cache_get_or_create(FluxRenderCache *cache, uint64_t node_id) {
+FluxCacheEntry *flux_rcache_ensure(FluxRenderCache *cache, uint64_t node_id) {
 	if (!cache) return NULL;
 
 	FluxCacheSlot *existing = rc_find(cache, node_id);
@@ -219,7 +219,7 @@ static uint32_t rc_oldest_slot(FluxRenderCache const *cache) {
 	return oldest_idx;
 }
 
-void flux_render_cache_evict_lru(FluxRenderCache *cache, uint64_t age_threshold) {
+void flux_rcache_evict(FluxRenderCache *cache, uint64_t age_threshold) {
 	if (!cache) return;
 	rc_evict_by_age(cache, age_threshold);
 	while (cache->count > cache->max_entries) {

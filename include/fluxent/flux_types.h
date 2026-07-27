@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <xtk/xtk_types.h>
-#include <xent/xent_types.h>   /* XENT_NODISCARD + the C23 toolchain gate */
+#include <xent/xent_types.h> /* XENT_NODISCARD + the C23 toolchain gate */
 
 /** @brief RGBA color — alias of XtkColor for API compatibility. */
 typedef XtkColor FluxColor;
@@ -33,12 +33,45 @@ typedef struct FluxSize {
 } FluxSize;
 
 /** @brief DPI information for a display. */
-typedef struct FluxDpiInfo {
+typedef struct FluxDpi {
 	float dpi_x;
 	float dpi_y;
-} FluxDpiInfo;
+} FluxDpi;
 
 #define FLUX_DPI_BASE 96.0f
+
+typedef enum FluxKey
+{
+	FLUX_KEY_NONE = 0,
+	FLUX_KEY_BACKSPACE,
+	FLUX_KEY_TAB,
+	FLUX_KEY_ENTER,
+	FLUX_KEY_SHIFT,
+	FLUX_KEY_CONTROL,
+	FLUX_KEY_ALT,
+	FLUX_KEY_ESCAPE,
+	FLUX_KEY_SPACE,
+	FLUX_KEY_PAGE_UP,
+	FLUX_KEY_PAGE_DOWN,
+	FLUX_KEY_END,
+	FLUX_KEY_HOME,
+	FLUX_KEY_LEFT,
+	FLUX_KEY_UP,
+	FLUX_KEY_RIGHT,
+	FLUX_KEY_DOWN,
+	FLUX_KEY_DELETE,
+	FLUX_KEY_A,
+	FLUX_KEY_C,
+	FLUX_KEY_V,
+	FLUX_KEY_X,
+	FLUX_KEY_Y,
+	FLUX_KEY_Z,
+	FLUX_KEY_F4,
+	FLUX_KEY_F6,
+	FLUX_KEY_COUNT,
+} FluxKey;
+
+bool flux_key_held(FluxKey key);
 
 /** @brief Pointer device type for unified pointer events. */
 typedef enum FluxPointerType
@@ -56,6 +89,7 @@ typedef enum FluxPointerEventKind
 	FLUX_POINTER_UP,           /**< Button released, finger lift, or pen lift. */
 	FLUX_POINTER_CANCEL,       /**< Input stream aborted. */
 	FLUX_POINTER_WHEEL,        /**< Wheel or touchpad scroll; wheel_dx/dy carry notches. */
+	FLUX_POINTER_HOLD,         /**< Touch press-and-hold candidate. */
 	FLUX_POINTER_CONTEXT_MENU, /**< Context menu requested. */
 } FluxPointerEventKind;
 

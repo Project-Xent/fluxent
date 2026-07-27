@@ -1,25 +1,20 @@
 #include "tb_internal.h"
 #include "tb_metrics.h"
-#include "controls/draw/flux_control_draw.h"
 #include "runtime/flux_str.h"
-#include "fluxent/fluxent.h"
-#include "fluxent/flux_engine.h"
+#include "store/flux_node_data.h"
+#include "controls/factory/flux_init_textbox.h"
+#include "render/flux_engine.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef void (*TbDrawFn)(
-  FluxRenderContext const *, FluxRenderSnapshot const *, FluxRect const *, FluxControlState const *
-);
-
 typedef void (*TbChangeFn)(void *, char const *);
 
 typedef struct TbTextControlSpec {
-	XentContext    *ctx;
-	FluxNodeStore  *store;
+	XentCtx        *ctx;
+	FluxStore      *store;
 	XentNodeId      parent;
 	FluxControlType type;
-	TbDrawFn        draw;
 	char const     *placeholder;
 	TbChangeFn      on_change;
 	void           *userdata;
@@ -28,7 +23,7 @@ typedef struct TbTextControlSpec {
 typedef struct TbAppTextControlSpec {
 	FluxApp    *app;
 	XentNodeId  parent;
-	XentNodeId  (*create)(FluxTextBoxCreateInfo const *);
+	XentNodeId  (*create)(FluxTextBoxDesc const *);
 	char const *placeholder;
 	TbChangeFn  on_change;
 	void       *userdata;
@@ -43,29 +38,27 @@ typedef struct TbNumberBoxSpec {
 } TbNumberBoxSpec;
 
 typedef struct TbBaseSpec {
-	XentContext   *ctx;
-	XentNodeId     node;
-	FluxNodeStore *store;
-	char const    *placeholder;
-	TbChangeFn     on_change;
-	void          *userdata;
+	XentCtx    *ctx;
+	XentNodeId  node;
+	FluxStore  *store;
+	char const *placeholder;
+	TbChangeFn  on_change;
+	void       *userdata;
 } TbBaseSpec;
 
-static XentNodeId
-tb_create_node_with_parent(XentContext *ctx, FluxNodeStore *store, XentNodeId parent, FluxControlType type) {
-	XentNodeId node = xent_create_node(ctx);
+static XentNodeId tb_create_node_with_parent(XentCtx *ctx, FluxStore *store, XentNodeId parent, FluxControlType type) {
+	XentNodeId node = xent_node_create(ctx);
 	if (node == XENT_NODE_INVALID) return node;
 
-	flux_set_control_type(ctx, node, type);
+	flux_node_settype(store, node, type);
 
-	if (parent != XENT_NODE_INVALID) xent_append_child(ctx, parent, node);
+	if (parent != XENT_NODE_INVALID) xent_node_append(ctx, parent, node);
 
-	FluxNodeData *nd = flux_node_store_get_or_create(store, node);
+	FluxNodeData *nd = flux_store_ensure(store, node);
 	if (nd) nd->component_type = type;
-	xent_set_userdata(ctx, node, nd);
 	xent_set_focusable(ctx, node, true);
-	xent_set_size(ctx, node, (XentSize) {NAN, 32.0f});
-	xent_set_min_size(ctx, node, (XentSize) {64.0f, 32.0f});
+	xent_setsize(ctx, node, (XentSize) {NAN, 32.0f});
+	xent_setminsize(ctx, node, (XentSize) {64.0f, 32.0f});
 	return node;
 }
 
@@ -94,8 +87,8 @@ static void tb_wire_behaviors(FluxNodeData *nd, FluxTextBoxInputData *tb) {
 	nd->behavior.on_context_menu_ctx    = tb;
 }
 
-static void tb_attach_app(FluxNodeStore *store, XentNodeId node, FluxApp *app) {
-	FluxNodeData *nd = flux_node_store_get(store, node);
+static void tb_attach_app(FluxStore *store, XentNodeId node, FluxApp *app) {
+	FluxNodeData *nd = flux_store_find(store, node);
 	if (nd && nd->component_data) (( FluxTextBoxInputData * ) nd->component_data)->app = app;
 }
 
@@ -153,34 +146,53 @@ static XentNodeId tb_create_text_control(TbTextControlSpec const *spec) {
 	XentNodeId node = tb_create_node_with_parent(spec->ctx, spec->store, spec->parent, spec->type);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData *nd         = flux_node_store_get(spec->store, node);
+	FluxNodeData *nd         = flux_store_find(spec->store, node);
 	TbBaseSpec    base_spec  = {spec->ctx, node, spec->store, spec->placeholder, spec->on_change, spec->userdata};
 	FluxTextBoxInputData *tb = nd ? tb_alloc_base(&base_spec) : NULL;
 	if (nd && tb) tb_wire_behaviors(nd, tb);
 
-	xent_set_semantic_role(spec->ctx, node, XENT_SEMANTIC_CUSTOM);
-	if (spec->placeholder) xent_set_semantic_label(spec->ctx, node, spec->placeholder);
+	xent_sem_setrole(spec->ctx, node, XENT_SEM_ROLE_CUSTOM);
+	if (spec->placeholder) xent_sem_setlabel(spec->ctx, node, spec->placeholder);
 
 	return node;
 }
 
-XentNodeId flux_create_textbox(FluxTextBoxCreateInfo const *info) {
+XentNodeId flux_textbox_init(FluxTextBoxDesc const *info) {
 	if (!info) return XENT_NODE_INVALID;
 	TbTextControlSpec spec = {
-	  info->ctx, info->store, info->parent, FLUX_CONTROL_TEXT_INPUT, flux_draw_textbox, info->placeholder,
-	  info->on_change, info->userdata};
+	  info->ctx, info->store, info->parent, FLUX_CONTROL_TEXT_INPUT, info->placeholder, info->on_change,
+	  info->userdata};
 	return tb_create_text_control(&spec);
+}
+
+void flux_textbox_retarget(XentCtx *ctx, FluxStore *store, XentNodeId node) {
+	FluxNodeData         *nd = flux_store_find(store, node);
+	FluxTextBoxInputData *tb = nd ? ( FluxTextBoxInputData * ) nd->component_data : NULL;
+	if (!tb) return;
+	tb->ctx   = ctx;
+	tb->node  = node;
+	tb->store = store;
+}
+
+void flux_textbox_sync_ime(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (!nd || !nd->component_data) return;
+	if (nd->component_type != FLUX_CONTROL_TEXT_INPUT
+		&& nd->component_type != FLUX_CONTROL_PASSWORD_BOX
+		&& nd->component_type != FLUX_CONTROL_NUMBER_BOX)
+		return;
+	tb_update_ime_position(( FluxTextBoxInputData * ) nd->component_data);
 }
 
 static XentNodeId tb_create_app_control(TbAppTextControlSpec const *spec) {
 	if (!spec->app) return XENT_NODE_INVALID;
 
-	XentContext   *ctx   = flux_app_get_context(spec->app);
-	FluxNodeStore *store = flux_app_get_store(spec->app);
+	XentCtx   *ctx   = flux_app_ctx(spec->app);
+	FluxStore *store = flux_app_store(spec->app);
 	if (!ctx || !store) return XENT_NODE_INVALID;
 
-	FluxTextBoxCreateInfo create_info = {ctx, store, spec->parent, spec->placeholder, spec->on_change, spec->userdata};
-	XentNodeId            node        = spec->create(&create_info);
+	FluxTextBoxDesc create_info = {ctx, store, spec->parent, spec->placeholder, spec->on_change, spec->userdata};
+	XentNodeId      node        = spec->create(&create_info);
 	if (node == XENT_NODE_INVALID) return node;
 
 	tb_attach_app(store, node, spec->app);
@@ -188,20 +200,20 @@ static XentNodeId tb_create_app_control(TbAppTextControlSpec const *spec) {
 	return node;
 }
 
-XentNodeId flux_app_create_textbox(FluxAppTextBoxCreateInfo const *info) {
+XentNodeId flux_app_create_textbox(FluxAppTextBoxDesc const *info) {
 	if (!info) return XENT_NODE_INVALID;
 	TbAppTextControlSpec spec
-	  = {info->app, info->parent, flux_create_textbox, info->placeholder, info->on_change, info->userdata};
+	  = {info->app, info->parent, flux_textbox_init, info->placeholder, info->on_change, info->userdata};
 	return tb_create_app_control(&spec);
 }
 
-static void tb_configure_password_grid(XentContext *ctx, XentNodeId node);
+static void tb_configure_password_grid(XentCtx *ctx, XentNodeId node);
 
-XentNodeId  flux_create_password_box(FluxTextBoxCreateInfo const *info) {
+XentNodeId  flux_password_init(FluxTextBoxDesc const *info) {
 	if (!info) return XENT_NODE_INVALID;
 	TbTextControlSpec spec = {
-	  info->ctx, info->store, info->parent, FLUX_CONTROL_PASSWORD_BOX, flux_draw_password_box, info->placeholder,
-	  info->on_change, info->userdata};
+	  info->ctx, info->store, info->parent, FLUX_CONTROL_PASSWORD_BOX, info->placeholder, info->on_change,
+	  info->userdata};
 	XentNodeId node = tb_create_text_control(&spec);
 	if (node == XENT_NODE_INVALID) return node;
 
@@ -209,10 +221,10 @@ XentNodeId  flux_create_password_box(FluxTextBoxCreateInfo const *info) {
 	return node;
 }
 
-XentNodeId flux_app_create_password_box(FluxAppTextBoxCreateInfo const *info) {
+XentNodeId flux_app_create_password(FluxAppTextBoxDesc const *info) {
 	if (!info) return XENT_NODE_INVALID;
 	TbAppTextControlSpec spec
-	  = {info->app, info->parent, flux_create_password_box, info->placeholder, info->on_change, info->userdata};
+	  = {info->app, info->parent, flux_password_init, info->placeholder, info->on_change, info->userdata};
 	return tb_create_app_control(&spec);
 }
 
@@ -231,32 +243,32 @@ static FluxNBExt *tb_create_number_ext(TbNumberBoxSpec const *spec) {
 	return nb;
 }
 
-static void tb_configure_text_grid(XentContext *ctx, XentNodeId node, float const *col_vals, uint32_t col_count) {
-	xent_set_protocol(ctx, node, XENT_PROTOCOL_GRID);
+static void tb_configure_text_grid(XentCtx *ctx, XentNodeId node, float const *col_vals, uint32_t col_count) {
+	xent_setproto(ctx, node, XENT_PROTOCOL_GRID);
 	XentGridSizeMode row_modes []  = {XENT_GRID_STAR};
 	float            row_vals []   = {1.0f};
 	XentGridSizeMode col_modes [3] = {XENT_GRID_STAR, XENT_GRID_PIXEL, XENT_GRID_PIXEL};
-	xent_set_grid_rows(ctx, node, row_modes, row_vals, 1);
-	xent_set_grid_columns(ctx, node, col_modes, col_vals, col_count);
+	xent_grid_setrows(ctx, node, row_modes, row_vals, 1);
+	xent_grid_setcols(ctx, node, col_modes, col_vals, col_count);
 }
 
-static void tb_configure_password_grid(XentContext *ctx, XentNodeId node) {
+static void tb_configure_password_grid(XentCtx *ctx, XentNodeId node) {
 	float col_vals [] = {1.0f, FLUX_PASSWORD_REVEAL_BTN_W};
 	tb_configure_text_grid(ctx, node, col_vals, 2);
 }
 
-static void tb_configure_number_grid(XentContext *ctx, XentNodeId node) {
+static void tb_configure_number_grid(XentCtx *ctx, XentNodeId node) {
 	float col_vals [] = {1.0f, FLUX_NUMBER_BOX_DELETE_BTN_W, FLUX_NUMBER_BOX_SPIN_W};
 	tb_configure_text_grid(ctx, node, col_vals, 3);
 }
 
-XentNodeId flux_create_number_box(FluxNumberBoxCreateInfo const *info) {
+XentNodeId flux_number_init(FluxNumberBoxDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
 	XentNodeId node = tb_create_node_with_parent(info->ctx, info->store, info->parent, FLUX_CONTROL_NUMBER_BOX);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData         *nd        = flux_node_store_get(info->store, node);
+	FluxNodeData         *nd        = flux_store_find(info->store, node);
 	TbBaseSpec            base_spec = {info->ctx, node, info->store, NULL, NULL, NULL};
 	FluxTextBoxInputData *tb        = nd ? tb_alloc_base(&base_spec) : NULL;
 	if (tb) {
@@ -271,29 +283,27 @@ XentNodeId flux_create_number_box(FluxNumberBoxCreateInfo const *info) {
 		tb_wire_behaviors(nd, tb);
 	}
 
-	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_CUSTOM);
-	xent_set_semantic_value(
-	  info->ctx, node, ( float ) info->min_value, ( float ) info->min_value, ( float ) info->max_value
-	);
-	xent_set_semantic_expanded(info->ctx, node, true);
+	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_CUSTOM);
+	xent_sem_setvalue(info->ctx, node, ( float ) info->min_value, ( float ) info->min_value, ( float ) info->max_value);
+	xent_sem_setexpanded(info->ctx, node, true);
 	xent_set_focusable(info->ctx, node, true);
 
 	tb_configure_number_grid(info->ctx, node);
-	xent_set_min_size(info->ctx, node, (XentSize) {64.0f + FLUX_NUMBER_BOX_DELETE_BTN_W + FLUX_NUMBER_BOX_SPIN_W, 32.0f});
+	xent_setminsize(info->ctx, node, (XentSize) {64.0f + FLUX_NUMBER_BOX_DELETE_BTN_W + FLUX_NUMBER_BOX_SPIN_W, 32.0f});
 
 	return node;
 }
 
-XentNodeId flux_app_create_number_box(FluxAppNumberBoxCreateInfo const *info) {
+XentNodeId flux_app_create_number(FluxAppNumberBoxDesc const *info) {
 	if (!info || !info->app) return XENT_NODE_INVALID;
 
-	XentContext   *ctx   = flux_app_get_context(info->app);
-	FluxNodeStore *store = flux_app_get_store(info->app);
+	XentCtx   *ctx   = flux_app_ctx(info->app);
+	FluxStore *store = flux_app_store(info->app);
 	if (!ctx || !store) return XENT_NODE_INVALID;
 
-	FluxNumberBoxCreateInfo create_info
+	FluxNumberBoxDesc create_info
 	  = {ctx, store, info->parent, info->min_value, info->max_value, info->step, info->on_value_change, info->userdata};
-	XentNodeId node = flux_create_number_box(&create_info);
+	XentNodeId node = flux_number_init(&create_info);
 	if (node == XENT_NODE_INVALID) return node;
 
 	tb_attach_app(store, node, info->app);

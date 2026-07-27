@@ -15,10 +15,6 @@
 
 #include <cwinrt/Windows.UI.Composition.Interactions.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 typedef struct FluxScrollTracker FluxScrollTracker;
 
@@ -36,7 +32,7 @@ FluxScrollTracker               *flux_scroll_tracker_create(FluxCompositor *c, W
 void                             flux_scroll_tracker_destroy(FluxScrollTracker *t);
 
 /** @brief Set the maximum vertical scroll offset (content height minus viewport). */
-void                             flux_scroll_tracker_set_max_y(FluxScrollTracker *t, float max_y);
+void                             flux_strack_setmaxy(FluxScrollTracker *t, float max_y);
 
 /** @brief The underlying InteractionTracker (not owned) — bind content Offset to its Position. */
 WUICOIN_InteractionTracker      *flux_scroll_tracker_handle(FluxScrollTracker *t);
@@ -47,10 +43,7 @@ WUICOIN_InteractionTracker      *flux_scroll_tracker_handle(FluxScrollTracker *t
  * Starts an expression animation `Vector3(0, -tracker.Position.Y, 0)` on the
  * content visual, so the compositor scrolls it without the UI thread.
  */
-void                             flux_scroll_tracker_bind_offset(FluxScrollTracker *t, WUC_Visual *content);
+void                             flux_strack_bind(FluxScrollTracker *t, WUC_Visual *content);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_SCROLL_H */

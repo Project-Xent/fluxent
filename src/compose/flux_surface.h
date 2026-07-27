@@ -26,33 +26,29 @@
 
 typedef struct ID2D1DeviceContext ID2D1DeviceContext;
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
-typedef struct FluxSurface FluxSurface;
+typedef struct FluxSurface        FluxSurface;
 
 /**
  * @brief Create a drawing surface of the given pixel size.
  *
  * @param c      Shared compositor (provides the SurfaceBrush).
- * @param device Graphics device from flux_compositor_create_graphics_device().
+ * @param device Graphics device from flux_compositor_dev_create().
  * @param w      Width in physical pixels (clamped to >= 1).
  * @param h      Height in physical pixels (clamped to >= 1).
  * @return New surface, or NULL on failure.
  */
-FluxSurface               *flux_surface_create(FluxCompositor *c, WUC_CompositionGraphicsDevice *device, int w, int h);
+FluxSurface        *flux_surface_create(FluxCompositor *c, WUC_CompositionGraphicsDevice *device, int w, int h);
 
 /**
  * @brief Destroy a surface and its brush. NULL is safe.
  */
-void                       flux_surface_destroy(FluxSurface *s);
+void                flux_surface_destroy(FluxSurface *s);
 
 /**
  * @brief Resize the surface's pixel extent. Content must be redrawn after.
  */
-HRESULT                    flux_surface_resize(FluxSurface *s, int w, int h);
+HRESULT             flux_surface_resize(FluxSurface *s, int w, int h);
 
 /**
  * @brief Begin drawing; returns a Direct2D context positioned for this surface.
@@ -62,20 +58,17 @@ HRESULT                    flux_surface_resize(FluxSurface *s, int w, int h);
  *                   must be translated by this offset.
  * @return Direct2D device context (released by flux_surface_end), or NULL.
  */
-ID2D1DeviceContext        *flux_surface_begin(FluxSurface *s, POINT *out_offset);
+ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, POINT *out_offset);
 
 /**
  * @brief End drawing started by flux_surface_begin().
  */
-void                       flux_surface_end(FluxSurface *s);
+void                flux_surface_end(FluxSurface *s);
 
 /**
  * @brief The SurfaceBrush wrapping this surface (not owned). Assign to a visual.
  */
 WUC_CompositionSurfaceBrush *flux_surface_brush(FluxSurface *s);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_SURFACE_H */

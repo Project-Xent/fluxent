@@ -1,9 +1,9 @@
-#include "flux_menu_flyout_internal.h"
+#include "flux_menu_internal.h"
 
 #include <string.h>
 #include <windows.h>
 
-static FluxSize measure_text(FluxMenuFlyout *m, char const *s, float font_size) {
+static FluxSize measure_text(FluxMenu *m, char const *s, float font_size) {
 	FluxSize sz = {0.0f, 0.0f};
 	if (!s || !*s) return sz;
 
@@ -23,7 +23,7 @@ static FluxSize measure_text(FluxMenuFlyout *m, char const *s, float font_size) 
 }
 
 static void
-menu_measure_item_text(FluxMenuFlyout *m, StoredItem const *it, float *max_label, float *max_accel, float *max_text_h) {
+menu_measure_item_text(FluxMenu *m, StoredItem const *it, float *max_label, float *max_accel, float *max_text_h) {
 	if (it->label) {
 		FluxSize sz = measure_text(m, it->label, FLUX_MENU_ITEM_FONT_SIZE);
 		if (sz.w > *max_label) *max_label = sz.w;
@@ -35,7 +35,7 @@ menu_measure_item_text(FluxMenuFlyout *m, StoredItem const *it, float *max_label
 	}
 }
 
-static void menu_scan_item_kinds(FluxMenuFlyout *m) {
+static void menu_scan_item_kinds(FluxMenu *m) {
 	m->has_icons    = false;
 	m->has_toggles  = false;
 	m->has_accels   = false;
@@ -51,13 +51,13 @@ static void menu_scan_item_kinds(FluxMenuFlyout *m) {
 	}
 }
 
-static float menu_placeholder_width(FluxMenuFlyout const *m) {
+static float menu_placeholder_width(FluxMenu const *m) {
 	if (m->has_toggles && m->has_icons) return 56.0f;
 	if (m->has_toggles || m->has_icons) return 28.0f;
 	return 0.0f;
 }
 
-static void menu_measure_columns(FluxMenuFlyout *m, float *max_label, float *max_accel, float *max_text_h) {
+static void menu_measure_columns(FluxMenu *m, float *max_label, float *max_accel, float *max_text_h) {
 	*max_label  = 0.0f;
 	*max_accel  = 0.0f;
 	*max_text_h = 0.0f;
@@ -69,14 +69,14 @@ static void menu_measure_columns(FluxMenuFlyout *m, float *max_label, float *max
 	}
 }
 
-static float menu_item_slot_height(FluxMenuFlyout const *m, float max_text_h) {
+static float menu_item_slot_height(FluxMenu const *m, float max_text_h) {
 	float text_h = max_text_h > FLUX_MENU_ITEM_ICON_SIZE ? max_text_h : FLUX_MENU_ITEM_ICON_SIZE;
 	float item_h = m->pad_top + text_h + m->pad_bot;
 	float slot   = item_h + 2.0f * FLUX_MENU_ITEM_MARGIN_V;
 	return slot > m->min_item_height ? slot : m->min_item_height;
 }
 
-static float menu_assign_item_layouts(FluxMenuFlyout *m, float item_slot_h) {
+static float menu_assign_item_layouts(FluxMenu *m, float item_slot_h) {
 	float cumulative_y = 0.0f;
 
 	for (int i = 0; i < m->item_count; i++) {
@@ -91,7 +91,7 @@ static float menu_assign_item_layouts(FluxMenuFlyout *m, float item_slot_h) {
 	return cumulative_y;
 }
 
-static float menu_owner_max_height(FluxMenuFlyout *m) {
+static float menu_owner_max_height(FluxMenu *m) {
 	if (!m->owner) return 0.0f;
 
 	HWND owner_hwnd = flux_window_hwnd(m->owner);
@@ -103,19 +103,19 @@ static float menu_owner_max_height(FluxMenuFlyout *m) {
 	MONITORINFO mi = {.cbSize = sizeof(mi)};
 	if (!GetMonitorInfoW(mon, &mi)) return 0.0f;
 
-	FluxDpiInfo dpi   = flux_window_dpi(m->owner);
-	float       scale = dpi.dpi_x / FLUX_DPI_BASE;
+	FluxDpi dpi   = flux_window_dpi(m->owner);
+	float   scale = dpi.dpi_x / FLUX_DPI_BASE;
 	if (scale < 0.1f) scale = 1.0f;
 	return ( float ) (mi.rcWork.bottom - mi.rcWork.top) / scale - 16.0f;
 }
 
-static void menu_clamp_scroll(FluxMenuFlyout *m, float intrinsic_h, float total_h) {
+static void menu_clamp_scroll(FluxMenu *m, float intrinsic_h, float total_h) {
 	m->scroll_max = intrinsic_h > total_h ? intrinsic_h - total_h : 0.0f;
 	if (m->scroll_y > m->scroll_max) m->scroll_y = m->scroll_max;
 	if (m->scroll_y < 0.0f) m->scroll_y = 0.0f;
 }
 
-void menu_measure(FluxMenuFlyout *m) {
+void menu_measure(FluxMenu *m) {
 	menu_scan_item_kinds(m);
 
 	float max_label    = 0.0f;
@@ -162,7 +162,7 @@ void menu_measure(FluxMenuFlyout *m) {
 	m->total_h = total_h;
 }
 
-int menu_hit_test(FluxMenuFlyout const *m, float px, float py) {
+int menu_hit_test(FluxMenu const *m, float px, float py) {
 	if (m->item_count == 0) return -1;
 
 	float band_top = FLUX_MENU_PRESENTER_BORDER + FLUX_MENU_PRESENTER_PAD_TOP;

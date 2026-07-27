@@ -14,10 +14,6 @@
 
 #include "compose/flux_compose.h"
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /**
  * @brief Build a backdrop brush blurred by a Gaussian effect graph.
@@ -31,12 +27,12 @@ extern "C"
  * @param blur_amount Gaussian standard deviation (DIPs).
  * @return A CompositionBrush (base interface), or NULL on failure.
  */
-WUC_Brush *flux_effect_make_backdrop_blur(FluxCompositor *c, float blur_amount);
+WUC_Brush *flux_effect_backdrop_blur(FluxCompositor *c, float blur_amount);
 
 /**
  * @brief Build a *host*-backdrop brush blurred by a Gaussian effect graph.
  *
- * Like flux_effect_make_backdrop_blur, but the backdrop samples the desktop
+ * Like flux_effect_backdrop_blur, but the backdrop samples the desktop
  * content *behind the window* rather than the window's own content. This is the
  * correct source for a standalone top-level window (a popup / flyout / menu /
  * tooltip), whose own composition tree has nothing behind the acrylic layer.
@@ -45,10 +41,7 @@ WUC_Brush *flux_effect_make_backdrop_blur(FluxCompositor *c, float blur_amount);
  * @param blur_amount Gaussian standard deviation (DIPs).
  * @return A CompositionBrush (base interface), or NULL on failure.
  */
-WUC_Brush *flux_effect_make_host_backdrop_blur(FluxCompositor *c, float blur_amount);
+WUC_Brush *flux_effect_host_blur(FluxCompositor *c, float blur_amount);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_EFFECT_H */

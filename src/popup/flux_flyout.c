@@ -4,6 +4,8 @@
 
 #include "fluxent/flux_flyout.h"
 #include "fluxent/flux_graphics.h"
+#include "controls/draw/flux_control_record_internal.h"
+#include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
 
 #include <stdlib.h>
@@ -13,27 +15,27 @@
 
 typedef struct {
 	FluxThemeColors const *colors;  /* not owned — static fallback */
-	FluxThemeManager      *manager; /* not owned — preferred, auto-updates */
+	FluxTheme             *manager; /* not owned — preferred, auto-updates */
 	bool                   is_dark;
 } ThemeRef;
 
 struct FluxFlyout {
-	FluxPopup               *popup;
-	FluxWindow              *owner;
+	FluxPopup            *popup;
+	FluxWindow           *owner;
 
-	FluxTextRenderer        *text; /* not owned */
-	ThemeRef                 theme;
+	FluxText             *text; /* not owned */
+	ThemeRef              theme;
 
-	ID2D1SolidColorBrush    *brush; /* owned */
+	ID2D1SolidColorBrush *brush; /* owned */
 
-	float                    content_w;
-	float                    content_h;
+	float                 content_w;
+	float                 content_h;
 
-	FluxFlyoutPaintCallback  paint_cb;
-	void                    *paint_ctx;
+	FluxFlyoutPaintFn     paint_cb;
+	void                 *paint_ctx;
 
-	FluxPopupDismissCallback dismiss_cb;
-	void                    *dismiss_ctx;
+	FluxPopupDismissFn    dismiss_cb;
+	void                 *dismiss_ctx;
 };
 
 static void ensure_brush(FluxFlyout *fly, ID2D1DeviceContext *d2d) {
@@ -53,8 +55,8 @@ static void ensure_brush(FluxFlyout *fly, ID2D1DeviceContext *d2d) {
 static void flyout_resolve_theme(FluxFlyout *fly, FluxThemeColors const **out_theme, bool *out_is_dark) {
 	if (fly->theme.manager) {
 		*out_theme      = flux_theme_colors(fly->theme.manager);
-		FluxThemeMode m = flux_theme_get_mode(fly->theme.manager);
-		*out_is_dark    = (m == FLUX_THEME_DARK) || (m == FLUX_THEME_SYSTEM && flux_theme_system_is_dark());
+		FluxThemeMode m = flux_theme_mode(fly->theme.manager);
+		*out_is_dark    = (m == FLUX_THEME_DARK) || (m == FLUX_THEME_SYSTEM && flux_theme_systemdark());
 	}
 	else {
 		*out_theme   = fly->theme.colors;
@@ -76,9 +78,9 @@ static void resolve_card_colors(FluxFlyout const *fly, bool is_dark, FluxColor *
 	*out_border = border;
 }
 
-static FluxRenderContext
+static FluxRenderCtx
 flyout_render_context(FluxFlyout *fly, ID2D1DeviceContext *d2d, FluxThemeColors const *theme, bool is_dark) {
-	FluxRenderContext rc;
+	FluxRenderCtx rc;
 	memset(&rc, 0, sizeof(rc));
 	rc.d2d     = d2d;
 	rc.brush   = fly->brush;
@@ -95,10 +97,14 @@ static FluxRect flyout_bounds(FluxFlyout const *fly) {
 	return (FluxRect) {0.0f, 0.0f, outer_w, outer_h};
 }
 
-static void flyout_draw_border(FluxRenderContext const *rc, FluxRect const *bounds, FluxColor border) {
+static XentDl *flyout_record_chrome(FluxRect const *bounds, FluxColor bg, FluxColor border) {
+	XentDlBuilder *b = xent_dl_begin();
+	if (!b) return NULL;
+	bool     ok    = flux_rec_fill_rounded(b, bounds, FLUX_FLYOUT_CORNER_RADIUS, bg);
 	float    half  = FLUX_FLYOUT_BORDER_WIDTH * 0.5f;
 	FluxRect inset = {bounds->x + half, bounds->y + half, bounds->w - half * 2.0f, bounds->h - half * 2.0f};
-	flux_draw_rounded_rect(rc, &inset, FLUX_FLYOUT_CORNER_RADIUS, border, FLUX_FLYOUT_BORDER_WIDTH);
+	if (ok) ok = flux_rec_stroke_rounded(b, &inset, FLUX_FLYOUT_CORNER_RADIUS, border, FLUX_FLYOUT_BORDER_WIDTH);
+	return flux_rec_finish(b, ok);
 }
 
 static void flyout_paint_content(FluxFlyout *fly) {
@@ -114,10 +120,10 @@ static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
 	FluxFlyout *fly = ( FluxFlyout * ) ctx;
 	if (!fly) return;
 
-	FluxGraphics *gfx = flux_popup_get_graphics(popup);
+	FluxGfx *gfx = flux_popup_gfx(popup);
 	if (!gfx) return;
 
-	ID2D1DeviceContext *d2d = flux_graphics_get_d2d_context(gfx);
+	ID2D1DeviceContext *d2d = flux_gfx_d2d(gfx);
 	if (!d2d) return;
 
 	ensure_brush(fly, d2d);
@@ -130,11 +136,15 @@ static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
 	FluxRect  bounds = flyout_bounds(fly);
 	FluxColor bg, border;
 	resolve_card_colors(fly, is_dark, &bg, &border);
-	bg                   = flux_popup_acrylic_tint(popup, bg);
-	FluxRenderContext rc = flyout_render_context(fly, d2d, theme, is_dark);
+	bg                 = flux_popup_acrylic_tint(popup, bg);
+	FluxRenderCtx rc   = flyout_render_context(fly, d2d, theme, is_dark);
 
-	flux_fill_rounded_rect(&rc, &bounds, FLUX_FLYOUT_CORNER_RADIUS, bg);
-	flyout_draw_border(&rc, &bounds, border);
+	XentDl       *list = flyout_record_chrome(&bounds, bg, border);
+	if (list) {
+		flux_xtk_replay_rc(&rc, list);
+		xent_dl_free(list);
+	}
+	/* Optional content callback remains host-supplied (may draw into D2D). */
 	flyout_paint_content(fly);
 }
 
@@ -154,10 +164,10 @@ FluxFlyout *flux_flyout_create(FluxWindow *owner) {
 		return NULL;
 	}
 
-	flux_popup_set_dismiss_on_outside(fly->popup, true);
-	flux_popup_set_paint_callback(fly->popup, flyout_paint_thunk, fly);
+	flux_popup_setdismissoutside(fly->popup, true);
+	flux_popup_onpaint(fly->popup, flyout_paint_thunk, fly);
 	/* WinUI PopupThemeTransition: translate + fade, ~167 ms. */
-	flux_popup_set_anim_style(fly->popup, FLUX_POPUP_ANIM_FLYOUT);
+	flux_popup_setanim(fly->popup, FLUX_POPUP_ANIM_FLYOUT);
 
 	return fly;
 }
@@ -174,18 +184,18 @@ void flux_flyout_destroy(FluxFlyout *fly) {
 	free(fly);
 }
 
-void flux_flyout_set_text_renderer(FluxFlyout *fly, FluxTextRenderer *tr) {
+void flux_flyout_settext(FluxFlyout *fly, FluxText *tr) {
 	if (fly) fly->text = tr;
 }
 
-void flux_flyout_set_theme(FluxFlyout *fly, FluxThemeColors const *theme, bool is_dark) {
+void flux_flyout_settheme(FluxFlyout *fly, FluxThemeColors const *theme, bool is_dark) {
 	if (!fly) return;
 	fly->theme.colors  = theme;
 	fly->theme.is_dark = is_dark;
 	fly->theme.manager = NULL;
 }
 
-void flux_flyout_set_theme_manager(FluxFlyout *fly, FluxThemeManager *tm) {
+void flux_flyout_setthememanager(FluxFlyout *fly, FluxTheme *tm) {
 	if (!fly) return;
 	fly->theme.manager = tm;
 	if (tm) {
@@ -194,7 +204,7 @@ void flux_flyout_set_theme_manager(FluxFlyout *fly, FluxThemeManager *tm) {
 	}
 }
 
-void flux_flyout_set_content_size(FluxFlyout *fly, float width, float height) {
+void flux_flyout_setsize(FluxFlyout *fly, float width, float height) {
 	if (!fly) return;
 	fly->content_w = (width > 1.0f) ? width : 1.0f;
 	fly->content_h = (height > 1.0f) ? height : 1.0f;
@@ -204,23 +214,23 @@ void flux_flyout_set_content_size(FluxFlyout *fly, float width, float height) {
 	flux_popup_set_size(fly->popup, outer_w, outer_h);
 }
 
-void flux_flyout_set_paint_callback(FluxFlyout *fly, FluxFlyoutPaintCallback cb, void *user_ctx) {
+void flux_flyout_onpaint(FluxFlyout *fly, FluxFlyoutPaintFn cb, void *user_ctx) {
 	if (!fly) return;
 	fly->paint_cb  = cb;
 	fly->paint_ctx = user_ctx;
 }
 
-void flux_flyout_set_dismiss_callback(FluxFlyout *fly, FluxPopupDismissCallback cb, void *user_ctx) {
+void flux_flyout_ondismiss(FluxFlyout *fly, FluxPopupDismissFn cb, void *user_ctx) {
 	if (!fly) return;
 	fly->dismiss_cb  = cb;
 	fly->dismiss_ctx = user_ctx;
-	flux_popup_set_dismiss_callback(fly->popup, cb, user_ctx);
+	flux_popup_ondismiss(fly->popup, cb, user_ctx);
 }
 
 void flux_flyout_show(FluxFlyout *fly, FluxRect anchor, FluxPlacement placement) {
 	if (!fly) return;
 
-	flux_flyout_set_content_size(fly, fly->content_w, fly->content_h);
+	flux_flyout_setsize(fly, fly->content_w, fly->content_h);
 
 	flux_popup_show(fly->popup, anchor, placement);
 }
@@ -230,16 +240,16 @@ void flux_flyout_dismiss(FluxFlyout *fly) {
 	flux_popup_dismiss(fly->popup);
 }
 
-bool          flux_flyout_is_visible(FluxFlyout const *fly) { return fly ? flux_popup_is_visible(fly->popup) : false; }
+bool        flux_flyout_visible(FluxFlyout const *fly) { return fly ? flux_popup_visible(fly->popup) : false; }
 
-FluxGraphics *flux_flyout_get_graphics(FluxFlyout *fly) { return fly ? flux_popup_get_graphics(fly->popup) : NULL; }
+FluxGfx    *flux_flyout_gfx(FluxFlyout *fly) { return fly ? flux_popup_gfx(fly->popup) : NULL; }
 
-FluxWindow   *flux_flyout_get_owner(FluxFlyout *fly) { return fly ? fly->owner : NULL; }
+FluxWindow *flux_flyout_owner(FluxFlyout *fly) { return fly ? fly->owner : NULL; }
 
-FluxPopup    *flux_flyout_get_popup(FluxFlyout *fly) { return fly ? fly->popup : NULL; }
+FluxPopup  *flux_flyout_popup(FluxFlyout *fly) { return fly ? fly->popup : NULL; }
 
-FluxThemeColors const *flux_flyout_get_theme(FluxFlyout const *fly) { return fly ? fly->theme.colors : NULL; }
+FluxThemeColors const *flux_flyout_theme(FluxFlyout const *fly) { return fly ? fly->theme.colors : NULL; }
 
-bool                   flux_flyout_is_dark(FluxFlyout const *fly) { return fly ? fly->theme.is_dark : false; }
+bool                   flux_flyout_dark(FluxFlyout const *fly) { return fly ? fly->theme.is_dark : false; }
 
-FluxTextRenderer      *flux_flyout_get_text_renderer(FluxFlyout *fly) { return fly ? fly->text : NULL; }
+FluxText              *flux_flyout_text(FluxFlyout *fly) { return fly ? fly->text : NULL; }

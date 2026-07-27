@@ -11,8 +11,8 @@
 #include <cd2d.h>
 #include <cdwrite.h>
 
-#define FLUX_FORMAT_CACHE_SIZE 16
-#define FLUX_LAYOUT_CACHE_SIZE 64
+#define FLUX_FORMAT_CACHE_SIZE   16
+#define FLUX_LAYOUT_CACHE_SIZE   64
 
 /* The one default UI font family. Layout-time measure and paint-time draw MUST use
  * the same family or box widths disagree (text is measured narrow, drawn wide, and
@@ -66,14 +66,14 @@ typedef struct TextLayoutCacheRequest {
 } TextLayoutCacheRequest;
 
 typedef struct TextLayoutRequest {
-	FluxTextRenderer    *tr;
+	FluxText            *tr;
 	char const          *text;
 	FluxTextStyle const *style;
 	float                max_w;
 	float                max_h;
 } TextLayoutRequest;
 
-struct FluxTextRenderer {
+struct FluxText {
 	IDWriteFactory       *factory;
 	wchar_t              *default_font;
 	float                 default_size;
@@ -111,7 +111,7 @@ static uint32_t float_to_bits(float f) {
 	return bits;
 }
 
-static int flux_utf8_to_wchar(char const *utf8, wchar_t *out, int out_cap) {
+static int utf8_to_wchar(char const *utf8, wchar_t *out, int out_cap) {
 	if (!utf8 || !utf8 [0]) {
 		if (out && out_cap > 0) out [0] = L'\0';
 		return 0;
@@ -126,7 +126,12 @@ static int flux_utf8_to_wchar(char const *utf8, wchar_t *out, int out_cap) {
 
 static bool text_wide_buffer_from_utf8(TextWideBuffer *buf, char const *utf8) {
 	memset(buf, 0, sizeof(*buf));
-	int n = flux_utf8_to_wchar(utf8, NULL, 0);
+	if (utf8 && utf8 [0] == '\0') {
+		buf->text      = buf->stack;
+		buf->stack [0] = L'\0';
+		return true;
+	}
+	int n = utf8_to_wchar(utf8, NULL, 0);
 	if (n <= 0) return false;
 
 	buf->text = (n <= ( int ) (sizeof(buf->stack) / sizeof(buf->stack [0])))
@@ -134,7 +139,7 @@ static bool text_wide_buffer_from_utf8(TextWideBuffer *buf, char const *utf8) {
 	            : ( wchar_t * ) malloc(sizeof(wchar_t) * n);
 	if (!buf->text) return false;
 
-	flux_utf8_to_wchar(utf8, buf->text, n);
+	utf8_to_wchar(utf8, buf->text, n);
 	buf->len = n > 0 ? n - 1 : 0;
 	return true;
 }
@@ -148,10 +153,10 @@ static void text_wide_buffer_free(TextWideBuffer *buf) {
 static DWRITE_WORD_WRAPPING policy_to_dwrite_wrapping(XentLineBreakPolicy policy, XentMeasureMode mode) {
 	if (mode == XENT_MEASURE_UNDEFINED) return DWRITE_WORD_WRAPPING_NO_WRAP;
 	switch (policy) {
-	case XENT_LINE_BREAK_NO_WRAP   : return DWRITE_WORD_WRAPPING_NO_WRAP;
-	case XENT_LINE_BREAK_WORD_WRAP : return DWRITE_WORD_WRAPPING_WRAP;
-	case XENT_LINE_BREAK_CHAR_WRAP : return DWRITE_WORD_WRAPPING_CHARACTER;
-	default                        : return DWRITE_WORD_WRAPPING_NO_WRAP;
+	case XENT_LINEBREAK_NOWRAP   : return DWRITE_WORD_WRAPPING_NO_WRAP;
+	case XENT_LINEBREAK_WORDWRAP : return DWRITE_WORD_WRAPPING_WRAP;
+	case XENT_LINEBREAK_CHARWRAP : return DWRITE_WORD_WRAPPING_CHARACTER;
+	default                      : return DWRITE_WORD_WRAPPING_NO_WRAP;
 	}
 }
 
@@ -180,11 +185,11 @@ static DWRITE_PARAGRAPH_ALIGNMENT to_dw_para(FluxTextVAlign a) {
 	}
 }
 
-static IDWriteTextFormat *create_styled_format(FluxTextRenderer *tr, FluxTextStyle const *s) {
+static IDWriteTextFormat *create_styled_format(FluxText *tr, FluxTextStyle const *s) {
 	wchar_t const *family = FLUX_DEFAULT_FONT_FAMILY;
 	wchar_t        fam_buf [128];
 	if (s->font_family && s->font_family [0]) {
-		int n = flux_utf8_to_wchar(s->font_family, fam_buf, 128);
+		int n = utf8_to_wchar(s->font_family, fam_buf, 128);
 		if (n > 0) family = fam_buf;
 	}
 	float              size   = s->font_size > 0.0f ? s->font_size : 14.0f;
@@ -214,36 +219,36 @@ static FluxFormatCacheKey make_format_key(FluxTextStyle const *s) {
 	return k;
 }
 
-#define DEFINE_TEXT_CACHE_ACCESSORS(                                                                        \
-  Name, EntryType, KeyType, ValueType, cache_field, cache_size, value_field, release_fn                     \
-)                                                                                                           \
-	static ValueType *find_cached_##Name(FluxTextRenderer *tr, KeyType const *key) {                        \
-		for (int i = 0; i < cache_size; i++) {                                                              \
-			EntryType *e = &tr->cache_field [i];                                                            \
-			if (!e->occupied || memcmp(&e->key, key, sizeof(*key)) != 0) continue;                          \
-			e->last_used = tr->cache_tick;                                                                  \
-			return e->value_field;                                                                          \
-		}                                                                                                   \
-		return NULL;                                                                                        \
-	}                                                                                                       \
-	static int find_##Name##_cache_slot(FluxTextRenderer *tr) {                                             \
-		int      slot   = 0;                                                                                \
-		uint64_t oldest = UINT64_MAX;                                                                       \
-		for (int i = 0; i < cache_size; i++) {                                                              \
-			if (!tr->cache_field [i].occupied) return i;                                                    \
-			if (tr->cache_field [i].last_used >= oldest) continue;                                          \
-			oldest = tr->cache_field [i].last_used;                                                         \
-			slot   = i;                                                                                     \
-		}                                                                                                   \
-		return slot;                                                                                        \
-	}                                                                                                       \
-	static void store_cached_##Name(FluxTextRenderer *tr, int slot, KeyType const *key, ValueType *value) { \
-		if (tr->cache_field [slot].occupied && tr->cache_field [slot].value_field)                          \
-			release_fn(tr->cache_field [slot].value_field);                                                 \
-		tr->cache_field [slot].key         = *key;                                                          \
-		tr->cache_field [slot].value_field = value;                                                         \
-		tr->cache_field [slot].last_used   = tr->cache_tick;                                                \
-		tr->cache_field [slot].occupied    = true;                                                          \
+#define DEFINE_TEXT_CACHE_ACCESSORS(                                                                \
+  Name, EntryType, KeyType, ValueType, cache_field, cache_size, value_field, release_fn             \
+)                                                                                                   \
+	static ValueType *find_cached_##Name(FluxText *tr, KeyType const *key) {                        \
+		for (int i = 0; i < cache_size; i++) {                                                      \
+			EntryType *e = &tr->cache_field [i];                                                    \
+			if (!e->occupied || memcmp(&e->key, key, sizeof(*key)) != 0) continue;                  \
+			e->last_used = tr->cache_tick;                                                          \
+			return e->value_field;                                                                  \
+		}                                                                                           \
+		return NULL;                                                                                \
+	}                                                                                               \
+	static int find_##Name##_cache_slot(FluxText *tr) {                                             \
+		int      slot   = 0;                                                                        \
+		uint64_t oldest = UINT64_MAX;                                                               \
+		for (int i = 0; i < cache_size; i++) {                                                      \
+			if (!tr->cache_field [i].occupied) return i;                                            \
+			if (tr->cache_field [i].last_used >= oldest) continue;                                  \
+			oldest = tr->cache_field [i].last_used;                                                 \
+			slot   = i;                                                                             \
+		}                                                                                           \
+		return slot;                                                                                \
+	}                                                                                               \
+	static void store_cached_##Name(FluxText *tr, int slot, KeyType const *key, ValueType *value) { \
+		if (tr->cache_field [slot].occupied && tr->cache_field [slot].value_field)                  \
+			release_fn(tr->cache_field [slot].value_field);                                         \
+		tr->cache_field [slot].key         = *key;                                                  \
+		tr->cache_field [slot].value_field = value;                                                 \
+		tr->cache_field [slot].last_used   = tr->cache_tick;                                        \
+		tr->cache_field [slot].occupied    = true;                                                  \
 	}
 
 DEFINE_TEXT_CACHE_ACCESSORS(
@@ -251,7 +256,7 @@ DEFINE_TEXT_CACHE_ACCESSORS(
   IDWriteTextFormat_Release
 )
 
-static IDWriteTextFormat *get_or_create_format(FluxTextRenderer *tr, FluxTextStyle const *s) {
+static IDWriteTextFormat *get_or_create_format(FluxText *tr, FluxTextStyle const *s) {
 	FluxFormatCacheKey key = make_format_key(s);
 	IDWriteTextFormat *fmt = find_cached_format(tr, &key);
 	if (fmt) return fmt;
@@ -278,7 +283,7 @@ DEFINE_TEXT_CACHE_ACCESSORS(
   IDWriteTextLayout_Release
 )
 
-static IDWriteTextLayout *get_or_create_layout(FluxTextRenderer *tr, TextLayoutCacheRequest const *req) {
+static IDWriteTextLayout *get_or_create_layout(FluxText *tr, TextLayoutCacheRequest const *req) {
 	FluxLayoutCacheKey key    = make_layout_key(req->utf8_text, req->style, req->max_w, req->max_h);
 	IDWriteTextLayout *layout = find_cached_layout(tr, &key);
 	if (layout) return layout;
@@ -296,13 +301,13 @@ static IDWriteTextLayout *get_or_create_layout(FluxTextRenderer *tr, TextLayoutC
 }
 
 static IDWriteTextFormat *dwrite_create_measure_format(
-  FluxTextRenderer *tr, float font_size, uint16_t font_weight, XentLineBreakPolicy policy, XentMeasureMode mode
+  FluxText *tr, float font_size, uint16_t font_weight, XentLineBreakPolicy policy, XentMeasureMode mode
 ) {
 	DWRITE_FONT_WEIGHT weight = ( DWRITE_FONT_WEIGHT ) (font_weight ? font_weight : 400);
 	IDWriteTextFormat *fmt    = NULL;
 	HRESULT            hr     = IDWriteFactory_CreateTextFormat(
-	  tr->factory, tr->default_font ? tr->default_font : FLUX_DEFAULT_FONT_FAMILY, NULL, weight, DWRITE_FONT_STYLE_NORMAL,
-	  DWRITE_FONT_STRETCH_NORMAL, font_size, L"", &fmt
+	  tr->factory, tr->default_font ? tr->default_font : FLUX_DEFAULT_FONT_FAMILY, NULL, weight,
+	  DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"", &fmt
 	);
 	if (FAILED(hr)) return NULL;
 
@@ -311,7 +316,7 @@ static IDWriteTextFormat *dwrite_create_measure_format(
 }
 
 static IDWriteTextLayout *
-dwrite_create_measure_layout(FluxTextRenderer *tr, IDWriteTextFormat *fmt, TextWideBuffer const *text, float width) {
+dwrite_create_measure_layout(FluxText *tr, IDWriteTextFormat *fmt, TextWideBuffer const *text, float width) {
 	IDWriteTextLayout *layout = NULL;
 	HRESULT            hr
 	  = IDWriteFactory_CreateTextLayout(tr->factory, text->text, ( UINT32 ) text->len, fmt, width, 100000.0f, &layout);
@@ -321,6 +326,12 @@ dwrite_create_measure_layout(FluxTextRenderer *tr, IDWriteTextFormat *fmt, TextW
 
 static bool
 dwrite_read_metrics(IDWriteTextLayout *layout, XentMeasureMode mode, float width_constraint, XentTextMetrics *out) {
+	if (mode == XENT_MEASURE_MIN_CONTENT) {
+		FLOAT min_width = 0.0f;
+		if (FAILED(IDWriteTextLayout_DetermineMinWidth(layout, &min_width))) return false;
+		if (FAILED(IDWriteTextLayout_SetMaxWidth(layout, min_width))) return false;
+	}
+
 	DWRITE_TEXT_METRICS metrics;
 	HRESULT             hr = IDWriteTextLayout_GetMetrics(layout, &metrics);
 	if (FAILED(hr)) return false;
@@ -332,9 +343,8 @@ dwrite_read_metrics(IDWriteTextLayout *layout, XentMeasureMode mode, float width
 	return true;
 }
 
-static bool
-dwrite_measure(XentTextBackend const *backend, XentTextMeasureRequest const *request, XentTextMetrics *out) {
-	FluxTextRenderer *tr = ( FluxTextRenderer * ) backend->userdata;
+static bool dwrite_measure(XentTextBackend const *backend, XentTextMeasureReq const *request, XentTextMetrics *out) {
+	FluxText *tr = ( FluxText * ) backend->userdata;
 	if (!tr || !request || !out) return false;
 
 	TextWideBuffer wide;
@@ -359,39 +369,14 @@ dwrite_measure(XentTextBackend const *backend, XentTextMeasureRequest const *req
 	return ok;
 }
 
-static bool
-dwrite_shape(XentTextBackend const *backend, XentTextShapeRequest const *request, XentTextShapeOutput const *output) {
-	if (!request || !output || !output->result) return false;
-
-	XentTextMetrics        m;
-	XentTextMeasureRequest measure_request = {
-	  .text              = request->text,
-	  .font_size         = request->font_size,
-	  .font_weight       = request->font_weight,
-	  .width_constraint  = request->width_constraint,
-	  .line_break_policy = request->line_break_policy,
-	  .width_mode        = request->width_mode,
-	};
-	if (!dwrite_measure(backend, &measure_request, &m)) return false;
-
-	memset(output->result, 0, sizeof(*output->result));
-	output->result->metrics     = m;
-	output->result->glyph_count = 0;
-	output->result->run_count   = 0;
-	output->result->line_count  = m.line_count;
-	output->result->truncated   = false;
-	return true;
-}
-
 static XentTextBackend const kDWriteBackend = {
   .name     = "fluxent-dwrite",
   .measure  = dwrite_measure,
-  .shape    = dwrite_shape,
   .userdata = NULL,
 };
 
-FluxTextRenderer *flux_text_renderer_create(void) {
-	FluxTextRenderer *tr = ( FluxTextRenderer * ) calloc(1, sizeof(*tr));
+FluxText *flux_text_create(void) {
+	FluxText *tr = ( FluxText * ) calloc(1, sizeof(*tr));
 	if (!tr) return NULL;
 
 	HRESULT hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, &IID_IDWriteFactory, ( void ** ) &tr->factory);
@@ -404,7 +389,7 @@ FluxTextRenderer *flux_text_renderer_create(void) {
 	return tr;
 }
 
-void flux_text_renderer_destroy(FluxTextRenderer *tr) {
+void flux_text_destroy(FluxText *tr) {
 	if (!tr) return;
 
 	for (int i = 0; i < FLUX_FORMAT_CACHE_SIZE; i++)
@@ -422,15 +407,15 @@ void flux_text_renderer_destroy(FluxTextRenderer *tr) {
 	free(tr);
 }
 
-bool flux_text_renderer_register(FluxTextRenderer *tr, XentContext *ctx) {
+bool flux_text_register(FluxText *tr, XentCtx *ctx) {
 	if (!tr || !ctx) return false;
 
-	/* xent_set_text_backend stores the pointer, not a copy, so the backend must
+	/* xent_text_setbackend stores the pointer, not a copy, so the backend must
 	 * outlive the call — keep it in the renderer (which lives with the app). */
 	tr->backend          = kDWriteBackend;
 	tr->backend.userdata = tr;
 
-	return xent_set_text_backend(ctx, &tr->backend);
+	return xent_text_setbackend(ctx, &tr->backend);
 }
 
 #define FLUX_TEXT_UNBOUNDED 100000.0f
@@ -444,7 +429,7 @@ static IDWriteTextLayout *text_layout_from_utf8(TextLayoutRequest const *req, Te
 	return layout;
 }
 
-static bool text_ensure_shared_brush(FluxTextRenderer *tr, ID2D1RenderTarget *rt, FluxColor color) {
+static bool text_ensure_shared_brush(FluxText *tr, ID2D1RenderTarget *rt, FluxColor color) {
 	D2D1_COLOR_F cf;
 	cf.r = flux_color_rf(color);
 	cf.g = flux_color_gf(color);
@@ -483,7 +468,7 @@ static TextLayoutRequest text_layout_request(FluxTextLayoutQuery const *query, c
 }
 
 void flux_text_draw(
-  FluxTextRenderer *tr, ID2D1RenderTarget *rt, char const *text, FluxRect const *bounds, FluxTextStyle const *style
+  FluxText *tr, ID2D1RenderTarget *rt, char const *text, FluxRect const *bounds, FluxTextStyle const *style
 ) {
 	if (!tr || !rt || !text || !text [0] || !bounds || !style) return;
 
@@ -507,7 +492,7 @@ void flux_text_draw(
 	text_wide_buffer_free(&wide);
 }
 
-FluxSize flux_text_measure(FluxTextRenderer *tr, char const *text, FluxTextStyle const *style, float max_width) {
+FluxSize flux_text_measure(FluxText *tr, char const *text, FluxTextStyle const *style, float max_width) {
 	FluxSize result = {0, 0};
 	if (!tr || !text || !text [0] || !style) return result;
 
@@ -529,7 +514,7 @@ FluxSize flux_text_measure(FluxTextRenderer *tr, char const *text, FluxTextStyle
 	return result;
 }
 
-int flux_text_hit_test(FluxTextHitTestQuery const *query) {
+int flux_text_hittest(FluxTextHitTestQuery const *query) {
 	if (!query || !query->layout.renderer || !query->layout.text || !query->layout.text [0] || !query->layout.style)
 		return 0;
 
@@ -550,7 +535,7 @@ int flux_text_hit_test(FluxTextHitTestQuery const *query) {
 	return pos;
 }
 
-FluxRect flux_text_caret_rect(FluxTextCaretQuery const *query) {
+FluxRect flux_text_caret(FluxTextCaretQuery const *query) {
 	FluxRect result = {0, 0, 1.0f, 0};
 	if (!query || !query->layout.renderer || !query->layout.style) return result;
 
@@ -617,7 +602,7 @@ static uint32_t text_copy_selection_rects(
 	return n;
 }
 
-uint32_t flux_text_selection_rects(FluxTextSelectionQuery const *query) {
+uint32_t flux_text_selection(FluxTextSelectionQuery const *query) {
 	if (!query
 		|| !query->layout.renderer
 		|| !query->layout.text
@@ -664,7 +649,7 @@ static IDWriteTextLayout *text_cluster_layout(FluxTextClusterQuery const *query,
 	return layout;
 }
 
-uint32_t flux_text_cluster_next(FluxTextClusterQuery const *query) {
+uint32_t flux_text_next(FluxTextClusterQuery const *query) {
 	if (!query || !query->layout.renderer || !query->layout.style) return query ? query->index : 0;
 
 	query->layout.renderer->cache_tick++;
@@ -687,7 +672,7 @@ uint32_t flux_text_cluster_next(FluxTextClusterQuery const *query) {
 	return result;
 }
 
-uint32_t flux_text_cluster_prev(FluxTextClusterQuery const *query) {
+uint32_t flux_text_prev(FluxTextClusterQuery const *query) {
 	if (!query || !query->layout.renderer || !query->layout.style) return query ? query->index : 0;
 	if (query->index == 0) return 0;
 

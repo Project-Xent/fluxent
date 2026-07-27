@@ -2,22 +2,22 @@
  * @file flux_text.h
  * @brief Text rendering, measurement, and hit-testing for Fluxent.
  *
- * FluxTextRenderer wraps DirectWrite to provide high-level text operations.
+ * FluxText wraps DirectWrite to provide high-level text operations.
  * It handles text layout creation, caching, and rendering with consistent
  * styling across all Fluxent controls.
  *
  * ## Usage Pattern
  *
- * 1. Create renderer with `flux_text_renderer_create()`
- * 2. Register with Xent context: `flux_text_renderer_register(tr, ctx)`
+ * 1. Create renderer with `flux_text_create()`
+ * 2. Register with Xent context: `flux_text_register(tr, ctx)`
  *    (This hooks the text measure function into the layout engine)
  * 3. Use rendering functions:
  *    - `flux_text_draw()` for rendering
  *    - `flux_text_measure()` for layout measurement
- *    - `flux_text_hit_test()` for click-to-position mapping
- *    - `flux_text_caret_rect()` for cursor positioning
- *    - `flux_text_selection_rects()` for selection highlighting
- * 4. Destroy with `flux_text_renderer_destroy()`
+ *    - `flux_text_hittest()` for click-to-position mapping
+ *    - `flux_text_caret()` for cursor positioning
+ *    - `flux_text_selection()` for selection highlighting
+ * 4. Destroy with `flux_text_destroy()`
  *
  * ## Text Styling
  *
@@ -33,17 +33,43 @@
 #define FLUX_TEXT_H
 
 #include "flux_types.h"
-#include "flux_component_data.h"
 #include <xent/xent.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 typedef struct ID2D1RenderTarget ID2D1RenderTarget;
 
-typedef struct FluxTextRenderer  FluxTextRenderer;
+typedef struct FluxText          FluxText;
+
+#include <xtk/xtk_types.h>
+
+typedef XtkTextAlign FluxTextAlign;
+#define FLUX_TEXT_LEFT    XTK_TEXT_LEFT
+#define FLUX_TEXT_CENTER  XTK_TEXT_CENTER
+#define FLUX_TEXT_RIGHT   XTK_TEXT_RIGHT
+#define FLUX_TEXT_JUSTIFY XTK_TEXT_JUSTIFY
+
+typedef enum FluxTextVAlign
+{
+	FLUX_TEXT_TOP,
+	FLUX_TEXT_VCENTER,
+	FLUX_TEXT_BOTTOM,
+} FluxTextVAlign;
+
+typedef XtkFontWeight FluxFontWeight;
+#define FLUX_FONT_THIN        XTK_FONT_THIN
+#define FLUX_FONT_EXTRA_LIGHT XTK_FONT_EXTRA_LIGHT
+#define FLUX_FONT_LIGHT       XTK_FONT_LIGHT
+#define FLUX_FONT_REGULAR     XTK_FONT_REGULAR
+#define FLUX_FONT_MEDIUM      XTK_FONT_MEDIUM
+#define FLUX_FONT_SEMI_BOLD   XTK_FONT_SEMI_BOLD
+#define FLUX_FONT_BOLD        XTK_FONT_BOLD
+#define FLUX_FONT_EXTRA_BOLD  XTK_FONT_EXTRA_BOLD
+#define FLUX_FONT_BLACK       XTK_FONT_BLACK
+
+/** FluxFontWeight values are DWrite-style numerics; 0 falls back to regular. */
+static uint16_t inline flux_font_weight_numeric(FluxFontWeight weight) {
+	return ( uint16_t ) (weight > 0 ? weight : FLUX_FONT_REGULAR);
+}
 
 /**
  * @brief Text styling parameters.
@@ -63,7 +89,7 @@ typedef struct FluxTextStyle {
 
 /** @brief Text layout input shared by hit-testing and range queries. */
 typedef struct FluxTextLayoutQuery {
-	FluxTextRenderer    *renderer;
+	FluxText            *renderer;
 	char const          *text;
 	FluxTextStyle const *style;
 	float                max_width;
@@ -104,13 +130,13 @@ typedef struct FluxTextClusterQuery {
  *
  * @return New text renderer, or NULL on failure.
  */
-XENT_NODISCARD FluxTextRenderer *flux_text_renderer_create(void);
+XENT_NODISCARD FluxText *flux_text_create(void);
 
 /**
  * @brief Destroy a text renderer.
  * @param tr Text renderer to destroy (NULL is safe).
  */
-void              flux_text_renderer_destroy(FluxTextRenderer *tr);
+void                     flux_text_destroy(FluxText *tr);
 
 /**
  * @brief Register the text renderer with a Xent layout context.
@@ -122,19 +148,19 @@ void              flux_text_renderer_destroy(FluxTextRenderer *tr);
  * @param ctx Xent context to register with.
  * @return true on success.
  */
-bool              flux_text_renderer_register(FluxTextRenderer *tr, XentContext *ctx);
+bool                     flux_text_register(FluxText *tr, XentCtx *ctx);
 
 /**
  * @brief Draw text to a D2D render target.
  *
  * @param tr Text renderer.
- * @param rt D2D render target (typically from flux_graphics_get_d2d_context).
+ * @param rt D2D render target (typically from flux_gfx_d2d).
  * @param text UTF-8 text to render.
  * @param bounds Bounding rectangle for text layout.
  * @param style Text styling parameters.
  */
-void              flux_text_draw(
-  FluxTextRenderer *tr, ID2D1RenderTarget *rt, char const *text, FluxRect const *bounds, FluxTextStyle const *style
+void                     flux_text_draw(
+  FluxText *tr, ID2D1RenderTarget *rt, char const *text, FluxRect const *bounds, FluxTextStyle const *style
 );
 
 /**
@@ -149,7 +175,7 @@ void              flux_text_draw(
  * @param max_width Maximum width for wrapping (FLT_MAX for no limit).
  * @return Measured text size.
  */
-FluxSize flux_text_measure(FluxTextRenderer *tr, char const *text, FluxTextStyle const *style, float max_width);
+FluxSize flux_text_measure(FluxText *tr, char const *text, FluxTextStyle const *style, float max_width);
 
 /**
  * @brief Hit-test a point to find the character index.
@@ -165,7 +191,7 @@ FluxSize flux_text_measure(FluxTextRenderer *tr, char const *text, FluxTextStyle
  * @param y Y coordinate (relative to text bounds origin).
  * @return Character index at the point, or 0 when input is invalid.
  */
-int      flux_text_hit_test(FluxTextHitTestQuery const *query);
+int      flux_text_hittest(FluxTextHitTestQuery const *query);
 
 /**
  * @brief Get the caret rectangle for a character index.
@@ -180,7 +206,7 @@ int      flux_text_hit_test(FluxTextHitTestQuery const *query);
  * @param index Character index.
  * @return Caret rectangle (relative to text bounds origin).
  */
-FluxRect flux_text_caret_rect(FluxTextCaretQuery const *query);
+FluxRect flux_text_caret(FluxTextCaretQuery const *query);
 
 /**
  * @brief Get rectangles covering a text selection.
@@ -198,23 +224,20 @@ FluxRect flux_text_caret_rect(FluxTextCaretQuery const *query);
  * @param max_rects Maximum number of rectangles to output.
  * @return Number of rectangles written to out_rects.
  */
-uint32_t flux_text_selection_rects(FluxTextSelectionQuery const *query);
+uint32_t flux_text_selection(FluxTextSelectionQuery const *query);
 
 /**
  * @brief UTF-16 offset of the next grapheme-cluster boundary at or after the
  * query index, using DirectWrite cluster analysis. Returns the text's UTF-16
  * length when already at the end.
  */
-uint32_t flux_text_cluster_next(FluxTextClusterQuery const *query);
+uint32_t flux_text_next(FluxTextClusterQuery const *query);
 
 /**
  * @brief UTF-16 offset of the previous grapheme-cluster boundary before the
  * query index, using DirectWrite cluster analysis. Returns 0 at the start.
  */
-uint32_t flux_text_cluster_prev(FluxTextClusterQuery const *query);
+uint32_t flux_text_prev(FluxTextClusterQuery const *query);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -302,7 +302,7 @@ void flux_dmanip_viewport_destroy(FluxDManipViewport *vp) {
 	free(vp);
 }
 
-void flux_dmanip_viewport_set_rect(FluxDManipViewport *vp, int x, int y, int w, int h) {
+void flux_dmanip_vp_setrect(FluxDManipViewport *vp, int x, int y, int w, int h) {
 	if (!vp || !vp->viewport || w <= 0 || h <= 0) return;
 	RECT    r  = {x, y, x + w, y + h};
 	HRESULT hr = IDirectManipulationViewport_SetViewportRect(vp->viewport, &r);
@@ -311,7 +311,7 @@ void flux_dmanip_viewport_set_rect(FluxDManipViewport *vp, int x, int y, int w, 
 	}
 }
 
-void flux_dmanip_viewport_set_content_size(FluxDManipViewport *vp, int w, int h) {
+void flux_dmanip_vp_setsize(FluxDManipViewport *vp, int w, int h) {
 	if (!vp || !vp->primary || w <= 0 || h <= 0) return;
 	if (w == vp->content_w && h == vp->content_h) return;
 	RECT r = {0, 0, w, h};
@@ -321,19 +321,19 @@ void flux_dmanip_viewport_set_content_size(FluxDManipViewport *vp, int w, int h)
 	}
 }
 
-HRESULT flux_dmanip_viewport_set_contact(FluxDManipViewport *vp, uint32_t pointer_id) {
+HRESULT flux_dmanip_vp_setcontact(FluxDManipViewport *vp, uint32_t pointer_id) {
 	if (!vp || !vp->viewport) return E_INVALIDARG;
 	if (!vp->enabled) return E_NOT_VALID_STATE;
 	return IDirectManipulationViewport_SetContact(vp->viewport, pointer_id);
 }
 
-void flux_dmanip_viewport_set_callback(FluxDManipViewport *vp, FluxDManipContentUpdatedFn cb, void *ctx) {
+void flux_dmanip_vp_onchange(FluxDManipViewport *vp, FluxDManipContentUpdatedFn cb, void *ctx) {
 	if (!vp) return;
 	vp->on_updated     = cb;
 	vp->on_updated_ctx = ctx;
 }
 
-void flux_dmanip_viewport_sync_transform(FluxDManipViewport *vp, float scroll_x, float scroll_y) {
+void flux_dmanip_vp_sync(FluxDManipViewport *vp, float scroll_x, float scroll_y) {
 	if (!vp || !vp->primary) return;
 	if (vp->status == DIRECTMANIPULATION_RUNNING || vp->status == DIRECTMANIPULATION_INERTIA) return;
 	float s     = (vp->dpi_scale > 0.0f) ? vp->dpi_scale : 1.0f;
@@ -341,12 +341,12 @@ void flux_dmanip_viewport_sync_transform(FluxDManipViewport *vp, float scroll_x,
 	( void ) IDirectManipulationContent_SyncContentTransform(vp->primary, m, 6);
 }
 
-bool flux_dmanip_viewport_is_manipulating(FluxDManipViewport const *vp) {
+bool flux_dmanip_vp_manipulating(FluxDManipViewport const *vp) {
 	if (!vp) return false;
 	return vp->status == DIRECTMANIPULATION_RUNNING || vp->status == DIRECTMANIPULATION_INERTIA;
 }
 
-void flux_dmanip_viewport_set_dpi_scale(FluxDManipViewport *vp, float scale) {
+void flux_dmanip_vp_setdpi(FluxDManipViewport *vp, float scale) {
 	if (!vp) return;
 	if (scale > 0.0f) vp->dpi_scale = scale;
 }

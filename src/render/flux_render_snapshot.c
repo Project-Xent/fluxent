@@ -1,21 +1,24 @@
-#include "fluxent/flux_render_snapshot.h"
+#include "render/flux_render_snapshot.h"
+#include "store/flux_node_data.h"
 #include "controls/textbox/tb_internal.h"
 
 #include <windows.h>
-#include "fluxent/controls/flux_menu_bar_data.h"
-#include "fluxent/controls/flux_nav_view_data.h"
-#include "fluxent/controls/flux_tab_view_data.h"
-#include "fluxent/controls/flux_refresh_data.h"
-#include "fluxent/controls/flux_tree_view_data.h"
-#include "fluxent/controls/flux_breadcrumb_data.h"
+#include "controls/data/flux_menu_bar_data.h"
+#include "controls/data/flux_nav_view_data.h"
+#include "controls/data/flux_tab_view_data.h"
+#include "controls/behavior/flux_breadcrumb_internal.h"
+#include "controls/behavior/flux_expander_internal.h"
+#include "controls/behavior/flux_flip_internal.h"
+#include "controls/behavior/flux_refresh_internal.h"
+#include "controls/behavior/flux_tree_internal.h"
 
 #include <string.h>
 
 typedef struct SnapshotContext {
-	FluxRenderSnapshot *snap;
-	XentContext const  *ctx;
-	XentNodeId          node;
-	void const         *data;
+	FluxRenderSnap *snap;
+	XentCtx const  *ctx;
+	XentNodeId      node;
+	void const     *data;
 } SnapshotContext;
 
 typedef void (*SnapshotHandler)(SnapshotContext const *ctx);
@@ -28,10 +31,10 @@ typedef struct SnapshotButtonFields {
 	FluxButtonStyle style;
 } SnapshotButtonFields;
 
-static void snapshot_base(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {
+static void snapshot_base(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId node, FluxNodeData const *nd) {
 	memset(snap, 0, sizeof(*snap));
 	snap->id   = ( uint64_t ) node;
-	snap->type = flux_get_control_type(ctx, node);
+	snap->type = nd ? nd->component_type : FLUX_CONTROL_CONTAINER;
 	if (!nd) return;
 
 	snap->background    = nd->visuals.background;
@@ -43,8 +46,8 @@ static void snapshot_base(FluxRenderSnapshot *snap, XentContext const *ctx, Xent
 	snap->hover_local_y = nd->hover_local_y;
 }
 
-static void snapshot_text(FluxRenderSnapshot *snap, FluxTextData const *t) {
-	snap->font_size                = t->font_size;
+static void snapshot_text(FluxRenderSnap *snap, FluxTextData const *t) {
+	snap->font_size                  = t->font_size;
 	snap->u.text.text_content        = t->content;
 	snap->u.text.font_family         = t->font_family;
 	snap->u.text.text_color          = t->text_color;
@@ -55,23 +58,23 @@ static void snapshot_text(FluxRenderSnapshot *snap, FluxTextData const *t) {
 	snap->u.text.word_wrap           = t->wrap;
 }
 
-static void snapshot_button_fields(FluxRenderSnapshot *snap, SnapshotButtonFields fields) {
-	snap->font_size           = fields.font_size;
+static void snapshot_button_fields(FluxRenderSnap *snap, SnapshotButtonFields fields) {
+	snap->font_size             = fields.font_size;
 	snap->u.button.label        = fields.label;
 	snap->u.button.icon_name    = fields.icon_name;
 	snap->u.button.text_color   = fields.label_color;
 	snap->u.button.button_style = fields.style;
 }
 
-static void snapshot_button(FluxRenderSnapshot *snap, FluxButtonData const *b) {
+static void snapshot_button(FluxRenderSnap *snap, FluxButtonData const *b) {
 	snapshot_button_fields(
 	  snap, (SnapshotButtonFields) {b->label, b->icon_name, b->label_color, b->font_size, b->style}
 	);
 	snap->u.button.is_checked = b->is_checked;
 }
 
-static void snapshot_textbox(FluxRenderSnapshot *snap, FluxTextBoxData const *tb) {
-	snap->font_size                    = tb->font_size;
+static void snapshot_textbox(FluxRenderSnap *snap, FluxTextBoxData const *tb) {
+	snap->font_size                         = tb->font_size;
 	snap->u.textbox.text_content            = tb->content;
 	snap->u.textbox.placeholder             = tb->placeholder;
 	snap->u.textbox.font_family             = tb->font_family;
@@ -87,17 +90,17 @@ static void snapshot_textbox(FluxRenderSnapshot *snap, FluxTextBoxData const *tb
 	snap->u.textbox.edit.readonly           = tb->readonly;
 }
 
-static void snapshot_checkbox_like(FluxRenderSnapshot *snap, FluxCheckboxData const *c) {
+static void snapshot_checkbox_like(FluxRenderSnap *snap, FluxCheckboxData const *c) {
 	snap->u.check.label       = c->label;
 	snap->u.check.check_state = c->state;
 }
 
-static void snapshot_switch(FluxRenderSnapshot *snap, FluxCheckboxData const *c) {
+static void snapshot_switch(FluxRenderSnap *snap, FluxCheckboxData const *c) {
 	snap->u.sw.label       = c->label;
 	snap->u.sw.check_state = c->state;
 }
 
-static void snapshot_slider(FluxRenderSnapshot *snap, FluxSliderData const *s) {
+static void snapshot_slider(FluxRenderSnap *snap, FluxSliderData const *s) {
 	snap->u.slider.min_value             = s->min_value;
 	snap->u.slider.max_value             = s->max_value;
 	snap->u.slider.current_value         = s->current_value;
@@ -107,7 +110,7 @@ static void snapshot_slider(FluxRenderSnapshot *snap, FluxSliderData const *s) {
 	snap->u.slider.slider_tick_placement = ( uint8_t ) s->tick_placement;
 }
 
-static void snapshot_scroll(FluxRenderSnapshot *snap, FluxScrollData const *sc) {
+static void snapshot_scroll(FluxRenderSnap *snap, FluxScrollData const *sc) {
 	snap->u.scroll.x                  = sc->scroll_x;
 	snap->u.scroll.y                  = sc->scroll_y;
 	snap->u.scroll.origin_x           = sc->origin_x;
@@ -127,24 +130,25 @@ static void snapshot_scroll(FluxRenderSnapshot *snap, FluxScrollData const *sc) 
 	snap->u.scroll.last_activity_time = sc->last_activity_time;
 }
 
-static void snapshot_progress_fields(FluxRenderSnapshot *snap, float value, float max_value, bool indeterminate) {
-	snap->u.progress.min_value     = 0.0f;
+static void
+snapshot_progress_fields(FluxRenderSnap *snap, float value, float min_value, float max_value, bool indeterminate) {
+	snap->u.progress.min_value     = min_value;
 	snap->u.progress.current_value = value;
 	snap->u.progress.max_value     = max_value;
 	snap->u.progress.indeterminate = indeterminate;
 }
 
-static void snapshot_progress(FluxRenderSnapshot *snap, FluxProgressData const *p) {
-	snapshot_progress_fields(snap, p->value, p->max_value, p->indeterminate);
+static void snapshot_progress(FluxRenderSnap *snap, FluxProgressData const *p) {
+	snapshot_progress_fields(snap, p->value, p->min_value, p->max_value, p->indeterminate);
 }
 
-static void snapshot_number_box_spin(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node) {
-	snap->u.textbox.nb_spin_placement = ( uint8_t ) (xent_get_semantic_expanded(ctx, node) ? 2 : 0);
+static void snapshot_number_box_spin(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId node) {
+	snap->u.textbox.nb_spin_placement = ( uint8_t ) (xent_sem_expanded(ctx, node) ? 2 : 0);
 
-	float sv                = 0.0f;
-	float smin              = 0.0f;
-	float smax              = 0.0f;
-	if (!xent_get_semantic_value(ctx, node, &sv, &smin, &smax)) {
+	float sv                          = 0.0f;
+	float smin                        = 0.0f;
+	float smax                        = 0.0f;
+	if (!xent_sem_value(ctx, node, &sv, &smin, &smax)) {
 		snap->u.textbox.nb_up_enabled   = true;
 		snap->u.textbox.nb_down_enabled = true;
 		return;
@@ -153,30 +157,30 @@ static void snapshot_number_box_spin(FluxRenderSnapshot *snap, XentContext const
 	snap->u.textbox.nb_down_enabled = (sv > smin) || (smin == smax);
 }
 
-static void snapshot_hyperlink(FluxRenderSnapshot *snap, FluxHyperlinkData const *hl) {
+static void snapshot_hyperlink(FluxRenderSnap *snap, FluxHyperlinkData const *hl) {
 	snapshot_button_fields(
 	  snap, (SnapshotButtonFields) {hl->label, hl->icon_name, hl->label_color, hl->font_size, FLUX_BUTTON_TEXT}
 	);
 }
 
-static void snapshot_repeat_button(FluxRenderSnapshot *snap, FluxRepeatButtonData const *rb) {
+static void snapshot_repeat_button(FluxRenderSnap *snap, FluxRepeatButtonData const *rb) {
 	snapshot_button_fields(
 	  snap, (SnapshotButtonFields) {rb->label, rb->icon_name, rb->label_color, rb->font_size, rb->style}
 	);
 }
 
-static void snapshot_progress_ring(FluxRenderSnapshot *snap, FluxProgressRingData const *pr) {
-	snapshot_progress_fields(snap, pr->value, pr->max_value, pr->indeterminate);
+static void snapshot_progress_ring(FluxRenderSnap *snap, FluxProgressRingData const *pr) {
+	snapshot_progress_fields(snap, pr->value, pr->min_value, pr->max_value, pr->indeterminate);
 }
 
-static void snapshot_info_badge(FluxRenderSnapshot *snap, FluxInfoBadgeData const *ib) {
-	snap->background           = ib->background;
+static void snapshot_info_badge(FluxRenderSnap *snap, FluxInfoBadgeData const *ib) {
+	snap->background             = ib->background;
 	snap->u.info_badge.value     = ib->value;
 	snap->u.info_badge.icon_name = ib->icon_name;
 	snap->u.info_badge.mode      = ib->mode;
 }
 
-static void snapshot_info_bar(FluxRenderSnapshot *snap, FluxInfoBarData const *ib) {
+static void snapshot_info_bar(FluxRenderSnap *snap, FluxInfoBarData const *ib) {
 	snap->u.info_bar.label        = ib->title;
 	snap->u.info_bar.text_content = ib->message;
 	snap->u.info_bar.severity     = ib->severity;
@@ -191,7 +195,7 @@ static void snapshot_handle_expander_header(SnapshotContext const *ctx) {
 	ctx->snap->u.expander.is_checked = (( FluxExpanderData const * ) ctx->data)->expanded;
 }
 
-static void snapshot_image(FluxRenderSnapshot *snap, FluxImageData const *im) {
+static void snapshot_image(FluxRenderSnap *snap, FluxImageData const *im) {
 	snap->u.image.text_content = im->source;
 	snap->u.image.stretch      = im->stretch;
 }
@@ -200,8 +204,8 @@ static void snapshot_handle_image(SnapshotContext const *ctx) {
 	snapshot_image(ctx->snap, ( FluxImageData const * ) ctx->data);
 }
 
-static void snapshot_combo_box(FluxRenderSnapshot *snap, FluxComboBoxData const *cb) {
-	bool valid              = cb->selected_index >= 0 && cb->selected_index < cb->item_count;
+static void snapshot_combo_box(FluxRenderSnap *snap, FluxComboBoxData const *cb) {
+	bool valid                 = cb->selected_index >= 0 && cb->selected_index < cb->item_count;
 	snap->u.combo.text_content = valid ? cb->items [cb->selected_index] : NULL;
 	snap->u.combo.placeholder  = cb->placeholder;
 	snap->u.combo.is_checked   = cb->open;
@@ -212,9 +216,9 @@ static void snapshot_handle_combo_box(SnapshotContext const *ctx) {
 }
 
 static void snapshot_handle_menu_bar_item(SnapshotContext const *ctx) {
-	FluxMenuBarItem const *it = ( FluxMenuBarItem const * ) ctx->data;
-	ctx->snap->u.menu.label      = it->label;
-	ctx->snap->u.menu.is_checked = (it->bar->open_index == it->index);
+	FluxMenuItemVisual const *item = ( FluxMenuItemVisual const * ) ctx->data;
+	ctx->snap->u.menu.label        = item->label;
+	ctx->snap->u.menu.is_checked   = item->open;
 }
 
 static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
@@ -225,7 +229,7 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	 * in Minimal (the root stays full-width). */
 	if (ctx->node != d->pane) {
 		XentRect rr = {0}, cr = {0};
-		if (xent_get_layout_rect(d->ctx, d->root, &rr) && xent_get_layout_rect(d->ctx, d->content, &cr)) {
+		if (xent_layout_rect(d->ctx, d->root, &rr) && xent_layout_rect(d->ctx, d->content, &cr)) {
 			ctx->snap->u.nav.nav_content_x = cr.x - rr.x;
 			ctx->snap->u.nav.nav_content_y = cr.y - rr.y;
 		}
@@ -238,24 +242,24 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	/* The pill is drawn by the pane (outside the items viewport) from layout-space
 	 * tween values; shift it by the live scroll offset so it stays glued to the
 	 * visually translated item rows. */
-	float scroll = 0.0f;
+	float scroll                    = 0.0f;
 	if (d->ind_in_scroll && d->items_scroll_data)
 		scroll = (d->mode == FLUX_NAV_TOP) ? flux_scroll_off_x(d->items_scroll_data)
 		                                   : flux_scroll_off_y(d->items_scroll_data);
-	ctx->snap->u.nav.nav_ind_top        = d->ind_top.current - scroll;
-	ctx->snap->u.nav.nav_ind_bottom     = d->ind_bot.current - scroll;
-	ctx->snap->u.nav.nav_ind_opacity    = d->ind_op.current;
+	ctx->snap->u.nav.nav_ind_top     = d->ind_top.current - scroll;
+	ctx->snap->u.nav.nav_ind_bottom  = d->ind_bot.current - scroll;
+	ctx->snap->u.nav.nav_ind_opacity = d->ind_op.current;
 	/* The pill tracks the item content, so it indents with the item's depth and
 	 * (for menu items) is clipped to the scroll viewport so it never bleeds over
 	 * the pinned footer. Footer-item pills sit outside the viewport (no clip).
 	 * Depth comes from the *visible* item the pill sits on, not the raw selection:
 	 * a compact-flyout child is drawn on its parent's rail row, so indenting by the
 	 * child's own (unshown) depth would shove the pill a level to the right. */
-	int ind_item = (d->ind_visible >= 0 && d->ind_visible < d->count) ? d->ind_visible : -1;
-	ctx->snap->u.nav.nav_ind_indent = ind_item >= 0 ? ( float ) d->items [ind_item].depth * 31.0f : 0.0f;
+	int ind_item                     = (d->ind_visible >= 0 && d->ind_visible < d->count) ? d->ind_visible : -1;
+	ctx->snap->u.nav.nav_ind_indent  = ind_item >= 0 ? ( float ) d->items [ind_item].depth * 31.0f : 0.0f;
 	if (d->ind_in_scroll) {
 		XentRect sr = {0}, pr = {0};
-		if (xent_get_layout_rect(d->ctx, d->items_scroll, &sr) && xent_get_layout_rect(d->ctx, d->pane, &pr)) {
+		if (xent_layout_rect(d->ctx, d->items_scroll, &sr) && xent_layout_rect(d->ctx, d->pane, &pr)) {
 			ctx->snap->u.nav.nav_ind_clip_top    = sr.y - pr.y;
 			ctx->snap->u.nav.nav_ind_clip_bottom = sr.y - pr.y + sr.h;
 		}
@@ -269,7 +273,7 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 }
 
 static void snapshot_handle_nav_view_item(SnapshotContext const *ctx) {
-	FluxNavViewItem const *it        = ( FluxNavViewItem const * ) ctx->data;
+	FluxNavViewItem const *it         = ( FluxNavViewItem const * ) ctx->data;
 	ctx->snap->u.nav.nav_item_kind    = ( uint8_t ) it->kind;
 	ctx->snap->u.nav.nav_top          = (it->nav->mode == FLUX_NAV_TOP);
 	ctx->snap->u.nav.nav_depth        = ( uint8_t ) it->depth;
@@ -283,8 +287,8 @@ static void snapshot_handle_nav_view_item(SnapshotContext const *ctx) {
 /* True when a strip slot is selected, hovered, or pressed — the states that hide
  * the divider on it and on its left-adjacent neighbour (TabViewItem.cpp
  * HideLeftAdjacentTabSeparator). */
-static bool snapshot_tab_node_hot(FluxNodeStore *store, XentNodeId node) {
-	FluxNodeData const *nd = flux_node_store_get(store, node);
+static bool snapshot_tab_node_hot(FluxStore *store, XentNodeId node) {
+	FluxNodeData const *nd = flux_store_find(store, node);
 	return nd && (nd->state.hovered || nd->state.pressed);
 }
 
@@ -311,7 +315,7 @@ static bool snapshot_tab_separator(FluxTabViewItem const *it) {
 }
 
 static void snapshot_handle_tab_view_item(SnapshotContext const *ctx) {
-	FluxTabViewItem const *it = ( FluxTabViewItem const * ) ctx->data;
+	FluxTabViewItem const *it  = ( FluxTabViewItem const * ) ctx->data;
 	ctx->snap->u.tab.tab_kind  = ( uint8_t ) it->kind;
 	ctx->snap->u.tab.icon_name = it->icon_name;
 	if (it->kind != FLUX_TAB_KIND_TAB) return;
@@ -327,6 +331,7 @@ static void snapshot_handle_tab_view_item(SnapshotContext const *ctx) {
 
 static void snapshot_handle_text(SnapshotContext const *ctx) {
 	snapshot_text(ctx->snap, ( FluxTextData const * ) ctx->data);
+	ctx->snap->u.text.text_content = xent_node_text(ctx->ctx, ctx->node);
 }
 
 static void snapshot_handle_button(SnapshotContext const *ctx) {
@@ -362,7 +367,7 @@ static void snapshot_handle_password_box(SnapshotContext const *ctx) {
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx->data;
 	tb_sync_content(tb);
 	snapshot_textbox(ctx->snap, ( FluxTextBoxData const * ) ctx->data);
-	ctx->snap->u.textbox.is_checked = tb->password_show_plain || xent_get_semantic_checked(ctx->ctx, ctx->node) != 0;
+	ctx->snap->u.textbox.is_checked = tb->password_show_plain || xent_sem_checked(ctx->ctx, ctx->node) != 0;
 }
 
 static void snapshot_handle_number_box(SnapshotContext const *ctx) {
@@ -398,9 +403,9 @@ static bool snapshot_list_item_selected(FluxListItemData const *it) {
 }
 
 static void snapshot_handle_breadcrumb_item(SnapshotContext const *ctx) {
-	FluxBreadcrumbItem const    *it = ( FluxBreadcrumbItem const * ) ctx->data;
-	FluxBreadcrumbBarData const *d  = it->bar;
-	bool is_last                    = it->elem == d->count;
+	FluxBreadcrumbItem const    *it      = ( FluxBreadcrumbItem const * ) ctx->data;
+	FluxBreadcrumbBarData const *d       = it->bar;
+	bool                         is_last = it->elem == d->count;
 	ctx->snap->u.breadcrumb.label        = it->elem > 0 ? d->labels [it->elem - 1] : NULL;
 	ctx->snap->u.breadcrumb.is_ellipsis  = it->elem == 0;
 	ctx->snap->u.breadcrumb.is_last      = is_last;
@@ -410,14 +415,14 @@ static void snapshot_handle_breadcrumb_item(SnapshotContext const *ctx) {
 
 static void snapshot_handle_selector_item(SnapshotContext const *ctx) {
 	FluxSelectorBarItemData const *it = ( FluxSelectorBarItemData const * ) ctx->data;
-	ctx->snap->u.selector.text       = it->text;
-	ctx->snap->u.selector.icon_glyph = it->icon_glyph;
-	ctx->snap->u.selector.selected   = it->selected;
-	ctx->snap->u.selector.pill_t     = it->pill_t;
+	ctx->snap->u.selector.text        = it->text;
+	ctx->snap->u.selector.icon_glyph  = it->icon_glyph;
+	ctx->snap->u.selector.selected    = it->selected;
+	ctx->snap->u.selector.pill_t      = it->pill_t;
 }
 
 static void snapshot_handle_rating(SnapshotContext const *ctx) {
-	FluxRatingData const *r      = ( FluxRatingData const * ) ctx->data;
+	FluxRatingData const *r               = ( FluxRatingData const * ) ctx->data;
 	ctx->snap->u.rating.value             = r->value;
 	ctx->snap->u.rating.hover_value       = r->hover_value;
 	ctx->snap->u.rating.placeholder_value = r->placeholder_value;
@@ -431,7 +436,7 @@ static void snapshot_handle_rating(SnapshotContext const *ctx) {
 }
 
 static void snapshot_handle_list_item(SnapshotContext const *ctx) {
-	FluxListItemData const *it        = ( FluxListItemData const * ) ctx->data;
+	FluxListItemData const *it         = ( FluxListItemData const * ) ctx->data;
 	ctx->snap->u.list_item.kind        = ( uint8_t ) (it->owner ? it->owner->kind : XTK_LIST_KIND_LIST);
 	ctx->snap->u.list_item.is_selected = snapshot_list_item_selected(it);
 	ctx->snap->u.list_item.multi       = it->multi;
@@ -441,25 +446,24 @@ static void snapshot_handle_tree_item(SnapshotContext const *ctx) {
 	FluxTreeItemData const *it = ( FluxTreeItemData const * ) ctx->data;
 	FluxTreeViewData const *d  = it->owner;
 	if (!d || it->flat_index < 0 || it->flat_index >= d->flat_count) return;
-	int                 h = d->flat [it->flat_index];
-	FluxTreeNode const *n = &d->nodes [h];
+	int                 h            = d->flat [it->flat_index];
+	FluxTreeNode const *n            = &d->nodes [h];
 	ctx->snap->u.tree_item.label     = n->text;
 	ctx->snap->u.tree_item.glyph     = n->glyph;
 	ctx->snap->u.tree_item.depth     = n->depth;
 	ctx->snap->u.tree_item.sel_state = d->sel_mode == XTK_TREE_SELECT_SINGLE
-	    ? ( uint8_t ) (d->selected == h ? FLUX_TREE_SEL_SELECTED : FLUX_TREE_SEL_NONE)
-	    : n->sel_state;
+	                                   ? ( uint8_t ) (d->selected == h ? FLUX_TREE_SEL_SELECTED : FLUX_TREE_SEL_NONE)
+	                                   : n->sel_state;
 	ctx->snap->u.tree_item.flags = ( uint8_t ) ((n->first_child >= 0 ? FLUX_TREE_ROW_HAS_CHILDREN : 0)
-	    | (n->expanded ? FLUX_TREE_ROW_EXPANDED : 0)
-	    | (d->sel_mode == XTK_TREE_SELECT_MULTIPLE ? FLUX_TREE_ROW_MULTI : 0)
-	    | (n->disabled ? FLUX_TREE_ROW_DISABLED : 0));
+												| (n->expanded ? FLUX_TREE_ROW_EXPANDED : 0)
+												| (d->sel_mode == XTK_TREE_SELECT_MULTIPLE ? FLUX_TREE_ROW_MULTI : 0)
+												| (n->disabled ? FLUX_TREE_ROW_DISABLED : 0));
 }
 
 static void snapshot_handle_flip_view(SnapshotContext const *ctx) {
-	FluxFlipViewData const *fv = ( FluxFlipViewData const * ) ctx->data;
+	FluxFlipViewData const *fv    = ( FluxFlipViewData const * ) ctx->data;
 	int                     count = 0;
-	for (XentNodeId c = xent_get_first_child(ctx->ctx, fv->host); c != XENT_NODE_INVALID;
-	  c               = xent_get_next_sibling(ctx->ctx, c))
+	for (XentNodeId c = xent_node_first(ctx->ctx, fv->host); c != XENT_NODE_INVALID; c = xent_node_next(ctx->ctx, c))
 		count++;
 	ctx->snap->u.flip.vertical      = fv->vertical;
 	ctx->snap->u.flip.prev_enabled  = fv->selected > 0 && count > 1;
@@ -469,30 +473,30 @@ static void snapshot_handle_flip_view(SnapshotContext const *ctx) {
 }
 
 static void snapshot_handle_pips_pager(SnapshotContext const *ctx) {
-	FluxPipsPagerData const *pd = ( FluxPipsPagerData const * ) ctx->data;
-	int visible                 = pd->max_visible < pd->count ? pd->max_visible : pd->count;
-	ctx->snap->u.pips.count        = pd->count;
-	ctx->snap->u.pips.selected     = pd->selected;
-	ctx->snap->u.pips.window_start = pd->window_start;
-	ctx->snap->u.pips.visible      = visible > 0 ? visible : 0;
-	ctx->snap->u.pips.vertical     = pd->vertical;
-	ctx->snap->u.pips.nav_vis      = pd->nav_vis;
-	ctx->snap->u.pips.pressed_pip  = pd->pressed_pip;
-	ctx->snap->u.pips.pressed_nav  = pd->pressed_nav;
+	FluxPipsPagerData const *pd      = ( FluxPipsPagerData const * ) ctx->data;
+	int                      visible = pd->max_visible < pd->count ? pd->max_visible : pd->count;
+	ctx->snap->u.pips.count          = pd->count;
+	ctx->snap->u.pips.selected       = pd->selected;
+	ctx->snap->u.pips.window_start   = pd->window_start;
+	ctx->snap->u.pips.visible        = visible > 0 ? visible : 0;
+	ctx->snap->u.pips.vertical       = pd->vertical;
+	ctx->snap->u.pips.nav_vis        = pd->nav_vis;
+	ctx->snap->u.pips.pressed_pip    = pd->pressed_pip;
+	ctx->snap->u.pips.pressed_nav    = pd->pressed_nav;
 }
 
 static void snapshot_handle_refresh(SnapshotContext const *ctx) {
-	FluxRefreshData const *d   = ( FluxRefreshData const * ) ctx->data;
-	FluxRefreshSnapshot   *r   = &ctx->snap->u.refresh;
-	unsigned long          now = GetTickCount();
+	FluxRefreshData const *d      = ( FluxRefreshData const * ) ctx->data;
+	FluxRefreshSnapshot   *r      = &ctx->snap->u.refresh;
+	unsigned long          now    = GetTickCount();
 	float const            two_pi = 6.28318530718f;
 	float                  thr    = d->threshold_ratio > 0.0f ? d->threshold_ratio : FLUX_REFRESH_EXECUTION_RATIO;
 
-	r->state             = d->state;
-	r->direction         = ( int ) d->direction;
-	r->interaction_ratio = d->interaction_ratio;
-	r->threshold_ratio   = thr;
-	r->visualizer_size   = d->visualizer_size;
+	r->state                      = d->state;
+	r->direction                  = ( int ) d->direction;
+	r->interaction_ratio          = d->interaction_ratio;
+	r->threshold_ratio            = thr;
+	r->visualizer_size            = d->visualizer_size;
 
 	if (d->state == FLUX_REFRESH_REFRESHING) {
 		unsigned long e    = now - d->spin_start_tick;
@@ -504,11 +508,11 @@ static void snapshot_handle_refresh(SnapshotContext const *ctx) {
 		r->glyph_angle = d->start_angle + two_pi * (ratio / thr);
 	}
 
-	bool bright = d->state == FLUX_REFRESH_PEEKING || d->state == FLUX_REFRESH_PENDING
-	           || d->state == FLUX_REFRESH_REFRESHING;
+	bool bright
+	  = d->state == FLUX_REFRESH_PEEKING || d->state == FLUX_REFRESH_PENDING || d->state == FLUX_REFRESH_REFRESHING;
 	r->glyph_opacity = bright ? 1.0f : d->min_opacity;
 
-	float scale = 1.0f;
+	float scale      = 1.0f;
 	if (d->state == FLUX_REFRESH_PENDING && d->pop_start_tick) {
 		float t = ( float ) (now - d->pop_start_tick) / FLUX_REFRESH_POP_MS;
 		if (t < 1.0f) scale = (t < 0.5f) ? 1.0f + 0.5f * (t / 0.5f) : 1.5f - 0.5f * ((t - 0.5f) / 0.5f);
@@ -517,41 +521,41 @@ static void snapshot_handle_refresh(SnapshotContext const *ctx) {
 }
 
 static void snapshot_handle_pager(SnapshotContext const *ctx) {
-	FluxPagerData const *d = ( FluxPagerData const * ) ctx->data;
-	FluxPagerSnapshot   *p = &ctx->snap->u.pager;
+	FluxPagerData const *d        = ( FluxPagerData const * ) ctx->data;
+	FluxPagerSnapshot   *p        = &ctx->snap->u.pager;
 	bool                 at_first = d->selected <= 0;
 	bool                 at_last  = d->selected >= d->count - 1;
 
-	p->count        = d->count;
-	p->selected     = d->selected;
-	p->display_mode = d->display_mode;
-	p->first_state  = ( uint8_t ) flux_pager_nav_state(d->first_vis, at_first);
-	p->prev_state   = ( uint8_t ) flux_pager_nav_state(d->prev_vis, at_first);
-	p->next_state   = ( uint8_t ) flux_pager_nav_state(d->next_vis, at_last);
-	p->last_state   = ( uint8_t ) flux_pager_nav_state(d->last_vis, at_last);
-	p->cell_count   = ( uint8_t ) flux_pager_build_cells(d->count, d->selected, p->cells);
-	p->pressed_elem = ( int16_t ) d->pressed_elem;
-	p->prefix       = d->prefix;
-	p->suffix       = d->suffix;
+	p->count                      = d->count;
+	p->selected                   = d->selected;
+	p->display_mode               = d->display_mode;
+	p->first_state                = ( uint8_t ) flux_pager_nav_state(d->first_vis, at_first);
+	p->prev_state                 = ( uint8_t ) flux_pager_nav_state(d->prev_vis, at_first);
+	p->next_state                 = ( uint8_t ) flux_pager_nav_state(d->next_vis, at_last);
+	p->last_state                 = ( uint8_t ) flux_pager_nav_state(d->last_vis, at_last);
+	p->cell_count                 = ( uint8_t ) flux_pager_build_cells(d->count, d->selected, p->cells);
+	p->pressed_elem               = ( int16_t ) d->pressed_elem;
+	p->prefix                     = d->prefix;
+	p->suffix                     = d->suffix;
 }
 
 static void snapshot_handle_title_bar(SnapshotContext const *ctx) {
 	FluxTitleBarData const *d = ( FluxTitleBarData const * ) ctx->data;
 	FluxTitleBarSnapshot   *t = &ctx->snap->u.title_bar;
-	t->title            = d->title;
-	t->subtitle         = d->subtitle;
-	t->icon_glyph       = d->icon_glyph [0] ? d->icon_glyph : NULL;
-	t->title_w          = d->title_w;
-	t->pressed          = d->pressed;
-	t->show_back        = d->show_back;
-	t->back_disabled    = d->back_disabled;
-	t->show_pane_toggle = d->show_pane_toggle;
-	t->caption_buttons  = d->integrate_window;
-	t->maximized        = d->maximized;
+	t->title                  = d->title;
+	t->subtitle               = d->subtitle;
+	t->icon_glyph             = d->icon_glyph [0] ? d->icon_glyph : NULL;
+	t->title_w                = d->title_w;
+	t->pressed                = d->pressed;
+	t->show_back              = d->show_back;
+	t->back_disabled          = d->back_disabled;
+	t->show_pane_toggle       = d->show_pane_toggle;
+	t->caption_buttons        = d->integrate_window;
+	t->maximized              = d->maximized;
 }
 
 static void snapshot_handle_split_pane(SnapshotContext const *ctx) {
-	FluxSplitPaneData const *d = ( FluxSplitPaneData const * ) ctx->data;
+	FluxSplitPaneData const *d        = ( FluxSplitPaneData const * ) ctx->data;
 	ctx->snap->u.split_pane.overlay   = d->overlay;
 	ctx->snap->u.split_pane.placement = d->placement;
 	ctx->snap->u.split_pane.divider   = d->divider;
@@ -560,61 +564,61 @@ static void snapshot_handle_split_pane(SnapshotContext const *ctx) {
 static void snapshot_handle_person_picture(SnapshotContext const *ctx) {
 	FluxPersonPictureData const *d = ( FluxPersonPictureData const * ) ctx->data;
 	FluxPersonSnapshot          *p = &ctx->snap->u.person;
-	p->initials     = d->resolved;
-	p->image_path   = d->image_path;
-	p->badge_glyph  = d->badge_glyph;
-	p->badge_number = d->badge_number;
-	p->diameter     = d->diameter;
-	p->is_group     = d->is_group;
+	p->initials                    = d->resolved;
+	p->image_path                  = d->image_path;
+	p->badge_glyph                 = d->badge_glyph;
+	p->badge_number                = d->badge_number;
+	p->diameter                    = d->diameter;
+	p->is_group                    = d->is_group;
 }
 
-static SnapshotHandler const SNAPSHOT_HANDLERS [FLUX_CONTROL_CUSTOM + 1] = {
-  [FLUX_CONTROL_TEXT]            = snapshot_handle_text,
-  [FLUX_CONTROL_BUTTON]          = snapshot_handle_button,
-  [FLUX_CONTROL_TOGGLE_BUTTON]   = snapshot_handle_button,
-  [FLUX_CONTROL_DROPDOWN_BUTTON] = snapshot_handle_button,
-  [FLUX_CONTROL_SPLIT_BUTTON]    = snapshot_handle_button,
+static SnapshotHandler const SNAPSHOT_HANDLERS [XTK_CTRL_TYPE_COUNT] = {
+  [FLUX_CONTROL_TEXT]                = snapshot_handle_text,
+  [FLUX_CONTROL_BUTTON]              = snapshot_handle_button,
+  [FLUX_CONTROL_TOGGLE_BUTTON]       = snapshot_handle_button,
+  [FLUX_CONTROL_DROPDOWN_BUTTON]     = snapshot_handle_button,
+  [FLUX_CONTROL_SPLIT_BUTTON]        = snapshot_handle_button,
   [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = snapshot_handle_button,
-  [FLUX_CONTROL_RATING]          = snapshot_handle_rating,
-  [FLUX_CONTROL_SELECTOR_BAR_ITEM] = snapshot_handle_selector_item,
-  [FLUX_CONTROL_BREADCRUMB_ITEM] = snapshot_handle_breadcrumb_item,
-  [FLUX_CONTROL_CHECKBOX]        = snapshot_handle_checkbox_like,
-  [FLUX_CONTROL_RADIO]           = snapshot_handle_checkbox_like,
-  [FLUX_CONTROL_SWITCH]          = snapshot_handle_switch,
-  [FLUX_CONTROL_SLIDER]          = snapshot_handle_slider,
-  [FLUX_CONTROL_TEXT_INPUT]      = snapshot_handle_textbox,
-  [FLUX_CONTROL_SCROLL]          = snapshot_handle_scroll,
-  [FLUX_CONTROL_PROGRESS]        = snapshot_handle_progress,
-  [FLUX_CONTROL_PASSWORD_BOX]    = snapshot_handle_password_box,
-  [FLUX_CONTROL_NUMBER_BOX]      = snapshot_handle_number_box,
-  [FLUX_CONTROL_HYPERLINK]       = snapshot_handle_hyperlink,
-  [FLUX_CONTROL_REPEAT_BUTTON]   = snapshot_handle_repeat_button,
-  [FLUX_CONTROL_PROGRESS_RING]   = snapshot_handle_progress_ring,
-  [FLUX_CONTROL_INFO_BADGE]      = snapshot_handle_info_badge,
-  [FLUX_CONTROL_INFO_BAR]        = snapshot_handle_info_bar,
-  [FLUX_CONTROL_EXPANDER_HEADER] = snapshot_handle_expander_header,
-  [FLUX_CONTROL_IMAGE]           = snapshot_handle_image,
-  [FLUX_CONTROL_COMBO_BOX]       = snapshot_handle_combo_box,
-  [FLUX_CONTROL_MENU_BAR_ITEM]   = snapshot_handle_menu_bar_item,
-  [FLUX_CONTROL_NAV_VIEW]        = snapshot_handle_nav_view,
-  [FLUX_CONTROL_NAV_VIEW_ITEM]   = snapshot_handle_nav_view_item,
-  [FLUX_CONTROL_TAB_VIEW_ITEM]   = snapshot_handle_tab_view_item,
-  [FLUX_CONTROL_LIST_ITEM]       = snapshot_handle_list_item,
-  [FLUX_CONTROL_TREE_ITEM]       = snapshot_handle_tree_item,
-  [FLUX_CONTROL_FLIP_VIEW]       = snapshot_handle_flip_view,
-  [FLUX_CONTROL_PIPS_PAGER]      = snapshot_handle_pips_pager,
-  [FLUX_CONTROL_REFRESH]         = snapshot_handle_refresh,
-  [FLUX_CONTROL_PERSON_PICTURE]  = snapshot_handle_person_picture,
-  [FLUX_CONTROL_PAGER]           = snapshot_handle_pager,
-  [FLUX_CONTROL_SPLIT_VIEW_PANE] = snapshot_handle_split_pane,
-  [FLUX_CONTROL_TITLE_BAR]       = snapshot_handle_title_bar,
+  [FLUX_CONTROL_RATING]              = snapshot_handle_rating,
+  [FLUX_CONTROL_SELECTOR_BAR_ITEM]   = snapshot_handle_selector_item,
+  [FLUX_CONTROL_BREADCRUMB_ITEM]     = snapshot_handle_breadcrumb_item,
+  [FLUX_CONTROL_CHECKBOX]            = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_RADIO]               = snapshot_handle_checkbox_like,
+  [FLUX_CONTROL_SWITCH]              = snapshot_handle_switch,
+  [FLUX_CONTROL_SLIDER]              = snapshot_handle_slider,
+  [FLUX_CONTROL_TEXT_INPUT]          = snapshot_handle_textbox,
+  [FLUX_CONTROL_SCROLL]              = snapshot_handle_scroll,
+  [FLUX_CONTROL_PROGRESS]            = snapshot_handle_progress,
+  [FLUX_CONTROL_PASSWORD_BOX]        = snapshot_handle_password_box,
+  [FLUX_CONTROL_NUMBER_BOX]          = snapshot_handle_number_box,
+  [FLUX_CONTROL_HYPERLINK]           = snapshot_handle_hyperlink,
+  [FLUX_CONTROL_REPEAT_BUTTON]       = snapshot_handle_repeat_button,
+  [FLUX_CONTROL_PROGRESS_RING]       = snapshot_handle_progress_ring,
+  [FLUX_CONTROL_INFO_BADGE]          = snapshot_handle_info_badge,
+  [FLUX_CONTROL_INFO_BAR]            = snapshot_handle_info_bar,
+  [FLUX_CONTROL_EXPANDER_HEADER]     = snapshot_handle_expander_header,
+  [FLUX_CONTROL_IMAGE]               = snapshot_handle_image,
+  [FLUX_CONTROL_COMBO_BOX]           = snapshot_handle_combo_box,
+  [FLUX_CONTROL_MENU_BAR_ITEM]       = snapshot_handle_menu_bar_item,
+  [FLUX_CONTROL_NAV_VIEW]            = snapshot_handle_nav_view,
+  [FLUX_CONTROL_NAV_VIEW_ITEM]       = snapshot_handle_nav_view_item,
+  [FLUX_CONTROL_TAB_VIEW_ITEM]       = snapshot_handle_tab_view_item,
+  [FLUX_CONTROL_LIST_ITEM]           = snapshot_handle_list_item,
+  [FLUX_CONTROL_TREE_ITEM]           = snapshot_handle_tree_item,
+  [FLUX_CONTROL_FLIP_VIEW]           = snapshot_handle_flip_view,
+  [FLUX_CONTROL_PIPS_PAGER]          = snapshot_handle_pips_pager,
+  [FLUX_CONTROL_REFRESH]             = snapshot_handle_refresh,
+  [FLUX_CONTROL_PERSON_PICTURE]      = snapshot_handle_person_picture,
+  [FLUX_CONTROL_PAGER]               = snapshot_handle_pager,
+  [FLUX_CONTROL_SPLIT_VIEW_PANE]     = snapshot_handle_split_pane,
+  [FLUX_CONTROL_TITLE_BAR]           = snapshot_handle_title_bar,
 };
 
-void flux_snapshot_build(FluxRenderSnapshot *snap, XentContext const *ctx, XentNodeId node, FluxNodeData const *nd) {
+void flux_snapshot_build(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId node, FluxNodeData const *nd) {
 	snapshot_base(snap, ctx, node, nd);
 	if (!nd || !nd->component_data) return;
 
-	SnapshotHandler handler = snap->type <= FLUX_CONTROL_CUSTOM ? SNAPSHOT_HANDLERS [snap->type] : NULL;
+	SnapshotHandler handler = ( unsigned ) snap->type < XTK_CTRL_TYPE_COUNT ? SNAPSHOT_HANDLERS [snap->type] : NULL;
 	if (!handler) return;
 
 	SnapshotContext build = {snap, ctx, node, nd->component_data};

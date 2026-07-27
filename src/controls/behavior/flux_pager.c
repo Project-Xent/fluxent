@@ -7,14 +7,17 @@
  * recomputes the panel window and re-measures the control.
  */
 #include "controls/factory/flux_factory.h"
+#include "store/flux_node_data.h"
 #include "runtime/flux_str.h"
-#include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_nav.h"
+#include "fluxent/flux_host.h"
+#include <xtk/xtk_catalog.h>
 
 #include <stdlib.h>
 #include <windows.h>
 
-static FluxPagerData *pager_data(FluxNodeStore *store, XentNodeId id) {
-	FluxNodeData *nd = flux_node_store_get(store, id);
+static FluxPagerData *pager_data(FluxStore *store, XentNodeId id) {
+	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || nd->component_type != FLUX_CONTROL_PAGER || !nd->component_data) return NULL;
 	return ( FluxPagerData * ) nd->component_data;
 }
@@ -36,7 +39,7 @@ static void pager_apply_size(FluxPagerData *d) {
 	FluxPagerElem elems [FLUX_PAGER_MAX_CELLS + 4];
 	float         tw = 0.0f;
 	pager_elems(d, elems, &tw);
-	xent_set_size(d->ctx, d->node, (XentSize) {tw, FLUX_PAGER_HEIGHT});
+	xent_setsize(d->ctx, d->node, (XentSize) {tw, FLUX_PAGER_HEIGHT});
 }
 
 /* Element index under a node-local point, or -1. */
@@ -56,6 +59,19 @@ static void pager_select(FluxPagerData *d, int index) {
 	if (index == d->selected) return;
 	d->selected = index;
 	pager_apply_size(d);
+	XtkHost *host = flux_store_host(d->store);
+	if (host) {
+		XtkEvent event = {
+		  .id             = XTK_EVENT_SELECT,
+		  .target         = ( XtkCtrl ) d->node,
+		  .source         = ( XtkCtrl ) d->node,
+		  .current_target = ( XtkCtrl ) d->node,
+		  .phase          = XTK_EVENT_PHASE_TARGET,
+		  .cause          = XTK_EVENT_CAUSE_USER,
+		  .payload        = {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = index},
+		};
+		flux_host_route(host, &event);
+	}
 	if (d->on_select) d->on_select(d->on_select_ctx, index);
 }
 
@@ -64,22 +80,22 @@ static void pager_activate(FluxPagerData *d, FluxPagerElem const *e) {
 	bool at_first = d->selected <= 0;
 	bool at_last  = d->selected >= d->count - 1;
 	switch (e->kind) {
-	case FLUX_PAGER_EL_FIRST:
+	case FLUX_PAGER_EL_FIRST :
 		if (flux_pager_nav_state(d->first_vis, at_first) == FLUX_PAGER_NAV_ENABLED) pager_select(d, 0);
 		break;
-	case FLUX_PAGER_EL_PREV:
+	case FLUX_PAGER_EL_PREV :
 		if (flux_pager_nav_state(d->prev_vis, at_first) == FLUX_PAGER_NAV_ENABLED) pager_select(d, d->selected - 1);
 		break;
-	case FLUX_PAGER_EL_NEXT:
+	case FLUX_PAGER_EL_NEXT :
 		if (flux_pager_nav_state(d->next_vis, at_last) == FLUX_PAGER_NAV_ENABLED) pager_select(d, d->selected + 1);
 		break;
-	case FLUX_PAGER_EL_LAST:
+	case FLUX_PAGER_EL_LAST :
 		if (flux_pager_nav_state(d->last_vis, at_last) == FLUX_PAGER_NAV_ENABLED) pager_select(d, d->count - 1);
 		break;
-	case FLUX_PAGER_EL_CELL:
+	case FLUX_PAGER_EL_CELL :
 		if (e->page != FLUX_PAGER_ELLIPSIS_PAGE) pager_select(d, e->page - 1);
 		break;
-	default: break;
+	default : break;
 	}
 }
 
@@ -90,16 +106,17 @@ static void pager_pointer_down(void *ctx, float x, float y, int clicks) {
 }
 
 static void pager_click(void *ctx) {
-	FluxPagerData *d  = ( FluxPagerData * ) ctx;
-	FluxNodeData  *nd = ( FluxNodeData * ) xent_get_userdata(d->ctx, d->node);
-	int            hit = nd ? pager_hit(d, nd->hover_local_x, nd->hover_local_y) : -1;
-	if (hit >= 0 && hit == d->pressed_elem) {
+	FluxPagerData *d       = ( FluxPagerData * ) ctx;
+	FluxNodeData  *nd      = flux_store_find(d->store, d->node);
+	int            hit     = nd ? pager_hit(d, nd->hover_local_x, nd->hover_local_y) : -1;
+	int            pressed = d->pressed_elem;
+	d->pressed_elem        = -1;
+	if (hit >= 0 && hit == pressed) {
 		FluxPagerElem elems [FLUX_PAGER_MAX_CELLS + 4];
 		float         tw = 0.0f;
 		int           n  = pager_elems(d, elems, &tw);
 		if (hit < n) pager_activate(d, &elems [hit]);
 	}
-	d->pressed_elem = -1;
 }
 
 static void pager_cancel(void *ctx) {
@@ -107,15 +124,15 @@ static void pager_cancel(void *ctx) {
 	d->pressed_elem  = -1;
 }
 
-static bool pager_key(void *ctx, unsigned int vk, bool down) {
+static bool pager_key(void *ctx, FluxKey key, bool down) {
 	if (!down) return false;
 	FluxPagerData *d = ( FluxPagerData * ) ctx;
-	switch (vk) {
-	case VK_LEFT : pager_select(d, d->selected - 1); return true;
-	case VK_RIGHT: pager_select(d, d->selected + 1); return true;
-	case VK_HOME : pager_select(d, 0); return true;
-	case VK_END  : pager_select(d, d->count - 1); return true;
-	default      : return false;
+	switch (key) {
+	case FLUX_KEY_LEFT  : pager_select(d, d->selected - 1); return true;
+	case FLUX_KEY_RIGHT : pager_select(d, d->selected + 1); return true;
+	case FLUX_KEY_HOME  : pager_select(d, 0); return true;
+	case FLUX_KEY_END   : pager_select(d, d->count - 1); return true;
+	default             : return false;
 	}
 }
 
@@ -127,36 +144,36 @@ static void pager_destroy(void *component_data) {
 	free(d);
 }
 
-XentNodeId flux_create_pager(FluxPagerCreateInfo const *info) {
+XentNodeId flux_pager_init(FluxPagerDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
 	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_PAGER);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData  *nd = flux_node_store_get(info->store, node);
+	FluxNodeData  *nd = flux_store_find(info->store, node);
 	FluxPagerData *d  = nd ? ( FluxPagerData * ) calloc(1, sizeof(*d)) : NULL;
 	if (!nd || !d) {
 		free(d);
 		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 
-	d->ctx           = info->ctx;
-	d->store         = info->store;
-	d->node          = node;
-	d->count         = info->count > 0 ? info->count : 1;
-	d->selected      = info->selected;
+	d->ctx      = info->ctx;
+	d->store    = info->store;
+	d->node     = node;
+	d->count    = info->count > 0 ? info->count : 1;
+	d->selected = info->selected;
 	if (d->selected < 0) d->selected = 0;
 	if (d->selected > d->count - 1) d->selected = d->count - 1;
-	d->display_mode  = ( uint8_t ) info->display_mode;
-	d->first_vis     = ( uint8_t ) info->first_button;
-	d->prev_vis      = ( uint8_t ) info->prev_button;
-	d->next_vis      = ( uint8_t ) info->next_button;
-	d->last_vis      = ( uint8_t ) info->last_button;
-	d->prefix        = info->prefix ? flux_str_dup(info->prefix) : NULL;
-	d->suffix        = info->suffix ? flux_str_dup(info->suffix) : NULL;
-	d->pressed_elem  = -1;
-	d->on_select     = info->on_select;
-	d->on_select_ctx = info->userdata;
+	d->display_mode                  = ( uint8_t ) info->display_mode;
+	d->first_vis                     = ( uint8_t ) info->first_button;
+	d->prev_vis                      = ( uint8_t ) info->prev_button;
+	d->next_vis                      = ( uint8_t ) info->next_button;
+	d->last_vis                      = ( uint8_t ) info->last_button;
+	d->prefix                        = info->prefix ? flux_str_dup(info->prefix) : NULL;
+	d->suffix                        = info->suffix ? flux_str_dup(info->suffix) : NULL;
+	d->pressed_elem                  = -1;
+	d->on_select                     = info->on_select;
+	d->on_select_ctx                 = info->userdata;
 
 	nd->component_data               = d;
 	nd->destroy_component_data       = pager_destroy;
@@ -170,12 +187,12 @@ XentNodeId flux_create_pager(FluxPagerCreateInfo const *info) {
 	nd->behavior.on_key_ctx          = d;
 
 	xent_set_focusable(info->ctx, node, true);
-	xent_set_semantic_role(info->ctx, node, XENT_SEMANTIC_CONTAINER);
+	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_CONTAINER);
 	pager_apply_size(d);
 	return node;
 }
 
-void flux_pager_configure(FluxNodeStore *store, XentNodeId id, int count, int selected, int display_mode) {
+void flux_pager_configure(FluxStore *store, XentNodeId id, int count, int selected, int display_mode) {
 	FluxPagerData *d = pager_data(store, id);
 	if (!d) return;
 	if (count < 1) count = 1;
@@ -187,7 +204,7 @@ void flux_pager_configure(FluxNodeStore *store, XentNodeId id, int count, int se
 	pager_apply_size(d);
 }
 
-void flux_pager_set_selected(FluxNodeStore *store, XentNodeId id, int index) {
+void flux_pager_set_selected(FluxStore *store, XentNodeId id, int index) {
 	FluxPagerData *d = pager_data(store, id);
 	if (!d) return;
 	if (index < 0) index = 0;
@@ -196,14 +213,20 @@ void flux_pager_set_selected(FluxNodeStore *store, XentNodeId id, int index) {
 	pager_apply_size(d);
 }
 
-void flux_pager_set_button_visibility(
-  FluxNodeStore *store, XentNodeId id, int first, int prev, int next, int last
-) {
+void flux_pager_setbuttons(FluxStore *store, XentNodeId id, int first, int prev, int next, int last) {
 	FluxPagerData *d = pager_data(store, id);
 	if (!d) return;
 	d->first_vis = ( uint8_t ) first;
 	d->prev_vis  = ( uint8_t ) prev;
 	d->next_vis  = ( uint8_t ) next;
 	d->last_vis  = ( uint8_t ) last;
+	pager_apply_size(d);
+}
+
+void flux_pager_settext(FluxStore *store, XentNodeId id, char const *prefix, char const *suffix) {
+	FluxPagerData *d = pager_data(store, id);
+	if (!d) return;
+	flux_str_replace(&d->prefix, prefix);
+	flux_str_replace(&d->suffix, suffix);
 	pager_apply_size(d);
 }

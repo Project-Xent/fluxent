@@ -124,5 +124,6 @@ void tb_perform_paste(FluxTextBoxInputData *tb) {
 	CloseClipboard();
 
 	tb_update_scroll(tb);
+	tb_update_ime_position(tb);
 	tb_notify_change(tb);
 }

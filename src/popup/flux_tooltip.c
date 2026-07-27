@@ -1,5 +1,8 @@
 #include "fluxent/flux_tooltip.h"
+#include "store/flux_node_data.h"
 #include "fluxent/flux_graphics.h"
+#include "controls/draw/flux_control_record_internal.h"
+#include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
 #include "runtime/flux_str.h"
 
@@ -12,7 +15,7 @@
 struct FluxTooltip {
 	FluxPopup             *popup;
 	FluxWindow            *owner;
-	FluxTextRenderer      *text;
+	FluxText              *text;
 	FluxThemeColors const *theme;
 	bool                   is_dark;
 	ID2D1SolidColorBrush  *brush;
@@ -46,9 +49,9 @@ FluxTooltip         *flux_tooltip_create(FluxWindow *owner) {
 		return NULL;
 	}
 
-	flux_popup_set_dismiss_on_outside(tt->popup, false);
-	flux_popup_set_paint_callback(tt->popup, tooltip_paint, tt);
-	flux_popup_set_anim_style(tt->popup, FLUX_POPUP_ANIM_TOOLTIP);
+	flux_popup_setdismissoutside(tt->popup, false);
+	flux_popup_onpaint(tt->popup, tooltip_paint, tt);
+	flux_popup_setanim(tt->popup, FLUX_POPUP_ANIM_TOOLTIP);
 
 	return tt;
 }
@@ -68,7 +71,7 @@ void flux_tooltip_destroy(FluxTooltip *tt) {
 	free(tt);
 }
 
-void flux_tooltip_set_text_renderer(FluxTooltip *tt, FluxTextRenderer *tr) {
+void flux_tooltip_settext(FluxTooltip *tt, FluxText *tr) {
 	if (tt) tt->text = tr;
 }
 
@@ -108,18 +111,17 @@ static bool tooltip_str_eq(char const *a, char const *b) {
 	return strcmp(a, b) == 0;
 }
 
+static char const *tooltip_text_at(FluxNodeData const *nd) {
+	if (!nd) return NULL;
+	if (nd->behavior.tooltip_at)
+		return nd->behavior.tooltip_at(nd->behavior.tooltip_at_ctx, nd->hover_local_x, nd->hover_local_y);
+	return nd->tooltip_text && nd->tooltip_text [0] ? nd->tooltip_text : NULL;
+}
+
 void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const *nd, FluxRect const *screen_bounds) {
 	if (!tt) return;
 
-	/* Region-aware nodes (e.g. a title bar's caption buttons) resolve tooltip text per
-	 * sub-region and re-evaluate on every hover update; plain nodes use tooltip_text. */
-	char const *new_text = NULL;
-	if (nd) {
-		if (nd->behavior.tooltip_at)
-			new_text = nd->behavior.tooltip_at(nd->behavior.tooltip_at_ctx, nd->hover_local_x, nd->hover_local_y);
-		else if (nd->tooltip_text && nd->tooltip_text [0])
-			new_text = nd->tooltip_text;
-	}
+	char const *new_text = tooltip_text_at(nd);
 
 	if (hovered == tt->hovered_node && hovered != XENT_NODE_INVALID && tooltip_str_eq(new_text, tt->tooltip_text)) {
 		if (screen_bounds && !tt->is_visible) tt->anchor_screen = *screen_bounds;
@@ -147,7 +149,7 @@ void flux_tooltip_dismiss(FluxTooltip *tt) {
 	if (tt->is_visible) tooltip_hide(tt);
 }
 
-bool            flux_tooltip_is_visible(FluxTooltip const *tt) { return tt ? tt->is_visible : false; }
+bool            flux_tooltip_visible(FluxTooltip const *tt) { return tt ? tt->is_visible : false; }
 
 static FluxSize tooltip_measure_content(FluxTooltip *tt) {
 	FluxSize size = {0.0f, 0.0f};
@@ -242,8 +244,8 @@ static void tooltip_resolve_colors(FluxTooltip const *tt, FluxColor *bg, FluxCol
 	else *text_color = flux_color_rgba(0, 0, 0, 0xe4);
 }
 
-static FluxRenderContext tooltip_render_context(FluxTooltip *tt, ID2D1DeviceContext *d2d) {
-	FluxRenderContext rc;
+static FluxRenderCtx tooltip_render_context(FluxTooltip *tt, ID2D1DeviceContext *d2d) {
+	FluxRenderCtx rc;
 	memset(&rc, 0, sizeof(rc));
 	rc.d2d     = d2d;
 	rc.brush   = tt->brush;
@@ -254,40 +256,36 @@ static FluxRenderContext tooltip_render_context(FluxTooltip *tt, ID2D1DeviceCont
 	return rc;
 }
 
-static void tooltip_draw_border(FluxRenderContext const *rc, FluxRect const *bounds, FluxColor border) {
+static XentDl *
+tooltip_record(FluxTooltip *tt, FluxRect const *bounds, FluxColor bg, FluxColor border, FluxColor text_color) {
+	XentDlBuilder *b = xent_dl_begin();
+	if (!b) return NULL;
+	bool     ok    = flux_rec_fill_rounded(b, bounds, FLUX_TOOLTIP_CORNER_RADIUS, bg);
 	float    half  = FLUX_TOOLTIP_BORDER_WIDTH * 0.5f;
 	FluxRect inset = {bounds->x + half, bounds->y + half, bounds->w - half * 2.0f, bounds->h - half * 2.0f};
-	flux_draw_rounded_rect(rc, &inset, FLUX_TOOLTIP_CORNER_RADIUS, border, FLUX_TOOLTIP_BORDER_WIDTH);
-}
-
-static void tooltip_draw_text(FluxTooltip *tt, ID2D1DeviceContext *d2d, FluxRect const *bounds, FluxColor text_color) {
-	if (!tt->text || !tt->tooltip_text) return;
-
-	FluxRect text_rect = {
-	  FLUX_TOOLTIP_PAD_LEFT, FLUX_TOOLTIP_PAD_TOP, bounds->w - FLUX_TOOLTIP_PAD_LEFT - FLUX_TOOLTIP_PAD_RIGHT,
-	  bounds->h - FLUX_TOOLTIP_PAD_TOP - FLUX_TOOLTIP_PAD_BOTTOM};
-
-	FluxTextStyle ts;
-	memset(&ts, 0, sizeof(ts));
-	ts.font_family = NULL;
-	ts.font_size   = FLUX_TOOLTIP_FONT_SIZE;
-	ts.font_weight = FLUX_FONT_REGULAR;
-	ts.text_align  = FLUX_TEXT_LEFT;
-	ts.vert_align  = FLUX_TEXT_TOP;
-	ts.color       = text_color;
-	ts.word_wrap   = true;
-
-	flux_text_draw(tt->text, ( ID2D1RenderTarget * ) d2d, tt->tooltip_text, &text_rect, &ts);
+	if (ok) ok = flux_rec_stroke_rounded(b, &inset, FLUX_TOOLTIP_CORNER_RADIUS, border, FLUX_TOOLTIP_BORDER_WIDTH);
+	if (ok && tt->tooltip_text) {
+		FluxRect text_rect = {
+		  FLUX_TOOLTIP_PAD_LEFT, FLUX_TOOLTIP_PAD_TOP, bounds->w - FLUX_TOOLTIP_PAD_LEFT - FLUX_TOOLTIP_PAD_RIGHT,
+		  bounds->h - FLUX_TOOLTIP_PAD_TOP - FLUX_TOOLTIP_PAD_BOTTOM};
+		XentTextStyle style = {
+		  .font_size   = FLUX_TOOLTIP_FONT_SIZE,
+		  .font_weight = FLUX_FONT_REGULAR,
+		  .flags       = XENT_DL_TEXT_WRAP,
+		};
+		ok = flux_rec_text_ex(b, &text_rect, tt->tooltip_text, &style, text_color);
+	}
+	return flux_rec_finish(b, ok);
 }
 
 static void tooltip_paint(void *ctx, FluxPopup *popup) {
 	FluxTooltip *tt = ( FluxTooltip * ) ctx;
 	if (!tt || !tt->tooltip_text) return;
 
-	FluxGraphics *gfx = flux_popup_get_graphics(popup);
+	FluxGfx *gfx = flux_popup_gfx(popup);
 	if (!gfx) return;
 
-	ID2D1DeviceContext *d2d = flux_graphics_get_d2d_context(gfx);
+	ID2D1DeviceContext *d2d = flux_gfx_d2d(gfx);
 	if (!d2d) return;
 
 	tooltip_ensure_brush(tt, d2d);
@@ -297,13 +295,14 @@ static void tooltip_paint(void *ctx, FluxPopup *popup) {
 	FluxColor border     = {0};
 	FluxColor text_color = {0};
 	tooltip_resolve_colors(tt, &bg, &border, &text_color);
-	bg                           = flux_popup_acrylic_tint(popup, bg);
+	bg                       = flux_popup_acrylic_tint(popup, bg);
 
-	FluxSize          popup_size = tooltip_measure_content(tt);
-	FluxRect          bounds     = {0.0f, 0.0f, popup_size.w, popup_size.h};
-	FluxRenderContext rc         = tooltip_render_context(tt, d2d);
-
-	flux_fill_rounded_rect(&rc, &bounds, FLUX_TOOLTIP_CORNER_RADIUS, bg);
-	tooltip_draw_border(&rc, &bounds, border);
-	tooltip_draw_text(tt, d2d, &bounds, text_color);
+	FluxSize      popup_size = tooltip_measure_content(tt);
+	FluxRect      bounds     = {0.0f, 0.0f, popup_size.w, popup_size.h};
+	FluxRenderCtx rc         = tooltip_render_context(tt, d2d);
+	XentDl       *list       = tooltip_record(tt, &bounds, bg, border, text_color);
+	if (list) {
+		flux_xtk_replay_rc(&rc, list);
+		xent_dl_free(list);
+	}
 }

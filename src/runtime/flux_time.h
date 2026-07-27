@@ -18,10 +18,6 @@
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /**
  * @brief Get the QPC frequency (ticks per second).
@@ -54,8 +50,5 @@ double  flux_perf_seconds(int64_t ticks);
  */
 float   flux_compute_dt(int64_t prev, int64_t now);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_TIME_H */

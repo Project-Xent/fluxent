@@ -3,9 +3,10 @@
 #endif
 
 #include "compose/flux_visual_tree.h"
+#include "store/flux_node_data.h"
 #include "compose/flux_interop.h"
 
-#include "fluxent/controls/flux_scroll_data.h"
+#include "controls/data/flux_scroll_data.h"
 #include "fluxent/flux_control_type.h"
 
 #include <cwinrt/cast.h>
@@ -16,6 +17,7 @@
 #include <string.h>
 
 typedef struct VisNode {
+	XentNodeId     owner;         /**< Full generation-checked identity for this dense slot. */
 	WUC_Container *container;     /**< This node's container visual (we hold one ref). */
 	WUC_Visual    *visual;        /**< IVisual facet of container (offset/size + collection ops). */
 	WUC_Container *holder;        /**< Scroll node only: content sub-visual the children attach to,
@@ -33,12 +35,12 @@ typedef struct VisNode {
 struct FluxVisualTree {
 	WUC_Comp      *c;     /**< Compositor (not owned). */
 	WUC_Container *root;  /**< Parent container the mirror hangs under (we hold a ref). */
-	VisNode       *nodes; /**< Indexed by XentNodeId. */
+	VisNode       *nodes; /**< Dense by slot index; ownership checked via owner. */
 	uint32_t       cap;
 	uint32_t       generation;
 	float          scale; /**< DIP-to-pixel factor for this pass (dpi/96). */
-	XentContext   *ctx;   /**< Layout context for this pass (control-type lookups). */
-	FluxNodeStore *store; /**< Node store for this pass (scroll offsets). */
+	XentCtx       *ctx;   /**< Layout context for this pass (control-type lookups). */
+	FluxStore     *store; /**< Node store for this pass (scroll offsets). */
 };
 
 FluxVisualTree *flux_visual_tree_create(FluxCompositor *c, WUC_Visual *root_parent) {
@@ -59,15 +61,26 @@ FluxVisualTree *flux_visual_tree_create(FluxCompositor *c, WUC_Visual *root_pare
 }
 
 static bool tree_reserve(FluxVisualTree *vt, XentNodeId node) {
-	if (node < vt->cap) return true;
+	uint32_t idx = xent_node_index(node);
+	if (idx < vt->cap) return true;
 	uint32_t new_cap = vt->cap ? vt->cap * 2 : 64;
-	while (new_cap <= node) new_cap *= 2;
+	while (new_cap <= idx) {
+		if (new_cap > UINT32_MAX / 2u) return false;
+		new_cap *= 2;
+	}
 	VisNode *n = ( VisNode * ) realloc(vt->nodes, ( size_t ) new_cap * sizeof(*n));
 	if (!n) return false;
 	memset(n + vt->cap, 0, ( size_t ) (new_cap - vt->cap) * sizeof(*n));
 	vt->nodes = n;
 	vt->cap   = new_cap;
 	return true;
+}
+
+static VisNode *tree_owned(FluxVisualTree *vt, XentNodeId node) {
+	uint32_t idx = xent_node_index(node);
+	if (!vt || idx >= vt->cap) return NULL;
+	VisNode *vn = &vt->nodes [idx];
+	return (vn->in_use && vn->owner == node) ? vn : NULL;
 }
 
 static void tree_insert_child(WUC_Container *parent, WUC_Visual *child) {
@@ -84,6 +97,36 @@ static void tree_remove_child(WUC_Container *parent, WUC_Visual *child) {
 	(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
 }
 
+/* Detach and free compositor resources for a live dense entry. */
+static void tree_evict(FluxVisualTree *vt, VisNode *vn) {
+	uint32_t parent_idx = xent_node_index(vn->parent);
+	bool     parent_alive
+	  = vn->parent == XENT_NODE_INVALID
+	 || (parent_idx < vt->cap && vt->nodes [parent_idx].in_use && vt->nodes [parent_idx].owner == vn->parent);
+	WUC_Container *pc = NULL;
+	if (parent_alive) {
+		if (vn->parent == XENT_NODE_INVALID) pc = vt->root;
+		else {
+			VisNode *parent = &vt->nodes [parent_idx];
+			pc              = parent->holder ? parent->holder : parent->container;
+		}
+	}
+	if (pc && vn->visual) tree_remove_child(pc, vn->visual);
+	if (vn->holder) (( IUnknown * ) vn->holder)->lpVtbl->Release(( IUnknown * ) vn->holder);
+	if (vn->holder_visual) (( IUnknown * ) vn->holder_visual)->lpVtbl->Release(( IUnknown * ) vn->holder_visual);
+	if (vn->visual) (( IUnknown * ) vn->visual)->lpVtbl->Release(( IUnknown * ) vn->visual);
+	if (vn->container) (( IUnknown * ) vn->container)->lpVtbl->Release(( IUnknown * ) vn->container);
+	vn->holder        = NULL;
+	vn->holder_visual = NULL;
+	vn->visual        = NULL;
+	vn->container     = NULL;
+	vn->in_use        = false;
+	vn->clipped       = false;
+	vn->tracker_bound = false;
+	vn->parent        = XENT_NODE_INVALID;
+	vn->owner         = XENT_NODE_INVALID;
+}
+
 /* A scroll node's current offset (DIPs), or {0,0} for any other node. The
  * compositor mirror has no command list, so scrolling is expressed structurally:
  * the offset is folded into the base that children inherit (below), and an inset
@@ -92,8 +135,8 @@ static void tree_remove_child(WUC_Container *parent, WUC_Visual *child) {
 static void tree_node_scroll(FluxVisualTree const *vt, XentNodeId node, float *sx, float *sy) {
 	*sx = 0.0f;
 	*sy = 0.0f;
-	if (!vt->store || flux_get_control_type(vt->ctx, node) != FLUX_CONTROL_SCROLL) return;
-	FluxNodeData   *nd = flux_node_store_get(vt->store, node);
+	if (!vt->store || flux_node_type(vt->store, node) != FLUX_CONTROL_SCROLL) return;
+	FluxNodeData   *nd = flux_store_find(vt->store, node);
 	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
 	if (!sd) return;
 	*sx = flux_scroll_off_x(sd);
@@ -120,7 +163,8 @@ static void tree_clip_to_bounds(FluxVisualTree *vt, VisNode *vn) {
  * one); to the plain container otherwise. */
 static WUC_Container *tree_child_parent(FluxVisualTree *vt, XentNodeId parent_node) {
 	if (parent_node == XENT_NODE_INVALID) return vt->root;
-	VisNode *vn = &vt->nodes [parent_node];
+	VisNode *vn = tree_owned(vt, parent_node);
+	if (!vn) return NULL;
 	return vn->holder ? vn->holder : vn->container;
 }
 
@@ -142,8 +186,9 @@ static void tree_make_holder(FluxVisualTree *vt, VisNode *vn) {
 /* Ensure a container exists for `node` under `parent_node`, then position it
  * relative to the parent. Parent is always reconciled before its children, so
  * its entry is valid here. Returns the container, or NULL on failure. */
-static bool tree_ensure_container(FluxVisualTree *vt, VisNode *vn, WUC_Container *parent_container) {
-	if (vn->in_use) return true;
+static bool tree_ensure_container(FluxVisualTree *vt, VisNode *vn, XentNodeId node, WUC_Container *parent_container) {
+	if (vn->in_use && vn->owner == node) return true;
+	if (vn->in_use) tree_evict(vt, vn);
 	if (FAILED(wuc_comp_create_container_visual(vt->c, &vn->container))) return false;
 	vn->visual = flux_compose_as_visual(vn->container);
 	if (!vn->visual) {
@@ -151,6 +196,7 @@ static bool tree_ensure_container(FluxVisualTree *vt, VisNode *vn, WUC_Container
 		vn->container = NULL;
 		return false;
 	}
+	vn->owner  = node;
 	vn->in_use = true;
 	tree_insert_child(parent_container, vn->visual);
 	return true;
@@ -163,15 +209,16 @@ tree_sync_node(FluxVisualTree *vt, XentNodeId node, XentNodeId parent_node, Xent
 	WUC_Container *parent_container = tree_child_parent(vt, parent_node);
 	if (!parent_container) return NULL;
 
-	VisNode *vn = &vt->nodes [node];
-	if (!tree_ensure_container(vt, vn, parent_container)) return NULL;
-	vn->parent       = parent_node;
+	VisNode *vn = &vt->nodes [xent_node_index(node)];
+	if (!tree_ensure_container(vt, vn, node, parent_container)) return NULL;
+	vn->parent             = parent_node;
 
 	/* abs_x/abs_y stay in DIPs so child-relative math is unaffected; only the
 	 * values handed to the compositor are scaled to physical pixels. */
-	float        pax = parent_node == XENT_NODE_INVALID ? 0.0f : vt->nodes [parent_node].abs_x;
-	float        pay = parent_node == XENT_NODE_INVALID ? 0.0f : vt->nodes [parent_node].abs_y;
-	WFN_Vector_3 off = {(rect->x - pax) * vt->scale, (rect->y - pay) * vt->scale, 0.0f};
+	VisNode     *parent_vn = parent_node == XENT_NODE_INVALID ? NULL : tree_owned(vt, parent_node);
+	float        pax       = parent_vn ? parent_vn->abs_x : 0.0f;
+	float        pay       = parent_vn ? parent_vn->abs_y : 0.0f;
+	WFN_Vector_3 off       = {(rect->x - pax) * vt->scale, (rect->y - pay) * vt->scale, 0.0f};
 	( void ) wuc_visual_put__offset(vn->visual, off);
 	WFN_Vector_2 size = {rect->w * vt->scale, rect->h * vt->scale};
 	( void ) wuc_visual_put__size(vn->visual, size);
@@ -181,7 +228,7 @@ tree_sync_node(FluxVisualTree *vt, XentNodeId node, XentNodeId parent_node, Xent
 	 * on the compositor when one is bound (see flux_compose_render); until then the
 	 * offset is folded into the children's inherited base as a fallback. The node's
 	 * own offset above is unaffected, so the scrollbar/background stay put. */
-	if (flux_get_control_type(vt->ctx, node) == FLUX_CONTROL_SCROLL) {
+	if (flux_node_type(vt->store, node) == FLUX_CONTROL_SCROLL) {
 		tree_clip_to_bounds(vt, vn);
 		tree_make_holder(vt, vn);
 	}
@@ -203,10 +250,9 @@ static void tree_sweep(FluxVisualTree *vt) {
 		/* Detach from the parent only if the parent survived this pass; if the
 		 * parent is also gone, releasing it detaches the whole subtree at once.
 		 * Children live under the parent's holder when it is a scroll node. */
-		bool parent_alive
-		  = vn->parent == XENT_NODE_INVALID
-		 || (vn->parent < vt->cap && vt->nodes [vn->parent].in_use && vt->nodes [vn->parent].seen == vt->generation);
-		WUC_Container *pc = parent_alive ? tree_child_parent(vt, vn->parent) : NULL;
+		VisNode *parent_vn    = vn->parent == XENT_NODE_INVALID ? NULL : tree_owned(vt, vn->parent);
+		bool     parent_alive = vn->parent == XENT_NODE_INVALID || (parent_vn && parent_vn->seen == vt->generation);
+		WUC_Container *pc     = parent_alive ? tree_child_parent(vt, vn->parent) : NULL;
 		if (pc) tree_remove_child(pc, vn->visual);
 
 		if (vn->holder) (( IUnknown * ) vn->holder)->lpVtbl->Release(( IUnknown * ) vn->holder);
@@ -218,8 +264,10 @@ static void tree_sweep(FluxVisualTree *vt) {
 		vn->visual        = NULL;
 		vn->container     = NULL;
 		vn->in_use        = false;
+		vn->clipped       = false;
 		vn->tracker_bound = false;
 		vn->parent        = XENT_NODE_INVALID;
+		vn->owner         = XENT_NODE_INVALID;
 	}
 }
 
@@ -243,16 +291,14 @@ static bool reconcile_stack_push(ReconcileFrame **stack, uint32_t *top, uint32_t
 
 /* Push every child of `parent` as a frame. False on OOM (caller should stop). */
 static bool
-reconcile_push_children(ReconcileFrame **stack, uint32_t *top, uint32_t *cap, XentContext *ctx, XentNodeId parent) {
-	for (XentNodeId child = xent_get_first_child(ctx, parent); child != XENT_NODE_INVALID;
-	  child               = xent_get_next_sibling(ctx, child))
+reconcile_push_children(ReconcileFrame **stack, uint32_t *top, uint32_t *cap, XentCtx *ctx, XentNodeId parent) {
+	for (XentNodeId child = xent_node_first(ctx, parent); child != XENT_NODE_INVALID;
+	  child               = xent_node_next(ctx, child))
 		if (!reconcile_stack_push(stack, top, cap, (ReconcileFrame) {child, parent})) return false;
 	return true;
 }
 
-void flux_visual_tree_reconcile(
-  FluxVisualTree *vt, XentContext *ctx, FluxNodeStore *store, XentNodeId root, float scale
-) {
+void flux_visual_tree_reconcile(FluxVisualTree *vt, XentCtx *ctx, FluxStore *store, XentNodeId root, float scale) {
 	if (!vt || !ctx || root == XENT_NODE_INVALID) return;
 	vt->ctx   = ctx;
 	vt->store = store;
@@ -269,7 +315,7 @@ void flux_visual_tree_reconcile(
 	while (top > 0) {
 		ReconcileFrame f    = stack [--top];
 		XentRect       rect = {0};
-		xent_get_layout_rect(ctx, f.node, &rect);
+		xent_layout_rect(ctx, f.node, &rect);
 
 		if (!tree_sync_node(vt, f.node, f.parent, &rect)) continue;
 		if (!reconcile_push_children(&stack, &top, &cap, ctx, f.node)) goto done;
@@ -280,19 +326,19 @@ done:
 	tree_sweep(vt);
 }
 
-WUC_Container *flux_visual_tree_node_visual(FluxVisualTree *vt, XentNodeId node) {
-	if (!vt || node >= vt->cap || !vt->nodes [node].in_use) return NULL;
-	return vt->nodes [node].container;
+WUC_Container *flux_vtree_visual(FluxVisualTree *vt, XentNodeId node) {
+	VisNode *vn = tree_owned(vt, node);
+	return vn ? vn->container : NULL;
 }
 
-WUC_Visual *flux_visual_tree_node_scroll_holder(FluxVisualTree *vt, XentNodeId node) {
-	if (!vt || node >= vt->cap || !vt->nodes [node].in_use) return NULL;
-	return vt->nodes [node].holder_visual;
+WUC_Visual *flux_vtree_scrollholder(FluxVisualTree *vt, XentNodeId node) {
+	VisNode *vn = tree_owned(vt, node);
+	return vn ? vn->holder_visual : NULL;
 }
 
-void flux_visual_tree_set_tracker_bound(FluxVisualTree *vt, XentNodeId node, bool bound) {
-	if (!vt || node >= vt->cap || !vt->nodes [node].in_use) return;
-	vt->nodes [node].tracker_bound = bound;
+void flux_vtree_bindtracker(FluxVisualTree *vt, XentNodeId node, bool bound) {
+	VisNode *vn = tree_owned(vt, node);
+	if (vn) vn->tracker_bound = bound;
 }
 
 static void tree_release_node(VisNode const *n) {

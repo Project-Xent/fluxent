@@ -2,36 +2,35 @@
  * @file flux_graphics.h
  * @brief DirectX graphics context and composition layer management.
  *
- * FluxGraphics encapsulates Direct2D, DirectWrite, DirectComposition, and
+ * FluxGfx encapsulates Direct2D, DirectWrite, DirectComposition, and
  * swap chain management. It provides the rendering foundation for Fluxent.
  *
  * ## Initialization
  *
- * 1. Create with `flux_graphics_create()`
- * 2. Attach to window with `flux_graphics_attach(hwnd)`
- * 3. Set DPI with `flux_graphics_set_dpi()` (typically from WM_DPICHANGED)
+ * 1. Create with `flux_gfx_create()`
+ * 2. Attach to window with `flux_gfx_attach(hwnd)`
+ * 3. Set DPI with `flux_gfx_setdpi()` (typically from WM_DPICHANGED)
  *
  * ## Frame Rendering
  *
  * ```c
- * flux_graphics_begin_draw(gfx);
- * flux_graphics_clear(gfx, background);
+ * flux_gfx_begin(gfx);
+ * flux_gfx_clear(gfx, background);
  * // ... issue D2D draw calls ...
- * flux_graphics_end_draw(gfx);
- * flux_graphics_commit(gfx);    // Commit DirectComposition
- * flux_graphics_present(gfx, vsync);
+ * flux_gfx_end(gfx);
+ * flux_gfx_commit(gfx);    // Commit DirectComposition
+ * flux_gfx_present(gfx, vsync);
  * ```
  *
  * ## DirectComposition
  *
  * The graphics context creates a DirectComposition visual tree rooted at
- * the swap chain visual. Use `flux_graphics_add_overlay_visual()` to add
- * additional visuals (e.g., for system compositor animations).
+ * the swap chain visual.
  *
  * ## Device Loss
  *
- * Check `flux_graphics_is_device_current()` and call
- * `flux_graphics_handle_device_change()` if the D3D device was lost.
+ * Check `flux_gfx_current()` and call
+ * `flux_gfx_devicechange()` if the D3D device was lost.
  *
  * ## Thread Safety
  *
@@ -48,12 +47,8 @@
   #include <windows.h>
 #endif
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
-typedef struct FluxGraphics        FluxGraphics;
+typedef struct FluxGfx             FluxGfx;
 
 typedef struct ID2D1DeviceContext  ID2D1DeviceContext;
 typedef struct ID2D1Factory3       ID2D1Factory3;
@@ -68,13 +63,13 @@ typedef struct IDCompositionVisual IDCompositionVisual;
  *
  * @return New graphics context, or NULL on failure.
  */
-XENT_NODISCARD FluxGraphics *flux_graphics_create(void);
+XENT_NODISCARD FluxGfx            *flux_gfx_create(void);
 
 /**
  * @brief Destroy a graphics context and release all resources.
  * @param gfx Graphics context to destroy (NULL is safe).
  */
-void                               flux_graphics_destroy(FluxGraphics *gfx);
+void                               flux_gfx_destroy(FluxGfx *gfx);
 
 /**
  * @brief Attach graphics to a window.
@@ -86,7 +81,7 @@ void                               flux_graphics_destroy(FluxGraphics *gfx);
  * @param hwnd Window handle.
  * @return S_OK on success, or HRESULT error code.
  */
-HRESULT                            flux_graphics_attach(FluxGraphics *gfx, HWND hwnd);
+HRESULT                            flux_gfx_attach(FluxGfx *gfx, HWND hwnd);
 
 /**
  * @brief Attach graphics directly to an HWND swap chain.
@@ -94,13 +89,13 @@ HRESULT                            flux_graphics_attach(FluxGraphics *gfx, HWND 
  * Creates a swap chain bound directly to the HWND instead of a
  * DirectComposition visual tree. Use only for windows that are known to
  * support direct HWND swap-chain presentation; popup windows in Fluxent use
- * flux_graphics_attach() because they rely on the DirectComposition path.
+ * flux_gfx_attach() because they rely on the DirectComposition path.
  *
  * @param gfx Graphics context.
  * @param hwnd Window handle.
  * @return S_OK on success, or HRESULT error code.
  */
-HRESULT                            flux_graphics_attach_for_backdrop(FluxGraphics *gfx, HWND hwnd);
+HRESULT                            flux_gfx_attachbackdrop(FluxGfx *gfx, HWND hwnd);
 
 /**
  * @brief Resize the swap chain to match window size.
@@ -112,7 +107,7 @@ HRESULT                            flux_graphics_attach_for_backdrop(FluxGraphic
  * @param height New height in pixels.
  * @return S_OK on success, or HRESULT error code.
  */
-HRESULT                            flux_graphics_resize(FluxGraphics *gfx, int width, int height);
+HRESULT                            flux_gfx_resize(FluxGfx *gfx, int width, int height);
 
 /**
  * @brief Set the DPI for rendering.
@@ -123,34 +118,34 @@ HRESULT                            flux_graphics_resize(FluxGraphics *gfx, int w
  * @param gfx Graphics context.
  * @param dpi DPI information.
  */
-void                               flux_graphics_set_dpi(FluxGraphics *gfx, FluxDpiInfo dpi);
+void                               flux_gfx_setdpi(FluxGfx *gfx, FluxDpi dpi);
 
 /**
  * @brief Get the current DPI.
  * @param gfx Graphics context.
  * @return Current DPI information.
  */
-FluxDpiInfo                        flux_graphics_get_dpi(FluxGraphics const *gfx);
+FluxDpi                            flux_gfx_dpi(FluxGfx const *gfx);
 
 /**
  * @brief Begin a render frame.
  *
  * Acquires the back buffer and begins D2D drawing.
- * Must be paired with flux_graphics_end_draw().
+ * Must be paired with flux_gfx_end().
  *
  * @param gfx Graphics context.
  */
-void                               flux_graphics_begin_draw(FluxGraphics *gfx);
+void                               flux_gfx_begin(FluxGfx *gfx);
 
 /**
  * @brief End the render frame.
  *
- * Completes D2D drawing. Call flux_graphics_commit() and
- * flux_graphics_present() after this.
+ * Completes D2D drawing. Call flux_gfx_commit() and
+ * flux_gfx_present() after this.
  *
  * @param gfx Graphics context.
  */
-void                               flux_graphics_end_draw(FluxGraphics *gfx);
+void                               flux_gfx_end(FluxGfx *gfx);
 
 /**
  * @brief Present the rendered frame.
@@ -160,37 +155,37 @@ void                               flux_graphics_end_draw(FluxGraphics *gfx);
  * @param gfx Graphics context.
  * @param vsync true to wait for vertical blank, false for immediate.
  */
-void                               flux_graphics_present(FluxGraphics *gfx, bool vsync);
+void                               flux_gfx_present(FluxGfx *gfx, bool vsync);
 
 /**
  * @brief Clear the render target to a solid color.
  * @param gfx Graphics context.
  * @param color Fill color.
  */
-void                               flux_graphics_clear(FluxGraphics *gfx, FluxColor color);
+void                               flux_gfx_clear(FluxGfx *gfx, FluxColor color);
 
 /**
  * @brief Commit the DirectComposition visual tree.
  *
- * Call after flux_graphics_end_draw() to apply visual tree changes.
+ * Call after flux_gfx_end() to apply visual tree changes.
  *
  * @param gfx Graphics context.
  */
-void                               flux_graphics_commit(FluxGraphics *gfx);
+void                               flux_gfx_commit(FluxGfx *gfx);
 
 /**
  * @brief Get the render target size in DIPs.
  * @param gfx Graphics context.
  * @return Target size.
  */
-FluxSize                           flux_graphics_get_target_size(FluxGraphics const *gfx);
+FluxSize                           flux_gfx_size(FluxGfx const *gfx);
 
 /**
  * @brief Get the client area size in physical pixels.
  * @param gfx Graphics context.
  * @return Client size in pixels.
  */
-FluxSize                           flux_graphics_get_client_pixel_size(FluxGraphics const *gfx);
+FluxSize                           flux_gfx_pixels(FluxGfx const *gfx);
 
 /**
  * @brief Get the D2D device context.
@@ -200,39 +195,22 @@ FluxSize                           flux_graphics_get_client_pixel_size(FluxGraph
  * @param gfx Graphics context.
  * @return D2D device context (caller does NOT own; do not Release).
  */
-ID2D1DeviceContext                *flux_graphics_get_d2d_context(FluxGraphics *gfx);
+ID2D1DeviceContext                *flux_gfx_d2d(FluxGfx *gfx);
 
 /**
  * @brief Get the D2D factory.
  * @param gfx Graphics context.
  * @return D2D factory (caller does NOT own; do not Release).
  */
-ID2D1Factory3                     *flux_graphics_get_d2d_factory(FluxGraphics *gfx);
+ID2D1Factory3                     *flux_gfx_d2dfactory(FluxGfx *gfx);
 
 /**
  * @brief Get the DirectWrite factory.
  * @param gfx Graphics context.
  * @return DWrite factory (caller does NOT own; do not Release).
  */
-IDWriteFactory3                   *flux_graphics_get_dwrite_factory(FluxGraphics *gfx);
+IDWriteFactory3                   *flux_gfx_dwrite(FluxGfx *gfx);
 
-/**
- * @brief Add an overlay visual to the composition tree.
- *
- * Overlay visuals are rendered on top of the main swap chain content.
- * Used for system compositor animations (e.g., Connected Animations).
- *
- * @param gfx Graphics context.
- * @param visual Visual to add.
- */
-void                               flux_graphics_add_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual);
-
-/**
- * @brief Remove an overlay visual from the composition tree.
- * @param gfx Graphics context.
- * @param visual Visual previously added with flux_graphics_add_overlay_visual().
- */
-void                               flux_graphics_remove_overlay_visual(FluxGraphics *gfx, IDCompositionVisual *visual);
 
 /**
  * @brief Request a redraw on the next frame.
@@ -241,12 +219,12 @@ void                               flux_graphics_remove_overlay_visual(FluxGraph
  *
  * @param gfx Graphics context.
  */
-void                               flux_graphics_request_redraw(FluxGraphics *gfx);
+void                               flux_gfx_redraw(FluxGfx *gfx);
 
 /**
  * @brief Redraw callback type.
  */
-typedef void                       (*FluxRedrawCallback)(void *ctx);
+typedef void                       (*FluxRedrawFn)(void *ctx);
 
 /**
  * @brief Set the redraw callback.
@@ -257,7 +235,7 @@ typedef void                       (*FluxRedrawCallback)(void *ctx);
  * @param cb Callback function.
  * @param ctx User context passed to callback.
  */
-void    flux_graphics_set_redraw_callback(FluxGraphics *gfx, FluxRedrawCallback cb, void *ctx);
+void                               flux_gfx_onredraw(FluxGfx *gfx, FluxRedrawFn cb, void *ctx);
 
 /**
  * @brief Check if the D3D device is still valid.
@@ -267,7 +245,7 @@ void    flux_graphics_set_redraw_callback(FluxGraphics *gfx, FluxRedrawCallback 
  * @param gfx Graphics context.
  * @return true if device is valid.
  */
-bool    flux_graphics_is_device_current(FluxGraphics const *gfx);
+bool                               flux_gfx_current(FluxGfx const *gfx);
 
 /**
  * @brief Handle device loss and recreate resources.
@@ -277,10 +255,7 @@ bool    flux_graphics_is_device_current(FluxGraphics const *gfx);
  * @param gfx Graphics context.
  * @return S_OK on success, or HRESULT error code.
  */
-HRESULT flux_graphics_handle_device_change(FluxGraphics *gfx);
+HRESULT                            flux_gfx_devicechange(FluxGfx *gfx);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

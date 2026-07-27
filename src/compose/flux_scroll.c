@@ -74,7 +74,7 @@ void flux_scroll_tracker_destroy(FluxScrollTracker *t) {
 	free(t);
 }
 
-void flux_scroll_tracker_set_max_y(FluxScrollTracker *t, float max_y) {
+void flux_strack_setmaxy(FluxScrollTracker *t, float max_y) {
 	if (!t || !t->tracker) return;
 	WFN_Vector_3 max = {0.0f, max_y, 0.0f};
 	( void ) wuicoin_interaction_tracker_put__max_position(t->tracker, max);
@@ -82,7 +82,7 @@ void flux_scroll_tracker_set_max_y(FluxScrollTracker *t, float max_y) {
 
 WUICOIN_InteractionTracker *flux_scroll_tracker_handle(FluxScrollTracker *t) { return t ? t->tracker : NULL; }
 
-void                        flux_scroll_tracker_bind_offset(FluxScrollTracker *t, WUC_Visual *content) {
+void                        flux_strack_bind(FluxScrollTracker *t, WUC_Visual *content) {
 	if (!t || !t->comp || !t->tracker || !content) return;
 
 	WUC_ExpressionAnimation *expr  = NULL;

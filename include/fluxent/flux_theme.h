@@ -13,11 +13,6 @@
 #include "flux_types.h"
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
 /** @brief Theme mode selection. */
 typedef enum FluxThemeMode
 {
@@ -81,50 +76,47 @@ typedef struct FluxThemeColors {
 	FluxColor solid_background;
 	FluxColor solid_background_tertiary;   /**< SolidBackgroundFillColorTertiary. */
 
-	FluxColor ctrl_on_image_default;   /**< ControlOnImageFillColorDefault (GridView overlay check). */
-	FluxColor ctrl_on_image_secondary; /**< ControlOnImageFillColorSecondary. */
-	FluxColor ctrl_on_image_tertiary;  /**< ControlOnImageFillColorTertiary. */
-	FluxColor ctrl_on_image_disabled;  /**< ControlOnImageFillColorDisabled. */
+	FluxColor ctrl_on_image_default;       /**< ControlOnImageFillColorDefault (GridView overlay check). */
+	FluxColor ctrl_on_image_secondary;     /**< ControlOnImageFillColorSecondary. */
+	FluxColor ctrl_on_image_tertiary;      /**< ControlOnImageFillColorTertiary. */
+	FluxColor ctrl_on_image_disabled;      /**< ControlOnImageFillColorDisabled. */
 
-	FluxColor list_box_bg;             /**< SystemControlBackgroundChromeMediumLow (ListBox surface). */
+	FluxColor list_box_bg;                 /**< SystemControlBackgroundChromeMediumLow (ListBox surface). */
 
-	FluxColor flip_nav_bg_default;     /**< FlipView nav chip fill (AcrylicInApp fallback, all states). */
-	FluxColor flip_view_bg;            /**< FlipView surface (SolidBackgroundFillColorBase). */
+	FluxColor flip_nav_bg_default;         /**< FlipView nav chip fill (AcrylicInApp fallback, all states). */
+	FluxColor flip_view_bg;                /**< FlipView surface (SolidBackgroundFillColorBase). */
 
-	FluxColor flyout_background;       /**< Popup surface (ComboBox dropdown, suggestions). */
-	FluxColor flyout_border;           /**< Popup 1px border. */
+	FluxColor flyout_background;           /**< Popup surface (ComboBox dropdown, suggestions). */
+	FluxColor flyout_border;               /**< Popup 1px border. */
 } FluxThemeColors;
 
 /** @brief Opaque theme manager. */
-typedef struct FluxThemeManager FluxThemeManager;
+typedef struct FluxTheme  FluxTheme;
 
 /** @brief Create a theme manager. */
-XENT_NODISCARD FluxThemeManager *flux_theme_create(void);
+XENT_NODISCARD FluxTheme *flux_theme_create(void);
 /** @brief Destroy a theme manager. */
-void                            flux_theme_destroy(FluxThemeManager *tm);
+void                      flux_theme_destroy(FluxTheme *tm);
 
 /** @brief Set the active theme mode. */
-void                            flux_theme_set_mode(FluxThemeManager *tm, FluxThemeMode mode);
+void                      flux_theme_setmode(FluxTheme *tm, FluxThemeMode mode);
 /** @brief Get the active theme mode. */
-FluxThemeMode                   flux_theme_get_mode(FluxThemeManager const *tm);
+FluxThemeMode             flux_theme_mode(FluxTheme const *tm);
 
 /** @brief Return the resolved colors for the currently active theme.
  *  Applies any pending system accent change on the calling (UI) thread. */
-FluxThemeColors const          *flux_theme_colors(FluxThemeManager *tm);
+FluxThemeColors const    *flux_theme_colors(FluxTheme *tm);
 
 /** @brief Return the built-in default (light) palette. Never NULL; use as a
  *  fallback so draw code can read colors unconditionally instead of guarding
  *  every field against a missing theme. */
-FluxThemeColors const          *flux_theme_default_colors(void);
+FluxThemeColors const    *flux_theme_defaults(void);
 
 /** @brief Return a version counter incremented whenever theme colors may have changed. */
-uint32_t                        flux_theme_version(FluxThemeManager const *tm);
+uint32_t                  flux_theme_ver(FluxTheme const *tm);
 
 /** @brief Return true if the operating system is currently using dark mode. */
-bool                            flux_theme_system_is_dark(void);
+bool                      flux_theme_systemdark(void);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

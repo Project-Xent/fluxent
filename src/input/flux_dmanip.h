@@ -17,10 +17,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /** @brief Per-window DirectManipulation manager handle. */
 typedef struct FluxDManip         FluxDManip;
@@ -61,14 +57,14 @@ void                              flux_dmanip_viewport_destroy(FluxDManipViewpor
  *  DManip refuses to operate if @p w or @p h is zero or negative.
  *  @param vp       Target viewport.
  *  @param x,y,w,h  Client-space pixel bounds. */
-void                              flux_dmanip_viewport_set_rect(FluxDManipViewport *vp, int x, int y, int w, int h);
+void                              flux_dmanip_vp_setrect(FluxDManipViewport *vp, int x, int y, int w, int h);
 
 /** @brief Updates the scrollable content size in client-space pixels.
  *
  *  DManip uses content_size − viewport_size as the pan limit.
  *  @param vp   Target viewport.
  *  @param w,h  Full scrollable content dimensions. */
-void                              flux_dmanip_viewport_set_content_size(FluxDManipViewport *vp, int w, int h);
+void                              flux_dmanip_vp_setsize(FluxDManipViewport *vp, int w, int h);
 
 /** @brief Sets the DIP-to-pixel scale for unit conversion in callbacks and sync_transform.
  *
@@ -76,7 +72,7 @@ void                              flux_dmanip_viewport_set_content_size(FluxDMan
  *  this scale bridges them.  Default is 1.0; update on WM_DPICHANGED.
  *  @param vp     Target viewport.
  *  @param scale  DIP-to-pixel ratio (e.g. 1.25 at 125% DPI). */
-void                              flux_dmanip_viewport_set_dpi_scale(FluxDManipViewport *vp, float scale);
+void                              flux_dmanip_vp_setdpi(FluxDManipViewport *vp, float scale);
 
 /** @brief Hands off an active WM_POINTER contact to DManip for gesture tracking.
  *
@@ -85,13 +81,13 @@ void                              flux_dmanip_viewport_set_dpi_scale(FluxDManipV
  *  @param vp          Target viewport.
  *  @param pointer_id  WM_POINTER contact identifier.
  *  @return S_OK on success, or a COM error code. */
-HRESULT                           flux_dmanip_viewport_set_contact(FluxDManipViewport *vp, uint32_t pointer_id);
+HRESULT                           flux_dmanip_vp_setcontact(FluxDManipViewport *vp, uint32_t pointer_id);
 
 /** @brief Registers the content-updated callback, replacing any previous one.
  *  @param vp   Target viewport.
  *  @param cb   Callback fired on each transform update.
  *  @param ctx  Caller context passed to @p cb. */
-void flux_dmanip_viewport_set_callback(FluxDManipViewport *vp, FluxDManipContentUpdatedFn cb, void *ctx);
+void flux_dmanip_vp_onchange(FluxDManipViewport *vp, FluxDManipContentUpdatedFn cb, void *ctx);
 
 /** @brief Pushes a scroll offset into DManip to synchronize its internal transform with the app state.
  *
@@ -99,14 +95,11 @@ void flux_dmanip_viewport_set_callback(FluxDManipViewport *vp, FluxDManipContent
  *  @param vp        Target viewport.
  *  @param scroll_x  Horizontal scroll offset in DIPs.
  *  @param scroll_y  Vertical scroll offset in DIPs. */
-void flux_dmanip_viewport_sync_transform(FluxDManipViewport *vp, float scroll_x, float scroll_y);
+void flux_dmanip_vp_sync(FluxDManipViewport *vp, float scroll_x, float scroll_y);
 
 /** @brief Returns true while the user is touching the viewport or inertia is playing.
  *  @return true if the viewport is in RUNNING or INERTIA state. */
-bool flux_dmanip_viewport_is_manipulating(FluxDManipViewport const *vp);
+bool flux_dmanip_vp_manipulating(FluxDManipViewport const *vp);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_DMANIP_H */

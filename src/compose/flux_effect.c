@@ -299,10 +299,8 @@ static WUC_Brush *make_blur_brush(FluxCompositor *c, float blur_amount, bool hos
 	return p.out;
 }
 
-WUC_Brush *flux_effect_make_backdrop_blur(FluxCompositor *c, float blur_amount) {
+WUC_Brush *flux_effect_backdrop_blur(FluxCompositor *c, float blur_amount) {
 	return make_blur_brush(c, blur_amount, false);
 }
 
-WUC_Brush *flux_effect_make_host_backdrop_blur(FluxCompositor *c, float blur_amount) {
-	return make_blur_brush(c, blur_amount, true);
-}
+WUC_Brush *flux_effect_host_blur(FluxCompositor *c, float blur_amount) { return make_blur_brush(c, blur_amount, true); }

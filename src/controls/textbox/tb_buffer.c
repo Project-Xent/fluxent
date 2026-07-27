@@ -222,7 +222,7 @@ uint32_t tb_buffer_utf8_next(FluxTextBoxInputData const *tb, uint32_t pos) {
 	return pos + (clen ? clen : 1);
 }
 
-static FluxTextClusterQuery tb_cluster_query(FluxTextBoxInputData *tb, FluxTextRenderer *tr, FluxTextStyle *style) {
+static FluxTextClusterQuery tb_cluster_query(FluxTextBoxInputData *tb, FluxText *tr, FluxTextStyle *style) {
 	char const *s              = tb_sync_content(tb);
 	*style                     = tb_make_style(tb);
 	FluxTextLayoutQuery layout = {tr, s, style, 0.0f};
@@ -233,25 +233,25 @@ uint32_t tb_grapheme_next(FluxTextBoxInputData *tb, uint32_t pos) {
 	if (!tb || !tb->buffer) return 0;
 	if (pos >= tb->buf_len) return tb->buf_len;
 
-	FluxTextRenderer *tr = flux_app_get_text_renderer(tb->app);
+	FluxText *tr = flux_app_text(tb->app);
 	if (!tr) return tb_buffer_utf8_next(tb, pos);
 
 	FluxTextStyle        style;
 	FluxTextClusterQuery q = tb_cluster_query(tb, tr, &style);
 	q.index                = tb_byte_to_utf16_offset(q.layout.text, tb->buf_len, pos);
-	return tb_utf16_to_byte_offset(q.layout.text, tb->buf_len, flux_text_cluster_next(&q));
+	return tb_utf16_to_byte_offset(q.layout.text, tb->buf_len, flux_text_next(&q));
 }
 
 uint32_t tb_grapheme_prev(FluxTextBoxInputData *tb, uint32_t pos) {
 	if (!tb || !tb->buffer || pos == 0) return 0;
 
-	FluxTextRenderer *tr = flux_app_get_text_renderer(tb->app);
+	FluxText *tr = flux_app_text(tb->app);
 	if (!tr) return tb_buffer_utf8_prev(tb, pos);
 
 	FluxTextStyle        style;
 	FluxTextClusterQuery q = tb_cluster_query(tb, tr, &style);
 	q.index                = tb_byte_to_utf16_offset(q.layout.text, tb->buf_len, pos);
-	return tb_utf16_to_byte_offset(q.layout.text, tb->buf_len, flux_text_cluster_prev(&q));
+	return tb_utf16_to_byte_offset(q.layout.text, tb->buf_len, flux_text_prev(&q));
 }
 
 uint32_t tb_utf16_to_byte_offset(char const *s, uint32_t len, uint32_t utf16_pos) {

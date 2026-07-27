@@ -7,15 +7,12 @@
 #ifndef FLUX_TB_INTERNAL_H
 #define FLUX_TB_INTERNAL_H
 
-#include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_textbox.h"
+#include "store/flux_node_data.h"
 #include "fluxent/flux_text.h"
 #include "fluxent/flux_window.h"
 #include <windows.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 #define FLUX_TEXTBOX_INITIAL_CAP 128
 #define TB_BUFFER_GROWTH_FACTOR  2u
@@ -75,9 +72,9 @@ typedef struct FluxTextBoxInputData {
 	uint32_t        gap_start;   /**< Byte offset where the gap begins in @ref buffer. */
 	uint32_t        gap_end; /**< Byte offset just past the gap; storage at [gap_end, buf_cap) is the post-gap text. */
 	bool            flat_dirty; /**< True when @ref flat_buffer no longer mirrors the gap buffer. */
-	XentContext    *ctx;
+	XentCtx        *ctx;
 	XentNodeId      node;
-	FluxNodeStore  *store;
+	FluxStore      *store;
 	struct FluxApp *app;
 
 	TbEditHistory   undo_stack [TB_UNDO_MAX];
@@ -196,13 +193,15 @@ void          nb_validate_input(FluxTextBoxInputData *tb);
 void          nb_step_value(FluxTextBoxInputData *tb, double change);
 /** @brief Sets nb_value with coercion, change detection, and on_value_change event firing. */
 void          nb_set_value(FluxTextBoxInputData *tb, double new_value);
+/** @brief Projects model state into nb_value without reporting a user change. */
+void          nb_project_value(FluxTextBoxInputData *tb, double new_value);
 /** @brief Clamps nb_value to [nb_minimum, nb_maximum] when validation mode is Overwrite. */
 void          nb_coerce_value(FluxTextBoxInputData *tb);
 /** @brief Writes nb_value, nb_minimum, nb_maximum, and spin placement to the node's semantic properties. */
 void          nb_sync_semantics(FluxTextBoxInputData *tb);
 
 /** @brief Handles a keyboard key press; returns true if the key was consumed. */
-bool          tb_on_key(void *ctx, unsigned int vk, bool down);
+bool          tb_on_key(void *ctx, FluxKey key, bool down);
 /** @brief Handles a character input event (WM_CHAR). */
 void          tb_on_char(void *ctx, wchar_t ch);
 /** @brief Handles pointer move for hit-testing and drag selection. */
@@ -220,8 +219,5 @@ void          tb_on_focus(void *ctx);
 /** @brief Handles focus loss; clears selection, IME state, and validates NumberBox input. */
 void          tb_on_blur(void *ctx);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_TB_INTERNAL_H */

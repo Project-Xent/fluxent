@@ -1,12 +1,15 @@
 #include "controls/factory/flux_factory.h"
+#include "store/flux_node_data.h"
 #include "render/flux_icon.h"
 #include "runtime/flux_str.h"
 
-#include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_nav.h"
 #include "fluxent/flux_input.h"
-#include "fluxent/flux_menu_flyout.h"
+#include "fluxent/flux_menu.h"
 #include "fluxent/flux_window.h"
-#include "fluxent/controls/flux_breadcrumb_data.h"
+#include "controls/behavior/flux_breadcrumb_internal.h"
+#include <fluxent/flux_host.h>
+#include <xtk/xtk_catalog.h>
 
 #include <float.h>
 #include <math.h>
@@ -17,14 +20,14 @@
 /* WinUI BreadcrumbBar (BreadcrumbBar.cpp / BreadcrumbLayout.cpp). The element
  * list is [ellipsis, crumb0..crumbN-1] — element 0 is always the synthetic
  * ellipsis, arranged 0x0 unless the crumbs overflow the assigned width. The
- * last crumb is the current location: plain text, focusable, never raises
- * ItemClicked. Ellipsis invoke opens a bottom-placed light-dismiss flyout of
+ * last crumb is the current location and keeps its distinct visual state, but
+ * still raises ItemClicked. Ellipsis invoke opens a bottom-placed light-dismiss flyout of
  * the hidden crumbs, reversed (closest-to-visible first, root last); clicking
  * a row raises ItemClicked with the data index. Crumb clicks fire on release;
  * Left/Right move focus with the WinUI ellipsis jump rules (no wrap). */
 
-static FluxBreadcrumbBarData *bc_data(FluxNodeStore *store, XentNodeId bar) {
-	FluxNodeData *nd = flux_node_store_get(store, bar);
+static FluxBreadcrumbBarData *bc_data(FluxStore *store, XentNodeId bar) {
+	FluxNodeData *nd = flux_store_find(store, bar);
 	if (!nd || nd->component_type != FLUX_CONTROL_BREADCRUMB_BAR) return NULL;
 	return ( FluxBreadcrumbBarData * ) nd->component_data;
 }
@@ -41,7 +44,7 @@ static void bc_repaint(FluxBreadcrumbBarData *d) {
 
 static float bc_text_w(FluxBreadcrumbBarData *d, char const *s, float font_size) {
 	if (!s || !s [0]) return 0.0f;
-	if (!d->text) return 7.0f * ( float ) strlen(s); /* headless probes: rough advance */
+	if (!d->text) return 10.0f * ( float ) strlen(s); /* headless probes: rough advance */
 	FluxTextStyle ts = {0};
 	ts.font_size     = font_size;
 	ts.font_weight   = FLUX_FONT_REGULAR;
@@ -61,7 +64,7 @@ static void bc_measure(FluxBreadcrumbBarData *d) {
 	                  + ceilf(bc_glyph_w(d, FLUX_BREADCRUMB_ELLIPSIS, FLUX_BREADCRUMB_ELLIPSIS_FONT))
 	                  + d->chevron_cell_w;
 
-	float natural = 0.0f;
+	float natural     = 0.0f;
 	for (int i = 1; i <= d->count; i++) {
 		float w = 2.0f * FLUX_BREADCRUMB_PAD_H + ceilf(bc_text_w(d, d->labels [i - 1], FLUX_BREADCRUMB_FONT));
 		if (i < d->count) w += d->chevron_cell_w; /* the last crumb has no chevron cell */
@@ -71,7 +74,7 @@ static void bc_measure(FluxBreadcrumbBarData *d) {
 	d->natural_w = natural;
 	/* Report the natural full width (the ellipsis is excluded from the desired
 	 * size, per BreadcrumbLayout::MeasureOverride); the parent clamps it. */
-	xent_set_size(d->ctx, d->root, (XentSize) {natural, FLUX_BREADCRUMB_ITEM_H});
+	xent_setsize(d->ctx, d->root, (XentSize) {natural, FLUX_BREADCRUMB_ITEM_H});
 	d->widths_dirty  = false;
 	d->arrange_dirty = true;
 }
@@ -81,14 +84,14 @@ static void bc_measure(FluxBreadcrumbBarData *d) {
  * ---------------------------------------------------------------------- */
 
 static void bc_place(FluxBreadcrumbBarData *d, int elem, float x, float w) {
-	xent_set_absolute_position(d->ctx, d->nodes [elem], (XentPoint) {x, 0.0f});
-	xent_set_size(d->ctx, d->nodes [elem], (XentSize) {w, FLUX_BREADCRUMB_ITEM_H});
+	xent_setpos(d->ctx, d->nodes [elem], (XentPoint) {x, 0.0f});
+	xent_setsize(d->ctx, d->nodes [elem], (XentSize) {w, FLUX_BREADCRUMB_ITEM_H});
 	xent_set_focusable(d->ctx, d->nodes [elem], !d->disabled);
 }
 
 static void bc_hide(FluxBreadcrumbBarData *d, int elem) {
-	xent_set_absolute_position(d->ctx, d->nodes [elem], (XentPoint) {0.0f, 0.0f});
-	xent_set_size(d->ctx, d->nodes [elem], (XentSize) {0.0f, 0.0f});
+	xent_setpos(d->ctx, d->nodes [elem], (XentPoint) {0.0f, 0.0f});
+	xent_setsize(d->ctx, d->nodes [elem], (XentSize) {0.0f, 0.0f});
 	xent_set_focusable(d->ctx, d->nodes [elem], false);
 }
 
@@ -114,14 +117,14 @@ static void bc_arrange(FluxBreadcrumbBarData *d, float avail) {
 	for (int i = 1; i <= n; i++) accumulated += d->widths [i];
 	d->ellipsis_rendered = n > 0 && accumulated > avail;
 
-	int first = 1;
+	int first            = 1;
 	if (d->ellipsis_rendered) {
 		first = bc_first_to_render(d, avail);
 		if (first < 1) first = 1;
 	}
 	d->first_rendered = first;
 
-	float x = 0.0f;
+	float x           = 0.0f;
 	if (d->ellipsis_rendered) {
 		bc_place(d, 0, 0.0f, d->widths [0]);
 		x = d->widths [0];
@@ -142,11 +145,11 @@ static void bc_arrange(FluxBreadcrumbBarData *d, float avail) {
 /* Fired from the engine's collect pass each rendered frame (same cadence as
  * the FlipView sync): re-measure when labels changed, re-run the collapse
  * whenever the bar's assigned width changed. */
-void flux_breadcrumb_bar_sync(XentContext *ctx, XentNodeId bar, struct FluxNodeData *nd) {
+void flux_breadcrumb_sync(XentCtx *ctx, XentNodeId bar, struct FluxNodeData *nd) {
 	( void ) bar;
 	FluxBreadcrumbBarData *d    = ( FluxBreadcrumbBarData * ) nd->component_data;
 	XentRect               rect = {0};
-	if (!d || !xent_get_layout_rect(ctx, d->root, &rect)) return;
+	if (!d || !xent_layout_rect(ctx, d->root, &rect)) return;
 
 	if (d->widths_dirty) bc_measure(d);
 	if (!d->arrange_dirty && rect.w == d->last_avail) return;
@@ -172,28 +175,28 @@ static void bc_open_flyout(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
 	FluxBreadcrumbBarData *d = it->bar;
 	if (!d->window || !d->ellipsis_rendered) return;
 	if (!d->flyout) {
-		d->flyout = flux_menu_flyout_create(d->window);
+		d->flyout = flux_menu_create(d->window);
 		if (!d->flyout) return;
-		flux_menu_flyout_set_theme_manager(d->flyout, d->theme);
-		flux_menu_flyout_set_text_renderer(d->flyout, d->text);
+		flux_menu_setthememanager(d->flyout, d->theme);
+		flux_menu_settext(d->flyout, d->text);
 	}
-	flux_menu_flyout_clear(d->flyout);
+	flux_menu_clear(d->flyout);
 	int hidden = d->first_rendered - 1; /* hidden data indices: 0 .. hidden-1 */
 	for (int row = 0; row < hidden; row++) {
 		int index            = hidden - 1 - row;
 		d->fly_slots [index] = (FluxBreadcrumbFlyoutSlot) {d, index};
-		flux_menu_flyout_add_item(
+		flux_menu_additem(
 		  d->flyout, &(FluxMenuItemDef) {
-				  .type         = FLUX_MENU_ITEM_NORMAL,
-				  .label        = d->labels [index],
-				  .enabled      = true,
-				  .on_click     = bc_flyout_click,
-				  .on_click_ctx = &d->fly_slots [index],
-				}
+					   .type         = FLUX_MENU_ITEM_NORMAL,
+					   .label        = d->labels [index],
+					   .enabled      = true,
+					   .on_click     = bc_flyout_click,
+					   .on_click_ctx = &d->fly_slots [index],
+					 }
 		);
 	}
 	FluxRect anchor = flux_binding_screen_anchor(d->window, d->ctx, d->store, it->node);
-	flux_menu_flyout_show_for_input(d->flyout, anchor, FLUX_PLACEMENT_BOTTOM, input);
+	flux_menu_showinput(d->flyout, anchor, FLUX_PLACEMENT_BOTTOM, input);
 }
 
 static void bc_invoke(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
@@ -203,17 +206,29 @@ static void bc_invoke(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
 		bc_open_flyout(it, input);
 		return;
 	}
-	if (it->elem == d->count) return; /* current crumb: plain text, never raises ItemClicked */
-	if (d->on_item_clicked) d->on_item_clicked(d->on_item_clicked_ctx, it->elem - 1);
+	int index = it->elem - 1;
+	if (d->on_item_clicked) d->on_item_clicked(d->on_item_clicked_ctx, index);
+	XtkHost *host = flux_store_host(d->store);
+	if (!host) return;
+	XtkEvent event = {
+	  .id             = XTK_EVENT_SELECT,
+	  .target         = ( XtkCtrl ) d->root,
+	  .source         = ( XtkCtrl ) d->root,
+	  .current_target = ( XtkCtrl ) d->root,
+	  .phase          = XTK_EVENT_PHASE_TARGET,
+	  .cause          = XTK_EVENT_CAUSE_USER,
+	  .payload        = {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = index},
+	};
+	flux_host_route(host, &event);
 }
 
 /* WinUI crumbs fire on Click (release). The chevron cell is a static separator
  * outside the inner button, so a release over it is a miss. */
 static void bc_item_click(void *ctx) {
-	FluxBreadcrumbItem    *it = ( FluxBreadcrumbItem * ) ctx;
-	FluxBreadcrumbBarData *d  = it->bar;
-	FluxNodeData          *nd = flux_node_store_get(d->store, it->node);
-	float content_w = d->widths [it->elem] - (it->elem == d->count ? 0.0f : d->chevron_cell_w);
+	FluxBreadcrumbItem    *it        = ( FluxBreadcrumbItem * ) ctx;
+	FluxBreadcrumbBarData *d         = it->bar;
+	FluxNodeData          *nd        = flux_store_find(d->store, it->node);
+	float                  content_w = d->widths [it->elem] - (it->elem == d->count ? 0.0f : d->chevron_cell_w);
 	if (nd && nd->hover_local_x >= 0.0f && nd->hover_local_x > content_w) return;
 	bc_invoke(it, FLUX_MENU_INPUT_MOUSE);
 }
@@ -229,21 +244,21 @@ static int bc_key_left_target(FluxBreadcrumbBarData const *d, int elem) {
 
 /* Right = next (from the ellipsis: jump straight to the first rendered crumb);
  * Left = previous. Home/End/PageUp/PageDown are NOT handled, per WinUI. */
-static bool bc_item_key(void *ctx, unsigned int vk, bool down) {
+static bool bc_item_key(void *ctx, FluxKey key, bool down) {
 	if (!down) return false;
 	FluxBreadcrumbItem    *it = ( FluxBreadcrumbItem * ) ctx;
 	FluxBreadcrumbBarData *d  = it->bar;
-	switch (vk) {
-	case VK_RETURN :
-	case VK_SPACE  : bc_invoke(it, FLUX_MENU_INPUT_KEYBOARD); return true;
-	case VK_RIGHT  : {
+	switch (key) {
+	case FLUX_KEY_ENTER :
+	case FLUX_KEY_SPACE : bc_invoke(it, FLUX_MENU_INPUT_KEYBOARD); return true;
+	case FLUX_KEY_RIGHT : {
 		int next = it->elem == 0 ? d->first_rendered : it->elem + 1;
-		if (next <= d->count && d->input) flux_input_set_focus(d->input, d->nodes [next]);
+		if (next <= d->count && d->input) flux_input_setfocus(d->input, d->nodes [next]);
 		return true;
 	}
-	case VK_LEFT : {
+	case FLUX_KEY_LEFT : {
 		int prev = bc_key_left_target(d, it->elem);
-		if (prev >= 0 && d->input) flux_input_set_focus(d->input, d->nodes [prev]);
+		if (prev >= 0 && d->input) flux_input_setfocus(d->input, d->nodes [prev]);
 		return true;
 	}
 	default : return false;
@@ -258,7 +273,7 @@ static XentNodeId bc_make_item(FluxBreadcrumbBarData *d, int elem) {
 	XentNodeId node = flux_factory_create_node(d->ctx, d->store, d->root, FLUX_CONTROL_BREADCRUMB_ITEM);
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData       *ind = flux_node_store_get(d->store, node);
+	FluxNodeData       *ind = flux_store_find(d->store, node);
 	FluxBreadcrumbItem *it  = ind ? ( FluxBreadcrumbItem * ) calloc(1, sizeof(*it)) : NULL;
 	if (!ind || !it) {
 		free(it);
@@ -275,12 +290,12 @@ static XentNodeId bc_make_item(FluxBreadcrumbBarData *d, int elem) {
 	ind->behavior.on_key        = bc_item_key;
 	ind->behavior.on_key_ctx    = it;
 
-	xent_set_semantic_role(d->ctx, node, XENT_SEMANTIC_BUTTON);
-	xent_set_semantic_label(d->ctx, node, elem > 0 ? d->labels [elem - 1] : "More");
-	xent_set_semantic_enabled(d->ctx, node, !d->disabled);
+	xent_sem_setrole(d->ctx, node, XENT_SEM_ROLE_BUTTON);
+	xent_sem_setlabel(d->ctx, node, elem > 0 ? d->labels [elem - 1] : "More");
+	xent_sem_setenabled(d->ctx, node, !d->disabled);
 	/* Everything starts hidden (0x0, non-focusable); the first sync arranges. */
-	xent_set_absolute_position(d->ctx, node, (XentPoint) {0.0f, 0.0f});
-	xent_set_size(d->ctx, node, (XentSize) {0.0f, 0.0f});
+	xent_setpos(d->ctx, node, (XentPoint) {0.0f, 0.0f});
+	xent_setsize(d->ctx, node, (XentSize) {0.0f, 0.0f});
 	xent_set_focusable(d->ctx, node, false);
 	return node;
 }
@@ -288,7 +303,7 @@ static XentNodeId bc_make_item(FluxBreadcrumbBarData *d, int elem) {
 static void bc_clear_items(FluxBreadcrumbBarData *d) {
 	int elems = d->nodes ? d->count + 1 : 0;
 	for (int e = 0; e < elems; e++)
-		if (d->nodes [e] != XENT_NODE_INVALID) flux_subtree_destroy(d->store, d->nodes [e]);
+		if (d->nodes [e] != XENT_NODE_INVALID) flux_tree_drop(d->store, d->nodes [e]);
 	int labels = d->labels ? d->count : 0;
 	for (int i = 0; i < labels; i++) flux_str_free(d->labels [i]);
 	free(( void * ) d->labels);
@@ -331,7 +346,7 @@ static void bc_destroy(void *component_data) {
 	FluxBreadcrumbBarData *d = ( FluxBreadcrumbBarData * ) component_data;
 	if (!d) return;
 	/* Item nodes are torn down with the subtree; only owned resources here. */
-	if (d->flyout) flux_menu_flyout_destroy(d->flyout);
+	if (d->flyout) flux_menu_destroy(d->flyout);
 	if (d->labels)
 		for (int i = 0; i < d->count; i++) flux_str_free(d->labels [i]);
 	free(( void * ) d->labels);
@@ -345,13 +360,13 @@ static void bc_destroy(void *component_data) {
  * Create / store-facing setters
  * ---------------------------------------------------------------------- */
 
-XentNodeId flux_create_breadcrumb_bar(FluxBreadcrumbBarCreateInfo const *info) {
+XentNodeId flux_breadcrumb_init(FluxBreadcrumbBarDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
 	XentNodeId root = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_BREADCRUMB_BAR);
 	if (root == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData          *nd = flux_node_store_get(info->store, root);
+	FluxNodeData          *nd = flux_store_find(info->store, root);
 	FluxBreadcrumbBarData *d  = nd ? ( FluxBreadcrumbBarData * ) calloc(1, sizeof(*d)) : NULL;
 	if (!nd || !d) {
 		free(d);
@@ -375,28 +390,29 @@ XentNodeId flux_create_breadcrumb_bar(FluxBreadcrumbBarCreateInfo const *info) {
 	/* The bar itself is chromeless (template is just the repeater): an ABSOLUTE
 	 * row of item nodes placed by the collapse; height is the shared item
 	 * height, width is the natural crumb sum (set by bc_measure). */
-	xent_set_protocol(info->ctx, root, XENT_PROTOCOL_ABSOLUTE);
-	xent_set_size(info->ctx, root, (XentSize) {0.0f, FLUX_BREADCRUMB_ITEM_H});
-	xent_set_semantic_role(info->ctx, root, XENT_SEMANTIC_CONTAINER);
+	xent_setproto(info->ctx, root, XENT_PROTOCOL_ABSOLUTE);
+	xent_setsize(info->ctx, root, (XentSize) {0.0f, FLUX_BREADCRUMB_ITEM_H});
+	xent_sem_setrole(info->ctx, root, XENT_SEM_ROLE_CONTAINER);
 
 	bc_assign_items(d, info->items, info->item_count);
 	return root;
 }
 
-void flux_breadcrumb_bar_set_items(FluxNodeStore *store, XentNodeId bar, char const *const *items, int count) {
+void flux_breadcrumb_set_items(FluxStore *store, XentNodeId bar, char const *const *items, int count) {
 	FluxBreadcrumbBarData *d = bc_data(store, bar);
 	if (!d) return;
-	if (d->flyout) flux_menu_flyout_dismiss(d->flyout); /* hidden list is stale */
+	if (d->flyout) flux_menu_dismiss(d->flyout); /* hidden list is stale */
 	bc_assign_items(d, items, count);
+	if (d->widths_dirty) bc_measure(d);
 	bc_repaint(d);
 }
 
-void flux_breadcrumb_bar_set_disabled(FluxNodeStore *store, XentNodeId bar, bool disabled) {
+void flux_breadcrumb_set_disabled(FluxStore *store, XentNodeId bar, bool disabled) {
 	FluxBreadcrumbBarData *d = bc_data(store, bar);
 	if (!d || d->disabled == disabled) return;
 	d->disabled = disabled;
 	for (int e = 0; e <= d->count; e++)
-		if (d->nodes [e] != XENT_NODE_INVALID) xent_set_semantic_enabled(d->ctx, d->nodes [e], !disabled);
+		if (d->nodes [e] != XENT_NODE_INVALID) xent_sem_setenabled(d->ctx, d->nodes [e], !disabled);
 	d->arrange_dirty = true; /* refresh per-element focusability */
 	bc_repaint(d);
 }

@@ -17,24 +17,20 @@
 #include "flux_node_store.h"
 #include <xent/xent.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
-#define FLUX_TOOLTIP_DELAY_MS        800
-#define FLUX_TOOLTIP_MAX_WIDTH       320.0f
-#define FLUX_TOOLTIP_FONT_SIZE       12.0f
-#define FLUX_TOOLTIP_PAD_LEFT        9.0f
-#define FLUX_TOOLTIP_PAD_TOP         6.0f
-#define FLUX_TOOLTIP_PAD_RIGHT       9.0f
-#define FLUX_TOOLTIP_PAD_BOTTOM      8.0f
-#define FLUX_TOOLTIP_CORNER_RADIUS   4.0f
-#define FLUX_TOOLTIP_BORDER_WIDTH    1.0f
-#define FLUX_TOOLTIP_OFFSET          4.0f
+#define FLUX_TOOLTIP_DELAY_MS      800
+#define FLUX_TOOLTIP_MAX_WIDTH     320.0f
+#define FLUX_TOOLTIP_FONT_SIZE     12.0f
+#define FLUX_TOOLTIP_PAD_LEFT      9.0f
+#define FLUX_TOOLTIP_PAD_TOP       6.0f
+#define FLUX_TOOLTIP_PAD_RIGHT     9.0f
+#define FLUX_TOOLTIP_PAD_BOTTOM    8.0f
+#define FLUX_TOOLTIP_CORNER_RADIUS 4.0f
+#define FLUX_TOOLTIP_BORDER_WIDTH  1.0f
+#define FLUX_TOOLTIP_OFFSET        4.0f
 
 /** @brief Opaque tooltip manager. */
-typedef struct FluxTooltip FluxTooltip;
+typedef struct FluxTooltip  FluxTooltip;
 
 /**
  * @brief Create the app-level tooltip system.
@@ -45,18 +41,18 @@ XENT_NODISCARD FluxTooltip *flux_tooltip_create(FluxWindow *owner);
 /**
  * @brief Destroy the tooltip system and release all resources.
  */
-void                       flux_tooltip_destroy(FluxTooltip *tt);
+void                        flux_tooltip_destroy(FluxTooltip *tt);
 
 /**
  * @brief Set the shared text renderer used to measure and draw tooltip text.
  */
-void                       flux_tooltip_set_text_renderer(FluxTooltip *tt, FluxTextRenderer *tr);
+void                        flux_tooltip_settext(FluxTooltip *tt, FluxText *tr);
 
 /**
  * @brief Update theme colours used for tooltip rendering.
  * Call this whenever the theme changes.
  */
-void                       flux_tooltip_set_theme(FluxTooltip *tt, FluxThemeColors const *theme, bool is_dark);
+void                        flux_tooltip_set_theme(FluxTooltip *tt, FluxThemeColors const *theme, bool is_dark);
 
 /**
  * @brief Notify the tooltip system that the hover target changed.
@@ -78,10 +74,7 @@ void flux_tooltip_dismiss(FluxTooltip *tt);
 /**
  * @brief Returns true if the tooltip popup is currently visible.
  */
-bool flux_tooltip_is_visible(FluxTooltip const *tt);
+bool flux_tooltip_visible(FluxTooltip const *tt);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

@@ -15,10 +15,6 @@
 #include "compose/flux_compose.h"
 #include "fluxent/flux_types.h"
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 typedef struct FluxAnimKit FluxAnimKit;
 
@@ -73,8 +69,5 @@ flux_anim_scalar(FluxAnimKit *kit, void *target, wchar_t const *prop, float to, 
 HRESULT
 flux_anim_color(FluxAnimKit *kit, void *target, wchar_t const *prop, FluxColor to, double seconds, FluxEaseId ease);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_COMPOSE_ANIM_H */

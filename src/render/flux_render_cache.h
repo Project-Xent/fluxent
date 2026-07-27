@@ -10,9 +10,9 @@
  *
  * 1. Create cache with `flux_render_cache_create(max_entries)`
  * 2. Each frame:
- *    - Call `flux_render_cache_begin_frame()` to advance frame counter
- *    - Use `flux_render_cache_get_or_create()` to access node entries
- *    - Periodically call `flux_render_cache_evict_lru()` to prune stale entries
+ *    - Call `flux_rcache_begin()` to advance frame counter
+ *    - Use `flux_rcache_ensure()` to access node entries
+ *    - Periodically call `flux_rcache_evict()` to prune stale entries
  * 3. Destroy with `flux_render_cache_destroy()`
  *
  * ## Animation Tweens
@@ -39,10 +39,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 typedef struct ID2D1DeviceContext   ID2D1DeviceContext;
 typedef struct ID2D1SolidColorBrush ID2D1SolidColorBrush;
@@ -111,6 +107,11 @@ typedef struct FluxCacheEntry {
 	FluxTween             scroll_anim_x; /**< Horizontal scroll position */
 	FluxTween             scroll_anim_y; /**< Vertical scroll position */
 	FluxColorTween        color_anim;    /**< Generic color transition */
+
+	/** TextBox caret blink epoch — reset when caret index / focus changes. */
+	double                caret_blink_epoch;
+	float                 caret_blink_index;
+	bool                  caret_blink_initialized;
 } FluxCacheEntry;
 
 typedef struct FluxRenderCache FluxRenderCache;
@@ -143,7 +144,7 @@ void                  flux_render_cache_destroy(FluxRenderCache *cache);
  * Call this once per frame before accessing any cache entries.
  * @param cache Cache instance.
  */
-void                  flux_render_cache_begin_frame(FluxRenderCache *cache);
+void                  flux_rcache_begin(FluxRenderCache *cache);
 
 /**
  * @brief Get the current frame number.
@@ -170,7 +171,7 @@ FluxCacheEntry       *flux_render_cache_get(FluxRenderCache *cache, uint64_t nod
  * @param node_id Node ID.
  * @return Entry pointer (never NULL unless allocation fails).
  */
-FluxCacheEntry       *flux_render_cache_get_or_create(FluxRenderCache *cache, uint64_t node_id);
+FluxCacheEntry       *flux_rcache_ensure(FluxRenderCache *cache, uint64_t node_id);
 
 /**
  * @brief Remove a cache entry and release its D2D resources.
@@ -201,7 +202,7 @@ uint32_t              flux_render_cache_count(FluxRenderCache const *cache);
  * @param cache Cache instance.
  * @param age_threshold Maximum frames since last access.
  */
-void                  flux_render_cache_evict_lru(FluxRenderCache *cache, uint64_t age_threshold);
+void                  flux_rcache_evict(FluxRenderCache *cache, uint64_t age_threshold);
 
 /**
  * @brief Get or create a solid color brush.
@@ -219,8 +220,5 @@ void                  flux_render_cache_evict_lru(FluxRenderCache *cache, uint64
  */
 ID2D1SolidColorBrush *flux_render_cache_brush(FluxRenderBrushRequest const *request);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_RENDER_CACHE_H */

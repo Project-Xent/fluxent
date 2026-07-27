@@ -10,10 +10,6 @@
 #ifndef FLUX_IMAGE_CACHE_H
 #define FLUX_IMAGE_CACHE_H
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /**
  * @brief Get (decoding and caching on first use) the Direct2D bitmap for a source.
@@ -27,10 +23,7 @@ extern "C"
 void *flux_image_cache_acquire(void *device_context, char const *source, float *out_w, float *out_h);
 
 /** @brief Release every cached bitmap and the WIC factory (call on shutdown / device loss). */
-void  flux_image_cache_release_all(void);
+void  flux_image_cache_clear(void);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

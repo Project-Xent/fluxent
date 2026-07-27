@@ -14,10 +14,6 @@
 
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /**
  * @brief Per-frame animation step.
@@ -31,16 +27,13 @@ typedef bool (*FluxAnimStep)(void *ctx, unsigned long now_ms);
  * @brief Register @p ctx to be ticked at ~60Hz. Idempotent per ctx (updates the
  *        step if already registered). Starts the shared timer on the first animator.
  */
-void flux_anim_register(void *ctx, FluxAnimStep step);
+void         flux_anim_register(void *ctx, FluxAnimStep step);
 
 /**
  * @brief Stop ticking @p ctx. Safe to call if not registered. Stops the shared timer
  *        once the last animator is gone. Call from a control's destroy path.
  */
-void flux_anim_unregister(void *ctx);
+void         flux_anim_unregister(void *ctx);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif

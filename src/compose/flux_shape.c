@@ -106,30 +106,30 @@ void flux_shape_rect_destroy(FluxShapeRect *s) {
 	free(s);
 }
 
-void flux_shape_rect_set_size(FluxShapeRect *s, float w, float h) {
+void flux_shape_setsize(FluxShapeRect *s, float w, float h) {
 	if (!s) return;
 	WFN_Vector_2 size = {w, h};
 	if (s->geometry) ( void ) wuc_composition_rounded_rectangle_geometry_put__size(s->geometry, size);
 	if (s->base) ( void ) wuc_visual_put__size(s->base, size);
 }
 
-void flux_shape_rect_set_corner_radius(FluxShapeRect *s, float radius) {
+void flux_shape_setradius(FluxShapeRect *s, float radius) {
 	if (!s || !s->geometry) return;
 	WFN_Vector_2 cr = {radius, radius};
 	( void ) wuc_composition_rounded_rectangle_geometry_put__corner_radius(s->geometry, cr);
 }
 
-void flux_shape_rect_set_fill(FluxShapeRect *s, FluxColor fill) {
+void flux_shape_setfill(FluxShapeRect *s, FluxColor fill) {
 	if (!s || !s->fill) return;
 	( void ) wuc_composition_color_brush_put__color(s->fill, shape_wui_color(fill));
 }
 
-void flux_shape_rect_set_fill_brush(FluxShapeRect *s, WUC_Brush *brush) {
+void flux_shape_setfillbrush(FluxShapeRect *s, WUC_Brush *brush) {
 	if (!s || !s->shape || !brush) return;
 	( void ) wuc_composition_sprite_shape_put__fill_brush(s->shape, brush);
 }
 
-void flux_shape_rect_set_stroke(FluxShapeRect *s, FluxColor stroke, float thickness) {
+void flux_shape_setstroke(FluxShapeRect *s, FluxColor stroke, float thickness) {
 	if (!s || !s->shape || !s->c) return;
 
 	if (!s->stroke) {
@@ -146,4 +146,4 @@ void flux_shape_rect_set_stroke(FluxShapeRect *s, FluxColor stroke, float thickn
 
 WUC_Visual                *flux_shape_rect_visual(FluxShapeRect *s) { return s ? s->base : NULL; }
 
-WUC_CompositionColorBrush *flux_shape_rect_fill_brush(FluxShapeRect *s) { return s ? s->fill : NULL; }
+WUC_CompositionColorBrush *flux_shape_fillbrush(FluxShapeRect *s) { return s ? s->fill : NULL; }

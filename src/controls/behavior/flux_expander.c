@@ -1,9 +1,15 @@
+#include "controls/behavior/flux_expander_internal.h"
+#include "store/flux_node_data.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/draw/flux_control_draw.h"
 #include "runtime/flux_anim_driver.h"
 
-#include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_basic.h"
+#include "controls/factory/flux_init_container.h"
+#include "host/flux_prop_apply.h"
+#include "fluxent/flux_host.h"
 #include "fluxent/flux_window.h"
+#include <xtk/xtk_catalog.h>
 
 #include <math.h>
 #include <stdlib.h>
@@ -20,11 +26,12 @@
  * into place (-ContentHeight -> 0) over 333ms; collapse retracts it back up behind
  * the header (0 -> -ContentHeight) over 167ms before the panel is detached. The
  * slide uses the node render-transform (render_translate_y + render_clip_subtree). */
+#define EXP_MIN_WIDTH   96.0f
 #define EXP_EXPAND_MS   333.0f
 #define EXP_COLLAPSE_MS 167.0f
 
-static FluxExpanderData *expander_data(FluxNodeStore *store, XentNodeId id) {
-	FluxNodeData *nd = flux_node_store_get(store, id);
+static FluxExpanderData *expander_data(FluxStore *store, XentNodeId id) {
+	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd) return NULL;
 	if (nd->component_type != FLUX_CONTROL_EXPANDER && nd->component_type != FLUX_CONTROL_EXPANDER_HEADER) return NULL;
 	return ( FluxExpanderData * ) nd->component_data;
@@ -38,31 +45,23 @@ static void expander_repaint(FluxExpanderData *d) {
 static float expander_clamp01(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
 
 static void  expander_set_translate(FluxExpanderData *d, float dy) {
-	FluxNodeData *nd = flux_node_store_get(d->store, d->content);
+	FluxNodeData *nd = flux_store_find(d->store, d->content);
 	if (nd) nd->render_translate_y = dy;
 }
 
-/* xent flex containers fill their parent's available main-axis space rather than
- * wrapping to content, so the control height is pinned explicitly: header only
- * when collapsed, header + content_height while expanded or animating (the
- * content panel grows into the reserved space, then slides within it). */
-static void expander_pin_height(FluxExpanderData *d) {
-	bool  open = d->expanded || d->anim_active;
-	float h    = open ? FLUX_EXPANDER_MIN_HEIGHT + d->content_height : FLUX_EXPANDER_MIN_HEIGHT;
-	if (d->width <= 0.0f) return;
-	xent_set_min_size(d->ctx, d->root, (XentSize) {d->width, h});
-	xent_set_max_size(d->ctx, d->root, (XentSize) {d->width, h});
+static float expander_content_extent(FluxExpanderData const *d) {
+	XentRect rect = {0};
+	if (xent_layout_rect(d->ctx, d->content, &rect) && rect.h > 0.0f) return rect.h;
+	if (isfinite(d->content_height) && d->content_height > 0.0f) return d->content_height;
+	return FLUX_EXPANDER_MIN_HEIGHT;
 }
 
-static void expander_anim_remove(FluxExpanderData *d) {
-	flux_anim_unregister(d);
-}
+static void expander_anim_remove(FluxExpanderData *d) { flux_anim_unregister(d); }
 
 static void expander_anim_finish(FluxExpanderData *d) {
 	d->anim_active = false;
 	expander_set_translate(d, 0.0f);
-	if (!d->anim_expanding) xent_remove_child(d->ctx, d->root, d->content);
-	expander_pin_height(d);
+	if (!d->anim_expanding) xent_node_remove(d->ctx, d->root, d->content);
 }
 
 static bool expander_step(void *ctx, unsigned long now) {
@@ -71,7 +70,7 @@ static bool expander_step(void *ctx, unsigned long now) {
 	float             elapsed  = ( float ) (( unsigned long ) now - d->anim_start);
 	float             t        = expander_clamp01(elapsed / duration);
 	float             eased    = 1.0f - powf(1.0f - t, 3.0f); /* approx KeySpline 0,0,0,1 / 1,1,0,1 */
-	float             h        = d->content_height;
+	float             h        = expander_content_extent(d);
 	/* Expand: -h -> 0 (slide down into place). Collapse (CollapseUp): 0 -> -h
 	 * (retract up behind the header). Both end clipped/hidden above row top. */
 	expander_set_translate(d, d->anim_expanding ? -(1.0f - eased) * h : -eased * h);
@@ -84,27 +83,43 @@ static bool expander_step(void *ctx, unsigned long now) {
 }
 
 static void expander_anim_start(FluxExpanderData *d, bool expanding) {
-	if (expanding) xent_append_child(d->ctx, d->root, d->content);
+	if (expanding) xent_node_append(d->ctx, d->root, d->content);
 	d->anim_active    = true;
 	d->anim_expanding = expanding;
 	d->anim_start     = GetTickCount();
-	expander_pin_height(d); /* reserve full height up-front; content slides within it */
-	expander_set_translate(d, expanding ? -d->content_height : 0.0f);
+	expander_set_translate(d, expanding ? -expander_content_extent(d) : 0.0f);
 	expander_repaint(d);
 	flux_anim_register(d, expander_step);
 }
 
-static void expander_apply_expanded(FluxExpanderData *d, bool expanded) {
+static void expander_report(FluxExpanderData *d, bool expanded) {
+	XtkHost *host = flux_store_host(d->store);
+	if (host) {
+		XtkEvent event = {
+		  .id             = XTK_EVENT_TOGGLE,
+		  .target         = ( XtkCtrl ) d->root,
+		  .source         = ( XtkCtrl ) d->root,
+		  .current_target = ( XtkCtrl ) d->root,
+		  .phase          = XTK_EVENT_PHASE_TARGET,
+		  .cause          = XTK_EVENT_CAUSE_USER,
+		  .payload        = {.kind = XTK_EVENT_PAYLOAD_BOOL, .u.b = expanded},
+		};
+		flux_host_route(host, &event);
+	}
+	if (d->on_toggle) d->on_toggle(d->on_toggle_ctx, expanded);
+}
+
+static void expander_apply_expanded(FluxExpanderData *d, bool expanded, bool report) {
 	if (d->expanded == expanded) return;
 	d->expanded = expanded;
-	xent_set_semantic_expanded(d->ctx, d->root, expanded);
+	xent_sem_setexpanded(d->ctx, d->root, expanded);
 	expander_anim_start(d, expanded);
-	if (d->on_toggle) d->on_toggle(d->on_toggle_ctx, expanded);
+	if (report) expander_report(d, expanded);
 }
 
 static void expander_toggle(void *ctx) {
 	FluxExpanderData *d = ( FluxExpanderData * ) ctx;
-	if (d) expander_apply_expanded(d, !d->expanded);
+	if (d) expander_apply_expanded(d, !d->expanded, true);
 }
 
 static void expander_destroy(void *component_data) {
@@ -116,28 +131,34 @@ static void expander_destroy(void *component_data) {
  * implement ExpandDirection.Up, so the row-swap a Grid would buy us is unused,
  * and a flex column resolves its intrinsic width cleanly when the expander is
  * measured inside another flex container (a Grid star column cannot). */
-static void expander_setup_root(XentContext *ctx, XentNodeId root) {
-	xent_set_protocol(ctx, root, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(ctx, root, XENT_FLEX_COLUMN);
-	xent_set_flex_align_items(ctx, root, XENT_FLEX_ALIGN_STRETCH);
+static void expander_setup_root(FluxExpanderData *d) {
+	xent_setproto(d->ctx, d->root, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(d->ctx, d->root, XENT_FLEX_COLUMN);
+	xent_setitems(d->ctx, d->root, XENT_FLEX_ALIGN_STRETCH);
+	xent_setfit(d->ctx, d->root, false, true);
+	xent_setminsize(d->ctx, d->root, (XentSize) {EXP_MIN_WIDTH, FLUX_EXPANDER_MIN_HEIGHT});
+	xent_setw(d->ctx, d->root, d->width);
 }
 
-/* Header and content get explicit sizes (xent flex would otherwise split the
- * root's main-axis height between them); width comes from the same control width. */
 static void expander_setup_header(FluxExpanderData *d) {
-	XentContext *ctx = d->ctx;
-	xent_set_protocol(ctx, d->header, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(ctx, d->header, XENT_FLEX_ROW);
-	xent_set_flex_align_items(ctx, d->header, XENT_FLEX_ALIGN_CENTER);
-	xent_set_size(ctx, d->header, (XentSize) {d->width, FLUX_EXPANDER_MIN_HEIGHT});
-	xent_set_padding(ctx, d->header, (XentInsets) {FLUX_EXPANDER_HEADER_PAD, 0.0f, FLUX_EXPANDER_CHEVRON_ZONE, 0.0f});
+	XentCtx *ctx = d->ctx;
+	xent_setproto(ctx, d->header, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(ctx, d->header, XENT_FLEX_ROW);
+	xent_setitems(ctx, d->header, XENT_FLEX_ALIGN_CENTER);
+	xent_setsize(ctx, d->header, (XentSize) {NAN, FLUX_EXPANDER_MIN_HEIGHT});
+	xent_setp(ctx, d->header, (XentInsets) {FLUX_EXPANDER_HEADER_PAD, 0.0f, FLUX_EXPANDER_CHEVRON_ZONE, 0.0f});
 	xent_set_focusable(ctx, d->header, true);
 }
 
 static void expander_setup_content(FluxExpanderData *d) {
-	XentContext *ctx = d->ctx;
-	xent_set_size(ctx, d->content, (XentSize) {d->width, d->content_height});
-	xent_set_padding(
+	XentCtx *ctx = d->ctx;
+	xent_setproto(ctx, d->content, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(ctx, d->content, XENT_FLEX_COLUMN);
+	xent_setitems(ctx, d->content, XENT_FLEX_ALIGN_STRETCH);
+	xent_setfit(ctx, d->content, false, true);
+	xent_setsize(ctx, d->content, (XentSize) {NAN, d->content_height});
+	xent_setminsize(ctx, d->content, (XentSize) {0.0f, FLUX_EXPANDER_MIN_HEIGHT});
+	xent_setp(
 	  ctx, d->content,
 	  (XentInsets) {
 		FLUX_EXPANDER_CONTENT_PAD, FLUX_EXPANDER_CONTENT_PAD, FLUX_EXPANDER_CONTENT_PAD, FLUX_EXPANDER_CONTENT_PAD}
@@ -147,9 +168,9 @@ static void expander_setup_content(FluxExpanderData *d) {
 /* Allocate the shared runtime and wire it onto the root (owner) and header (borrower:
  * its toggle behavior and expanded-state snapshot read the same pointer). NULL on OOM. */
 static FluxExpanderData *
-expander_make_runtime(FluxExpanderCreateInfo const *info, XentNodeId root, XentNodeId header, XentNodeId content) {
-	FluxNodeData     *root_nd = flux_node_store_get(info->store, root);
-	FluxNodeData     *hdr_nd  = flux_node_store_get(info->store, header);
+expander_make_runtime(FluxExpanderDesc const *info, XentNodeId root, XentNodeId header, XentNodeId content) {
+	FluxNodeData     *root_nd = flux_store_find(info->store, root);
+	FluxNodeData     *hdr_nd  = flux_store_find(info->store, header);
 	FluxExpanderData *d       = root_nd ? ( FluxExpanderData * ) calloc(1, sizeof(*d)) : NULL;
 	if (!root_nd || !hdr_nd || !d) {
 		free(d);
@@ -161,8 +182,8 @@ expander_make_runtime(FluxExpanderCreateInfo const *info, XentNodeId root, XentN
 	d->ctx                          = info->ctx;
 	d->store                        = info->store;
 	d->window                       = info->window;
-	d->width                        = info->width;
-	d->content_height               = info->content_height;
+	d->width                        = info->width > 0.0f ? info->width : NAN;
+	d->content_height               = info->content_height > 0.0f ? info->content_height : NAN;
 	d->expanded                     = info->expanded;
 	d->on_toggle                    = info->on_toggle;
 	d->on_toggle_ctx                = info->userdata;
@@ -175,25 +196,24 @@ expander_make_runtime(FluxExpanderCreateInfo const *info, XentNodeId root, XentN
 	return d;
 }
 
-static void expander_finalize(FluxExpanderData *d, FluxExpanderCreateInfo const *info) {
-	FluxNodeData *content_nd = flux_node_store_get(info->store, d->content);
+static void expander_finalize(FluxExpanderData *d, FluxExpanderDesc const *info) {
+	FluxNodeData *content_nd = flux_store_find(info->store, d->content);
 	if (content_nd) content_nd->render_clip_subtree = true;
 
 	if (info->header) {
 		/* Default body font size (BodyTextBlockStyle, 14). */
-		FluxTextCreateInfo ti = {info->ctx, info->store, d->header, info->header, 14.0f};
-		flux_create_text(&ti);
-		xent_set_semantic_label(info->ctx, d->header, info->header);
+		FluxTextDesc ti = {info->ctx, info->store, d->header, info->header, 14.0f};
+		d->header_text  = flux_text_init(&ti);
+		xent_sem_setlabel(info->ctx, d->header, info->header);
 	}
-	if (!info->expanded) xent_remove_child(info->ctx, d->root, d->content);
-	expander_pin_height(d);
-	xent_set_semantic_expanded(info->ctx, d->root, info->expanded);
+	if (!info->expanded) xent_node_remove(info->ctx, d->root, d->content);
+	xent_sem_setexpanded(info->ctx, d->root, info->expanded);
 
 	if (info->out_content) *info->out_content = d->content;
 	if (info->out_header) *info->out_header = d->header;
 }
 
-XentNodeId flux_create_expander(FluxExpanderCreateInfo const *info) {
+XentNodeId flux_expander_init(FluxExpanderDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
 	XentNodeId root = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_EXPANDER);
@@ -205,25 +225,50 @@ XentNodeId flux_create_expander(FluxExpanderCreateInfo const *info) {
 	FluxExpanderData *d = expander_make_runtime(info, root, header, content);
 	if (!d) return root;
 
-	expander_setup_root(info->ctx, root);
+	expander_setup_root(d);
 	expander_setup_header(d);
 	expander_setup_content(d);
 	expander_finalize(d, info);
 	return root;
 }
 
-XentNodeId flux_expander_content_node(FluxNodeStore *store, XentNodeId id) {
+XentNodeId flux_expbody_node(FluxStore *store, XentNodeId id) {
 	FluxExpanderData *d = expander_data(store, id);
 	return d ? d->content : XENT_NODE_INVALID;
 }
 
-XentNodeId flux_expander_header_node(FluxNodeStore *store, XentNodeId id) {
+XentNodeId flux_exphead_node(FluxStore *store, XentNodeId id) {
 	FluxExpanderData *d = expander_data(store, id);
 	return d ? d->header : XENT_NODE_INVALID;
 }
 
-void flux_expander_set_expanded(FluxNodeStore *store, XentNodeId id, XentContext *ctx, bool expanded) {
+void flux_prop_expander_expanded(FluxStore *store, XentNodeId id, XentCtx *ctx, bool expanded) {
 	( void ) ctx;
 	FluxExpanderData *d = expander_data(store, id);
-	if (d) expander_apply_expanded(d, expanded);
+	if (d) expander_apply_expanded(d, expanded, false);
+}
+
+void flux_prop_expander_header(FluxStore *store, XentNodeId id, char const *header) {
+	FluxExpanderData *d = expander_data(store, id);
+	if (!d) return;
+	if (d->header_text == XENT_NODE_INVALID) {
+		FluxTextDesc desc = {d->ctx, d->store, d->header, header, 14.0f};
+		d->header_text    = flux_text_init(&desc);
+	}
+	else flux_prop_text_content(store, d->header_text, header);
+	xent_sem_setlabel(d->ctx, d->header, header);
+}
+
+void flux_prop_expander_width(FluxStore *store, XentNodeId id, float width) {
+	FluxExpanderData *d = expander_data(store, id);
+	if (!d) return;
+	d->width = width > 0.0f ? width : NAN;
+	xent_setw(d->ctx, d->root, d->width);
+}
+
+void flux_prop_expander_content_height(FluxStore *store, XentNodeId id, float height) {
+	FluxExpanderData *d = expander_data(store, id);
+	if (!d) return;
+	d->content_height = height > 0.0f ? height : NAN;
+	xent_seth(d->ctx, d->content, d->content_height);
 }

@@ -1,6 +1,9 @@
 #include "fluxent/flux_popup.h"
 #include "graphics/flux_graphics_compose.h"
 #include "render/flux_anim.h"
+#include "render/flux_dl_replay.h"
+#include "render/flux_fluent.h"
+#include "render/flux_render_internal.h"
 #include "render/flux_scroll_geom.h"
 
 #ifndef COBJMACROS
@@ -25,39 +28,43 @@ typedef struct FluxPopupAnim {
 } FluxPopupAnim;
 
 struct FluxPopup {
-	FluxWindow              *owner;
-	HWND                     owner_hwnd;
-	HWND                     popup_hwnd;
-	FluxGraphics            *graphics;
+	FluxWindow           *owner;
+	HWND                  owner_hwnd;
+	HWND                  popup_hwnd;
+	FluxGfx              *graphics;
 
-	XentContext             *ctx;
-	FluxNodeStore           *store;
-	XentNodeId               content_root;
+	XentCtx              *ctx;
+	FluxStore            *store;
+	XentNodeId            content_root;
 
-	FluxRect                 anchor;
-	FluxPlacement            placement;
-	float                    content_w;
-	float                    content_h;
+	FluxRect              anchor;
+	FluxPlacement         placement;
+	float                 content_w;
+	float                 content_h;
 
-	bool                     is_visible;
-	bool                     dismiss_on_outside;
+	bool                  is_visible;
+	bool                  dismiss_on_outside;
 
-	FluxPopupDismissCallback dismiss_cb;
-	void                    *dismiss_ctx;
+	FluxPopupDismissFn    dismiss_cb;
+	void                 *dismiss_ctx;
 
-	FluxPopupPaintCallback   paint_cb;
-	void                    *paint_ctx;
+	FluxPopupPaintFn      paint_cb;
+	void                 *paint_ctx;
+	FluxPopupRecordFn     record_cb;
+	void                 *record_ctx;
+	FluxText             *record_text;
+	ID2D1SolidColorBrush *record_brush;
 
-	FluxPopupMouseCallback   mouse_cb;
-	void                    *mouse_ctx;
-	bool                     mouse_tracking;
-	bool                     last_input_touch; /* current mouse message was promoted from touch/pen */
+	FluxPopupMouseFn      mouse_cb;
+	void                 *mouse_ctx;
+	bool                  mouse_tracking;
+	bool                  last_input_touch; /* current mouse message was promoted from touch/pen */
 
-	float                    max_content_h;  /* 0 = no clamp */
+	float                 max_content_h;    /* 0 = no clamp */
 
-	bool                     acrylic_active; /* host-backdrop backplate live this frame (composition mode) */
+	bool                  acrylic_active;   /* host-backdrop backplate live this frame (composition mode) */
 
-	FluxPopupAnim            anim;
+	FluxPopupAnim         anim;
 };
 
 static FluxPopup **g_popup_registry       = NULL;
@@ -154,16 +161,16 @@ FluxPopup *flux_popup_create(FluxWindow *owner) {
 	SetWindowLongPtrW(popup->popup_hwnd, GWLP_USERDATA, ( LONG_PTR ) popup);
 	popup_registry_add(popup);
 
-	popup->graphics = flux_graphics_create();
+	popup->graphics = flux_gfx_create();
 	if (!popup->graphics) {
 		DestroyWindow(popup->popup_hwnd);
 		free(popup);
 		return NULL;
 	}
 
-	HRESULT hr = flux_graphics_attach(popup->graphics, popup->popup_hwnd);
+	HRESULT hr = flux_gfx_attach(popup->graphics, popup->popup_hwnd);
 	if (FAILED(hr)) {
-		flux_graphics_destroy(popup->graphics);
+		flux_gfx_destroy(popup->graphics);
 		DestroyWindow(popup->popup_hwnd);
 		free(popup);
 		return NULL;
@@ -180,11 +187,12 @@ void flux_popup_destroy(FluxPopup *popup) {
 		SetWindowLongPtrW(popup->popup_hwnd, GWLP_USERDATA, 0);
 		DestroyWindow(popup->popup_hwnd);
 	}
-	if (popup->graphics) flux_graphics_destroy(popup->graphics);
+	if (popup->record_brush) ID2D1SolidColorBrush_Release(popup->record_brush);
+	if (popup->graphics) flux_gfx_destroy(popup->graphics);
 	free(popup);
 }
 
-void flux_popup_set_content(FluxPopup *popup, XentContext *ctx, FluxNodeStore *store, XentNodeId content_root) {
+void flux_popup_set_content(FluxPopup *popup, XentCtx *ctx, FluxStore *store, XentNodeId content_root) {
 	if (!popup) return;
 	popup->ctx          = ctx;
 	popup->store        = store;
@@ -198,18 +206,18 @@ void flux_popup_set_size(FluxPopup *popup, float width, float height) {
 	if (popup->is_visible) popup_position(popup);
 }
 
-void flux_popup_set_dismiss_on_outside(FluxPopup *popup, bool dismiss) {
+void flux_popup_setdismissoutside(FluxPopup *popup, bool dismiss) {
 	if (!popup) return;
 	popup->dismiss_on_outside = dismiss;
 }
 
-void flux_popup_set_dismiss_callback(FluxPopup *popup, FluxPopupDismissCallback cb, void *ctx) {
+void flux_popup_ondismiss(FluxPopup *popup, FluxPopupDismissFn cb, void *ctx) {
 	if (!popup) return;
 	popup->dismiss_cb  = cb;
 	popup->dismiss_ctx = ctx;
 }
 
-void flux_popup_set_anim_style(FluxPopup *popup, FluxPopupAnimStyle style) {
+void flux_popup_setanim(FluxPopup *popup, FluxPopupAnimStyle style) {
 	if (!popup) return;
 	popup->anim.style = style;
 }
@@ -375,7 +383,7 @@ static void popup_position(FluxPopup *popup) {
 	popup->anim.final_placement = params.placement;
 
 	SetWindowPos(popup->popup_hwnd, HWND_TOPMOST, x, y, pw, ph, SWP_NOACTIVATE);
-	flux_graphics_resize(popup->graphics, pw, ph);
+	flux_gfx_resize(popup->graphics, pw, ph);
 }
 
 static float popup_clampf(float v, float lo, float hi) {
@@ -503,9 +511,9 @@ void flux_popup_update_position(FluxPopup *popup) {
 	popup_position(popup);
 }
 
-bool                    flux_popup_is_visible(FluxPopup const *popup) { return popup ? popup->is_visible : false; }
+bool                    flux_popup_visible(FluxPopup const *popup) { return popup ? popup->is_visible : false; }
 
-FluxPopupMenuTransition flux_popup_get_menu_transition(FluxPopup const *popup, float opened_length) {
+FluxPopupMenuTransition flux_popup_menutransition(FluxPopup const *popup, float opened_length) {
 	FluxPopupMenuTransition tr = {
 	  .active              = false,
 	  .border_scale_y      = 1.0f,
@@ -531,25 +539,37 @@ FluxPopupMenuTransition flux_popup_get_menu_transition(FluxPopup const *popup, f
 	return tr;
 }
 
-void flux_popup_set_paint_callback(FluxPopup *popup, FluxPopupPaintCallback cb, void *ctx) {
+void flux_popup_onpaint(FluxPopup *popup, FluxPopupPaintFn cb, void *ctx) {
 	if (!popup) return;
-	popup->paint_cb  = cb;
-	popup->paint_ctx = ctx;
+	popup->paint_cb    = cb;
+	popup->paint_ctx   = ctx;
+	popup->record_cb   = NULL;
+	popup->record_ctx  = NULL;
+	popup->record_text = NULL;
 }
 
-void flux_popup_set_mouse_callback(FluxPopup *popup, FluxPopupMouseCallback cb, void *ctx) {
+void flux_popup_onrecord(FluxPopup *popup, FluxPopupRecordFn cb, void *ctx, FluxText *text) {
+	if (!popup) return;
+	popup->record_cb   = cb;
+	popup->record_ctx  = ctx;
+	popup->record_text = text;
+	popup->paint_cb    = NULL;
+	popup->paint_ctx   = NULL;
+}
+
+void flux_popup_onmouse(FluxPopup *popup, FluxPopupMouseFn cb, void *ctx) {
 	if (!popup) return;
 	popup->mouse_cb  = cb;
 	popup->mouse_ctx = ctx;
 }
 
-FluxGraphics *flux_popup_get_graphics(FluxPopup *popup) { return popup ? popup->graphics : NULL; }
+FluxGfx *flux_popup_gfx(FluxPopup *popup) { return popup ? popup->graphics : NULL; }
 
-HWND          flux_popup_get_hwnd(FluxPopup *popup) { return popup ? popup->popup_hwnd : NULL; }
+HWND     flux_popup_hwnd(FluxPopup *popup) { return popup ? popup->popup_hwnd : NULL; }
 
-bool          flux_popup_last_input_is_touch(FluxPopup const *popup) { return popup && popup->last_input_touch; }
+bool     flux_popup_lasttouch(FluxPopup const *popup) { return popup && popup->last_input_touch; }
 
-bool          flux_popup_acrylic_active(FluxPopup const *popup) { return popup && popup->acrylic_active; }
+bool     flux_popup_acrylic_active(FluxPopup const *popup) { return popup && popup->acrylic_active; }
 
 /* WinUI flyout/menu acrylic keeps the surface fairly opaque for legibility while
  * still revealing the blurred backdrop. */
@@ -562,7 +582,7 @@ FluxColor flux_popup_acrylic_tint(FluxPopup const *popup, FluxColor fill) {
 	return t;
 }
 
-void flux_popup_set_max_content_height(FluxPopup *popup, float max_h) {
+void flux_popup_setmaxh(FluxPopup *popup, float max_h) {
 	if (!popup) return;
 	popup->max_content_h = (max_h > 0.0f) ? max_h : 0.0f;
 	if (popup->is_visible) popup_position(popup);
@@ -577,7 +597,7 @@ bool flux_popup_lightdismiss_visible(HWND owner_hwnd) {
 	return false;
 }
 
-void flux_popup_dismiss_all_for_owner(HWND owner_hwnd) {
+void flux_popup_dismissowner(HWND owner_hwnd) {
 	if (!owner_hwnd) return;
 	int         cap        = g_popup_registry_count;
 	FluxPopup **to_dismiss = cap > 0 ? ( FluxPopup ** ) malloc(( size_t ) cap * sizeof(*to_dismiss)) : NULL;
@@ -634,7 +654,7 @@ static LRESULT popup_on_mouse_event(PopupWindowMessage const *m, FluxPopupMouseE
 	/* Touch/pen taps arrive as promoted mouse messages tagged with the
 	 * MOUSEEVENTF_FROMTOUCH signature; consumers use this to pick touch
 	 * behaviors (pan-to-scroll, larger slop) per message. */
-	popup->last_input_touch = (GetMessageExtraInfo() & 0xFFFFFF00) == 0xFF515700;
+	popup->last_input_touch = (GetMessageExtraInfo() & 0xffffff00) == 0xff515700;
 
 	if (ev == FLUX_POPUP_MOUSE_MOVE) popup_begin_mouse_tracking(m->hwnd, popup);
 
@@ -652,6 +672,29 @@ static LRESULT popup_on_mouse_leave(FluxPopup *popup) {
 	return 0;
 }
 
+static bool popup_ensure_record_brush(FluxPopup *popup, ID2D1DeviceContext *d2d) {
+	if (popup->record_brush) return true;
+	D2D1_COLOR_F          black = {0.0f, 0.0f, 0.0f, 1.0f};
+	D2D1_BRUSH_PROPERTIES props = flux_default_brush_props();
+	HRESULT               hr
+	  = ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &props, &popup->record_brush);
+	return SUCCEEDED(hr);
+}
+
+static void popup_replay_record(FluxPopup *popup) {
+	ID2D1DeviceContext *d2d = flux_gfx_d2d(popup->graphics);
+	if (!d2d || !popup_ensure_record_brush(popup, d2d)) return;
+	XentDl *list = popup->record_cb(popup->record_ctx, popup);
+	if (!list) return;
+	FluxRenderCtx rc = {
+	  .d2d   = d2d,
+	  .brush = popup->record_brush,
+	  .text  = popup->record_text,
+	};
+	( void ) flux_xtk_replay_rc(&rc, list);
+	xent_dl_free(list);
+}
+
 static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
 	PAINTSTRUCT ps;
 	BeginPaint(hwnd, &ps);
@@ -662,16 +705,17 @@ static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
 
 	/* In composition mode, sample the desktop behind the window into a blurred
 	 * backplate so chrome painted with a translucent fill reads as acrylic. */
-	popup->acrylic_active = flux_graphics_enable_window_acrylic(popup->graphics, POPUP_ACRYLIC_BLUR);
+	popup->acrylic_active = flux_gfx_enable_acrylic(popup->graphics, POPUP_ACRYLIC_BLUR);
 
-	flux_graphics_begin_draw(popup->graphics);
-	flux_graphics_clear(popup->graphics, flux_color_rgba(0, 0, 0, 0));
+	flux_gfx_begin(popup->graphics);
+	flux_gfx_clear(popup->graphics, flux_color_rgba(0, 0, 0, 0));
 
-	if (popup->paint_cb) popup->paint_cb(popup->paint_ctx, popup);
+	if (popup->record_cb) popup_replay_record(popup);
+	else if (popup->paint_cb) popup->paint_cb(popup->paint_ctx, popup);
 
-	flux_graphics_end_draw(popup->graphics);
-	flux_graphics_present(popup->graphics, true);
-	flux_graphics_commit(popup->graphics);
+	flux_gfx_end(popup->graphics);
+	flux_gfx_present(popup->graphics, true);
+	flux_gfx_commit(popup->graphics);
 	EndPaint(hwnd, &ps);
 	return 0;
 }
@@ -686,7 +730,7 @@ static LRESULT popup_on_size(FluxPopup *popup, LPARAM lp) {
 
 	int w = LOWORD(lp);
 	int h = HIWORD(lp);
-	if (w > 0 && h > 0) flux_graphics_resize(popup->graphics, w, h);
+	if (w > 0 && h > 0) flux_gfx_resize(popup->graphics, w, h);
 	return 0;
 }
 

@@ -1,13 +1,19 @@
 #include "controls/factory/flux_factory.h"
+#include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
 #include "runtime/flux_anim_driver.h"
 
-#include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_basic.h"
+#include "controls/factory/flux_init_popup.h"
 #include "fluxent/flux_input.h"
+#include "fluxent/flux_host.h"
 #include "fluxent/flux_window.h"
+#include "runtime/flux_str.h"
+#include <xtk/xtk_catalog.h>
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include <windows.h>
 
 /* WinUI ContentDialog (ContentDialog_themeresources.xaml): card MinWidth 320,
@@ -35,31 +41,37 @@ typedef struct FluxDialogButton {
 } FluxDialogButton;
 
 struct FluxDialogRuntime {
-	XentNodeId        root;
-	XentNodeId        card;
-	XentNodeId        content;
-	XentNodeId        overlay_parent;
-	XentNodeId        default_focus;
-	XentContext      *ctx;
-	FluxNodeStore    *store;
-	FluxInput        *input;
-	FluxWindow       *window;
-	FluxThemeManager *theme;
-	void              (*on_result)(void *ctx, FluxDialogResult result);
-	void             *on_result_ctx;
-	FluxDialogButton  buttons [3];
-	bool              open;
-	DWORD             anim_start; /**< Entrance animation start tick (GetTickCount). */
+	XentNodeId       root;
+	XentNodeId       card;
+	XentNodeId       content;
+	XentNodeId       overlay_parent;
+	XentNodeId       default_focus;
+	XentCtx         *ctx;
+	FluxStore       *store;
+	FluxInput       *input;
+	FluxWindow      *window;
+	FluxTheme       *theme;
+	void             (*on_result)(void *ctx, FluxDialogResult result);
+	void            *on_result_ctx;
+	FluxDialogButton buttons [3];
+	char            *title;
+	char            *primary;
+	char            *secondary;
+	char            *close;
+	float            width;
+	float            content_height;
+	bool             open;
+	DWORD            anim_start; /**< Entrance animation start tick (GetTickCount). */
 };
 
 /* Entrance animation (DialogShowing): card scale 1.05->1.0 over 250ms with a
  * FastOutSlowIn (ease-out cubic) curve, opacity 0->1 over 83ms. Driven by a shared
  * thread timer because the dialog has no per-frame hook of its own. */
-#define DLG_ANIM_MS  250.0f
-#define DLG_FADE_MS  83.0f
+#define DLG_ANIM_MS 250.0f
+#define DLG_FADE_MS 83.0f
 
-static FluxDialogRuntime *dialog_runtime(FluxNodeStore *store, XentNodeId id) {
-	FluxNodeData *nd = flux_node_store_get(store, id);
+static FluxDialogRuntime *dialog_runtime(FluxStore *store, XentNodeId id) {
+	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || nd->component_type != FLUX_CONTROL_CONTENT_DIALOG) return NULL;
 	return ( FluxDialogRuntime * ) nd->component_data;
 }
@@ -75,14 +87,29 @@ static float dialog_clamp01(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f 
  * LayoutRoot — i.e. the scrim fades in with the card, not just the card. So scale
  * goes on the card and opacity on the dialog root (whose subtree is scrim + card). */
 static void  dialog_set_card_transform(FluxDialogRuntime *rt, float scale, float opacity) {
-	FluxNodeData *card = flux_node_store_get(rt->store, rt->card);
-	FluxNodeData *root = flux_node_store_get(rt->store, rt->root);
+	FluxNodeData *card = flux_store_find(rt->store, rt->card);
+	FluxNodeData *root = flux_store_find(rt->store, rt->root);
 	if (card) card->render_scale = scale;
 	if (root) root->render_opacity = opacity;
 }
 
-static void dialog_anim_remove(FluxDialogRuntime *rt) {
-	flux_anim_unregister(rt);
+static void dialog_anim_remove(FluxDialogRuntime *rt) { flux_anim_unregister(rt); }
+
+/* Declarative trees keep a ContentDialog el under the page, but the live node must
+ * not sit in page layout (size_percent 1×1 would crush siblings). Park = orphan +
+ * zero size; show reattaches under the scene overlay. */
+static void dialog_park(FluxDialogRuntime *rt) {
+	if (!rt || rt->open) return;
+	XentNodeId parent = xent_node_parent(rt->ctx, rt->root);
+	if (parent != XENT_NODE_INVALID) xent_node_remove(rt->ctx, parent, rt->root);
+	xent_setsize(rt->ctx, rt->root, (XentSize) {0.0f, 0.0f});
+}
+
+static void dialog_ensure_on_overlay(FluxDialogRuntime *rt) {
+	if (!rt || rt->overlay_parent == XENT_NODE_INVALID) return;
+	xent_setsizepct(rt->ctx, rt->root, (XentSize) {1.0f, 1.0f});
+	if (xent_node_parent(rt->ctx, rt->root) != rt->overlay_parent)
+		xent_node_append(rt->ctx, rt->overlay_parent, rt->root);
 }
 
 static bool dialog_step(void *ctx, unsigned long now) {
@@ -106,76 +133,96 @@ static void dialog_anim_start(FluxDialogRuntime *rt) {
 	flux_anim_register(rt, dialog_step);
 }
 
-static void dialog_close(FluxDialogRuntime *rt, FluxDialogResult result) {
+static void dialog_close(FluxDialogRuntime *rt, FluxDialogResult result, XtkEventCause cause) {
 	if (!rt->open) return;
 	rt->open = false;
 	dialog_anim_remove(rt);
 	dialog_set_card_transform(rt, 1.0f, 1.0f);
-	flux_input_set_modal(rt->input, XENT_NODE_INVALID, NULL, NULL);
-	xent_remove_child(rt->ctx, rt->overlay_parent, rt->root);
+	flux_input_setmodal(rt->input, XENT_NODE_INVALID, NULL, NULL);
+	dialog_park(rt);
 	dialog_repaint(rt);
+	XtkHost *host = flux_store_host(rt->store);
+	if (host) {
+		XtkEvent event = {
+		  .id             = XTK_EVENT_CLOSE,
+		  .target         = ( XtkCtrl ) rt->root,
+		  .source         = ( XtkCtrl ) rt->root,
+		  .current_target = ( XtkCtrl ) rt->root,
+		  .phase          = XTK_EVENT_PHASE_TARGET,
+		  .cause          = cause,
+		  .payload        = {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = result},
+		};
+		flux_host_route(host, &event);
+	}
 	if (rt->on_result) rt->on_result(rt->on_result_ctx, result);
 }
 
-static void dialog_escape(void *ctx) { dialog_close(( FluxDialogRuntime * ) ctx, FLUX_DIALOG_NONE); }
+static void dialog_escape(void *ctx) {
+	dialog_close(( FluxDialogRuntime * ) ctx, FLUX_DIALOG_NONE, XTK_EVENT_CAUSE_USER);
+}
 
 static void dialog_button_click(void *ctx) {
 	FluxDialogButton *b = ( FluxDialogButton * ) ctx;
-	if (b && b->runtime) dialog_close(b->runtime, b->result);
+	if (b && b->runtime) dialog_close(b->runtime, b->result, XTK_EVENT_CAUSE_USER);
 }
 
 static void dialog_destroy(void *component_data) {
-	dialog_anim_remove(( FluxDialogRuntime * ) component_data);
-	free(component_data);
+	FluxDialogRuntime *rt = ( FluxDialogRuntime * ) component_data;
+	dialog_anim_remove(rt);
+	flux_str_free(rt->title);
+	flux_str_free(rt->primary);
+	flux_str_free(rt->secondary);
+	flux_str_free(rt->close);
+	free(rt);
 }
 
-static void dialog_setup_root(XentContext *ctx, XentNodeId root) {
+static void dialog_setup_root(XentCtx *ctx, XentNodeId root) {
 	/* Full-viewport overlay: absolute origin so an absolute-protocol host stacks it
 	 * over the page rather than in flow; the scrim then dims the page behind it. */
-	xent_set_absolute_position(ctx, root, (XentPoint) {0.0f, 0.0f});
-	xent_set_size_percent(ctx, root, (XentSize) {1.0f, 1.0f});
-	xent_set_protocol(ctx, root, XENT_PROTOCOL_GRID);
+	xent_setpos(ctx, root, (XentPoint) {0.0f, 0.0f});
+	xent_setsizepct(ctx, root, (XentSize) {1.0f, 1.0f});
+	xent_setproto(ctx, root, XENT_PROTOCOL_GRID);
 	XentGridSizeMode tri_mode [] = {XENT_GRID_STAR, XENT_GRID_AUTO, XENT_GRID_STAR};
 	float            tri_val []  = {1.0f, 0.0f, 1.0f};
-	xent_set_grid_rows(ctx, root, tri_mode, tri_val, 3);
-	xent_set_grid_columns(ctx, root, tri_mode, tri_val, 3);
+	xent_grid_setrows(ctx, root, tri_mode, tri_val, 3);
+	xent_grid_setcols(ctx, root, tri_mode, tri_val, 3);
 }
 
-static XentNodeId dialog_make_card(XentContext *ctx, FluxNodeStore *store, XentNodeId root) {
+static XentNodeId dialog_make_card(XentCtx *ctx, FluxStore *store, XentNodeId root) {
 	XentNodeId card = flux_factory_create_node(ctx, store, root, FLUX_CONTROL_CARD);
-	xent_set_grid_row(ctx, card, 1);
-	xent_set_grid_column(ctx, card, 1);
-	xent_set_min_size(ctx, card, (XentSize) {DLG_MIN_W, DLG_MIN_H});
-	xent_set_max_size(ctx, card, (XentSize) {DLG_MAX_W, DLG_MAX_H});
-	xent_set_protocol(ctx, card, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(ctx, card, XENT_FLEX_COLUMN);
-	xent_set_flex_align_items(ctx, card, XENT_FLEX_ALIGN_STRETCH);
+	xent_grid_setrow(ctx, card, 1);
+	xent_grid_setcol(ctx, card, 1);
+	xent_setminsize(ctx, card, (XentSize) {DLG_MIN_W, DLG_MIN_H});
+	xent_setmaxsize(ctx, card, (XentSize) {DLG_MAX_W, DLG_MAX_H});
+	xent_setproto(ctx, card, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(ctx, card, XENT_FLEX_COLUMN);
+	xent_setitems(ctx, card, XENT_FLEX_ALIGN_STRETCH);
 	return card;
 }
 
 static XentNodeId dialog_make_padded_region(
-  XentContext *ctx, FluxNodeStore *store, XentNodeId card, FluxControlType type, XentFlexDirection dir, float gap
+  XentCtx *ctx, FluxStore *store, XentNodeId card, FluxControlType type, XentFlexDirection dir, float gap
 ) {
 	XentNodeId region = flux_factory_create_node(ctx, store, card, type);
-	xent_set_protocol(ctx, region, XENT_PROTOCOL_FLEX);
-	xent_set_flex_direction(ctx, region, dir);
-	xent_set_gap(ctx, region, gap);
-	xent_set_padding(ctx, region, (XentInsets) {DLG_PADDING, DLG_PADDING, DLG_PADDING, DLG_PADDING});
+	xent_setproto(ctx, region, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(ctx, region, dir);
+	xent_setgap(ctx, region, gap);
+	xent_setp(ctx, region, (XentInsets) {DLG_PADDING, DLG_PADDING, DLG_PADDING, DLG_PADDING});
 	return region;
 }
 
 static void dialog_add_button(
   FluxDialogRuntime *rt, XentNodeId command_area, char const *label, FluxDialogResult result, int slot, bool accent
 ) {
-	if (!label) return;
+	if (!label || !label [0]) return;
 	rt->buttons [slot].runtime = rt;
 	rt->buttons [slot].result  = result;
 
-	FluxButtonCreateInfo bi    = {rt->ctx, rt->store, command_area, label, dialog_button_click, &rt->buttons [slot]};
-	XentNodeId           n     = flux_create_button(&bi);
+	FluxButtonDesc bi          = {rt->ctx, rt->store, command_area, label, dialog_button_click, &rt->buttons [slot]};
+	XentNodeId     n           = flux_button_init(&bi);
 	if (n == XENT_NODE_INVALID) return;
-	if (accent) flux_button_set_style(rt->store, n, FLUX_BUTTON_ACCENT);
-	xent_set_flex_grow(rt->ctx, n, 1.0f);
+	if (accent) flux_prop_button_style(rt->store, n, FLUX_BUTTON_ACCENT);
+	xent_setgrow(rt->ctx, n, 1.0f);
 	if (rt->default_focus == XENT_NODE_INVALID) rt->default_focus = n;
 }
 
@@ -190,7 +237,7 @@ typedef struct DialogDims {
 	float command_h; /**< Fixed command bar height. */
 } DialogDims;
 
-static DialogDims dialog_dims(FluxContentDialogCreateInfo const *info) {
+static DialogDims dialog_dims(FluxContentDialogDesc const *info) {
 	float w           = info->width > 0.0f ? info->width : DLG_MIN_W;
 	w                 = w < DLG_MIN_W ? DLG_MIN_W : (w > DLG_MAX_W ? DLG_MAX_W : w);
 	float title_block = info->title ? DLG_TITLE_H + DLG_TITLE_GAP : 0.0f;
@@ -203,22 +250,21 @@ static DialogDims dialog_dims(FluxContentDialogCreateInfo const *info) {
 /* Build the padded content region (optional title + caller's body host) under the card.
  * Explicit height (not flex-grow): grow absorbs xent's slightly-too-large free space and
  * shoves the command bar past the card bottom; a definite height keeps the bar flush. */
-static XentNodeId
-dialog_build_content_region(FluxContentDialogCreateInfo const *info, XentNodeId card, DialogDims const *d) {
+static XentNodeId dialog_build_content_region(FluxContentDialogDesc const *info, XentNodeId card, DialogDims const *d) {
 	XentNodeId region = dialog_make_padded_region(
 	  info->ctx, info->store, card, FLUX_CONTROL_DIALOG_CONTENT, XENT_FLEX_COLUMN, DLG_TITLE_GAP
 	);
-	xent_set_size(info->ctx, region, (XentSize) {d->w, d->content_h});
+	xent_setsize(info->ctx, region, (XentSize) {d->w, d->content_h});
 	if (info->title) {
-		FluxTextCreateInfo ti = {info->ctx, info->store, region, info->title, DLG_TITLE_SIZE};
-		XentNodeId         tn = flux_create_text(&ti);
-		flux_text_set_weight(info->store, tn, FLUX_FONT_SEMI_BOLD);
-		xent_set_size(info->ctx, tn, (XentSize) {d->inner_w, DLG_TITLE_H});
+		FluxTextDesc ti = {info->ctx, info->store, region, info->title, DLG_TITLE_SIZE};
+		XentNodeId   tn = flux_text_init(&ti);
+		flux_prop_text_weight(info->store, tn, FLUX_FONT_SEMI_BOLD);
+		xent_setsize(info->ctx, tn, (XentSize) {d->inner_w, DLG_TITLE_H});
 	}
 	return region;
 }
 
-static void dialog_init_runtime(FluxDialogRuntime *rt, XentNodeId root, FluxContentDialogCreateInfo const *info) {
+static void dialog_init_runtime(FluxDialogRuntime *rt, XentNodeId root, FluxContentDialogDesc const *info) {
 	rt->root           = root;
 	rt->overlay_parent = info->overlay_parent;
 	rt->ctx            = info->ctx;
@@ -229,15 +275,21 @@ static void dialog_init_runtime(FluxDialogRuntime *rt, XentNodeId root, FluxCont
 	rt->on_result      = info->on_result;
 	rt->on_result_ctx  = info->userdata;
 	rt->default_focus  = XENT_NODE_INVALID;
+	rt->title          = flux_str_dup(info->title);
+	rt->primary        = flux_str_dup(info->primary_text);
+	rt->secondary      = flux_str_dup(info->secondary_text);
+	rt->close          = flux_str_dup(info->close_text);
+	rt->width          = info->width;
+	rt->content_height = info->content_height;
 }
 
-XentNodeId flux_create_content_dialog(FluxContentDialogCreateInfo const *info) {
+XentNodeId flux_dialog_init(FluxContentDialogDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
 	XentNodeId root = flux_factory_create_node(info->ctx, info->store, XENT_NODE_INVALID, FLUX_CONTROL_CONTENT_DIALOG);
 	if (root == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
-	FluxNodeData      *nd = flux_node_store_get(info->store, root);
+	FluxNodeData      *nd = flux_store_find(info->store, root);
 	FluxDialogRuntime *rt = nd ? ( FluxDialogRuntime * ) calloc(1, sizeof(*rt)) : NULL;
 	if (!nd || !rt) {
 		free(rt);
@@ -248,16 +300,16 @@ XentNodeId flux_create_content_dialog(FluxContentDialogCreateInfo const *info) {
 	DialogDims d = dialog_dims(info);
 	dialog_setup_root(info->ctx, root);
 	rt->card = dialog_make_card(info->ctx, info->store, root);
-	xent_set_size(info->ctx, rt->card, (XentSize) {d.w, d.card_h});
+	xent_setsize(info->ctx, rt->card, (XentSize) {d.w, d.card_h});
 
 	XentNodeId content_region = dialog_build_content_region(info, rt->card, &d);
 	rt->content = flux_factory_create_node(info->ctx, info->store, content_region, FLUX_CONTROL_CONTAINER);
-	xent_set_size(info->ctx, rt->content, (XentSize) {d.inner_w, info->content_height});
+	xent_setsize(info->ctx, rt->content, (XentSize) {d.inner_w, info->content_height});
 
 	XentNodeId command_area = dialog_make_padded_region(
 	  info->ctx, info->store, rt->card, FLUX_CONTROL_CONTAINER, XENT_FLEX_ROW, DLG_BTN_SPACING
 	);
-	xent_set_size(info->ctx, command_area, (XentSize) {d.w, d.command_h});
+	xent_setsize(info->ctx, command_area, (XentSize) {d.w, d.command_h});
 	dialog_add_button(rt, command_area, info->primary_text, FLUX_DIALOG_PRIMARY, 0, true);
 	dialog_add_button(rt, command_area, info->secondary_text, FLUX_DIALOG_SECONDARY, 1, false);
 	dialog_add_button(rt, command_area, info->close_text, FLUX_DIALOG_NONE, 2, false);
@@ -266,32 +318,102 @@ XentNodeId flux_create_content_dialog(FluxContentDialogCreateInfo const *info) {
 	nd->destroy_component_data = dialog_destroy;
 
 	if (info->out_content) *info->out_content = rt->content;
+	dialog_park(rt);
 	return root;
 }
 
-void flux_content_dialog_show(FluxNodeStore *store, XentNodeId dialog) {
+void flux_dialog_show(FluxStore *store, XentNodeId dialog) {
 	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
 	if (!rt || rt->open) return;
 
-	FluxThemeColors const *t = rt->theme ? flux_theme_colors(rt->theme) : flux_theme_default_colors();
-	flux_node_set_background(store, rt->card, t->solid_background);
-	flux_node_set_border(store, rt->card, flux_color_rgba(0x75, 0x75, 0x75, 0x66), 1.0f);
-	flux_node_set_corner_radius(store, rt->card, DLG_CORNER);
+	FluxThemeColors const *t = rt->theme ? flux_theme_colors(rt->theme) : flux_theme_defaults();
+	flux_prop_node_background(store, rt->card, t->solid_background);
+	flux_prop_node_border(store, rt->card, flux_color_rgba(0x75, 0x75, 0x75, 0x66), 1.0f);
+	flux_prop_radius(store, rt->card, DLG_CORNER);
 
-	xent_append_child(rt->ctx, rt->overlay_parent, rt->root);
-	flux_input_set_modal(rt->input, rt->card, dialog_escape, rt);
-	if (rt->default_focus != XENT_NODE_INVALID) flux_input_set_focus(rt->input, rt->default_focus);
+	dialog_ensure_on_overlay(rt);
+	flux_input_setmodal(rt->input, rt->card, dialog_escape, rt);
 	rt->open = true;
 	dialog_anim_start(rt);
 	dialog_repaint(rt);
+	if (rt->default_focus != XENT_NODE_INVALID) flux_input_setfocus_programmatic(rt->input, rt->default_focus);
 }
 
-void flux_content_dialog_hide(FluxNodeStore *store, XentNodeId dialog) {
+void flux_dialog_hide(FluxStore *store, XentNodeId dialog) {
 	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
-	if (rt) dialog_close(rt, FLUX_DIALOG_NONE);
+	if (rt) dialog_close(rt, FLUX_DIALOG_NONE, XTK_EVENT_CAUSE_PROGRAM);
 }
 
-XentNodeId flux_content_dialog_content_node(FluxNodeStore *store, XentNodeId dialog) {
+void flux_dialog_sync_host(FluxStore *store, XentNodeId dialog, bool open) {
+	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
+	if (!rt) return;
+	if (open)
+		if (!rt->open) flux_dialog_show(store, dialog);
+		else dialog_ensure_on_overlay(rt); /* reconciler may have reparented under the page */
+	else if (rt->open) flux_dialog_hide(store, dialog);
+	else dialog_park(rt);
+}
+
+static void dialog_build_card(FluxDialogRuntime *rt) {
+	FluxContentDialogDesc info = {
+	  .ctx            = rt->ctx,
+	  .store          = rt->store,
+	  .title          = rt->title,
+	  .primary_text   = rt->primary,
+	  .secondary_text = rt->secondary,
+	  .close_text     = rt->close,
+	  .width          = rt->width,
+	  .content_height = rt->content_height,
+	};
+	DialogDims d = dialog_dims(&info);
+	rt->card     = dialog_make_card(rt->ctx, rt->store, rt->root);
+	xent_setsize(rt->ctx, rt->card, (XentSize) {d.w, d.card_h});
+	XentNodeId content_region = dialog_build_content_region(&info, rt->card, &d);
+	xent_node_append(rt->ctx, content_region, rt->content);
+	xent_setsize(rt->ctx, rt->content, (XentSize) {d.inner_w, rt->content_height});
+	XentNodeId command_area
+	  = dialog_make_padded_region(rt->ctx, rt->store, rt->card, FLUX_CONTROL_CONTAINER, XENT_FLEX_ROW, DLG_BTN_SPACING);
+	xent_setsize(rt->ctx, command_area, (XentSize) {d.w, d.command_h});
+	rt->default_focus = XENT_NODE_INVALID;
+	dialog_add_button(rt, command_area, rt->primary, FLUX_DIALOG_PRIMARY, 0, true);
+	dialog_add_button(rt, command_area, rt->secondary, FLUX_DIALOG_SECONDARY, 1, false);
+	dialog_add_button(rt, command_area, rt->close, FLUX_DIALOG_NONE, 2, false);
+}
+
+static bool dialog_text_equal(char const *a, char const *b) {
+	if (!a || !a [0]) a = NULL;
+	if (!b || !b [0]) b = NULL;
+	return a == b || (a && b && strcmp(a, b) == 0);
+}
+
+void flux_dialog_configure(
+  FluxStore *store, XentNodeId dialog, char const *title, char const *primary, char const *secondary, char const *close,
+  float width, float content_height
+) {
+	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
+	if (!rt) return;
+	if (dialog_text_equal(rt->title, title)
+		&& dialog_text_equal(rt->primary, primary)
+		&& dialog_text_equal(rt->secondary, secondary)
+		&& dialog_text_equal(rt->close, close)
+		&& rt->width == width
+		&& rt->content_height == content_height)
+		return;
+	flux_str_replace(&rt->title, title);
+	flux_str_replace(&rt->primary, primary);
+	flux_str_replace(&rt->secondary, secondary);
+	flux_str_replace(&rt->close, close);
+	rt->width          = width;
+	rt->content_height = content_height;
+	xent_node_remove(rt->ctx, xent_node_parent(rt->ctx, rt->content), rt->content);
+	xent_node_destroy(rt->ctx, rt->card);
+	dialog_build_card(rt);
+	if (!rt->open) return;
+	dialog_ensure_on_overlay(rt);
+	flux_input_setmodal(rt->input, rt->card, dialog_escape, rt);
+}
+
+XentNodeId flux_dialogbody_node(FluxStore *store, XentNodeId dialog) {
 	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
 	return rt ? rt->content : XENT_NODE_INVALID;
 }

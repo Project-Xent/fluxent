@@ -212,7 +212,7 @@ static FluxRect inline flux_snap_bounds(FluxRect const *bounds, float sx, float 
 	return r;
 }
 
-static void inline flux_draw_focus_rect(FluxRenderContext const *rc, FluxRect const *bounds, float radius) {
+static void inline flux_draw_focus_rect(FluxRenderCtx const *rc, FluxRect const *bounds, float radius) {
 	FluxRect outer = {
 	  bounds->x - FLUX_FOCUS_OUTER_PAD, bounds->y - FLUX_FOCUS_OUTER_PAD, bounds->w + FLUX_FOCUS_OUTER_PAD * 2.0f,
 	  bounds->h + FLUX_FOCUS_OUTER_PAD * 2.0f};
@@ -295,12 +295,12 @@ static FluxCheckboxLayout inline flux_calc_checkbox_layout(
 	return l;
 }
 
-static FluxColor inline flux_elevation_secondary(FluxRenderContext const *rc, bool is_accent) {
+static FluxColor inline flux_elevation_secondary(FluxRenderCtx const *rc, bool is_accent) {
 	if (is_accent) return rc->theme ? rc->theme->ctrl_stroke_on_accent_secondary : ft_ctrl_stroke_on_accent_secondary();
 	return rc->theme ? rc->theme->ctrl_stroke_secondary : ft_ctrl_stroke_secondary();
 }
 
-static FluxColor inline flux_elevation_primary(FluxRenderContext const *rc, bool is_accent) {
+static FluxColor inline flux_elevation_primary(FluxRenderCtx const *rc, bool is_accent) {
 	if (is_accent) return rc->theme ? rc->theme->ctrl_stroke_on_accent_default : ft_ctrl_stroke_on_accent_default();
 	return rc->theme ? rc->theme->ctrl_stroke_default : ft_ctrl_stroke_default();
 }
@@ -340,7 +340,7 @@ static D2D1_BRUSH_PROPERTIES inline flux_default_brush_props(void) {
 }
 
 static void inline flux_draw_elevation_border(
-  FluxRenderContext const *rc, FluxRect const *bounds, float radius, bool is_accent
+  FluxRenderCtx const *rc, FluxRect const *bounds, float radius, bool is_accent
 ) {
 	float     thickness = FLUX_STROKE_WIDTH;
 	float     half      = thickness * 0.5f;

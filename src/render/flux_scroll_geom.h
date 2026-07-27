@@ -10,9 +10,13 @@
 #include <stdbool.h>
 #include <string.h>
 
-#define FLUX_SCROLLBAR_FULL_SIZE    12.0f
-#define FLUX_SCROLLBAR_MINI_SIZE    2.0f
-#define FLUX_SCROLLBAR_BUTTON_SIZE  12.0f
+#define FLUX_SCROLLBAR_FULL_SIZE   12.0f
+#define FLUX_SCROLLBAR_MINI_SIZE   2.0f
+#define FLUX_SCROLLBAR_BUTTON_SIZE 12.0f
+/* Authoritative for overlay geom (matches HEAD geom). fluent.h may define 20. */
+#ifdef FLUX_SCROLLBAR_MIN_THUMB
+  #undef FLUX_SCROLLBAR_MIN_THUMB
+#endif
 #define FLUX_SCROLLBAR_MIN_THUMB    30.0f
 #define FLUX_SCROLLBAR_SMALL_CHANGE 48.0f
 

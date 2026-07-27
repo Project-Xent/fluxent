@@ -14,10 +14,6 @@
 
 typedef struct FluxInput FluxInput;
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 /**
  * @brief Sync DManip viewports for all SCROLL nodes in the tree.
@@ -31,22 +27,22 @@ extern "C"
  *
  * @param dmanip DManip manager (NULL = no-op).
  * @param ctx Xent layout context.
- * @param store FluxNodeStore for control metadata.
+ * @param store FluxStore for control metadata.
  * @param root Root node to walk.
  * @param scale DPI scale (pixels per DIP).
  */
-void flux_dmanip_sync_tree(FluxDManip *dmanip, XentContext *ctx, FluxNodeStore *store, XentNodeId root, float scale);
+void flux_dmanip_sync_tree(FluxDManip *dmanip, XentCtx *ctx, FluxStore *store, XentNodeId root, float scale);
 
 /**
  * @brief Transfer the newly promoted touch pan from FluxInput to the DManip viewport for its scroll target.
  *
  * @param dmanip DManip manager.
  * @param input Input router tracking the promoted touch pan.
- * @param store FluxNodeStore for control metadata.
+ * @param store FluxStore for control metadata.
  * @param pointer_id WM_POINTER contact identifier.
  * @return true if DManip accepted the contact and FluxInput's manual pan state was cleared.
  */
-bool flux_dmanip_handoff_touch_pan(FluxDManip *dmanip, FluxInput *input, FluxNodeStore *store, uint32_t pointer_id);
+bool flux_dmanip_pan_handoff(FluxDManip *dmanip, FluxInput *input, FluxStore *store, uint32_t pointer_id);
 
 /**
  * @brief Destroy all DManip viewports attached to SCROLL nodes.
@@ -54,10 +50,10 @@ bool flux_dmanip_handoff_touch_pan(FluxDManip *dmanip, FluxInput *input, FluxNod
  * Must be called before destroying the FluxDManip manager.
  *
  * @param ctx Xent layout context.
- * @param store FluxNodeStore for control metadata.
+ * @param store FluxStore for control metadata.
  * @param root Root node to walk.
  */
-void flux_dmanip_cleanup_tree(XentContext *ctx, FluxNodeStore *store, XentNodeId root);
+void flux_dmanip_cleanup_tree(XentCtx *ctx, FluxStore *store, XentNodeId root);
 
 /**
  * @brief Release one node's DManip viewport, if it is a scroll node that has one.
@@ -65,10 +61,7 @@ void flux_dmanip_cleanup_tree(XentContext *ctx, FluxNodeStore *store, XentNodeId
  * Identity is read from the store (not the layout tree), so this is safe to
  * call from the node-removed listener after the node is already dead in xent.
  */
-void flux_dmanip_release_node_viewport(FluxNodeStore *store, XentNodeId node);
+void flux_dmanip_vp_release(FluxStore *store, XentNodeId node);
 
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* FLUX_DMANIP_SYNC_H */

@@ -1,60 +1,56 @@
 # Fluxent
 
-A WinUI 3-style Fluent UI framework written in pure C (C23), layered directly on
-the Win32 / DirectX stack. Fluxent renders Fluent Design controls, drives them
-with a retained node store, and integrates with Windows platform services through
-[cwinrt](../cwinrt) (pure-C WinRT bindings).
+The Windows Host for Project Xent, written in C23 over Win32, Direct2D,
+DirectWrite, DirectComposition, and pure-C WinRT bindings from
+[cwinrt](https://github.com/Project-Xent/cwinrt).
+
+Applications use the standard XTK control protocol. Fluxent does not expose a
+second `flux_create_*` control family or a renderer-plugin ABI.
 
 ## Features
 
-- **Dual render backend**, selected once at startup by capability:
-  - *Direct2D / DirectWrite* immediate-mode swap chain — the default path, with a
-    render-command list, snapshot diffing, and a per-node render cache.
-  - *Windows.UI.Composition* retained visual tree — opt-in via
-    `FLUX_USE_COMPOSITION=1`; per-node surfaces, compositor-thread color animations,
-    and InteractionTracker scrolling. Falls back to Direct2D over Remote Desktop.
-- **Platform integration via WinRT** (cwinrt): true system accent color + light/dark
-  theme and change events (`UISettings`), locale-aware `NumberBox` formatting
-  (`Globalization.NumberFormatting`), compositor animations and `InteractionTracker`
-  (`UI.Composition[.Interactions]`).
-- **DirectWrite text** rendering with grapheme-cluster–aware caret/selection.
-- **Inertial scrolling** — DirectManipulation on the Direct2D path, InteractionTracker
-  on the composition path.
-- **Accessibility** — a Win32 UI Automation provider (control types, patterns,
-  focus/invoke events).
-- **Theming** — light/dark palettes driven by the live system accent.
-- **Plugin hook** — register custom renderers per control type via the plugin registry.
+- atomic `XtkBatch` Host with generation-checked controls, typed properties,
+  normalized events, transactional Components, and typed Providers;
+- immutable Xent display-list record/replay with private built-in renderer
+  metadata and resource interning;
+- DirectWrite measurement/rendering, grapheme-aware editing, IME composition,
+  selection, undo, and clipboard integration;
+- DirectManipulation and Composition scrolling;
+- UI Automation, focus/capture/routing, system accent, light/dark themes,
+  NumberBox globalization, popups, menus, tooltips, and window backdrops;
+- declarative `flux_run` and direct imperative `XtkScene`/`XtkHost` entry points
+  over the same retained controls.
 
 ## Controls
 
-Buttons (standard / toggle / repeat / hyperlink), Checkbox, RadioButton, ToggleSwitch,
-Slider, ProgressBar, ProgressRing, TextBox, PasswordBox, NumberBox, ScrollViewer, Card,
-InfoBadge, Divider, List, TabView, plus Flyout, MenuFlyout, and Tooltip popups. Image
-and Canvas have type slots with partial support.
+The generated XTK catalog is the source of truth. It includes text and image,
+buttons and split/menu variants, toggles, value controls, text editors,
+navigation, TabView, dialogs and teaching tips, virtualized list/grid/items/tree
+controls, scrolling and pull-to-refresh, status controls, and layout containers.
+
+The declarative and imperative galleries exercise the same pages and behavior.
 
 ## Build
 
-```bash
-xmake                        # debug build (default)
-xmake f -m release && xmake  # release build
-xmake run hello_fluxent      # run the showcase demo
+```sh
+xmake
+xmake test
+xmake run fluxent_gallery_decl
+xmake run fluxent_gallery_imp
 ```
 
-`FLUX_USE_COMPOSITION=1 xmake run hello_fluxent` exercises the composition backend.
+`FLUX_USE_COMPOSITION=1` selects the Composition path; otherwise Fluxent uses
+the Direct2D path. The full gate includes both Gallery models, control behavior,
+Host transactions, display-list ownership, DirectWrite measurement, IME,
+virtualization, allocation failures, and degraded rendering.
 
-Requires Windows 10 1903+, a C23 compiler (MSVC or MinGW/Clang), and `xmake`.
+Requires Windows 10 1903+, xmake, and a C23 compiler.
 
 ## Dependencies
 
 - [`xent-core`](https://github.com/Project-Xent/xent-core)
+- [`xent-kit`](https://github.com/Project-Xent/xent-kit)
 - [`cwinrt`](https://github.com/Project-Xent/cwinrt)
-
-## Status
-
-The Direct2D backend is the stable default. The composition backend is functional
-(DPI scaling, theming, scrolling, and most controls render identically to Direct2D)
-but still being hardened — in-window acrylic backdrops are currently disabled, and it
-remains opt-in behind `FLUX_USE_COMPOSITION`.
 
 ## License
 

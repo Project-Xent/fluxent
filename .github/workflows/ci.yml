@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: fluxent-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fluxent
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+          build-cache: true
+          project-path: fluxent
+
+      - name: Install canonical formatter
+        run: pip install clang-format==22.1.2
+
+      - name: Check formatting
+        working-directory: fluxent
+        shell: pwsh
+        run: |
+          $files = git ls-files -- '*.c' '*.h' '*.ispc' |
+            Where-Object { $_ -notmatch '^(thirdparty|microsoft-ui-xaml)/' }
+          if (-not $files) {
+            throw "No source files found"
+          }
+          clang-format --dry-run --Werror --style=file -- $files
+
+      - name: Check out coordinated dependencies
+        shell: pwsh
+        run: |
+          function Clone-Dependency($repo) {
+            $remote = "https://github.com/Project-Xent/$repo.git"
+            $branch = "${{ github.head_ref || github.ref_name }}"
+            $match = git ls-remote --heads $remote "refs/heads/$branch"
+            if ($match) {
+              git clone --depth 1 --branch $branch $remote $repo
+            } else {
+              git clone --depth 1 $remote $repo
+            }
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to clone $repo"
+            }
+          }
+          Clone-Dependency xent-core
+          Clone-Dependency xent-kit
+          Clone-Dependency cwinrt
+
+      - name: Configure
+        working-directory: fluxent
+        run: xmake f -m debug
+
+      - name: Test
+        working-directory: fluxent
+        run: xmake test
+
+      - name: Check patch whitespace
+        working-directory: fluxent
+        run: git diff --check

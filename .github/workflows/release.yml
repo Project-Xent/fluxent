@@ -1,7 +1,8 @@
 name: release
 
-# Build the FluXent Gallery for Windows x86_64 + aarch64 with both MSVC and
-# clang/llvm-mingw (4 binaries), and attach them to the GitHub Release on a v* tag.
+# Verify one coordinated source set, build the FluXent Gallery for Windows
+# x86_64 + aarch64 with MSVC and llvm-mingw, and attach all four binaries to
+# the GitHub Release.
 on:
   push:
     tags:
@@ -12,7 +13,68 @@ permissions:
   contents: write
 
 jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: fluxent
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Project-Xent/xent-core
+          ref: ${{ github.ref_name }}
+          path: xent-core
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Project-Xent/xent-kit
+          ref: ${{ github.ref_name }}
+          path: xent-kit
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Project-Xent/cwinrt
+          ref: v0.2.1
+          path: cwinrt
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
+          build-cache: true
+          project-path: fluxent
+
+      - name: Install canonical formatter
+        run: pip install clang-format==22.1.2
+
+      - name: Check coordinated source formatting
+        shell: pwsh
+        run: |
+          foreach ($repo in @("xent-core", "xent-kit", "fluxent")) {
+            Push-Location $repo
+            $files = git ls-files -- '*.c' '*.h' '*.ispc' |
+              Where-Object { $_ -notmatch '^(thirdparty|microsoft-ui-xaml)/' }
+            if (-not $files) {
+              throw "No source files found in $repo"
+            }
+            clang-format --dry-run --Werror --style=file -- $files
+            Pop-Location
+          }
+
+      - name: Configure
+        working-directory: fluxent
+        run: xmake f -m debug --fault_injection=y
+
+      - name: Test
+        working-directory: fluxent
+        run: xmake test
+
+      - name: Check patch whitespace
+        working-directory: fluxent
+        run: git diff --check
+
   gallery:
+    needs: verify
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -24,11 +86,32 @@ jobs:
           - { name: mingw-aarch64, toolchain: mingw, plat: mingw, xarch: arm64 }
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: fluxent
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Project-Xent/xent-core
+          ref: ${{ github.ref_name }}
+          path: xent-core
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Project-Xent/xent-kit
+          ref: ${{ github.ref_name }}
+          path: xent-kit
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Project-Xent/cwinrt
+          ref: v0.2.1
+          path: cwinrt
 
       - name: Setup xmake
         uses: xmake-io/github-action-setup-xmake@v1
         with:
           xmake-version: latest
+          project-path: fluxent
 
       - name: Setup llvm-mingw (clang + mingw runtime, x64 & arm64 targets)
         if: matrix.toolchain == 'mingw'
@@ -46,7 +129,15 @@ jobs:
           "LLVM_MINGW=$root" | Out-File -Append -Encoding ascii $env:GITHUB_ENV
           "$root\bin"        | Out-File -Append -Encoding ascii $env:GITHUB_PATH
 
+      - name: Resolve XENT_VERSION (tag minus "v")
+        shell: pwsh
+        run: |
+          $v = '${{ github.ref_name }}' -replace '^v', ''
+          if ($v -notmatch '^\d') { $v = '0.3.0-dev' }
+          "XENT_VERSION=$v" | Out-File -Append -Encoding ascii $env:GITHUB_ENV
+
       - name: Configure (${{ matrix.name }})
+        working-directory: fluxent
         shell: pwsh
         run: |
           if ('${{ matrix.toolchain }}' -eq 'mingw') {
@@ -56,26 +147,28 @@ jobs:
           }
 
       - name: Build gallery
-        run: xmake build fluxent_gallery
+        working-directory: fluxent
+        run: xmake build fluxent_gallery_decl
 
       - name: Stage artifact
+        working-directory: fluxent
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Recurse build -Filter fluxent_gallery.exe | Select-Object -First 1
-          if (-not $exe) { throw 'fluxent_gallery.exe not found' }
+          $exe = Get-ChildItem -Recurse build -Filter fluxent_gallery_decl.exe | Select-Object -First 1
+          if (-not $exe) { throw 'fluxent_gallery_decl.exe not found' }
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item $exe.FullName "dist/fluxent_gallery-${{ matrix.name }}.exe"
+          Copy-Item $exe.FullName "dist/fluxent_gallery_decl-${{ matrix.name }}.exe"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fluxent_gallery-${{ matrix.name }}
-          path: dist/fluxent_gallery-${{ matrix.name }}.exe
+          name: fluxent_gallery_decl-${{ matrix.name }}
+          path: fluxent/dist/fluxent_gallery_decl-${{ matrix.name }}.exe
           if-no-files-found: error
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/fluxent_gallery-${{ matrix.name }}.exe
+          files: fluxent/dist/fluxent_gallery_decl-${{ matrix.name }}.exe
           fail_on_unmatched_files: true

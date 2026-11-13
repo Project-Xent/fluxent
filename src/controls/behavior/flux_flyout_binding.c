@@ -27,6 +27,14 @@ static void compute_scroll_offset(XentCtx *ctx, FluxStore *store, XentNodeId nod
 	}
 }
 
+FluxRect flux_binding_window_rect(XentCtx *ctx, FluxStore *store, XentNodeId node) {
+	XentRect lr = {0};
+	float    sx = 0.0f, sy = 0.0f;
+	if (!ctx || !xent_layout_rect(ctx, node, &lr)) return (FluxRect) {0};
+	compute_scroll_offset(ctx, store, node, &sx, &sy);
+	return (FluxRect) {lr.x - sx, lr.y - sy, lr.w, lr.h};
+}
+
 FluxRect flux_binding_screen_anchor(FluxWindow *window, XentCtx *ctx, FluxStore *store, XentNodeId node) {
 	FluxRect anchor = {0.0f, 0.0f, 0.0f, 0.0f};
 	if (!window || !ctx || node == XENT_NODE_INVALID) {
@@ -67,63 +75,6 @@ typedef struct FluxFlyoutBinding {
 	XentCtx      *ctx;
 } FluxFlyoutBinding;
 
-/* WinUI Button.Flyout opens on Click (pointer release), not press -- Button::OnClick ->
- * OpenAssociatedFlyout. An already-open flyout is light-dismissed by the outside press
- * before this runs, so the click path only ever has to open. */
-static void flyout_on_click(void *ctx) {
-	FluxFlyoutBinding *b = ( FluxFlyoutBinding * ) ctx;
-	if (!b || !b->flyout || flux_flyout_visible(b->flyout)) return;
-
-	FluxRect anchor = flux_binding_screen_anchor(b->window, b->ctx, b->store, b->node);
-	flux_flyout_show(b->flyout, anchor, b->placement);
-}
-
-/* Keyboard parity with WinUI DropDownButton (a Button hosting a Flyout): invoking the
- * button with Space/Enter opens the flyout; Escape light-dismisses it. */
-static bool flyout_on_key(void *ctx, FluxKey key, bool down) {
-	if (!down) return false;
-	FluxFlyoutBinding *b = ( FluxFlyoutBinding * ) ctx;
-	if (!b || !b->flyout) return false;
-
-	bool visible = flux_flyout_visible(b->flyout);
-	if (!visible && (key == FLUX_KEY_ENTER || key == FLUX_KEY_SPACE)) {
-		FluxRect anchor = flux_binding_screen_anchor(b->window, b->ctx, b->store, b->node);
-		flux_flyout_show(b->flyout, anchor, b->placement);
-		return true;
-	}
-	if (visible && key == FLUX_KEY_ESCAPE) {
-		flux_flyout_dismiss(b->flyout);
-		return true;
-	}
-	return false;
-}
-
-void flux_prop_node_flyout(FluxStore *store, XentNodeId id, FluxFlyout *flyout, FluxPlacement placement) {
-	FluxFlyoutBindingInfo info = {store, id, flyout, placement, NULL, NULL};
-	flux_prop_flyout_ex(&info);
-}
-
-void flux_prop_flyout_ex(FluxFlyoutBindingInfo const *info) {
-	if (!info || !info->store || !info->flyout) return;
-	FluxNodeData *nd = flux_store_find(info->store, info->id);
-	if (!nd) return;
-
-	FluxFlyoutBinding *b = ( FluxFlyoutBinding * ) calloc(1, sizeof(*b));
-	if (!b) return;
-
-	b->flyout                 = info->flyout;
-	b->placement              = info->placement;
-	b->store                  = info->store;
-	b->node                   = info->id;
-	b->ctx                    = info->xctx;
-	b->window                 = info->window;
-
-	nd->behavior.on_click     = flyout_on_click;
-	nd->behavior.on_click_ctx = b;
-	nd->behavior.on_key       = flyout_on_key;
-	nd->behavior.on_key_ctx   = b;
-}
-
 typedef struct FluxContextMenuBinding {
 	FluxMenu   *menu;
 	FluxStore  *store;
@@ -132,24 +83,6 @@ typedef struct FluxContextMenuBinding {
 	XentCtx    *ctx;
 } FluxContextMenuBinding;
 
-static void context_menu_on_context_binding(void *ctx, float local_x, float local_y) {
-	( void ) local_x;
-	( void ) local_y;
-	FluxContextMenuBinding *b = ( FluxContextMenuBinding * ) ctx;
-	if (!b || !b->menu) return;
-
-	FluxRect anchor = flux_binding_screen_anchor(b->window, b->ctx, b->store, b->node);
-	flux_menu_show(b->menu, anchor, FLUX_PLACEMENT_BOTTOM);
-}
-
-void flux_prop_ctxflyout(FluxStore *store, XentNodeId id, FluxMenu *menu) {
-	FluxContextFlyoutBindingInfo info = {store, id, menu, NULL, NULL};
-	flux_prop_ctxflyout_ex(&info);
-}
-
-/* Primary-invoke MenuFlyout (WinUI Button.Flyout == MenuFlyout): the host opens the
- * menu on click or Space/Enter. A keyboard invoke opens it with FLUX_MENU_INPUT_KEYBOARD
- * so the first item is highlighted immediately; pointer opens it without a highlight. */
 static void menu_flyout_binding_show(FluxContextMenuBinding const *b, FluxMenuInputKind kind) {
 	if (flux_menu_visible(b->menu)) {
 		flux_menu_dismiss(b->menu);
@@ -173,11 +106,6 @@ static bool menu_flyout_on_key(void *ctx, FluxKey key, bool down) {
 	return true;
 }
 
-void flux_prop_menu(FluxStore *store, XentNodeId id, FluxMenu *menu) {
-	FluxContextFlyoutBindingInfo info = {store, id, menu, NULL, NULL};
-	flux_prop_menu_ex(&info);
-}
-
 void flux_prop_menu_ex(FluxContextFlyoutBindingInfo const *info) {
 	if (!info || !info->store || !info->menu) return;
 	FluxNodeData *nd = flux_store_find(info->store, info->id);
@@ -196,22 +124,4 @@ void flux_prop_menu_ex(FluxContextFlyoutBindingInfo const *info) {
 	nd->behavior.on_click_ctx = b;
 	nd->behavior.on_key       = menu_flyout_on_key;
 	nd->behavior.on_key_ctx   = b;
-}
-
-void flux_prop_ctxflyout_ex(FluxContextFlyoutBindingInfo const *info) {
-	if (!info || !info->store || !info->menu) return;
-	FluxNodeData *nd = flux_store_find(info->store, info->id);
-	if (!nd) return;
-
-	FluxContextMenuBinding *b = ( FluxContextMenuBinding * ) calloc(1, sizeof(*b));
-	if (!b) return;
-
-	b->menu                          = info->menu;
-	b->store                         = info->store;
-	b->node                          = info->id;
-	b->ctx                           = info->xctx;
-	b->window                        = info->window;
-
-	nd->behavior.on_context_menu     = context_menu_on_context_binding;
-	nd->behavior.on_context_menu_ctx = b;
 }

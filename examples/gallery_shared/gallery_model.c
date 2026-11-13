@@ -17,6 +17,12 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_RADIO]           = {XTK_NAV_CHILD,     NULL,              "RadioButton"      },
   [PAGE_COMBO]           = {XTK_NAV_CHILD,     NULL,              "ComboBox"         },
   [PAGE_SLIDER]          = {XTK_NAV_CHILD,     NULL,              "Slider"           },
+  [PAGE_SCROLL_BAR]      = {XTK_NAV_CHILD,     NULL,              "ScrollBar"        },
+  [PAGE_LOOPING]         = {XTK_NAV_CHILD,     NULL,              "LoopingSelector"  },
+  [PAGE_DATE_PICKER]     = {XTK_NAV_CHILD,     NULL,              "DatePicker"       },
+  [PAGE_TIME_PICKER]     = {XTK_NAV_CHILD,     NULL,              "TimePicker"       },
+  [PAGE_CALENDAR]        = {XTK_NAV_CHILD,     NULL,              "CalendarView"     },
+  [PAGE_COLOR_PICKER]    = {XTK_NAV_CHILD,     NULL,              "ColorPicker"      },
   [PAGE_TOGGLE]          = {XTK_NAV_CHILD,     NULL,              "ToggleSwitch"     },
   [PAGE_RADIO_BUTTONS]   = {XTK_NAV_CHILD,     NULL,              "RadioButtons"     },
   [PAGE_RATING]          = {XTK_NAV_CHILD,     NULL,              "RatingControl"    },
@@ -63,6 +69,15 @@ void gallery_model_init(Model *m) {
 	m->combo_sel    = -1;
 	m->combo_font   = -1;
 	m->slider_basic = 50.0f;
+	m->scrollbar_v  = 200.0;
+	m->scrollbar_h  = 0.0;
+	m->looping_sel  = 3;
+	m->date_pick    = 20261012;
+	m->time_pick    = 14 * 60 + 30;
+	m->time_pick_24 = 9 * 60;
+	m->cal_date     = 20261014;
+	m->color_pick   = 0x0078d4ffu;
+	m->color_alpha  = 0xe81123c0u;
 	m->slider_step  = 800.0f;
 	m->slider_tick  = 40.0f;
 	m->quantity     = 1.0;
@@ -90,6 +105,11 @@ void gallery_model_init(Model *m) {
 	m->items_invoke                                                       = -1;
 	m->breadcrumb_click                                                   = -1;
 	m->tip_close_reason                                                   = -1;
+	m->check_state                                                        = XTK_CHECK_INDETERMINATE;
+	m->slider_vert                                                        = 40.0f;
+	m->slider_range_lo                                                    = 30.0f;
+	m->slider_range_hi                                                    = 70.0f;
+	m->combo_edit_sel                                                     = -1;
 }
 
 static int tab_selection_after_close(Model const *m, int index) {
@@ -144,6 +164,35 @@ static void msg_slider_basic(Model *m, XtkMsg msg) { m->slider_basic = msg.f; }
 static void msg_slider_step(Model *m, XtkMsg msg) { m->slider_step = msg.f; }
 
 static void msg_slider_tick(Model *m, XtkMsg msg) { m->slider_tick = msg.f; }
+
+static void msg_scrollbar_v(Model *m, XtkMsg msg) { m->scrollbar_v = msg.d; }
+
+static void msg_scrollbar_h(Model *m, XtkMsg msg) { m->scrollbar_h = msg.d; }
+
+static void msg_looping(Model *m, XtkMsg msg) { m->looping_sel = msg.i; }
+
+static void msg_date_picker(Model *m, XtkMsg msg) { m->date_pick = msg.i; }
+
+static void msg_time_picker(Model *m, XtkMsg msg) { m->time_pick = msg.i; }
+
+static void msg_time_picker_24(Model *m, XtkMsg msg) { m->time_pick_24 = msg.i; }
+
+static void msg_calendar(Model *m, XtkMsg msg) {
+	if (msg.b) m->cal_date = msg.i;
+	else if (m->cal_date == msg.i) m->cal_date = 0;
+}
+
+static void msg_calendar_multi(Model *m, XtkMsg msg) {
+	int at = -1;
+	for (int i = 0; i < m->cal_multi_count; i++)
+		if (m->cal_multi [i] == msg.i) at = i;
+	if (msg.b && at < 0 && m->cal_multi_count < 16) m->cal_multi [m->cal_multi_count++] = msg.i;
+	if (!msg.b && at >= 0) m->cal_multi [at] = m->cal_multi [--m->cal_multi_count];
+}
+
+static void msg_color_picker(Model *m, XtkMsg msg) { m->color_pick = ( unsigned ) msg.i; }
+
+static void msg_color_alpha(Model *m, XtkMsg msg) { m->color_alpha = ( unsigned ) msg.i; }
 
 static void msg_light(Model *m, XtkMsg msg) { m->light_on = msg.b; }
 
@@ -324,6 +373,22 @@ static void msg_tb_pane(Model *m, XtkMsg msg) {
 	m->tb_pane_clicks++;
 }
 
+static void msg_check_tri(Model *m, XtkMsg msg) { m->check_state = msg.i; }
+
+static void msg_slider_vert(Model *m, XtkMsg msg) { m->slider_vert = msg.f; }
+
+static void msg_slider_range(Model *m, XtkMsg msg) {
+	m->slider_range_lo = msg.f;
+	m->slider_range_hi = ( float ) msg.d;
+}
+
+static void msg_combo_edit(Model *m, XtkMsg msg) { m->combo_edit_sel = msg.i; }
+
+static void msg_combo_submit(Model *m, XtkMsg msg) {
+	free(m->combo_submit);
+	m->combo_submit = msg.ptr ? strdup(( char const * ) msg.ptr) : NULL;
+}
+
 static GalleryMsgFn const k_msg_fn [] = {
   [MSG_NAV]                = msg_nav,
   [MSG_CLICK]              = msg_click,
@@ -338,6 +403,16 @@ static GalleryMsgFn const k_msg_fn [] = {
   [MSG_SLIDER_BASIC]       = msg_slider_basic,
   [MSG_SLIDER_STEP]        = msg_slider_step,
   [MSG_SLIDER_TICK]        = msg_slider_tick,
+  [MSG_SCROLLBAR_V]        = msg_scrollbar_v,
+  [MSG_SCROLLBAR_H]        = msg_scrollbar_h,
+  [MSG_LOOPING]            = msg_looping,
+  [MSG_DATE_PICKER]        = msg_date_picker,
+  [MSG_TIME_PICKER]        = msg_time_picker,
+  [MSG_TIME_PICKER_24]     = msg_time_picker_24,
+  [MSG_CALENDAR]           = msg_calendar,
+  [MSG_CALENDAR_MULTI]     = msg_calendar_multi,
+  [MSG_COLOR_PICKER]       = msg_color_picker,
+  [MSG_COLOR_ALPHA]        = msg_color_alpha,
   [MSG_LIGHT]              = msg_light,
   [MSG_NAME]               = msg_name,
   [MSG_PASSWORD]           = msg_password,
@@ -390,6 +465,11 @@ static GalleryMsgFn const k_msg_fn [] = {
   [MSG_SPLIT_PLACE]        = msg_split_place,
   [MSG_TB_BACK]            = msg_tb_back,
   [MSG_TB_PANE]            = msg_tb_pane,
+  [MSG_CHECK_TRI]          = msg_check_tri,
+  [MSG_SLIDER_VERT]        = msg_slider_vert,
+  [MSG_SLIDER_RANGE]       = msg_slider_range,
+  [MSG_COMBO_EDIT]         = msg_combo_edit,
+  [MSG_COMBO_SUBMIT]       = msg_combo_submit,
 };
 
 void gallery_model_update(Model *m, XtkMsg msg) {

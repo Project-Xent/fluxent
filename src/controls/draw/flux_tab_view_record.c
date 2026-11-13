@@ -1,8 +1,3 @@
-/**
- * @file flux_tabs_record.c
- * @brief TabView recorders: strip seam/fill, tab items with icon/label/close,
- * and the aux buttons (add / scroll / close).
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "controls/draw/flux_control_draw.h"
 
@@ -77,7 +72,7 @@ tab_rec_icon_label(XentDlBuilder *b, FluxRect const *box, FluxRenderSnap const *
 	if (!ok || !snap->u.tab.label || text_right <= x) return ok;
 	FluxRect tr     = {x, box->y, text_right - x, box->h};
 	uint16_t weight = selected ? ( uint16_t ) FLUX_FONT_SEMI_BOLD : ( uint16_t ) FLUX_FONT_REGULAR;
-	ok              = xent_dl_pushclip_rect(b, flux_rec_xrect(&tr));
+	ok              = xent_dl_pushcliprect(b, flux_rec_xrect(&tr));
 	if (ok) ok = flux_rec_text(b, &tr, snap->u.tab.label, FLUX_TAB_FONT, weight, fg);
 	return xent_dl_popclip(b) && ok;
 }
@@ -108,7 +103,7 @@ bool flux_rec_tabitem(
 	if (snap->u.tab.tab_kind != FLUX_TAB_KIND_TAB) return tab_rec_aux(b, &box, state, t, snap->u.tab.tab_kind);
 
 	bool selected = snap->u.tab.is_checked;
-	if (!selected && !xent_dl_pushclip_rect(b, flux_rec_xrect(&box))) return false;
+	if (!selected && !xent_dl_pushcliprect(b, flux_rec_xrect(&box))) return false;
 	bool ok = tab_rec_item_fill(b, &box, state, selected, t);
 	if (ok) ok = tab_rec_icon_label(b, &box, snap, tab_item_fg(t, state, selected), selected);
 	if (ok) ok = tab_item_separator(b, &box, t, snap->u.tab.tab_separator);

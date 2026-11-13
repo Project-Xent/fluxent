@@ -33,8 +33,8 @@ static XentCtx *s_sort_ctx = NULL;
 static int      compare_tab_index(void const *a, void const *b) {
 	XentNodeId na = *( XentNodeId const * ) a;
 	XentNodeId nb = *( XentNodeId const * ) b;
-	int32_t    ta = xent_get_tab_index(s_sort_ctx, na);
-	int32_t    tb = xent_get_tab_index(s_sort_ctx, nb);
+	int32_t    ta = xent_get_tabindex(s_sort_ctx, na);
+	int32_t    tb = xent_get_tabindex(s_sort_ctx, nb);
 
 	int32_t    ea = (ta == 0) ? 0x7fffffff : ta;
 	int32_t    eb = (tb == 0) ? 0x7fffffff : tb;
@@ -47,7 +47,7 @@ static uint32_t
 input_collect_tab_order(XentCtx *ctx, XentNodeId const *focusable, uint32_t count, XentNodeId *tab_order) {
 	uint32_t tab_count = 0;
 	for (uint32_t i = 0; i < count; i++) {
-		int32_t ti = xent_get_tab_index(ctx, focusable [i]);
+		int32_t ti = xent_get_tabindex(ctx, focusable [i]);
 		if (ti >= 0) tab_order [tab_count++] = focusable [i];
 	}
 	return tab_count;
@@ -99,8 +99,14 @@ static int input_arrow_delta(FluxKey direction) {
 	return 0;
 }
 
+static bool input_tab_hook(FluxInput *input, XentNodeId node, bool shift, bool entering) {
+	FluxNodeData *nd = node == XENT_NODE_INVALID ? NULL : flux_store_find(input->store, node);
+	return nd && nd->behavior.on_tab && nd->behavior.on_tab(nd->behavior.on_tab_ctx, shift, entering);
+}
+
 void flux_input_tab(FluxInput *input, XentNodeId root, bool shift) {
 	if (!input) return;
+	if (input_tab_hook(input, input->focused, shift, false)) return;
 	if (input->modal_root != XENT_NODE_INVALID) root = input->modal_root;
 	if (root == XENT_NODE_INVALID) return;
 
@@ -122,6 +128,7 @@ void flux_input_tab(FluxInput *input, XentNodeId root, bool shift) {
 	int        next_idx    = input_next_tab_index(current_idx, tab_count, shift);
 	XentNodeId next_node   = tab_order [next_idx];
 	input_move_focus(input, next_node, false);
+	input_tab_hook(input, next_node, shift, true);
 }
 
 void flux_input_arrow(FluxInput *input, XentNodeId root, FluxKey direction) {
@@ -159,6 +166,60 @@ void flux_input_activate(FluxInput *input) {
 	if (nd && nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
 }
 
+static bool input_buttonbase(FluxControlType ct, bool *accepts_return) {
+	*accepts_return = ct != FLUX_CONTROL_CHECKBOX && ct != FLUX_CONTROL_RADIO;
+	return ct == FLUX_CONTROL_BUTTON
+	    || ct == FLUX_CONTROL_TOGGLE_BUTTON
+	    || ct == FLUX_CONTROL_CHECKBOX
+	    || ct == FLUX_CONTROL_RADIO
+	    || ct == FLUX_CONTROL_HYPERLINK
+	    || ct == FLUX_CONTROL_DROPDOWN_BUTTON;
+}
+
+static void input_keypress_end(FluxInput *input) {
+	FluxNodeData *nd = flux_store_find(input->store, input->key_pressed);
+	if (nd) nd->state.pressed = 0;
+	input->key_pressed = XENT_NODE_INVALID;
+}
+
+static bool input_checkbox_numpad(FluxInput *input, FluxNodeData *nd, FluxKey key) {
+	FluxCheckboxData *cd = ( FluxCheckboxData * ) nd->component_data;
+	if (!cd || cd->is_three_state) return false;
+	bool want = key == FLUX_KEY_ADD;
+	if ((cd->state == FLUX_CHECK_CHECKED) != want) flux_input_activate(input);
+	return true;
+}
+
+static bool input_buttonkey_down(FluxInput *input, FluxNodeData *nd, FluxKey key, bool accepts_return) {
+	bool press = key == FLUX_KEY_SPACE || (key == FLUX_KEY_ENTER && accepts_return);
+	if (!press) {
+		if (input->key_pressed != XENT_NODE_INVALID) input_keypress_end(input);
+		return false;
+	}
+	if (input->key_pressed == XENT_NODE_INVALID && input->pressed == XENT_NODE_INVALID) {
+		input->key_pressed   = input->focused;
+		input->key_press_key = key;
+		nd->state.pressed    = 1;
+	}
+	return true;
+}
+
+bool flux_input_buttonkey(FluxInput *input, FluxKey key, bool down) {
+	if (!input || input->focused == XENT_NODE_INVALID) return false;
+	FluxNodeData *nd = flux_store_find(input->store, input->focused);
+	bool          accepts_return;
+	if (!nd || !input_buttonbase(nd->component_type, &accepts_return)) return false;
+	if (!xent_sem_enabled(input->ctx, input->focused)) return key == FLUX_KEY_SPACE || key == FLUX_KEY_ENTER;
+	if (down && nd->component_type == FLUX_CONTROL_CHECKBOX && (key == FLUX_KEY_ADD || key == FLUX_KEY_SUBTRACT))
+		return input_checkbox_numpad(input, nd, key);
+	if (down) return input_buttonkey_down(input, nd, key, accepts_return);
+	if (input->key_pressed == XENT_NODE_INVALID || key != input->key_press_key) return false;
+	bool click = input->key_pressed == input->focused && nd->state.pressed;
+	input_keypress_end(input);
+	if (click) flux_input_activate(input);
+	return true;
+}
+
 void flux_input_escape(FluxInput *input) {
 	if (!input) return;
 
@@ -178,17 +239,12 @@ void flux_input_setmodal(FluxInput *input, XentNodeId root, void (*on_escape)(vo
 	input->modal_escape_ctx = ctx;
 }
 
-void flux_input_setfocus(FluxInput *input, XentNodeId node) {
-	if (!input || input->focused == node) return;
-	input_move_focus(input, node, false);
-}
-
-void flux_input_setfocus_programmatic(FluxInput *input, XentNodeId node) {
+void flux_input_setfocus(FluxInput *input, XentNodeId node, bool programmatic) {
 	if (!input) return;
-	if (input->focused == node) {
-		FluxNodeData *nd = flux_store_find(input->store, node);
-		if (nd) nd->state.suppress_focus = 1;
+	if (input->focused != node) {
+		input_move_focus(input, node, programmatic);
 		return;
 	}
-	input_move_focus(input, node, true);
+	FluxNodeData *nd = programmatic ? flux_store_find(input->store, node) : NULL;
+	if (nd) nd->state.suppress_focus = 1;
 }

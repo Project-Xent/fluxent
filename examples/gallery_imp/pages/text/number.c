@@ -1,7 +1,9 @@
 #include "app.h"
 #include <string.h>
 
-bool page_numberbox_build(PageBuild *b) {
+static void page_numberbox_sync(GalleryApp *g);
+
+bool        page_numberbox_build(PageBuild *b) {
 	page_sync(b, page_numberbox_sync);
 	Model const *m      = &b->app->model;
 	XtkNodeRef   parent = xtk_ref_local(b->content);
@@ -27,12 +29,12 @@ bool page_numberbox_build(PageBuild *b) {
 	);
 	xtk_number_onchange(&b->txn, xtk_ref_local(number), page_post, page_bind(b, MSG_QUANTITY));
 	page_keep(b, MSG_QUANTITY, number);
-	XtkNodeRef output = page_output(b, demo.row, gallery_fmt(b->app, "Quantity: %.0f", m->quantity));
-	page_keepout(b, MSG_QUANTITY, output.u.local);
+	XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "Quantity: %.0f", m->quantity));
+	page_keepout(b, MSG_QUANTITY, output);
 	return true;
 }
 
-void page_numberbox_sync(GalleryApp *g) {
+static void page_numberbox_sync(GalleryApp *g) {
 	char const *text = gallery_fmt(g, "Quantity: %.0f", g->model.quantity);
 	xtk_text_settext(
 	  &g->scene, ( XtkCtrl ) g->live_output [MSG_QUANTITY], text, ( uint32_t ) strlen(text), (XtkChangeStamp) {0}

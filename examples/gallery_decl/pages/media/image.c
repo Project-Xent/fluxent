@@ -4,9 +4,7 @@ static XtkEl *stretch_col(XtkUi *ui, char const *source, XtkImageStretch stretch
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 6},
 	  xtk_kids(
-		xtk_sized(
-		  xtk_image(ui, (XtkImageDesc) {.source = flux_image_resource_path(source), .stretch = stretch}), 180, 110
-		),
+		xtk_sized(xtk_image(ui, (XtkImageDesc) {.source = flux_image_respath(source), .stretch = stretch}), 180, 110),
 		xtk_text(ui, label, (XtkTextDesc) {.size = 12})
 	  )
 	);

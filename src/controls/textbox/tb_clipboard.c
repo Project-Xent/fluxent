@@ -1,4 +1,6 @@
 #include "tb_internal.h"
+
+#include "text/flux_clipboard.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -29,28 +31,12 @@ static bool tb_copy_selection_range(FluxTextBoxInputData *tb, uint32_t *start, u
 	return *len > 0;
 }
 
-static void tb_set_clipboard_utf16(char const *utf8, uint32_t len) {
-	int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8, ( int ) len, NULL, 0);
-	if (wlen <= 0 || !OpenClipboard(NULL)) return;
-
-	EmptyClipboard();
-	HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, (( size_t ) wlen + 1u) * sizeof(wchar_t));
-	if (hg) {
-		wchar_t *p = ( wchar_t * ) GlobalLock(hg);
-		MultiByteToWideChar(CP_UTF8, 0, utf8, ( int ) len, p, wlen);
-		p [wlen] = 0;
-		GlobalUnlock(hg);
-		SetClipboardData(CF_UNICODETEXT, hg);
-	}
-	CloseClipboard();
-}
-
 void tb_perform_copy(FluxTextBoxInputData *tb) {
 	uint32_t start = 0;
 	uint32_t len   = 0;
 	if (!tb_copy_selection_range(tb, &start, &len)) return;
 	char const *content = tb_sync_content(tb);
-	tb_set_clipboard_utf16(content + start, len);
+	flux_clipboard_set_utf8(content + start, len);
 }
 
 static wchar_t const *tb_filtered_clip_text(

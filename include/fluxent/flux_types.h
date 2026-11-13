@@ -1,38 +1,25 @@
-/**
- * @file flux_types.h
- * @brief Core type definitions for Fluxent (FluxColor, FluxRect, FluxPoint, FluxSize).
- *
- * This header defines the fundamental value types used throughout the Fluxent
- * framework, including color representation, geometry, and pointer input events.
- */
-
 #ifndef FLUX_TYPES_H
 #define FLUX_TYPES_H
 
 #include <stdint.h>
 #include <stdbool.h>
 #include <xtk/xtk_types.h>
-#include <xent/xent_types.h> /* XENT_NODISCARD + the C23 toolchain gate */
+#include <xent/xent_types.h>
 
-/** @brief RGBA color — alias of XtkColor for API compatibility. */
 typedef XtkColor FluxColor;
 
-/** @brief Axis-aligned rectangle (position + size). */
 typedef struct FluxRect {
 	float x, y, w, h;
 } FluxRect;
 
-/** @brief 2D point. */
 typedef struct FluxPoint {
 	float x, y;
 } FluxPoint;
 
-/** @brief 2D size. */
 typedef struct FluxSize {
 	float w, h;
 } FluxSize;
 
-/** @brief DPI information for a display. */
 typedef struct FluxDpi {
 	float dpi_x;
 	float dpi_y;
@@ -68,12 +55,13 @@ typedef enum FluxKey
 	FLUX_KEY_Z,
 	FLUX_KEY_F4,
 	FLUX_KEY_F6,
+	FLUX_KEY_ADD,
+	FLUX_KEY_SUBTRACT,
 	FLUX_KEY_COUNT,
 } FluxKey;
 
 bool flux_key_held(FluxKey key);
 
-/** @brief Pointer device type for unified pointer events. */
 typedef enum FluxPointerType
 {
 	FLUX_POINTER_MOUSE = 0,
@@ -81,19 +69,17 @@ typedef enum FluxPointerType
 	FLUX_POINTER_PEN   = 2,
 } FluxPointerType;
 
-/** @brief Event kinds carried by FluxPointerEvent. */
 typedef enum FluxPointerEventKind
 {
-	FLUX_POINTER_DOWN,         /**< Button pressed, finger contact, or pen contact. */
-	FLUX_POINTER_MOVE,         /**< Cursor or contact moved. */
-	FLUX_POINTER_UP,           /**< Button released, finger lift, or pen lift. */
-	FLUX_POINTER_CANCEL,       /**< Input stream aborted. */
-	FLUX_POINTER_WHEEL,        /**< Wheel or touchpad scroll; wheel_dx/dy carry notches. */
-	FLUX_POINTER_HOLD,         /**< Touch press-and-hold candidate. */
-	FLUX_POINTER_CONTEXT_MENU, /**< Context menu requested. */
+	FLUX_POINTER_DOWN,
+	FLUX_POINTER_MOVE,
+	FLUX_POINTER_UP,
+	FLUX_POINTER_CANCEL,
+	FLUX_POINTER_WHEEL,
+	FLUX_POINTER_HOLD,
+	FLUX_POINTER_CONTEXT_MENU,
 } FluxPointerEventKind;
 
-/** @brief Pointer button bitmask values. */
 typedef enum FluxPointerButton
 {
 	FLUX_POINTER_BUTTON_NONE   = 0,
@@ -102,19 +88,18 @@ typedef enum FluxPointerButton
 	FLUX_POINTER_BUTTON_MIDDLE = 1u << 2,
 } FluxPointerButton;
 
-/** @brief Unified pointer event sent from the window layer to input consumers. */
 typedef struct FluxPointerEvent {
 	FluxPointerEventKind kind;
-	FluxPointerType      device;         /**< Pointer device type. */
-	uint32_t             pointer_id;     /**< Platform pointer id, or 0 when synthesized. */
+	FluxPointerType      device;
+	uint32_t             pointer_id;
 
-	float                x, y;           /**< Position in window-client DIPs. */
+	float                x, y;
 
-	uint32_t             buttons;        /**< Held FluxPointerButton bitmask after this event. */
-	uint32_t             changed_button; /**< Single transitioned button for DOWN/UP; 0 otherwise. */
+	uint32_t             buttons;
+	uint32_t             changed_button;
 
-	float                wheel_dx;       /**< Horizontal wheel delta in notches. */
-	float                wheel_dy;       /**< Vertical wheel delta in notches. */
+	float                wheel_dx;
+	float                wheel_dy;
 } FluxPointerEvent;
 
 static FluxColor inline flux_color_rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
@@ -140,7 +125,7 @@ static float inline flux_color_bf(FluxColor c) { return ((c.rgba >> 8) & 0xff) /
 static float inline flux_color_af(FluxColor c) { return (c.rgba & 0xff) / 255.0f; }
 
 #if defined(_D2D1_H_) || defined(__d2d1_h__) || defined(D2D1_APPEND_ALIGNED_ELEMENT)
-static inline D2D1_COLOR_F flux_to_d2d_color(FluxColor c) {
+static inline D2D1_COLOR_F flux_color_tod2d(FluxColor c) {
 	D2D1_COLOR_F d;
 	d.r = flux_color_rf(c);
 	d.g = flux_color_gf(c);

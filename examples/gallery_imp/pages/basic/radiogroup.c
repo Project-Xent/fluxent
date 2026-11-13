@@ -1,50 +1,35 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
-#include "render/flux_icon.h"
-#include "controls/behavior/flux_flyout_binding.h"
 
-static void on_select_i(void *ud, int idx) {
-	GalleryBind *b = ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = idx});
+static char const *const kItems [] = {"Option A", "Option B", "Option C"};
+
+static char const       *radio_text(GalleryApp *g) {
+	int sel = g->model.radio_buttons_sel;
+	return gallery_fmt(g, "Selected: %s", sel >= 0 && sel < 3 ? kItems [sel] : "Nothing selected");
 }
 
-static FluxRadioItem const kRbItems [] = {
-  {.label = "Option A"},
-  {.label = "Option B"},
-  {.label = "Option C"},
-};
+static void radio_buttons_sync(GalleryApp *g) { gallery_settext(g, g->live_output [MSG_RADIO_BUTTONS], radio_text(g)); }
 
-void page_radio_buttons(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_radio_buttons_sync);
-	Model const *m      = &g->model;
-	char const  *status = m->radio_buttons_sel >= 0 && m->radio_buttons_sel < 3 ? kRbItems [m->radio_buttons_sel].label
-	                                                                            : "Nothing selected";
-	g_page_header(
-	  g, parent, "RadioButtons", "A grouped set of mutually exclusive radio options — one control, one selection index."
+bool        page_radio_buttons_build(PageBuild *b) {
+	page_sync(b, radio_buttons_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(
+	  b, parent, "RadioButtons", "A grouped set of mutually exclusive radio options — one control, one selection index."
 	);
-	{
-		XentNodeId  ex   = g_example(g, parent, "A RadioButtons group with a header.");
-		GalleryDemo demo = g_demo_card(g, ex);
-		XentNodeId  row  = demo.items;
-		flux_radiogroup_init(&(FluxRadioButtonsDesc) {
-		  .ctx        = gallery_ctx(g),
-		  .store      = gallery_store(g),
-		  .parent     = row,
-		  .input      = flux_app_input(g->flux),
-		  .header     = "Background",
-		  .items      = kRbItems,
-		  .item_count = 3,
-		  .selected   = m->radio_buttons_sel,
-		  .on_select  = on_select_i,
-		  .userdata   = gallery_bind(g, MSG_RADIO_BUTTONS),
-		});
-		g->live_output [MSG_RADIO_BUTTONS] = g_output(g, demo.row, gallery_fmt(g, "Selected: %s", status));
-	}
-}
-
-void page_radio_buttons_sync(GalleryApp *g) {
-	int         selected = g->model.radio_buttons_sel;
-	char const *status   = selected >= 0 && selected < 3 ? kRbItems [selected].label : "Nothing selected";
-	xent_settext(gallery_ctx(g), g->live_output [MSG_RADIO_BUTTONS], gallery_fmt(g, "Selected: %s", status));
+	PageDemo   demo  = page_demo(b, page_example(b, parent, "A RadioButtons group with a header."));
+	XtkLocalId group = xtk_radiogroup_create(
+	  &b->txn, demo.items,
+	  &(XtkRadioGroupProps) {
+		.set   = XTK_RADIOGROUP_SEL_MASK | XTK_RADIOGROUP_NITEM_MASK | XTK_RADIOGROUP_NCOL_MASK,
+		.sel   = b->app->model.radio_buttons_sel,
+		.nitem = 3,
+		.ncol  = 1,
+	  }
+	);
+	XtkNodeRef ref = xtk_ref_local(group);
+	ui_text(&b->txn, ref, "Background", 14.0f, FLUX_FONT_REGULAR);
+	for (int i = 0; i < 3; i++)
+		xtk_radio_create(&b->txn, ref, &(XtkToggleProps) {.set = XTK_TOGGLE_TEXT_MASK, .text = kItems [i]});
+	xtk_radiogroup_onselect(&b->txn, ref, page_post, page_bind(b, MSG_RADIO_BUTTONS));
+	page_keepout(b, MSG_RADIO_BUTTONS, page_output(b, demo.row, radio_text(b->app)));
+	return true;
 }

@@ -1,11 +1,3 @@
-/**
- * @file flux_pips_pager.c
- * @brief PipsPager: a single leaf node hosting the pip strip + nav carets.
- * Geometry per PipsPager_themeresources: 12×24 pip hit targets (swapped
- * when vertical), 24×24 nav buttons, MaxVisiblePips window kept centered
- * on the selection. Clicks resolve on release against the same geometry
- * the renderer draws.
- */
 #include "controls/behavior/flux_flip_internal.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_factory.h"
@@ -17,7 +9,7 @@
 #include <stdlib.h>
 #include <windows.h>
 
-#define PIP_MAIN  24.0f /* hit target along the strip axis  (12 wide × 24 tall, horizontal) */
+#define PIP_MAIN  24.0f
 #define PIP_CROSS 12.0f
 #define PIP_NAV   24.0f
 
@@ -34,7 +26,6 @@ static int pips_visible(FluxPipsPagerData const *pd) {
 
 static bool  pips_nav_shown(FluxPipsPagerData const *pd) { return pd->nav_vis != XTK_PIPS_NAV_COLLAPSED; }
 
-/* Strip layout along the main axis: [nav prev][pips…][nav next]. */
 static float pips_strip_offset(FluxPipsPagerData const *pd) { return pips_nav_shown(pd) ? PIP_NAV : 0.0f; }
 
 static void  pips_center_window(FluxPipsPagerData *pd) {
@@ -55,8 +46,6 @@ static void pips_apply_size(FluxPipsPagerData *pd) {
 	xent_setsize(pd->ctx, pd->node, pd->vertical ? (XentSize) {cross, main} : (XentSize) {main, cross});
 }
 
-/* Hit zones in node-local coordinates: nav prev, pip i, nav next; -2 = prev,
- * -3 = next, ≥0 = pip index, -1 = none. */
 static int pips_hit(FluxPipsPagerData const *pd, float x, float y) {
 	float along = pd->vertical ? y : x;
 	float cross = pd->vertical ? x : y;

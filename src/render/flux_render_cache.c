@@ -13,7 +13,6 @@
 #define FLUX_RC_OCCUPIED         1
 #define FLUX_RC_DELETED          2
 
-/** @brief Frames-of-inactivity threshold beyond which entries are evicted on insert pressure. */
 #define FLUX_RC_EVICT_AGE_FRAMES 120
 
 typedef struct FluxCacheSlot {
@@ -121,8 +120,6 @@ void flux_rcache_begin(FluxRenderCache *cache) {
 	if (cache) cache->frame++;
 }
 
-uint64_t        flux_render_cache_frame(FluxRenderCache const *cache) { return cache ? cache->frame : 0; }
-
 FluxCacheEntry *flux_render_cache_get(FluxRenderCache *cache, uint64_t node_id) {
 	if (!cache) return NULL;
 	FluxCacheSlot *s = rc_find(cache, node_id);
@@ -179,18 +176,6 @@ void flux_render_cache_remove(FluxRenderCache *cache, uint64_t node_id) {
 	cache->tombstones++;
 }
 
-void flux_render_cache_clear(FluxRenderCache *cache) {
-	if (!cache) return;
-	for (uint32_t i = 0; i < cache->capacity; i++) {
-		if (cache->slots [i].tag == FLUX_RC_OCCUPIED) release_entry_resources(&cache->slots [i].entry);
-		cache->slots [i].tag = FLUX_RC_EMPTY;
-	}
-	cache->count      = 0;
-	cache->tombstones = 0;
-}
-
-uint32_t    flux_render_cache_count(FluxRenderCache const *cache) { return cache ? cache->count : 0; }
-
 static void rc_delete_slot(FluxRenderCache *cache, uint32_t idx) {
 	release_entry_resources(&cache->slots [idx].entry);
 	cache->slots [idx].tag = FLUX_RC_DELETED;
@@ -227,32 +212,4 @@ void flux_rcache_evict(FluxRenderCache *cache, uint64_t age_threshold) {
 		if (oldest_idx >= cache->capacity) break;
 		rc_delete_slot(cache, oldest_idx);
 	}
-}
-
-ID2D1SolidColorBrush *flux_render_cache_brush(FluxRenderBrushRequest const *request) {
-	if (!request || !request->cache || !request->dc || !request->cached_rgba || !request->slot) return NULL;
-
-	if (*request->slot && *request->cached_rgba == request->color.rgba) return *request->slot;
-
-	if (*request->slot) {
-		ID2D1SolidColorBrush_Release(*request->slot);
-		*request->slot = NULL;
-	}
-
-	D2D1_COLOR_F          cf = flux_to_d2d_color(request->color);
-	D2D1_BRUSH_PROPERTIES bp;
-	bp.opacity       = 1.0f;
-	bp.transform._11 = 1.0f;
-	bp.transform._12 = 0.0f;
-	bp.transform._21 = 0.0f;
-	bp.transform._22 = 1.0f;
-	bp.transform._31 = 0.0f;
-	bp.transform._32 = 0.0f;
-
-	HRESULT hr = ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) request->dc, &cf, &bp, request->slot);
-	if (FAILED(hr)) return NULL;
-
-	*request->cached_rgba = request->color.rgba;
-	( void ) request->node_id;
-	return *request->slot;
 }

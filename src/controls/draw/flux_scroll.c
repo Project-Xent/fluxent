@@ -1,7 +1,3 @@
-/**
- * @file flux_scroll.c
- * @brief ScrollView overlay → XentDl (per-frame record).
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "render/flux_anim.h"
 #include "render/flux_scroll_geom.h"
@@ -103,8 +99,6 @@ static bool rec_button(ScrollRec const *dc, FluxRect const *r, wchar_t const *gl
 	if (pressed) ok = flux_rec_fill_rect(dc->b, r, with_alpha_mul(dc->colors.btn_press_bg, dc->expanded));
 	else if (hovered) ok = flux_rec_fill_rect(dc->b, r, with_alpha_mul(dc->colors.btn_hover_bg, dc->expanded));
 	FluxColor arrow = pressed ? dc->colors.arrow_press : dc->colors.arrow;
-	/* Original draw_arrow_glyph uses Segoe Fluent/MDL2 + CENTER/VCENTER; flux_rec_text
-	 * would paint the default UI font (tofu) and left-align. */
 	return ok && flux_rec_glyph_wc(dc->b, r, glyph, 8.0f, with_alpha_mul(arrow, dc->expanded));
 }
 
@@ -207,5 +201,173 @@ XentDl *flux_scroll_overlay_record(
 	bool ok = true;
 	if (show_v) ok = rec_vertical(&dc);
 	if (ok && show_h) ok = rec_horizontal(&dc);
+	return flux_rec_finish(b, ok);
+}
+
+#define FLUX_SCROLLBAR_THUMB_STROKE 6.0f
+#define FLUX_SCROLLBAR_CORNER       3.0f
+#define FLUX_SCROLLBAR_TOUCH_WIDTH  2.0f
+#define FLUX_SCROLLBAR_TOUCH_MIN    32.0f
+#define FLUX_SCROLLBAR_TOUCH_MARGIN 2.0f
+
+typedef struct {
+	FluxColor thumb, arrow, arrow_active, track;
+} ScrollBarPalette;
+
+static ScrollBarPalette scroll_bar_palette(FluxThemeColors const *t, bool enabled) {
+	if (!enabled)
+		return (ScrollBarPalette) {
+		  t->ctrl_strong_fill_disabled, t->ctrl_strong_fill_disabled, t->ctrl_strong_fill_disabled,
+		  t->subtle_fill_secondary};
+	return (ScrollBarPalette) {
+	  t->ctrl_strong_fill_default, t->ctrl_strong_fill_default, t->text_secondary, t->subtle_fill_secondary};
+}
+
+static float scroll_bar_expansion(FluxRenderCtx const *rc, FluxRenderSnap const *snap, bool enabled) {
+	float           target = (enabled && snap->hover_local_x >= 0.0f) ? 1.0f : 0.0f;
+	FluxCacheEntry *ce     = rc->cache ? flux_rcache_ensure(rc->cache, snap->id) : NULL;
+	if (!ce) return target;
+	FluxTween *a = &ce->scroll_anim_y;
+	if (!a->initialized) {
+		a->current     = target;
+		a->initialized = true;
+	}
+	float k = 1.0f - expf(-rc->dt * 16.0f);
+	if (k > 1.0f) k = 1.0f;
+	a->current += (target - a->current) * k;
+	if (rc->animations_active && fabsf(target - a->current) > 0.001f) *rc->animations_active = true;
+	return a->current;
+}
+
+static FluxRect scroll_bar_thumb_box(FluxRect const *bar, FluxRect const *span, bool vertical, float expanded) {
+	float    across = vertical ? bar->w : bar->h;
+	float    size   = FLUX_SCROLLBAR_THUMB_THIN + (across - FLUX_SCROLLBAR_THUMB_THIN) * expanded;
+	float    offset = (across - size) * 0.5f + FLUX_SCROLLBAR_THUMB_OFFSET * (1.0f - expanded);
+
+	FluxRect box    = *span;
+	if (vertical) {
+		box.x = bar->x + offset;
+		box.w = size;
+		return box;
+	}
+	box.y = bar->y + offset;
+	box.h = size;
+	return box;
+}
+
+static FluxRect scroll_bar_inset(FluxRect const *r, float inset) {
+	return (FluxRect) {r->x + inset, r->y + inset, r->w - 2.0f * inset, r->h - 2.0f * inset};
+}
+
+static bool scroll_bar_rec_touch(
+  XentDlBuilder *b, FluxRect const *bar, FluxScrollBarParts const *p, bool vertical, FluxColor thumb
+) {
+	FluxRect r      = p->thumb;
+	float    length = vertical ? r.h : r.w;
+	if (length < FLUX_SCROLLBAR_TOUCH_MIN) {
+		if (vertical) r.h = FLUX_SCROLLBAR_TOUCH_MIN;
+		else r.w = FLUX_SCROLLBAR_TOUCH_MIN;
+	}
+	if (vertical) {
+		r.w = FLUX_SCROLLBAR_TOUCH_WIDTH;
+		r.x = bar->x + bar->w - FLUX_SCROLLBAR_TOUCH_WIDTH - FLUX_SCROLLBAR_TOUCH_MARGIN;
+	}
+	else {
+		r.h = FLUX_SCROLLBAR_TOUCH_WIDTH;
+		r.y = bar->y + bar->h - FLUX_SCROLLBAR_TOUCH_WIDTH - FLUX_SCROLLBAR_TOUCH_MARGIN;
+	}
+	return flux_rec_fill_rounded(b, &r, FLUX_SCROLLBAR_TOUCH_WIDTH * 0.5f, thumb);
+}
+
+typedef struct {
+	XentDlBuilder               *b;
+	FluxScrollBarSnapshot const *sb;
+	FluxScrollBarParts const    *parts;
+	ScrollBarPalette             palette;
+	FluxRect                     bar;
+	float                        hover_x, hover_y;
+	bool                         vertical;
+	float                        expanded;
+} ScrollBarRec;
+
+static bool scroll_bar_hovers(ScrollBarRec const *dc, FluxRect const *r) {
+	if (dc->hover_x < 0.0f) return false;
+	return flux_rect_contains(r, dc->bar.x + dc->hover_x, dc->bar.y + dc->hover_y);
+}
+
+static bool scroll_bar_rec_button(ScrollBarRec const *dc, FluxRect const *r, wchar_t const *glyph, bool pressed) {
+	if (r->w <= 0.5f || r->h <= 0.5f) return true;
+	bool      active = pressed || scroll_bar_hovers(dc, r);
+	FluxColor arrow  = active ? dc->palette.arrow_active : dc->palette.arrow;
+	return flux_rec_glyph_wc(dc->b, r, glyph, 8.0f, with_alpha_mul(arrow, dc->expanded));
+}
+
+static bool scroll_bar_rec_thumb(ScrollBarRec const *dc) {
+	if (!dc->parts->thumb_visible) return true;
+	FluxRect box    = scroll_bar_thumb_box(&dc->bar, &dc->parts->thumb, dc->vertical, dc->expanded);
+	FluxRect visual = scroll_bar_inset(&box, FLUX_SCROLLBAR_THUMB_STROKE * 0.5f);
+	if (visual.w <= 0.0f || visual.h <= 0.0f) return true;
+	return flux_rec_fill_rounded(dc->b, &visual, FLUX_SCROLLBAR_CORNER, dc->palette.thumb);
+}
+
+static bool scroll_bar_rec_mouse(ScrollBarRec const *dc) {
+	bool ok = true;
+	if (dc->expanded > 0.005f)
+		ok = flux_rec_fill_rect(dc->b, &dc->bar, with_alpha_mul(dc->palette.track, dc->expanded));
+	wchar_t const *dec = dc->vertical ? L"\xEDDB" : L"\xEDD9";
+	wchar_t const *inc = dc->vertical ? L"\xEDDC" : L"\xEDDA";
+	ok                 = ok && scroll_bar_rec_button(dc, &dc->parts->dec_btn, dec, dc->sb->dec_pressed);
+	ok                 = ok && scroll_bar_rec_button(dc, &dc->parts->inc_btn, inc, dc->sb->inc_pressed);
+	return ok && scroll_bar_rec_thumb(dc);
+}
+
+bool flux_rec_scrollbar_mouse(
+  XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *bar, FluxScrollBarModel const *model, float hover_x,
+  float hover_y, float expanded
+) {
+	FluxScrollBarParts    parts = {0};
+	FluxScrollBarSnapshot sb    = {0};
+	flux_scroll_bar_parts(&parts, bar, model, 1.0f);
+	ScrollBarRec dc = {
+	  .b        = b,
+	  .sb       = &sb,
+	  .parts    = &parts,
+	  .palette  = scroll_bar_palette(t, true),
+	  .bar      = *bar,
+	  .hover_x  = hover_x,
+	  .hover_y  = hover_y,
+	  .vertical = model->vertical,
+	  .expanded = expanded,
+	};
+	return scroll_bar_rec_mouse(&dc);
+}
+
+XentDl *flux_scroll_bar_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	FluxScrollBarSnapshot const *sb = &snap->u.scroll_bar;
+	XentDlBuilder               *b  = xent_dl_begin();
+	if (!b) return NULL;
+	if (sb->indicator_mode == FLUX_SCROLLBAR_INDICATOR_NONE) return xent_dl_end(b);
+
+	bool               touch    = sb->indicator_mode == FLUX_SCROLLBAR_INDICATOR_TOUCH;
+	bool               vertical = sb->orientation == FLUX_SCROLLBAR_VERTICAL;
+	float              expanded = scroll_bar_expansion(rc, snap, state->enabled);
+	FluxScrollBarModel model    = {sb->minimum, sb->maximum, sb->value, sb->viewport, vertical};
+	FluxScrollBarParts parts    = {0};
+	flux_scroll_bar_parts(&parts, bounds, &model, touch ? 0.0f : 1.0f);
+
+	ScrollBarRec dc = {
+	  .b        = b,
+	  .sb       = sb,
+	  .parts    = &parts,
+	  .palette  = scroll_bar_palette(flux_rec_theme(rc), state->enabled),
+	  .bar      = *bounds,
+	  .hover_x  = snap->hover_local_x,
+	  .hover_y  = snap->hover_local_y,
+	  .vertical = vertical,
+	  .expanded = expanded,
+	};
+	bool ok = touch ? scroll_bar_rec_touch(b, bounds, &parts, vertical, dc.palette.thumb) : scroll_bar_rec_mouse(&dc);
 	return flux_rec_finish(b, ok);
 }

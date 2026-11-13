@@ -5,13 +5,10 @@
 
 #define FLUX_WINDOW_MAX_RESIZE_OBSERVERS 8
 
-/** @brief Private message: apply a deferred frame change (extend-into-title-bar).
- *  Posted so the SWP_FRAMECHANGED runs after the current frame instead of
- *  re-entering WM_SIZE/render mid-reconcile (which double-composites the scene). */
 #define FLUX_WM_APPLY_FRAME              (WM_APP + 0x51)
 
-/** @brief Handle one WM_IME_* message (flux_window_ime.c); true = consumed, *result set. */
 bool flux_window_ime_message(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT *result);
+void flux_window_applyframe(FluxWindow *win, bool deferred);
 
 struct FluxWindow {
 	HWND                 hwnd;
@@ -19,6 +16,7 @@ struct FluxWindow {
 	FluxWindowCfg        config;
 	FluxGfx             *gfx;
 	bool                 render_requested;
+	bool                 shown;
 	bool                 com_initialized;
 	int                  cursor_type;
 	HCURSOR              cursor_arrow;
@@ -28,7 +26,7 @@ struct FluxWindow {
 
 	uint32_t             primary_touch_pid;
 	uint32_t             mouse_buttons;
-	float                touch_hold_x; /**< Press-and-hold anchor (logical client px). */
+	float                touch_hold_x;
 	float                touch_hold_y;
 
 	FluxRenderFn         on_render;
@@ -59,10 +57,10 @@ struct FluxWindow {
 	bool                 ime_position_valid;
 	bool                 ime_applying_position;
 
-	bool                 title_bar_active;   /**< A custom title bar registered a drag region. */
-	bool                 title_bar_extended; /**< OS caption removed; client covers the title bar. */
-	FluxRect             title_bar_drag;     /**< Drag region (client-local DIPs). */
-	FluxRect             title_bar_pass [FLUX_WINDOW_MAX_TITLE_BAR_PASS]; /**< Interactive passthrough rects (DIPs). */
+	bool                 title_bar_active;
+	bool                 title_bar_extended;
+	FluxRect             title_bar_drag;
+	FluxRect             title_bar_pass [FLUX_WINDOW_MAX_TITLE_BAR_PASS];
 	int                  title_bar_pass_count;
 };
 

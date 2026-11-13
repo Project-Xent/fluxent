@@ -1,7 +1,3 @@
-/**
- * @file flux_flip_view.c
- * @brief FlipView overlay nav chips → XentDl.
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "controls/draw/flux_control_draw.h"
 #include "render/flux_fluent.h"

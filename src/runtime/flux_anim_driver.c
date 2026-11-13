@@ -1,11 +1,10 @@
 #include "runtime/flux_anim_driver.h"
 
+#include "runtime/flux_time.h"
+
 #include <windows.h>
 #include <stdlib.h>
 
-/* Single shared registry of active animators. Behaviour matches the per-control
- * timers it replaces (one WM_TIMER at ~16ms, GetTickCount sampled once per tick,
- * swap-remove, timer killed when empty) — only the fixed cap is gone. */
 typedef struct FluxAnimEntry {
 	void        *ctx;
 	FluxAnimStep step;
@@ -15,20 +14,39 @@ static FluxAnimEntry *g_entries;
 static int            g_count;
 static int            g_cap;
 static UINT_PTR       g_timer;
+static bool           g_presented;
 
-static void CALLBACK  anim_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD systime) {
+uint64_t              flux_anim_ms(void) {
+	int64_t freq = flux_perf_freq();
+	return freq > 0 ? ( uint64_t ) (flux_perf_now() / (freq / 1000)) : GetTickCount64();
+}
+
+unsigned long flux_anim_now(void) { return ( unsigned long ) flux_anim_ms(); }
+
+void          flux_anim_presented(void) { g_presented = true; }
+
+bool          flux_anim_take_presented(void) {
+	bool was    = g_presented;
+	g_presented = false;
+	return was;
+}
+
+bool flux_anim_frame(void) {
+	unsigned long now = flux_anim_now();
+	for (int i = g_count - 1; i >= 0; i--) {
+		if (i >= g_count) continue;
+		FluxAnimEntry e = g_entries [i];
+		if (!e.step(e.ctx, now)) flux_anim_unregister(e.ctx);
+	}
+	return g_count > 0;
+}
+
+static void CALLBACK anim_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD systime) {
 	( void ) hwnd;
 	( void ) msg;
 	( void ) id;
 	( void ) systime;
-
-	unsigned long now = GetTickCount();
-	/* Iterate downward so a step that unregisters itself (swap-from-end) is safe;
-	 * a step that registers a new animator appends past the current index. */
-	for (int i = g_count - 1; i >= 0; i--) {
-		FluxAnimEntry e = g_entries [i];
-		if (!e.step(e.ctx, now)) flux_anim_unregister(e.ctx);
-	}
+	flux_anim_frame();
 }
 
 void flux_anim_register(void *ctx, FluxAnimStep step) {
@@ -44,7 +62,7 @@ void flux_anim_register(void *ctx, FluxAnimStep step) {
 	if (g_count == g_cap) {
 		int            ncap  = g_cap ? g_cap * 2 : 8;
 		FluxAnimEntry *grown = ( FluxAnimEntry * ) realloc(g_entries, ( size_t ) ncap * sizeof(*grown));
-		if (!grown) return; /* drop the registration rather than corrupt the live list */
+		if (!grown) return;
 		g_entries = grown;
 		g_cap     = ncap;
 	}

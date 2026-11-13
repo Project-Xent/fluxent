@@ -361,7 +361,7 @@ static XentDl *menu_record(
 	XentRect clip = {
 	  layout->content_x0, layout->content_y0 + tr->clip_translate_y, layout->content_w,
 	  layout->content_y1 - layout->content_y0};
-	if (ok) ok = xent_dl_pushclip_rect(b, clip);
+	if (ok) ok = xent_dl_pushcliprect(b, clip);
 	if (ok) ok = xent_dl_pushtransform(b, xent_affine_translate(0.0f, tr->content_translate_y - m->scroll_y));
 	for (int i = 0; ok && i < m->item_count; i++) {
 		StoredItem *it = &m->items [i];
@@ -390,7 +390,7 @@ void menu_paint(void *ctx, FluxPopup *popup) {
 	menu_resolve_theme(m, &theme, &is_dark);
 
 	ResolvedColors c               = resolve_colors(m);
-	c.presenter_bg                 = flux_popup_acrylic_tint(popup, c.presenter_bg);
+	c.presenter_bg                 = flux_popup_acrylictint(popup, c.presenter_bg);
 	FluxRenderCtx           rc     = menu_render_context(m, d2d, theme, is_dark);
 	MenuPresenterLayout     layout = menu_presenter_layout(m);
 	FluxPopupMenuTransition tr     = flux_popup_menutransition(popup, layout.bounds.h);

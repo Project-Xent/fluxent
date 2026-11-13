@@ -1,6 +1,8 @@
 #include "controls/factory/flux_control_registry.h"
 #include "controls/draw/flux_control_draw.h"
 #include <stdlib.h>
+#include "controls/behavior/flux_calendar.h"
+#include "controls/behavior/flux_color_picker.h"
 
 struct FluxControlRegistry {
 	FluxControlRenderer renderers [XTK_CTRL_TYPE_COUNT];
@@ -66,6 +68,12 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	register_recorded(reg, FLUX_CONTROL_SLIDER, flux_slider_record);
 	register_recorded(reg, FLUX_CONTROL_PROGRESS, flux_progress_record);
 	register_recorded_overlay(reg, FLUX_CONTROL_SCROLL, flux_scroll_record, flux_scroll_overlay_record);
+	register_recorded(reg, FLUX_CONTROL_SCROLL_BAR, flux_scroll_bar_record);
+	register_recorded_overlay(reg, FLUX_CONTROL_LOOPING_SELECTOR, NULL, flux_looping_record);
+	register_recorded(reg, FLUX_CONTROL_LOOPING_ITEM, flux_looping_item_record);
+	register_recorded(reg, FLUX_CONTROL_DATE_PICKER, flux_picker_record);
+	register_recorded(reg, FLUX_CONTROL_TIME_PICKER, flux_picker_record);
+	register_recorded(reg, FLUX_CONTROL_PICKER_FLYOUT, flux_pickercard_record);
 	register_recorded(reg, FLUX_CONTROL_IMAGE, flux_image_record);
 	register_recorded(reg, FLUX_CONTROL_TEXT_INPUT, flux_textbox_record);
 	register_recorded(reg, FLUX_CONTROL_PASSWORD_BOX, flux_password_record);
@@ -97,6 +105,8 @@ void flux_register_builtins(FluxControlRegistry *reg) {
 	register_recorded(reg, FLUX_CONTROL_RATING, flux_rating_record);
 	register_recorded(reg, FLUX_CONTROL_INFO_BADGE, flux_badge_record);
 	register_recorded(reg, FLUX_CONTROL_PROGRESS_RING, flux_progressring_record);
+	register_recorded(reg, FLUX_CONTROL_CALENDAR_VIEW, flux_calendar_record);
+	register_recorded(reg, FLUX_CONTROL_COLOR_PICKER, flux_colorpicker_record);
 	register_recorded(reg, FLUX_CONTROL_PERSON_PICTURE, flux_avatar_record);
 	register_recorded(reg, FLUX_CONTROL_TAB_VIEW_ITEM, flux_tabitem_record);
 	register_recorded_overlay(reg, FLUX_CONTROL_REFRESH, flux_refresh_record, flux_refresh_overlay_record);

@@ -1,24 +1,3 @@
-/**
- * @file flux_auto_suggest.c
- * @brief AutoSuggestBox: an app-hosted TextBox + query button + owner-drawn
- * suggestions popup, following AutoSuggestBox_Partial.cpp:
- *
- * - Suggestions arrive from the model (Elm round trip); the list opens when
- *   the box is focused with a non-empty list and closes on empty list,
- *   focus loss, Escape, Tab, or submission.
- * - Down/Up walk the list with the WinUI edge rules (past either end
- *   restores the user-typed text at highlight -1) and preview the
- *   highlighted suggestion into the box (UpdateTextOnSelect).
- * - Enter submits (query = box text; the app knows the previewed index from
- *   on_chosen); the query button submits ignoring the highlight; a
- *   suggestion click submits that item.
- *
- * The popup is the WinUI 3 SuggestionsContainer: acrylic flyout surface,
- * OverlayCornerRadius 8, SurfaceStrokeColorFlyout border, Padding 0,2,
- * MaxHeight 374, and default ListViewItem rows (40px, text at 16/12,
- * 4,2-inset backplate; the keyboard highlight is a real selection with
- * the accent pill, hover is the backplate only).
- */
 #ifndef COBJMACROS
   #define COBJMACROS
 #endif
@@ -43,14 +22,12 @@
 #include <string.h>
 #include <windows.h>
 
-#define ASB_ROW_H      40.0f  /* ListViewItemMinHeight */
-#define ASB_MAX_H      374.0f /* AutoSuggestListMaxHeight */
-#define ASB_GAP        2.0f   /* AutoSuggestListMargin 0,2 */
-#define ASB_PAD_Y      2.0f   /* SuggestionsContainer Padding 0,2,0,2 */
+#define ASB_ROW_H      40.0f
+#define ASB_MAX_H      374.0f
+#define ASB_GAP        2.0f
+#define ASB_PAD_Y      2.0f
 #define ASB_CORNER     8.0f
 #define ASB_BORDER     1.0f
-/* Rows are default ListViewItems: Padding 16,0,12,0 over the 4,2,4,2
- * backplate, 3x16 pill on the leading edge. */
 #define ASB_TEXT_PAD_L 16.0f
 #define ASB_TEXT_PAD_R 12.0f
 
@@ -65,22 +42,21 @@ typedef struct FluxAsbRuntime {
 	FluxTheme   *theme;
 	FluxPopup   *popup;
 
-	char const **items;                  /**< Owned suggestion copies. */
+	char const **items;
 	int          count;
-	int          highlight;              /**< Keyboard selection; -1 = the typed text shows. */
-	int          hover;                  /**< Pointer-over row (backplate only), or -1. */
-	int          pressed;                /**< Item the press landed on, or -1. */
+	int          highlight;
+	int          hover;
+	int          pressed;
 	float        width, height, scroll_y;
-	float        scroll_from, scroll_to; /**< Keyboard scroll-into-view tween. */
-	DWORD        scroll_anim_start;      /**< 0 = idle. */
+	float        scroll_from, scroll_to;
+	DWORD        scroll_anim_start;
 	bool         open;
-	DWORD        rows_anim_start;        /**< Item add-transition start tick (0 = idle). */
+	DWORD        rows_anim_start;
 	bool         focused;
-	bool         ignore_text;            /**< Programmatic writes skip on_text. */
+	bool         ignore_text;
 
-	char const  *user_text;              /**< Owned copy of the user-typed text. */
+	char const  *user_text;
 
-	/* The inner textbox's original key handler (caret movement etc.). */
 	bool         (*tb_on_key)(void *ctx, FluxKey key, bool down);
 	void        *tb_on_key_ctx;
 
@@ -107,7 +83,7 @@ static void asb_notify_text(FluxAsbRuntime *rt, char const *text) {
 	  (XtkEventPayload) {
 		.kind     = XTK_EVENT_PAYLOAD_STRING,
 		.u.string = {text, ( uint32_t ) strlen(text)},
-    },
+	},
 	  XTK_EVENT_CAUSE_USER
 	);
 	if (notify) notify(notify_ctx, text);
@@ -132,7 +108,7 @@ static void asb_notify_query(FluxAsbRuntime *rt, char const *text, int index) {
 	  (XtkEventPayload) {
 		.kind    = XTK_EVENT_PAYLOAD_QUERY,
 		.u.query = {text, ( uint32_t ) strlen(text), index},
-    },
+	},
 	  XTK_EVENT_CAUSE_USER
 	);
 	if (notify) notify(notify_ctx, text);
@@ -155,7 +131,7 @@ static void asb_notify_chosen_query(FluxAsbRuntime *rt, char const *text, int in
 	  (XtkEventPayload) {
 		.kind    = XTK_EVENT_PAYLOAD_QUERY,
 		.u.query = {text, ( uint32_t ) strlen(text), index},
-    },
+	},
 	  XTK_EVENT_CAUSE_USER
 	);
 	if (chosen) chosen(chosen_ctx, index);
@@ -173,10 +149,6 @@ static void asb_write_box(FluxAsbRuntime *rt, char const *text) {
 	flux_prop_textbox_content(rt->store, rt->textbox, text ? text : "");
 	rt->ignore_text = false;
 }
-
-/* -------------------------------------------------------------------------
- * Popup paint (ComboBox-style flyout surface, ListView-style rows)
- * ---------------------------------------------------------------------- */
 
 static float asb_viewport_h(FluxAsbRuntime const *rt) { return rt->height - 2.0f * (ASB_BORDER + ASB_PAD_Y); }
 
@@ -201,8 +173,6 @@ static bool  asb_scroll_step(void *ctx, unsigned long now) {
 	return rt->scroll_anim_start != 0;
 }
 
-/* Keyboard scroll-into-view animates (AutoSuggestBox_Partial scrolls its
- * ScrollViewer via ChangeViewWithOptionalAnimation, not a jump). */
 static void asb_ensure_visible(FluxAsbRuntime *rt, int i) {
 	if (i < 0) return;
 	float current = rt->scroll_anim_start ? rt->scroll_to : rt->scroll_y;
@@ -214,7 +184,7 @@ static void asb_ensure_visible(FluxAsbRuntime *rt, int i) {
 
 	rt->scroll_from       = rt->scroll_y;
 	rt->scroll_to         = target;
-	rt->scroll_anim_start = GetTickCount();
+	rt->scroll_anim_start = flux_anim_now();
 	flux_anim_register(rt, asb_scroll_step);
 }
 
@@ -223,7 +193,6 @@ static int asb_item_at(FluxAsbRuntime const *rt, float y) {
 	return i >= 0 && i < rt->count ? i : -1;
 }
 
-/* Scale a color's alpha for the row entrance fade. */
 static FluxColor asb_fade(FluxColor c, float f) {
 	if (f >= 1.0f) return c;
 	uint32_t a = ( uint32_t ) (( float ) (c.rgba & 0xffu) * f);
@@ -236,13 +205,10 @@ static void asb_repaint(FluxAsbRuntime *rt) {
 	if (h) InvalidateRect(h, NULL, FALSE);
 }
 
-/* PVL SHOWPOPUP (Animations storyboard 18, dumped from the OS theme):
- * translate runs 367 ms on cubic-bezier(0.1, 0.9, 0.2, 1); opacity holds
- * for 83 ms then fades 0 -> 1 linearly over 83 ms. */
 #define ASB_POPIN_MS       367
 #define ASB_POPIN_FADE_IN  83.0f
 #define ASB_POPIN_FADE_LEN 83.0f
-#define ASB_POPIN_OFFSET   50.0f /* FlyoutBase g_entranceThemeOffset */
+#define ASB_POPIN_OFFSET   50.0f
 
 static bool asb_rows_anim_step(void *ctx, unsigned long now) {
 	FluxAsbRuntime *rt = ( FluxAsbRuntime * ) ctx;
@@ -258,9 +224,6 @@ static bool asb_rows_anim_step(void *ctx, unsigned long now) {
 	return true;
 }
 
-/* One suggestion row. WinUI semantics: the keyboard highlight is a real
- * ListView selection (fill + pill); hover is only the subtle backplate.
- * `slide` is applied by the caller via PUSH_TRANSFORM. */
 static bool asb_rec_row(
   XentDlBuilder *b, FluxAsbRuntime const *rt, FluxThemeColors const *t, FluxRect const *view, int i, float row_alpha
 ) {
@@ -291,7 +254,7 @@ static void asb_popin_params(FluxAsbRuntime const *rt, float *row_alpha, float *
 	*row_alpha = 1.0f;
 	*slide     = 0.0f;
 	if (!rt->rows_anim_start) return;
-	float ms   = ( float ) (GetTickCount() - rt->rows_anim_start);
+	float ms   = ( float ) (flux_anim_now() - rt->rows_anim_start);
 	*row_alpha = (ms - ASB_POPIN_FADE_IN) / ASB_POPIN_FADE_LEN;
 	if (*row_alpha < 0.0f) *row_alpha = 0.0f;
 	if (*row_alpha > 1.0f) *row_alpha = 1.0f;
@@ -312,7 +275,7 @@ static XentDl *asb_record_popup(FluxAsbRuntime const *rt, FluxThemeColors const 
 	FluxRect view    = {ASB_BORDER, ASB_BORDER + ASB_PAD_Y, rt->width - 2.0f * ASB_BORDER, vp};
 	bool     clipped = false;
 	if (ok) {
-		ok      = xent_dl_pushclip_rect(b, flux_rec_xrect(&view));
+		ok      = xent_dl_pushcliprect(b, flux_rec_xrect(&view));
 		clipped = ok;
 	}
 
@@ -338,13 +301,9 @@ static XentDl *asb_record_popup(FluxAsbRuntime const *rt, FluxThemeColors const 
 static XentDl *asb_record(void *ctx, FluxPopup const *popup) {
 	FluxAsbRuntime        *rt = ( FluxAsbRuntime * ) ctx;
 	FluxThemeColors const *t  = rt->theme ? flux_theme_colors(rt->theme) : flux_theme_defaults();
-	FluxColor              bg = flux_popup_acrylic_tint(popup, t->flyout_background);
+	FluxColor              bg = flux_popup_acrylictint(popup, t->flyout_background);
 	return asb_record_popup(rt, t, bg);
 }
-
-/* -------------------------------------------------------------------------
- * Open / close / submit
- * ---------------------------------------------------------------------- */
 
 static void asb_close(FluxAsbRuntime *rt) {
 	if (!rt->open) return;
@@ -354,10 +313,6 @@ static void asb_close(FluxAsbRuntime *rt) {
 	flux_popup_dismiss(rt->popup);
 }
 
-/* Called on every suggestion-set change. WinUI keeps the open popup and
- * updates it in place (UpdateSuggestionListVisibility only toggles
- * IsSuggestionListOpen at the empty/non-empty edges) — the show animation
- * plays only on the closed→open transition, never per keystroke. */
 static void asb_open_if_ready(FluxAsbRuntime *rt) {
 	char const *text = asb_box_text(rt);
 	if (!rt->focused || rt->count <= 0 || !text || !text [0]) {
@@ -370,15 +325,13 @@ static void asb_open_if_ready(FluxAsbRuntime *rt) {
 	rt->width  = r.w > 0.0f ? r.w : 240.0f;
 	float body = ( float ) rt->count * ASB_ROW_H + 2.0f * (ASB_BORDER + ASB_PAD_Y);
 	rt->height = body < ASB_MAX_H ? body : ASB_MAX_H;
-	flux_popup_set_size(rt->popup, rt->width, rt->height);
+	flux_popup_setsize(rt->popup, rt->width, rt->height);
 
 	rt->scroll_y          = 0.0f;
 	rt->scroll_anim_start = 0;
 	if (rt->open) {
-		/* Already showing: re-anchor for the new height and fade the new
-		 * rows in — no re-show, no replayed flyout animation. */
-		flux_popup_update_position(rt->popup);
-		rt->rows_anim_start = GetTickCount();
+		flux_popup_reposition(rt->popup);
+		rt->rows_anim_start = flux_anim_now();
 		flux_anim_register(rt, asb_rows_anim_step);
 		asb_repaint(rt);
 		return;
@@ -398,8 +351,6 @@ static void asb_submit(FluxAsbRuntime *rt) {
 	asb_notify_query(rt, text, index);
 }
 
-/* Down/Up with the WinUI edge rules: walking past either end restores the
- * user-typed text at highlight -1 (OnKeyDown, AutoSuggestBox_Partial). */
 static void asb_move_highlight(FluxAsbRuntime *rt, bool forward) {
 	int next = rt->highlight;
 	if (forward) next = rt->highlight >= rt->count - 1 ? -1 : rt->highlight + 1;
@@ -427,7 +378,7 @@ static bool asb_key_open(FluxAsbRuntime *rt, FluxKey key) {
 	case FLUX_KEY_TAB :
 		asb_write_box(rt, rt->user_text);
 		asb_close(rt);
-		return false; /* let focus move (WinUI: not handled) */
+		return false;
 	default : return false;
 	}
 }
@@ -442,9 +393,6 @@ static bool asb_on_key(void *ctx, FluxKey key, bool down) {
 	return rt->tb_on_key ? rt->tb_on_key(rt->tb_on_key_ctx, key, down) : false;
 }
 
-/* User edits: capture the typed text, reset the preview, notify the app —
- * the model recomputes suggestions and the next set_suggestions applies
- * the open/close rule. */
 static void asb_text_changed(void *ctx, char const *text) {
 	FluxAsbRuntime *rt = ( FluxAsbRuntime * ) ctx;
 	if (rt->ignore_text) return;
@@ -455,7 +403,7 @@ static void asb_text_changed(void *ctx, char const *text) {
 
 static void asb_query_click(void *ctx) {
 	FluxAsbRuntime *rt = ( FluxAsbRuntime * ) ctx;
-	rt->highlight      = -1; /* the button ignores any highlight (ProgrammaticSubmitQuery) */
+	rt->highlight      = -1;
 	asb_write_box(rt, rt->user_text);
 	asb_submit(rt);
 }
@@ -463,7 +411,7 @@ static void asb_query_click(void *ctx) {
 static void asb_focus(void *ctx) {
 	FluxAsbRuntime *rt = ( FluxAsbRuntime * ) ctx;
 	rt->focused        = true;
-	asb_open_if_ready(rt); /* GotFocus with existing text reopens */
+	asb_open_if_ready(rt);
 }
 
 static void asb_blur(void *ctx) {
@@ -474,11 +422,10 @@ static void asb_blur(void *ctx) {
 
 static void asb_mouse_set_hover(FluxAsbRuntime *rt, int i) {
 	if (i == rt->hover) return;
-	rt->hover = i; /* hover shows the backplate only — no pill, no preview */
+	rt->hover = i;
 	asb_repaint(rt);
 }
 
-/* Release commits the pressed row (WinUI click-on-release semantics). */
 static void asb_mouse_up(FluxAsbRuntime *rt, int i) {
 	int pressed = rt->pressed;
 	rt->pressed = -1;
@@ -493,8 +440,8 @@ static void asb_mouse_up(FluxAsbRuntime *rt, int i) {
 static void asb_mouse_wheel(FluxAsbRuntime *rt, float dy) {
 	float max_scroll = ( float ) rt->count * ASB_ROW_H - asb_viewport_h(rt);
 	if (max_scroll <= 0.0f) return;
-	rt->scroll_anim_start  = 0;  /* wheel overrides the keyboard tween */
-	rt->scroll_y          -= dy; /* wheel delta in DIPs */
+	rt->scroll_anim_start  = 0;
+	rt->scroll_y          -= dy;
 	if (rt->scroll_y < 0.0f) rt->scroll_y = 0.0f;
 	if (rt->scroll_y > max_scroll) rt->scroll_y = max_scroll;
 	asb_repaint(rt);
@@ -534,14 +481,6 @@ static void asb_destroy(void *component_data) {
 	free(rt);
 }
 
-/* -------------------------------------------------------------------------
- * Create + setters
- * ---------------------------------------------------------------------- */
-
-/* WinUI QueryButton: 32×28 inside the box's trailing edge, 12px glyph, subtle
- * chrome. The fluxent textbox has no trailing slot yet, so the button sits
- * flush against it (2px lead margin per the template); visually it reads as
- * the in-box button. */
 static void asb_make_query_button(FluxAsbRuntime *rt, char const *icon) {
 	if (!icon || !icon [0]) return;
 	rt->button = flux_button_init(&(FluxButtonDesc) {rt->ctx, rt->store, rt->root, NULL, asb_query_click, rt});
@@ -554,7 +493,7 @@ static void asb_make_query_button(FluxAsbRuntime *rt, char const *icon) {
 	xent_setm(rt->ctx, rt->button, (XentInsets) {2.0f, 0.0f, 0.0f, 0.0f});
 	FluxNodeData   *bnd = flux_store_find(rt->store, rt->button);
 	FluxButtonData *bd  = bnd ? ( FluxButtonData * ) bnd->component_data : NULL;
-	if (bd) bd->font_size = 12.0f; /* AutoSuggestBoxIconFontSize */
+	if (bd) bd->font_size = 12.0f;
 }
 
 XentNodeId flux_suggest_init(FluxAutoSuggestDesc const *info) {
@@ -600,8 +539,6 @@ XentNodeId flux_suggest_init(FluxAutoSuggestDesc const *info) {
 	xent_setgrow(info->ctx, rt->textbox, 1.0f);
 	xent_setbasis(info->ctx, rt->textbox, 0.0f);
 
-	/* Steal the textbox's key handler; ours filters the suggestion-list
-	 * keys and forwards everything else (caret movement, editing). */
 	FluxNodeData *tnd = flux_store_find(info->store, rt->textbox);
 	if (tnd) {
 		rt->tb_on_key              = tnd->behavior.on_key;
@@ -662,7 +599,7 @@ void flux_suggest_set_suggestions(FluxStore *store, XentNodeId asb, char const *
 	rt->items = copy;
 	rt->count = normalized_count;
 	if (rt->highlight >= rt->count) rt->highlight = -1;
-	rt->hover = -1; /* the rows under the pointer changed identity */
+	rt->hover = -1;
 
 	asb_open_if_ready(rt);
 	if (rt->open) asb_repaint(rt);

@@ -1,59 +1,57 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
 
-static void on_pager(void *ud, int idx) {
-	GalleryBind *b = ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = idx});
+static void pager_sync(GalleryApp *g) {
+	xtk_pager_setsel(&g->scene, g->live_control [MSG_PAGER_SELECT], g->model.pager_page, (XtkChangeStamp) {0});
+	xtk_pager_setsel(&g->scene, g->live_extra [0], g->model.pager_page, (XtkChangeStamp) {0});
+	gallery_settext(g, g->live_output [MSG_PAGER_SELECT], gallery_fmt(g, "Page %d of 32", g->model.pager_page + 1));
 }
 
-void page_pager(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_pager_sync);
-	Model const *m = &g->model;
-	g_page_header(
-	  g, parent, "PagerControl",
-	  "A numeric/arrow pager (distinct from the dot PipsPager): First/Previous/Next/Last buttons around a "
-	  "number panel with ellipses, or a compact page-of-total label."
-	);
-	{
-		XentNodeId ex                      = g_example(g, parent, "Number panel (32 pages) with First/Last buttons.");
-		XentNodeId card                    = g_col(g, g_card(g, ex), 12.0f, 0, 0, 0, 0);
-		XentNodeId pager                   = flux_pager_init(&(FluxPagerDesc) {
-		  .ctx          = gallery_ctx(g),
-		  .store        = gallery_store(g),
-		  .parent       = card,
-		  .count        = 32,
-		  .selected     = m->pager_page,
-		  .first_button = XTK_PAGER_BUTTON_AUTO,
-		  .last_button  = XTK_PAGER_BUTTON_AUTO,
-		  .on_select    = on_pager,
-		  .userdata     = gallery_bind(g, MSG_PAGER_SELECT),
-		});
-		g->live_control [MSG_PAGER_SELECT] = pager;
-		g->live_output [MSG_PAGER_SELECT]
-		  = g_text(g, card, gallery_fmt(g, "Page %d of 32", m->pager_page + 1), 13.0f, FLUX_FONT_REGULAR);
-	}
-	{
-		XentNodeId ex                     = g_example(g, parent, "Number-text display.");
-		g->live_control [MSG_FLIP_SELECT] = flux_pager_init(&(FluxPagerDesc) {
-		  .ctx          = gallery_ctx(g),
-		  .store        = gallery_store(g),
-		  .parent       = g_card(g, ex),
-		  .count        = 32,
-		  .selected     = m->pager_page,
-		  .display_mode = XTK_PAGER_DISPLAY_NUMBER_TEXT,
-		  .prefix       = "Page",
-		  .suffix       = "of",
-		  .on_select    = on_pager,
-		  .userdata     = gallery_bind(g, MSG_PAGER_SELECT),
-		});
-	}
+static XtkLocalId pager(PageBuild *b, XtkNodeRef parent, XtkPagerProps props) {
+	props.set    |= XTK_PAGER_SEL_MASK | XTK_PAGER_NITEM_MASK;
+	props.sel     = b->app->model.pager_page;
+	props.nitem   = 32;
+	XtkLocalId p  = xtk_pager_create(&b->txn, parent, &props);
+	xtk_pager_onselect(&b->txn, xtk_ref_local(p), page_post, page_bind(b, MSG_PAGER_SELECT));
+	return p;
 }
 
-void page_pager_sync(GalleryApp *g) {
-	flux_pager_set_selected(gallery_store(g), g->live_control [MSG_PAGER_SELECT], g->model.pager_page);
-	flux_pager_set_selected(gallery_store(g), g->live_control [MSG_FLIP_SELECT], g->model.pager_page);
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_PAGER_SELECT], gallery_fmt(g, "Page %d of 32", g->model.pager_page + 1)
+bool page_pager_build(PageBuild *b) {
+	page_sync(b, pager_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(
+	  b, parent, "PagerControl",
+	  "A numeric/arrow pager (distinct from the dot PipsPager): First/Previous/Next/Last buttons around a number panel "
+	  "with ellipses, or a compact page-of-total label."
 	);
+	XtkNodeRef card = xtk_ref_local(ui_card(
+	  &b->txn, page_example(b, parent, "Number panel (32 pages) with First/Last buttons."), 12.0f,
+	  XENT_FLEX_ALIGN_START, 16.0f
+	));
+	page_keep(
+	  b, MSG_PAGER_SELECT,
+	  pager(
+		b, card,
+		(XtkPagerProps) {
+		  .set   = XTK_PAGER_FIRST_MASK | XTK_PAGER_LAST_MASK,
+		  .first = XTK_PAGER_BUTTON_AUTO,
+		  .last  = XTK_PAGER_BUTTON_AUTO,
+		}
+	  )
+	);
+	page_keepout(
+	  b, MSG_PAGER_SELECT, page_note(b, card, gallery_fmt(b->app, "Page %d of 32", b->app->model.pager_page + 1))
+	);
+	page_keepx(
+	  b, 0,
+	  pager(
+		b, page_example(b, parent, "Number-text display."),
+		(XtkPagerProps) {
+		  .set     = XTK_PAGER_DISPLAY_MASK | XTK_PAGER_PREFIX_MASK | XTK_PAGER_SUFFIX_MASK,
+		  .display = XTK_PAGER_DISPLAY_NUMBER_TEXT,
+		  .prefix  = "Page",
+		  .suffix  = "of",
+		}
+	  )
+	);
+	return true;
 }

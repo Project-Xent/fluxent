@@ -1,8 +1,3 @@
-/**
- * @file flux_container_record.c
- * @brief Container chrome recorders (Expander / ContentDialog content region /
- * SplitView pane / RefreshContainer overlay).
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "controls/draw/flux_control_draw.h"
 
@@ -90,7 +85,7 @@ bool flux_rec_splitpane(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSna
 			XentLinearGrad grad   = {
 			  shadow.x, shadow.y, shadow.x + shadow.w, shadow.y, 0.0f, 1.0f, flux_rec_xcolor(right ? s1 : s0),
 			  flux_rec_xcolor(right ? s0 : s1)};
-			ok = xent_dl_fillrect_grad(b, xr, &grad);
+			ok = xent_dl_fillrectgrad(b, xr, &grad);
 		}
 	}
 	else { ok = flux_rec_fill_rect(b, bounds, t->layer_default); }

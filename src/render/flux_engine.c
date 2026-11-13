@@ -23,10 +23,10 @@ struct FluxEngine {
 	FluxControlRegistry const *registry;
 	XtkBackend                *backend;
 	FluxCommandBuffer          commands;
-	uint32_t                   transform_overflow_count;  /**< Bumped each time a clip/transform push is clamped. */
-	uint32_t                   transform_overflow_logged; /**< Non-zero after first OutputDebugStringA notice. */
-	bool                       render_degraded;           /**< A collect-time allocation failed this frame. */
-	FluxDegradedFn             degraded_cb;               /**< NULL: degraded frames assert in debug builds instead. */
+	uint32_t                   transform_overflow_count;
+	uint32_t                   transform_overflow_logged;
+	bool                       render_degraded;
+	FluxDegradedFn             degraded_cb;
 	void                      *degraded_ctx;
 };
 
@@ -43,8 +43,6 @@ static bool command_buffer_push(FluxCommandBuffer *buf, FluxRenderCommand const 
 	return true;
 }
 
-/* A failed push drops the command; the frame is marked degraded and reported
- * once when collection ends (collect_report_degraded). */
 static void engine_push(FluxEngine *eng, FluxRenderCommand const *cmd) {
 	if (!command_buffer_push(&eng->commands, cmd)) eng->render_degraded = true;
 }
@@ -74,7 +72,7 @@ typedef struct CollectFrame {
 	FluxRenderSnap   snapshot;
 	FluxControlState state;
 	XentNodeId       current_child;
-	bool             has_transform; /**< Subtree wrapped in a render transform (scale/opacity). */
+	bool             has_transform;
 } CollectFrame;
 
 static CollectFrame collect_root_frame(XentNodeId root) {
@@ -109,9 +107,6 @@ static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentR
 	cmd.bounds.h        = rect->h;
 	cmd.phase           = FLUX_PHASE_MAIN;
 	cmd.clip_action     = FLUX_CLIP_PUSH;
-	/* Children are laid out in rebased physical space; translate and cull by
-	 * the residual, not the logical position (virtualized rebase; origin=0
-	 * for plain scrolls). */
 	cmd.scroll_x        = frame->snapshot.u.scroll.x - frame->snapshot.u.scroll.origin_x;
 	cmd.scroll_y        = frame->snapshot.u.scroll.y - frame->snapshot.u.scroll.origin_y;
 	frame->scroll_off_x = cmd.scroll_x;
@@ -121,9 +116,6 @@ static void collect_emit_scroll_clip(FluxEngine *eng, CollectFrame *frame, XentR
 	engine_push(eng, &cmd);
 }
 
-/* Plain axis-aligned clip of a node's children to its rect (no scroll translate,
- * no viewport culling) — used to contain off-bounds children like NavView's
- * slid-away Minimal pane so it never bleeds outside the control. */
 static void collect_emit_clip(FluxEngine *eng, CollectFrame const *frame, XentRect const *rect) {
 	FluxRenderCommand cmd;
 	memset(&cmd, 0, sizeof(cmd));
@@ -150,10 +142,6 @@ collect_emit_transform_push(FluxEngine *eng, CollectFrame const *frame, XentRect
 	engine_push(eng, &cmd);
 }
 
-/* Auto-derived scroll extent: the content size is the children's laid-out
- * bounding box plus the node's trailing padding, refreshed each frame before
- * the snapshot copies it, so pages never hand-compute their own height.
- * Owners that manage the extent themselves set FluxScrollData.content_manual. */
 static void collect_update_scroll_extent(XentCtx *ctx, XentNodeId node, FluxNodeData *nd, XentRect const *rect) {
 	if (!nd || nd->component_type != FLUX_CONTROL_SCROLL || !nd->component_data) return;
 	FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
@@ -183,8 +171,6 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 
 	FluxNodeData *nd = flux_store_find(eng->store, frame->node);
 	collect_update_scroll_extent(ctx, frame->node, nd, &rect);
-	/* FlipView / SplitView / Breadcrumb layout sync runs in app_prepare_layout_tree
-	 * (layout → sync → layout) so paint never sees a one-frame stale abs rect. */
 	if (nd && nd->component_data && nd->component_type == FLUX_CONTROL_TITLE_BAR)
 		flux_titlebar_sync(ctx, frame->node, nd);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
@@ -324,9 +310,6 @@ void flux_engine_destroy(FluxEngine *eng) {
 	free(eng);
 }
 
-/* Once-per-frame observability for dropped commands, mirroring
- * execute_note_overflow: a debug-log line always, then either the embedder's
- * callback or — unhandled — a debug assert. */
 static void collect_report_degraded(FluxEngine *eng) {
 	OutputDebugStringA("[fluxent] render degraded: collect allocation failed; part of the frame was dropped.\n");
 	if (eng->degraded_cb) {
@@ -382,9 +365,9 @@ static D2D1_MATRIX_3X2_F matrix_multiply(D2D1_MATRIX_3X2_F const *a, D2D1_MATRIX
 
 typedef struct FluxTransformStack {
 	D2D1_MATRIX_3X2_F frames [FLUX_RENDER_MAX_TRANSFORM_DEPTH];
-	bool              clipped [FLUX_RENDER_MAX_TRANSFORM_DEPTH]; /**< Frame also pushed an axis-aligned clip. */
+	bool              clipped [FLUX_RENDER_MAX_TRANSFORM_DEPTH];
 	uint32_t          top;
-	uint32_t          clamped;                                   /**< Pushes coalesced into the topmost frame. */
+	uint32_t          clamped;
 } FluxTransformStack;
 
 static void execute_note_overflow(FluxEngine *eng) {
@@ -456,9 +439,6 @@ static void execute_transform_push(
 	}
 	stack->frames [stack->top]  = current;
 
-	/* Optional subtree clip, recorded in the parent (pre-transform) space so a
-	 * slid child is clipped to its own layout rect — content sliding out from
-	 * behind the Expander header never overdraws the header. */
 	stack->clipped [stack->top] = cmd->clip_subtree;
 	if (cmd->clip_subtree) {
 		D2D1_RECT_F clip = {cmd->bounds.x, cmd->bounds.y, cmd->bounds.x + cmd->bounds.w, cmd->bounds.y + cmd->bounds.h};

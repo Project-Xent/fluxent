@@ -3,7 +3,7 @@
 #define PB_BULLET_UTF8_LEN 3u
 
 static uint32_t pb_next_char(char const *src, uint32_t src_len, uint32_t pos) {
-	uint32_t next = tb_utf8_next(src, src_len, pos);
+	uint32_t next = flux_utf8_next(src, src_len, pos);
 	return (next <= pos || next > src_len) ? pos + 1 : next;
 }
 

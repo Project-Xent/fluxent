@@ -1,9 +1,3 @@
-/**
- * @file flux_titlebar_record.c
- * @brief TitleBar recorder: back/pane-toggle buttons, app icon, title/subtitle,
- * and the caption cluster. Element geometry comes from flux_titlebar_layout,
- * the same source hit-testing uses.
- */
 #include "controls/draw/flux_control_record_internal.h"
 
 #include "controls/data/flux_title_bar_data.h"
@@ -123,13 +117,13 @@ bool flux_rec_titlebar(
 	float hy = snap->hover_local_y;
 
 	if (l.has_back
-		&& !titlebar_nav_button(
+	    && !titlebar_nav_button(
 		  b, bounds, &l.back, ( wchar_t ) FLUX_TB_GLYPH_BACK, !tb->back_disabled, tb->pressed == FLUX_TB_REGION_BACK,
 		  hx, hy, t
 		))
 		return false;
 	if (l.has_toggle
-		&& !titlebar_nav_button(
+	    && !titlebar_nav_button(
 		  b, bounds, &l.toggle, ( wchar_t ) FLUX_TB_GLYPH_PANE, true, tb->pressed == FLUX_TB_REGION_PANE, hx, hy, t
 		))
 		return false;

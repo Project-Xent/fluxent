@@ -1,7 +1,3 @@
-/**
- * @file gallery_model.h
- * @brief Shared PAGE_/MSG_/Model/kNavItems for declarative + imperative galleries.
- */
 #ifndef GALLERY_MODEL_H
 #define GALLERY_MODEL_H
 
@@ -19,6 +15,12 @@ enum
 	PAGE_RADIO,
 	PAGE_COMBO,
 	PAGE_SLIDER,
+	PAGE_SCROLL_BAR,
+	PAGE_LOOPING,
+	PAGE_DATE_PICKER,
+	PAGE_TIME_PICKER,
+	PAGE_CALENDAR,
+	PAGE_COLOR_PICKER,
 	PAGE_TOGGLE,
 	PAGE_RADIO_BUTTONS,
 	PAGE_RATING,
@@ -79,6 +81,16 @@ enum
 	MSG_SLIDER_BASIC,
 	MSG_SLIDER_STEP,
 	MSG_SLIDER_TICK,
+	MSG_SCROLLBAR_V,
+	MSG_SCROLLBAR_H,
+	MSG_LOOPING,
+	MSG_DATE_PICKER,
+	MSG_TIME_PICKER,
+	MSG_TIME_PICKER_24,
+	MSG_CALENDAR,
+	MSG_CALENDAR_MULTI,
+	MSG_COLOR_PICKER,
+	MSG_COLOR_ALPHA,
 	MSG_LIGHT,
 	MSG_NAME,
 	MSG_PASSWORD,
@@ -131,76 +143,98 @@ enum
 	MSG_SPLIT_PLACE,
 	MSG_TB_BACK,
 	MSG_TB_PANE,
+	MSG_CHECK_TRI,
+	MSG_SLIDER_VERT,
+	MSG_SLIDER_RANGE,
+	MSG_COMBO_EDIT,
+	MSG_COMBO_SUBMIT,
 	MSG_COUNT,
 };
 
 #define BAR_COUNT 4
 
 typedef struct Model {
-	int    page;
-	int    clicks;
-	bool   button_disabled;
-	bool   check_a;
-	bool   check_b;
-	int    radio;
-	int    combo_sel;
-	int    combo_font;
-	float  slider_basic;
-	float  slider_step;
-	float  slider_tick;
-	bool   light_on;
-	char  *name;
-	char  *password;
-	int    pass_chars;
-	double quantity;
-	bool   bar_open [BAR_COUNT];
-	int    badge_value;
-	float  progress;
-	bool   indeterminate;
-	int    menu_choice;
-	int    repeats;
-	bool   expanded;
-	int    split_action;
-	int    tab_ids [8];
-	int    ntab;
-	int    next_tab_id;
-	int    tab_sel;
-	int    tab_gen;
-	bool   dialog_open;
-	int    dialog_result;
-	int    list_sel;
-	int    multi_lead;
-	int    grid_sel;
-	int    listbox_sel;
-	int    flip_page;
-	char  *asb_text;
-	int    asb_chosen;
-	char  *asb_query;
-	int    radio_buttons_sel;
-	double rating_value;
-	bool   toggle_split_checked;
-	int    toggle_split_menu;
-	int    breadcrumb_click;
-	int    selector_sel;
-	bool   tip_open;
-	int    tip_actions;
-	int    tip_close_reason;
-	int    tree_sel;
-	int    tree_invoke;
-	bool   tree_docs_expanded;
-	bool   tree_pictures_expanded;
-	int    items_sel;
-	int    items_invoke;
-	bool   refresh_busy;
-	int    refresh_count;
-	int    pp_badge;
-	bool   pp_group;
-	int    pager_page;
-	bool   split_open;
-	int    split_mode;
-	bool   split_right;
-	int    tb_back_clicks;
-	int    tb_pane_clicks;
+	int      page;
+	int      clicks;
+	bool     button_disabled;
+	bool     check_a;
+	bool     check_b;
+	int      radio;
+	int      combo_sel;
+	int      combo_font;
+	float    slider_basic;
+	float    slider_step;
+	float    slider_tick;
+	double   scrollbar_v;
+	double   scrollbar_h;
+	int      looping_sel;
+	int      date_pick;
+	int      time_pick;
+	int      time_pick_24;
+	int      cal_date;
+	int      cal_multi [16];
+	int      cal_multi_count;
+	unsigned color_pick;
+	unsigned color_alpha;
+	bool     light_on;
+	char    *name;
+	char    *password;
+	int      pass_chars;
+	double   quantity;
+	bool     bar_open [BAR_COUNT];
+	int      badge_value;
+	float    progress;
+	bool     indeterminate;
+	int      menu_choice;
+	int      repeats;
+	bool     expanded;
+	int      split_action;
+	int      tab_ids [8];
+	int      ntab;
+	int      next_tab_id;
+	int      tab_sel;
+	int      tab_gen;
+	bool     dialog_open;
+	int      dialog_result;
+	int      list_sel;
+	int      multi_lead;
+	int      grid_sel;
+	int      listbox_sel;
+	int      flip_page;
+	char    *asb_text;
+	int      asb_chosen;
+	char    *asb_query;
+	int      radio_buttons_sel;
+	double   rating_value;
+	bool     toggle_split_checked;
+	int      toggle_split_menu;
+	int      breadcrumb_click;
+	int      selector_sel;
+	bool     tip_open;
+	int      tip_actions;
+	int      tip_close_reason;
+	int      tree_sel;
+	int      tree_invoke;
+	bool     tree_docs_expanded;
+	bool     tree_pictures_expanded;
+	int      items_sel;
+	int      items_invoke;
+	bool     refresh_busy;
+	int      refresh_count;
+	int      pp_badge;
+	bool     pp_group;
+	int      pager_page;
+	bool     split_open;
+	int      split_mode;
+	bool     split_right;
+	int      tb_back_clicks;
+	int      tb_pane_clicks;
+	int      check_state;
+	float    slider_vert;
+	float    slider_range_lo;
+	float    slider_range_hi;
+	int      combo_edit_sel;
+	char    *combo_submit;
 } Model;
 
 void gallery_model_init(Model *m);

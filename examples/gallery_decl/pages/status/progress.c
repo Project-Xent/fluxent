@@ -35,6 +35,27 @@ XtkEl *page_progress(XtkUi *ui, Model const *m) {
 			  xtk_progressring(ui, (XtkProgressDesc) {.value = m->progress, .indeterminate = m->indeterminate})
 			)
 		  )
+		),
+		example(
+		  ui, "ProgressBar can be paused or show an error, determinate or not.",
+		  xtk_card(
+			ui, (XtkStackDesc) {.gap = 16, .align = XENT_FLEX_ALIGN_STRETCH},
+			xtk_kids(
+			  xtk_sized(xtk_progress(ui, (XtkProgressDesc) {.value = m->progress}), 400, NAN),
+			  xtk_sized(
+				xtk_progress(ui, (XtkProgressDesc) {.value = m->progress, .state = XTK_PROGRESS_PAUSED}), 400, NAN
+			  ),
+			  xtk_sized(
+				xtk_progress(ui, (XtkProgressDesc) {.value = m->progress, .state = XTK_PROGRESS_ERROR}), 400, NAN
+			  ),
+			  xtk_sized(
+				xtk_progress(ui, (XtkProgressDesc) {.indeterminate = true, .state = XTK_PROGRESS_PAUSED}), 400, NAN
+			  ),
+			  xtk_sized(
+				xtk_progress(ui, (XtkProgressDesc) {.indeterminate = true, .state = XTK_PROGRESS_ERROR}), 400, NAN
+			  )
+			)
+		  )
 		)
 	  )
 	);

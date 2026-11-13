@@ -1,7 +1,3 @@
-/**
- * @file flux_badge_data.h
- * @brief Data structure for FluxInfoBadge control.
- */
 #ifndef FLUX_INFO_BADGE_DATA_H
 #define FLUX_INFO_BADGE_DATA_H
 
@@ -9,24 +5,17 @@
 
 #include <stdint.h>
 
-
 typedef XtkBadgeMode FluxInfoBadgeMode;
 
 #define FLUX_BADGE_DOT    XTK_BADGE_DOT
 #define FLUX_BADGE_NUMBER XTK_BADGE_NUMBER
 #define FLUX_BADGE_ICON   XTK_BADGE_ICON
 
-/**
- * @brief Configuration for an info badge (notification indicator).
- *
- * Typically overlaid on icons or buttons to show counts or status.
- */
 typedef struct FluxInfoBadgeData {
-	FluxInfoBadgeMode mode;       /**< Badge display mode */
-	int32_t           value;      /**< Number to display (NUMBER mode) */
-	char const       *icon_name;  /**< Icon name (ICON mode) */
-	FluxColor         background; /**< Badge background color */
+	FluxInfoBadgeMode mode;
+	int32_t           value;
+	char const       *icon_name;
+	FluxColor         background;
 } FluxInfoBadgeData;
-
 
 #endif

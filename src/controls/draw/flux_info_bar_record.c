@@ -1,7 +1,3 @@
-/**
- * @file flux_infobar_record.c
- * @brief 1:1 port of 58331ad flux_info_bar.c into display-list.
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "fluxent/flux_text.h"
 
@@ -30,15 +26,15 @@ typedef struct {
 static IbSeverity ib_severity(int sev, bool dark, FluxThemeColors const *t) {
 	FluxColor bg [2][4] = {
 	  {flux_color_rgba(0xf6, 0xf6, 0xf6, 0x80), flux_color_rgba(0xdf, 0xf6, 0xdd, 0xff),
-       flux_color_rgba(0xff, 0xf4, 0xce, 0xff), flux_color_rgba(0xfd, 0xe7, 0xe9, 0xff)},
+	   flux_color_rgba(0xff, 0xf4, 0xce, 0xff), flux_color_rgba(0xfd, 0xe7, 0xe9, 0xff)},
 	  {flux_color_rgba(255,  255,  255,  0x08), flux_color_rgba(0x39, 0x3d, 0x1b, 0xff),
-       flux_color_rgba(0x43, 0x35, 0x19, 0xff), flux_color_rgba(0x44, 0x27, 0x26, 0xff)},
+	   flux_color_rgba(0x43, 0x35, 0x19, 0xff), flux_color_rgba(0x44, 0x27, 0x26, 0xff)},
 	};
 	FluxColor icon [2][4] = {
 	  {{0}, flux_color_rgba(0x0f, 0x7b, 0x0f, 0xff), flux_color_rgba(0x9d, 0x5d, 0x00, 0xff),
-       flux_color_rgba(0xc4, 0x2b, 0x1c, 0xff)},
+	   flux_color_rgba(0xc4, 0x2b, 0x1c, 0xff)},
 	  {{0}, flux_color_rgba(0x6c, 0xcb, 0x5f, 0xff), flux_color_rgba(0xfc, 0xe1, 0x00, 0xff),
-       flux_color_rgba(0xff, 0x99, 0xa4, 0xff)},
+	   flux_color_rgba(0xff, 0x99, 0xa4, 0xff)},
 	};
 	wchar_t const *glyph [4] = {L"\xF13F", L"\xF13E", L"\xF13C", L"\xF13D"};
 	int            d         = dark ? 1 : 0;
@@ -76,7 +72,7 @@ static bool ib_draw_close(
 	if (over && state->pressed) ok = flux_rec_fill_rounded(b, &box, FLUX_CORNER_RADIUS, t->ctrl_alt_fill_tertiary);
 	else if (over) ok = flux_rec_fill_rounded(b, &box, FLUX_CORNER_RADIUS, t->ctrl_alt_fill_secondary);
 	if (ok) ok = flux_rec_glyph_wc(b, &box, IB_CLOSE_GLYPH, IB_CLOSE_FONT, t->text_primary);
-	if (ok && state->focused && state->enabled) ok = flux_rec_focus_rect(b, &box, FLUX_CORNER_RADIUS);
+	if (ok && state->focused && state->enabled) ok = flux_rec_focus_rect(b, t, &box, FLUX_CORNER_RADIUS);
 	return ok;
 }
 

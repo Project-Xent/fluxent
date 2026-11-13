@@ -13,7 +13,6 @@ struct FluxScene {
 	bool       owns_store;
 };
 
-/* A full-window layer under the absolute root: absolute origin + 100% size. */
 static XentNodeId scene_make_layer(FluxScene *scene, XentProtocol proto) {
 	XentNodeId n = xent_node_create(scene->ctx);
 	if (n == XENT_NODE_INVALID) return n;
@@ -55,8 +54,6 @@ FluxScene *flux_scene_create(uint32_t initial_capacity) {
 	flux_node_settype(scene->store, scene->root, FLUX_CONTROL_CONTAINER);
 	xent_sem_setrole(scene->ctx, scene->root, XENT_SEM_ROLE_CUSTOM);
 
-	/* Root is an absolute stack: content layer (reconciled app view) with an overlay
-	 * layer above it for modal surfaces (dialogs, flyouts) so they overlay the page. */
 	xent_setproto(scene->ctx, scene->root, XENT_PROTOCOL_ABSOLUTE);
 
 	FluxNodeData *nd = flux_store_ensure(scene->store, scene->root);
@@ -68,8 +65,6 @@ FluxScene *flux_scene_create(uint32_t initial_capacity) {
 		flux_scene_destroy(scene);
 		return NULL;
 	}
-	/* Content keeps the old root's column-stretch (top-level column / stretched band
-	 * like a TitleBar spans the window). */
 	xent_setflexdir(scene->ctx, scene->content, XENT_FLEX_COLUMN);
 	xent_setitems(scene->ctx, scene->content, XENT_FLEX_ALIGN_STRETCH);
 
@@ -87,7 +82,7 @@ FluxScene *flux_scene_borrow(XentCtx *ctx, FluxStore *store, XentNodeId root) {
 	scene->ctx     = ctx;
 	scene->store   = store;
 	scene->root    = root;
-	scene->content = root; /* borrow mode: no separate overlay layer */
+	scene->content = root;
 	scene->overlay = root;
 	if (!flux_store_bind(store, ctx)) {
 		free(scene);

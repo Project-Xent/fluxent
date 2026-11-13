@@ -1,13 +1,3 @@
-/**
- * @file flux_person_picture.c
- * @brief PersonPicture behavior: a non-interactive circular avatar leaf.
- *
- * Owns its strings and a resolved-initials buffer. Initials come from an
- * explicit override or are derived from the display name (first + last word,
- * ASCII-uppercased, first Unicode codepoint of each). Badge glyphs are resolved
- * from a Segoe Fluent Icons name to UTF-8 at set time so the renderer stays
- * pure data.
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "render/flux_icon.h"
@@ -23,7 +13,6 @@ static FluxPersonPictureData *pp_data(FluxStore *store, XentNodeId id) {
 	return ( FluxPersonPictureData * ) nd->component_data;
 }
 
-/* Byte length of the first UTF-8 codepoint at s (defensive; assumes valid UTF-8). */
 static int pp_cp_len(char const *s) {
 	unsigned char c = ( unsigned char ) s [0];
 	if (c < 0x80) return 1;
@@ -38,8 +27,6 @@ static char const *pp_skip_spaces(char const *s) {
 	return s;
 }
 
-/* Append the first codepoint of the word at @p word, ASCII-uppercased, into
- * out[*len..cap). */
 static void pp_append_initial(char *out, int *len, int cap, char const *word) {
 	if (!word || !word [0]) return;
 	int n = pp_cp_len(word);
@@ -88,7 +75,6 @@ static void pp_resolve_initials(FluxPersonPictureData *d) {
 	d->resolved [len] = '\0';
 }
 
-/* Resolve a badge icon name to an owned UTF-8 glyph string (NULL clears). */
 static void pp_set_badge_glyph(FluxPersonPictureData *d, char const *name) {
 	flux_str_free(d->badge_glyph);
 	d->badge_glyph = NULL;
@@ -96,7 +82,7 @@ static void pp_set_badge_glyph(FluxPersonPictureData *d, char const *name) {
 	wchar_t const *cp = flux_icon_lookup(name);
 	char           utf8 [8];
 	if (cp && flux_icon_to_utf8(cp, utf8, sizeof(utf8)) > 0) d->badge_glyph = flux_str_dup(utf8);
-	else d->badge_glyph = flux_str_dup(name); /* allow a literal glyph string */
+	else d->badge_glyph = flux_str_dup(name);
 }
 
 static void pp_destroy(void *component_data) {

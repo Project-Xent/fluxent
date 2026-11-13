@@ -1,6 +1,8 @@
 #include "app.h"
 #include <string.h>
 
+static void              page_radio_sync(GalleryApp *g);
+
 static char const *const kRadioOptions [] = {"Option 1", "Option 2", "Option 3"};
 
 bool                     page_radio_build(PageBuild *b) {
@@ -44,13 +46,13 @@ bool                     page_radio_build(PageBuild *b) {
 			xtk_radio_onchange(&b->txn, xtk_ref_local(radio), page_post, page_bind(b, MSG_RADIO_0 + i));
 			page_keep(b, MSG_RADIO_0 + i, radio);
 		}
-		XtkNodeRef output = page_output(b, demo.row, gallery_fmt(b->app, "You selected %s", kRadioOptions [m->radio]));
-		page_keepout(b, MSG_RADIO_0, output.u.local);
+		XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "You selected %s", kRadioOptions [m->radio]));
+		page_keepout(b, MSG_RADIO_0, output);
 	}
 	return true;
 }
 
-void page_radio_sync(GalleryApp *g) {
+static void page_radio_sync(GalleryApp *g) {
 	for (int i = 0; i < 3; i++)
 		xtk_radio_setchecked(
 		  &g->scene, ( XtkCtrl ) g->live_control [MSG_RADIO_0 + i], i == g->model.radio, (XtkChangeStamp) {0}

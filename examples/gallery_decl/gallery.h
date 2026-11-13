@@ -1,7 +1,3 @@
-/**
- * @file gallery.h
- * @brief Declarative FluXent Gallery: helpers + page declarations over shared model.
- */
 #ifndef GALLERY_H
 #define GALLERY_H
 
@@ -24,6 +20,10 @@ XtkEl *page_checkbox(XtkUi *ui, Model const *m);
 XtkEl *page_radio(XtkUi *ui, Model const *m);
 XtkEl *page_combo(XtkUi *ui, Model const *m);
 XtkEl *page_slider(XtkUi *ui, Model const *m);
+XtkEl *page_scroll_bar(XtkUi *ui, Model const *m);
+XtkEl *page_looping(XtkUi *ui, Model const *m);
+XtkEl *page_date_picker(XtkUi *ui, Model const *m);
+XtkEl *page_time_picker(XtkUi *ui, Model const *m);
 XtkEl *page_toggle(XtkUi *ui, Model const *m);
 XtkEl *page_radio_buttons(XtkUi *ui, Model const *m);
 XtkEl *page_rating(XtkUi *ui, Model const *m);

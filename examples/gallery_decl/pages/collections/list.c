@@ -76,7 +76,7 @@ XtkEl *page_listview(XtkUi *ui, Model const *m) {
 			  xtk_text(
 				ui,
 				m->multi_lead >= 0 ? xtk_fmt(ui, "Lead selection: row %d", m->multi_lead)
-								   : "Selection is control-retained; the lead index posts here.",
+				                   : "Selection is control-retained; the lead index posts here.",
 				(XtkTextDesc) {.size = 13}
 			  )
 			)

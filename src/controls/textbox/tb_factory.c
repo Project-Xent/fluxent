@@ -178,8 +178,8 @@ void flux_textbox_sync_ime(FluxStore *store, XentNodeId node) {
 	FluxNodeData *nd = flux_store_find(store, node);
 	if (!nd || !nd->component_data) return;
 	if (nd->component_type != FLUX_CONTROL_TEXT_INPUT
-		&& nd->component_type != FLUX_CONTROL_PASSWORD_BOX
-		&& nd->component_type != FLUX_CONTROL_NUMBER_BOX)
+	    && nd->component_type != FLUX_CONTROL_PASSWORD_BOX
+	    && nd->component_type != FLUX_CONTROL_NUMBER_BOX)
 		return;
 	tb_update_ime_position(( FluxTextBoxInputData * ) nd->component_data);
 }

@@ -1,9 +1,4 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include "host/flux_prop_apply.h"
-#include "virtual.h"
 
 static char const *const kFonts [] = {
   "Arial", "Calibri", "Cambria", "Consolas", "Courier New", "Georgia", "Segoe UI", "Tahoma", "Times New Roman",
@@ -11,33 +6,38 @@ static char const *const kFonts [] = {
 
 #define FONT_COUNT ( int ) (sizeof(kFonts) / sizeof(kFonts [0]))
 
-static void fill_listbox_row(GalleryApp *g, XentNodeId item, int index) {
-	g_text(g, item, kFonts [index], 14.0f, FLUX_FONT_REGULAR);
+static void listbox_row(GalleryApp *g, XtkTxn *txn, XtkNodeRef item, int index) {
+	( void ) g;
+	ui_text(txn, item, kFonts [index], 14.0f, FLUX_FONT_REGULAR);
 }
 
-void page_listbox(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_listbox_sync);
-	Model const *m      = &g->model;
-	char const  *status = m->listbox_sel >= 0 ? gallery_fmt(g, "Font: %s", kFonts [m->listbox_sel]) : "Pick a font.";
-	g_page_header(g, parent, "ListBox", "The bordered list surface with accent-filled selection.");
-	{
-		XentNodeId ex
-		  = g_example(g, parent, "Selection fills the row with the accent at WinUI's 0.6/0.8/0.9 opacities.");
-		XentNodeId row  = g_wraprow(g, ex, 16.0f);
-		XentNodeId list = gallery_list_create(
-		  g, row, XTK_LIST_KIND_LIST_BOX, FONT_COUNT, 40.0f, 0.0f, 1, m->listbox_sel, XTK_LIST_SELECT_SINGLE,
-		  MSG_LISTBOX_SELECT, fill_listbox_row, 320.0f
-		);
-		xent_setw(gallery_ctx(g), list, 260.0f);
-		g->live_output [MSG_LISTBOX_SELECT] = g_text(g, row, status, 13.0f, FLUX_FONT_REGULAR);
-	}
+static char const *listbox_text(GalleryApp *g) {
+	return g->model.listbox_sel >= 0 ? gallery_fmt(g, "Font: %s", kFonts [g->model.listbox_sel]) : "Pick a font.";
 }
 
-void page_listbox_sync(GalleryApp *g) {
-	flux_list_set_selected(gallery_store(g), g->live_control [MSG_LISTBOX_SELECT], g->model.listbox_sel);
-	gallery_list_realize(g->live_data [MSG_LISTBOX_SELECT]);
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_LISTBOX_SELECT],
-	  g->model.listbox_sel >= 0 ? gallery_fmt(g, "Font: %s", kFonts [g->model.listbox_sel]) : "Pick a font."
+static void listbox_sync(GalleryApp *g) { gallery_settext(g, g->live_output [MSG_LISTBOX_SELECT], listbox_text(g)); }
+
+bool        page_listbox_build(PageBuild *b) {
+	page_sync(b, listbox_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(b, parent, "ListBox", "The bordered list surface with accent-filled selection.");
+	XtkNodeRef row  = xtk_ref_local(ui_row(
+	  &b->txn, page_example(b, parent, "Selection fills the row with the accent at WinUI's 0.6/0.8/0.9 opacities."),
+	  16.0f, true
+	));
+	XtkLocalId list = xtk_listbox_create(
+	  &b->txn, row,
+	  &(XtkListProps) {
+		.set   = XTK_LIST_W_MASK | XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK,
+		.w     = 260.0f,
+		.h     = 320.0f,
+		.sel   = b->app->model.listbox_sel,
+		.nitem = FONT_COUNT,
+		.itemh = 40.0f,
+	  }
 	);
+	xtk_listbox_onselect(&b->txn, xtk_ref_local(list), page_post, page_bind(b, MSG_LISTBOX_SELECT));
+	page_list(b, list, listbox_row);
+	page_keepout(b, MSG_LISTBOX_SELECT, page_note(b, row, listbox_text(b->app)));
+	return true;
 }

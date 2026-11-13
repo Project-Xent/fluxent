@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+static void       page_progress_sync(GalleryApp *g);
+
 static XtkNodeRef progress_column(PageBuild *b, XtkNodeRef parent) {
 	XtkLocalId column = xtk_container_create(
 	  &b->txn, parent,
@@ -35,6 +37,38 @@ static XtkNodeRef progress_row(PageBuild *b, XtkNodeRef parent) {
 	  }
 	);
 	return xtk_ref_local(row);
+}
+
+static void
+progress_state_bar(PageBuild *b, XtkNodeRef parent, Model const *m, bool indeterminate, XtkProgressState state) {
+	xtk_progress_create(
+	  &b->txn, parent,
+	  &(XtkProgressProps) {
+		.set           = XTK_PROGRESS_W_MASK
+	                   | XTK_PROGRESS_MIN_MASK
+	                   | XTK_PROGRESS_MAX_MASK
+	                   | XTK_PROGRESS_VALUE_MASK
+	                   | XTK_PROGRESS_INDETERMINATE_MASK
+	                   | XTK_PROGRESS_STATE_MASK,
+		.w             = 400.0f,
+		.min           = 0.0f,
+		.max           = 100.0f,
+		.value         = m->progress,
+		.indeterminate = indeterminate,
+		.state         = state,
+	  }
+	);
+}
+
+static void progress_state_example(PageBuild *b, XtkNodeRef parent, Model const *m) {
+	XtkNodeRef ex     = page_example(b, parent, "ProgressBar can be paused or show an error, determinate or not.");
+	PageDemo   demo   = page_demo(b, ex);
+	XtkNodeRef column = progress_column(b, demo.items);
+	progress_state_bar(b, column, m, false, XTK_PROGRESS_NORMAL);
+	progress_state_bar(b, column, m, false, XTK_PROGRESS_PAUSED);
+	progress_state_bar(b, column, m, false, XTK_PROGRESS_ERROR);
+	progress_state_bar(b, column, m, true, XTK_PROGRESS_PAUSED);
+	progress_state_bar(b, column, m, true, XTK_PROGRESS_ERROR);
 }
 
 bool page_progress_build(PageBuild *b) {
@@ -76,8 +110,8 @@ bool page_progress_build(PageBuild *b) {
 	);
 	XtkLocalId indeterminate = xtk_checkbox_create(
 	  &b->txn, row,
-	  &(XtkToggleProps) {
-		.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK | XTK_TOGGLE_ENABLED_MASK,
+	  &(XtkCheckBoxProps) {
+		.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 		.text    = "Indeterminate",
 		.checked = m->indeterminate,
 		.enabled = true,
@@ -96,10 +130,11 @@ bool page_progress_build(PageBuild *b) {
 	page_keep(b, MSG_PROGRESS, bar);
 	page_keep(b, MSG_INDETERMINATE, ring);
 	page_keepout(b, MSG_PROGRESS, value);
+	progress_state_example(b, parent, m);
 	return true;
 }
 
-void page_progress_sync(GalleryApp *g) {
+static void page_progress_sync(GalleryApp *g) {
 	XtkChangeStamp change = {0};
 	XtkCtrl        bar    = ( XtkCtrl ) g->live_control [MSG_PROGRESS];
 	XtkCtrl        ring   = ( XtkCtrl ) g->live_control [MSG_INDETERMINATE];

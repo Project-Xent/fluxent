@@ -5,52 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-XentCtx                 *gallery_ctx(GalleryApp *g) { return g->bctx.ctx; }
-
-FluxStore               *gallery_store(GalleryApp *g) { return g->bctx.store; }
-
-XtkScene                *gallery_scene(GalleryApp *g) { return &g->scene; }
-
-GalleryBind             *gallery_bind(GalleryApp *g, int tag) { return gallery_bind_i(g, tag, 0); }
-
-static GalleryBindBlock *gallery_bind_block(GalleryApp *g) {
-	GalleryBindBlock *block = g->bind_cursor;
-	if (block && block->used < ( int ) (sizeof(block->items) / sizeof(block->items [0]))) return block;
-	if (block && block->next) block = block->next;
-	else {
-		GalleryBindBlock *next = ( GalleryBindBlock * ) calloc(1, sizeof(*next));
-		if (!next) return NULL;
-		if (block) block->next = next;
-		else g->bind_blocks = next;
-		block = next;
-	}
-	g->bind_cursor = block;
-	return block;
+char const *gallery_fmt(GalleryApp *g, char const *fmt, ...) {
+	va_list ap;
+	va_start(ap, fmt);
+	vsnprintf(g->fmt_buf, sizeof(g->fmt_buf), fmt, ap);
+	va_end(ap);
+	return g->fmt_buf;
 }
 
-GalleryBind *gallery_bind_i(GalleryApp *g, int tag, int i) {
-	GalleryBindBlock *block = gallery_bind_block(g);
-	if (!block) return NULL;
-	GalleryBind *b = &block->items [block->used++];
-	g->bind_n++;
-	b->app = g;
-	b->tag = tag;
-	b->i   = i;
-	return b;
-}
-
-int gallery_bind_tag(GalleryApp const *g, int index) {
-	for (GalleryBindBlock const *block = g->bind_blocks; block; block = block->next) {
-		if (index < block->used) return block->items [index].tag;
-		index -= block->used;
-	}
-	return MSG_NONE;
-}
-
-static void gallery_binds_reset(GalleryApp *g) {
-	for (GalleryBindBlock *block = g->bind_blocks; block; block = block->next) block->used = 0;
-	g->bind_cursor = g->bind_blocks;
-	g->bind_n      = 0;
+void gallery_settext(GalleryApp *g, XtkCtrl text, char const *value) {
+	xtk_text_settext(&g->scene, text, value, ( uint32_t ) strlen(value), (XtkChangeStamp) {0});
 }
 
 static void bind_blocks_destroy(GalleryBindBlock *block) {
@@ -61,23 +25,7 @@ static void bind_blocks_destroy(GalleryBindBlock *block) {
 	}
 }
 
-static void gallery_binds_destroy(GalleryApp *g) {
-	bind_blocks_destroy(g->bind_blocks);
-	g->bind_blocks = NULL;
-	g->bind_cursor = NULL;
-	g->bind_n      = 0;
-}
-
-void *gallery_page_alloc(GalleryApp *g, size_t size) {
-	if (size > SIZE_MAX - sizeof(GalleryPageAlloc)) return NULL;
-	GalleryPageAlloc *alloc = ( GalleryPageAlloc * ) malloc(sizeof(*alloc) + size);
-	if (!alloc) return NULL;
-	alloc->next    = g->page_allocs;
-	g->page_allocs = alloc;
-	return alloc->data;
-}
-
-static void page_allocs_destroy(GalleryPageAlloc *alloc) {
+static void allocs_destroy(GalleryPageAlloc *alloc) {
 	while (alloc) {
 		GalleryPageAlloc *next = alloc->next;
 		free(alloc);
@@ -85,530 +33,377 @@ static void page_allocs_destroy(GalleryPageAlloc *alloc) {
 	}
 }
 
-static void gallery_page_allocs_destroy(GalleryApp *g) {
-	page_allocs_destroy(g->page_allocs);
-	g->page_allocs = NULL;
-}
-
-static GalleryBindBlock *page_bind_block(PageBuild *b) {
+GalleryBind *page_bind_i(PageBuild *b, int tag, int i) {
 	GalleryBindBlock *block = b->bind_cursor;
-	if (block && block->used < ( int ) (sizeof(block->items) / sizeof(block->items [0]))) return block;
-	if (block && block->next) block = block->next;
-	else {
+	if (!block || block->used == ( int ) (sizeof(block->items) / sizeof(block->items [0]))) {
 		GalleryBindBlock *next = ( GalleryBindBlock * ) calloc(1, sizeof(*next));
 		if (!next) return NULL;
 		if (block) block->next = next;
 		else b->bind_blocks = next;
-		block = next;
+		b->bind_cursor = block = next;
 	}
-	b->bind_cursor = block;
-	return block;
-}
-
-GalleryBind *page_bind_i(PageBuild *b, int tag, int i) {
-	GalleryBindBlock *block = page_bind_block(b);
-	if (!block) return NULL;
 	GalleryBind *bind = &block->items [block->used++];
-	bind->app         = b->app;
-	bind->tag         = tag;
-	bind->i           = i;
+	*bind             = (GalleryBind) {.app = b->app, .tag = tag, .i = i};
 	return bind;
 }
 
 GalleryBind *page_bind(PageBuild *b, int tag) { return page_bind_i(b, tag, 0); }
 
 void        *page_alloc(PageBuild *b, size_t size) {
-	if (size > SIZE_MAX - sizeof(GalleryPageAlloc)) return NULL;
-	GalleryPageAlloc *alloc = ( GalleryPageAlloc * ) malloc(sizeof(*alloc) + size);
+	GalleryPageAlloc *alloc = ( GalleryPageAlloc * ) calloc(1, sizeof(*alloc) + size);
 	if (!alloc) return NULL;
 	alloc->next = b->allocs;
 	b->allocs   = alloc;
 	return alloc->data;
 }
 
-char const *gallery_fmt(GalleryApp *g, char const *fmt, ...) {
-	va_list ap;
-	va_start(ap, fmt);
-	vsnprintf(g->fmt_buf, sizeof(g->fmt_buf), fmt, ap);
-	va_end(ap);
-	return g->fmt_buf;
+void page_on(PageBuild *b, XtkLocalId local, XtkEventId event, int tag, int i) {
+	xtk_txn_on(&b->txn, xtk_ref_local(local), event, XTK_EVENT_PHASE_MASK_TARGET, page_post, page_bind_i(b, tag, i));
 }
 
-static XtkCtrl page_control(XtkBatchResult const *result, XtkLocalId local) {
-	if (!result || local == XTK_LOCAL_INVALID) return XTK_CTRL_INVALID;
-	for (uint32_t i = 0; i < result->control_count; i++)
-		if (result->controls [i].local == local) return result->controls [i].control;
-	return XTK_CTRL_INVALID;
+void page_sync(PageBuild *b, PageSyncFn sync) { b->sync = sync; }
+
+void page_keep(PageBuild *b, int tag, XtkLocalId local) { b->controls [tag] = local; }
+
+void page_keepout(PageBuild *b, int tag, XtkLocalId local) { b->outputs [tag] = local; }
+
+void page_keepx(PageBuild *b, int slot, XtkLocalId local) { b->extra [slot] = local; }
+
+void page_list(PageBuild *b, XtkLocalId list, PageFillFn fill) {
+	if (b->nlist == PAGE_LISTS) return;
+	GalleryList *l = ( GalleryList * ) page_alloc(b, sizeof(*l));
+	if (!l) return;
+	*l                    = (GalleryList) {.app = b->app, .local = list, .fill = fill};
+	b->lists [b->nlist++] = l;
 }
 
-static int page_bind_count(GalleryBindBlock const *block) {
-	int count = 0;
-	for (; block; block = block->next) count += block->used;
-	return count;
-}
-
-void page_abort(PageBuild *b) {
-	if (!b) return;
-	if (b->active) xtk_txn_abort(&b->txn);
-	bind_blocks_destroy(b->bind_blocks);
-	page_allocs_destroy(b->allocs);
-	memset(b, 0, sizeof(*b));
-}
-
-bool page_begin(PageBuild *b, GalleryApp *g) {
-	if (!b || !g || g->content_host == XENT_NODE_INVALID) return false;
-	memset(b, 0, sizeof(*b));
-	b->app     = g;
-	b->root    = XTK_LOCAL_INVALID;
-	b->content = XTK_LOCAL_INVALID;
-	for (int i = 0; i < MSG_COUNT; i++) b->controls [i] = b->outputs [i] = XTK_LOCAL_INVALID;
-	if (!xtk_txn_begin(&g->scene, &b->txn)) return false;
-	b->active = true;
-	if (g->page_root != XENT_NODE_INVALID && !xtk_txn_drop(&b->txn, xtk_ref_existing(( XtkCtrl ) g->page_root))) {
-		page_abort(b);
-		return false;
+static XtkMsg event_pair_msg(XtkMsg msg, XtkEventPayload const *p) {
+	switch (p->kind) {
+	case XTK_EVENT_PAYLOAD_QUERY :
+		msg.ptr = ( void * ) p->u.query.text;
+		msg.i   = p->u.query.index;
+		break;
+	case XTK_EVENT_PAYLOAD_RATING :
+		msg.d = p->u.rating.value;
+		msg.i = p->u.rating.count;
+		break;
+	case XTK_EVENT_PAYLOAD_INDEX_BOOL :
+		msg.i = p->u.index_bool.index;
+		msg.b = p->u.index_bool.value;
+		break;
+	case XTK_EVENT_PAYLOAD_RANGE :
+		msg.f = p->u.range.start;
+		msg.d = p->u.range.end;
+		break;
+	default : break;
 	}
-	b->root = xtk_scroll_create(&b->txn, xtk_ref_existing(( XtkCtrl ) g->content_host), NULL);
-	if (b->root == XTK_LOCAL_INVALID) {
-		page_abort(b);
-		return false;
+	return msg;
+}
+
+static XtkMsg event_msg(GalleryBind const *bind, XtkEvent const *event) {
+	XtkMsg                 msg = {.tag = bind->tag, .i = bind->i};
+	XtkEventPayload const *p   = &event->payload;
+	switch (p->kind) {
+	case XTK_EVENT_PAYLOAD_BOOL   : msg.b = p->u.b; break;
+	case XTK_EVENT_PAYLOAD_I32    : msg.i = p->u.i32; break;
+	case XTK_EVENT_PAYLOAD_F32    : msg.f = p->u.f32; break;
+	case XTK_EVENT_PAYLOAD_F64    : msg.d = p->u.f64; break;
+	case XTK_EVENT_PAYLOAD_STRING : msg.ptr = ( void * ) p->u.string.data; break;
+	default                       : msg = event_pair_msg(msg, p); break;
 	}
-	b->content = xtk_container_create(
-	  &b->txn, xtk_ref_local(b->root),
-	  &(XtkContainerProps) {
-		.set    = XTK_CONTAINER_SHRINK_MASK
-	            | XTK_CONTAINER_DIR_MASK
-	            | XTK_CONTAINER_ITEMS_MASK
-	            | XTK_CONTAINER_GAP_MASK
-	            | XTK_CONTAINER_PL_MASK
-	            | XTK_CONTAINER_PT_MASK
-	            | XTK_CONTAINER_PR_MASK
-	            | XTK_CONTAINER_PB_MASK
-	            | XTK_CONTAINER_FILL_MASK
-	            | XTK_CONTAINER_FITW_MASK
-	            | XTK_CONTAINER_FITH_MASK,
-		.shrink = 0.0f,
-		.dir    = XTK_STACK_COLUMN,
-		.items  = XENT_FLEX_ALIGN_STRETCH,
-		.gap    = 20.0f,
-		.pl     = 36.0f,
-		.pt     = 28.0f,
-		.pr     = 36.0f,
-		.pb     = 28.0f,
-		.fill   = true,
-		.fitw   = false,
-		.fith   = true,
-	  }
-	);
-	if (b->content != XTK_LOCAL_INVALID) return true;
-	page_abort(b);
-	return false;
+	return msg;
 }
 
-bool page_commit(PageBuild *b) {
-	if (!b || !b->active) return false;
-	XtkBatchDiag    diagnostic = {0};
-	XtkBatchResult *result     = xtk_txn_commit(&b->txn, &diagnostic);
-	b->active                  = false;
-	if (!result) {
-		fprintf(
-		  stderr, "gallery page batch rejected: error=%d op=%u\n", ( int ) diagnostic.error, diagnostic.failed_op
-		);
-		page_abort(b);
-		return false;
-	}
-
-	GalleryApp *g = b->app;
-	gallery_page_allocs_destroy(g);
-	gallery_binds_destroy(g);
-	g->page_root   = ( XentNodeId ) page_control(result, b->root);
-	g->bind_blocks = b->bind_blocks;
-	g->bind_cursor = b->bind_cursor;
-	g->bind_n      = page_bind_count(b->bind_blocks);
-	g->page_allocs = b->allocs;
-	g->sync_page   = b->sync;
-	for (int i = 0; i < MSG_COUNT; i++) {
-		g->live_control [i] = ( XentNodeId ) page_control(result, b->controls [i]);
-		g->live_output [i]  = ( XentNodeId ) page_control(result, b->outputs [i]);
-		g->live_data [i]    = b->data [i];
-	}
-	b->bind_blocks = NULL;
-	b->bind_cursor = NULL;
-	b->allocs      = NULL;
-	xtk_batch_result_destroy(result);
-	memset(b, 0, sizeof(*b));
-	return g->page_root != XENT_NODE_INVALID;
+static bool msg_owns_string(int tag) {
+	return tag == MSG_NAME
+	    || tag == MSG_PASSWORD
+	    || tag == MSG_ASB_TEXT
+	    || tag == MSG_ASB_QUERY
+	    || tag == MSG_COMBO_SUBMIT;
 }
 
-void page_sync(PageBuild *b, GalleryPageSyncFn sync) {
-	if (b) b->sync = sync;
-}
-
-void page_keep(PageBuild *b, int tag, XtkLocalId local) {
-	if (b && tag > MSG_NONE && tag < MSG_COUNT) b->controls [tag] = local;
-}
-
-void page_keepout(PageBuild *b, int tag, XtkLocalId local) {
-	if (b && tag > MSG_NONE && tag < MSG_COUNT) b->outputs [tag] = local;
-}
-
-void page_keepdata(PageBuild *b, int tag, void *data) {
-	if (b && tag > MSG_NONE && tag < MSG_COUNT) b->data [tag] = data;
-}
-
-uint32_t page_post(void *arg, XtkEvent const *event) {
-	GalleryBind *bind = ( GalleryBind * ) arg;
-	if (!bind) return XTK_EVENT_CONTINUE;
-	XtkMsg msg = {.tag = bind->tag, .i = bind->i, .trace_id = event ? event->trace_id : 0};
-	if (event) {
-		switch (event->payload.kind) {
-		case XTK_EVENT_PAYLOAD_BOOL   : msg.b = event->payload.u.b; break;
-		case XTK_EVENT_PAYLOAD_I32    : msg.i = event->payload.u.i32; break;
-		case XTK_EVENT_PAYLOAD_F32    : msg.f = event->payload.u.f32; break;
-		case XTK_EVENT_PAYLOAD_F64    : msg.d = event->payload.u.f64; break;
-		case XTK_EVENT_PAYLOAD_STRING : msg.ptr = ( void * ) event->payload.u.string.data; break;
-		case XTK_EVENT_PAYLOAD_QUERY :
-			msg.ptr = ( void * ) event->payload.u.query.text;
-			msg.i   = event->payload.u.query.index;
-			break;
-		case XTK_EVENT_PAYLOAD_RATING :
-			msg.d = event->payload.u.rating.value;
-			msg.i = event->payload.u.rating.count;
-			break;
-		case XTK_EVENT_PAYLOAD_INDEX_BOOL :
-			msg.i = event->payload.u.index_bool.index;
-			msg.b = event->payload.u.index_bool.value;
-			break;
-		case XTK_EVENT_PAYLOAD_NONE : break;
-		}
-	}
-	gallery_dispatch(bind->app, msg);
-	return XTK_EVENT_HANDLED;
-}
-
-static bool gallery_msg_owns_string(int tag) {
-	return tag == MSG_NAME || tag == MSG_PASSWORD || tag == MSG_ASB_TEXT || tag == MSG_ASB_QUERY;
-}
-
-static char *gallery_string_copy(char const *text) {
-	size_t size = strlen(text) + 1;
-	char  *copy = ( char * ) malloc(size);
-	if (copy) memcpy(copy, text, size);
-	return copy;
-}
-
-static GalleryPending *gallery_pending_new(XtkMsg msg) {
+static void dispatch(GalleryApp *g, XtkMsg msg) {
+	if (g->rebuilding || msg.tag <= MSG_NONE || msg.tag >= MSG_COUNT) return;
 	GalleryPending *pending = ( GalleryPending * ) calloc(1, sizeof(*pending));
-	if (!pending) return NULL;
-	pending->msg = msg;
-	if (!gallery_msg_owns_string(msg.tag) || !msg.ptr) return pending;
-
-	pending->owned = gallery_string_copy(( char const * ) msg.ptr);
-	if (!pending->owned) {
-		free(pending);
-		return NULL;
-	}
-	pending->msg.ptr = pending->owned;
-	return pending;
-}
-
-void gallery_dispatch(GalleryApp *g, XtkMsg msg) {
-	if (!g || g->rebuilding || msg.tag <= MSG_NONE || msg.tag >= MSG_COUNT) return;
-	GalleryPending *pending = gallery_pending_new(msg);
 	if (!pending) return;
+	pending->msg = msg;
+	if (msg_owns_string(msg.tag) && msg.ptr) {
+		pending->owned = _strdup(( char const * ) msg.ptr);
+		if (!pending->owned) {
+			free(pending);
+			return;
+		}
+		pending->msg.ptr = pending->owned;
+	}
 	if (g->pending_tail) g->pending_tail->next = pending;
 	else g->pending_head = pending;
 	g->pending_tail = pending;
 	flux_app_redraw(g->flux);
 }
 
-static void gallery_pending_free(GalleryPending *pending) {
-	if (!pending) return;
-	free(pending->owned);
-	free(pending);
+uint32_t page_post(void *arg, XtkEvent const *event) {
+	GalleryBind *bind = ( GalleryBind * ) arg;
+	if (!bind || !event) return XTK_EVENT_CONTINUE;
+	dispatch(bind->app, event_msg(bind, event));
+	return XTK_EVENT_HANDLED;
 }
 
-void gallery_flush(GalleryApp *g) {
-	if (!g || !g->pending_head || g->rebuilding) return;
-	int  initial_page = g->model.page;
-	bool rebuild      = false;
+static XtkCtrl result_ctrl(XtkBatchResult const *result, XtkLocalId local) {
+	if (local == XTK_LOCAL_INVALID) return XTK_CTRL_INVALID;
+	for (uint32_t i = 0; i < result->control_count; i++)
+		if (result->controls [i].local == local) return result->controls [i].control;
+	return XTK_CTRL_INVALID;
+}
 
+static void list_realize(void *ctx, XtkCtrl list, int first, int last) {
+	GalleryList *l = ( GalleryList * ) ctx;
+	GalleryApp  *g = l->app;
+	int          n = last >= first ? last - first + 1 : 0;
+	XtkLocalId   ids [GALLERY_LIST_WINDOW];
+	XtkTxn       txn;
+	if (n > GALLERY_LIST_WINDOW) n = GALLERY_LIST_WINDOW;
+	if (!xtk_txn_begin(&g->scene, &txn)) return;
+	for (int i = 0; i < l->count; i++) xtk_txn_drop(&txn, xtk_ref_existing(l->items [i]));
+	l->count = 0;
+	for (int i = 0; i < n; i++) {
+		ids [i] = xtk_listitem_create(&txn, xtk_ref_existing(list), NULL);
+		l->fill(g, &txn, xtk_ref_local(ids [i]), first + i);
+	}
+	XtkBatchResult *result = xtk_txn_commit(&txn, NULL);
+	if (!result) return;
+	for (int i = 0; i < n; i++) l->items [l->count++] = result_ctrl(result, ids [i]);
+	xtk_batchresult_destroy(result);
+}
+
+static void page_reset(PageBuild *b) {
+	if (b->active) xtk_txn_abort(&b->txn);
+	bind_blocks_destroy(b->bind_blocks);
+	allocs_destroy(b->allocs);
+	memset(b, 0, sizeof(*b));
+}
+
+static XtkLocalId page_scroll(PageBuild *b, XtkCtrl parent) {
+	b->root = xtk_scroll_create(
+	  &b->txn, xtk_ref_existing(parent), &(XtkContainerProps) {.set = XTK_CONTAINER_GROW_MASK, .grow = 1.0f}
+	);
+	return xtk_container_create(
+	  &b->txn, xtk_ref_local(b->root),
+	  &(XtkContainerProps) {
+		.set   = XTK_CONTAINER_SHRINK_MASK
+	           | XTK_CONTAINER_DIR_MASK
+	           | XTK_CONTAINER_ITEMS_MASK
+	           | XTK_CONTAINER_GAP_MASK
+	           | XTK_CONTAINER_PL_MASK
+	           | XTK_CONTAINER_PT_MASK
+	           | XTK_CONTAINER_PR_MASK
+	           | XTK_CONTAINER_PB_MASK
+	           | XTK_CONTAINER_FILL_MASK
+	           | XTK_CONTAINER_FITH_MASK,
+		.dir   = XTK_STACK_COLUMN,
+		.items = XENT_FLEX_ALIGN_STRETCH,
+		.gap   = 20.0f,
+		.pl    = 36.0f,
+		.pt    = 28.0f,
+		.pr    = 36.0f,
+		.pb    = 28.0f,
+		.fill  = true,
+		.fith  = true,
+	  }
+	);
+}
+
+static bool page_begin(PageBuild *b, GalleryApp *g) {
+	memset(b, 0, sizeof(*b));
+	b->app = g;
+	for (int i = 0; i < MSG_COUNT; i++) b->controls [i] = b->outputs [i] = XTK_LOCAL_INVALID;
+	for (int i = 0; i < PAGE_EXTRA; i++) b->extra [i] = XTK_LOCAL_INVALID;
+	if (!xtk_txn_begin(&g->scene, &b->txn)) return false;
+	b->active = true;
+	if (g->page_root != XTK_CTRL_INVALID) xtk_txn_drop(&b->txn, xtk_ref_existing(g->page_root));
+	b->content = page_scroll(b, g->nav);
+	return b->content != XTK_LOCAL_INVALID;
+}
+
+static void page_adopt(GalleryApp *g, PageBuild *b, XtkBatchResult const *result) {
+	bind_blocks_destroy(g->bind_blocks);
+	allocs_destroy(g->page_allocs);
+	g->page_root   = result_ctrl(result, b->root);
+	g->bind_blocks = b->bind_blocks;
+	g->page_allocs = b->allocs;
+	g->sync_page   = b->sync;
+	for (int i = 0; i < MSG_COUNT; i++) {
+		g->live_control [i] = result_ctrl(result, b->controls [i]);
+		g->live_output [i]  = result_ctrl(result, b->outputs [i]);
+	}
+	for (int i = 0; i < PAGE_EXTRA; i++) g->live_extra [i] = result_ctrl(result, b->extra [i]);
+	b->bind_blocks = NULL;
+	b->allocs      = NULL;
+}
+
+static bool page_commit(PageBuild *b) {
+	XtkBatchDiag    diag   = {0};
+	XtkBatchResult *result = xtk_txn_commit(&b->txn, &diag);
+	b->active              = false;
+	if (!result) {
+		fprintf(stderr, "gallery page batch rejected: error=%d op=%u\n", ( int ) diag.error, diag.failed_op);
+		return false;
+	}
+	GalleryApp *g = b->app;
+	page_adopt(g, b, result);
+	for (int i = 0; i < b->nlist; i++)
+		flux_host_virtualize(g->host, result_ctrl(result, b->lists [i]->local), list_realize, b->lists [i]);
+	xtk_batchresult_destroy(result);
+	return true;
+}
+
+typedef bool             (*PageBuildFn)(PageBuild *b);
+
+static PageBuildFn const k_pages [PAGE_COUNT] = {
+  [PAGE_HOME]            = page_home_build,
+  [PAGE_CAT_BASIC]       = page_category_build,
+  [PAGE_CAT_TEXT]        = page_category_build,
+  [PAGE_CAT_STATUS]      = page_category_build,
+  [PAGE_CAT_MEDIA]       = page_category_build,
+  [PAGE_CAT_MENUS]       = page_category_build,
+  [PAGE_CAT_DIALOGS]     = page_category_build,
+  [PAGE_CAT_SHELL]       = page_category_build,
+  [PAGE_CAT_COLLECTIONS] = page_category_build,
+  [PAGE_BUTTON]          = page_button_build,
+  [PAGE_SPLIT]           = page_split_build,
+  [PAGE_CHECKBOX]        = page_checkbox_build,
+  [PAGE_RADIO]           = page_radio_build,
+  [PAGE_COMBO]           = page_combo_build,
+  [PAGE_SLIDER]          = page_slider_build,
+  [PAGE_SCROLL_BAR]      = page_scroll_bar_build,
+  [PAGE_LOOPING]         = page_looping_build,
+  [PAGE_DATE_PICKER]     = page_date_picker_build,
+  [PAGE_TIME_PICKER]     = page_time_picker_build,
+  [PAGE_CALENDAR]        = page_calendar_build,
+  [PAGE_COLOR_PICKER]    = page_color_picker_build,
+  [PAGE_TOGGLE]          = page_toggle_build,
+  [PAGE_RADIO_BUTTONS]   = page_radio_buttons_build,
+  [PAGE_RATING]          = page_rating_build,
+  [PAGE_TOGGLE_SPLIT]    = page_toggle_split_build,
+  [PAGE_TEXTBOX]         = page_textbox_build,
+  [PAGE_AUTOSUGGEST]     = page_autosuggest_build,
+  [PAGE_NUMBERBOX]       = page_numberbox_build,
+  [PAGE_TYPOGRAPHY]      = page_typography_build,
+  [PAGE_INFOBAR]         = page_infobar_build,
+  [PAGE_BADGE]           = page_badge_build,
+  [PAGE_PROGRESS]        = page_progress_build,
+  [PAGE_TOOLTIP]         = page_tooltip_build,
+  [PAGE_IMAGE]           = page_image_build,
+  [PAGE_PERSON_PICTURE]  = page_person_picture_build,
+  [PAGE_FLIPVIEW]        = page_flipview_build,
+  [PAGE_PAGER]           = page_pager_build,
+  [PAGE_MENUS]           = page_menus_build,
+  [PAGE_TABVIEW]         = page_tabview_build,
+  [PAGE_EXPANDER]        = page_expander_build,
+  [PAGE_BREADCRUMB]      = page_breadcrumb_build,
+  [PAGE_SELECTOR_BAR]    = page_selector_bar_build,
+  [PAGE_LISTVIEW]        = page_listview_build,
+  [PAGE_GRIDVIEW]        = page_gridview_build,
+  [PAGE_LISTBOX]         = page_listbox_build,
+  [PAGE_TREE_VIEW]       = page_tree_view_build,
+  [PAGE_ITEMS_VIEW]      = page_items_view_build,
+  [PAGE_PULL_REFRESH]    = page_pull_refresh_build,
+  [PAGE_SPLIT_VIEW]      = page_split_view_build,
+  [PAGE_TITLE_BAR]       = page_title_bar_build,
+  [PAGE_DIALOG]          = page_dialog_build,
+  [PAGE_TEACHING_TIP]    = page_teaching_tip_build,
+  [PAGE_SETTINGS]        = page_settings_build,
+};
+
+static void rebuild_page(GalleryApp *g) {
+	int page = g->model.page;
+	if (( unsigned ) page >= PAGE_COUNT || !k_pages [page]) page = PAGE_HOME;
+	g->rebuilding = true;
+	PageBuild b;
+	if (page_begin(&b, g) && k_pages [page](&b)) page_commit(&b);
+	page_reset(&b);
+	g->rebuilding = false;
+}
+
+static void flush(void *ctx) {
+	GalleryApp *g = ( GalleryApp * ) ctx;
+	if (!g->pending_head || g->rebuilding) return;
+	int  initial = g->model.page;
+	bool rebuild = !g->sync_page;
 	while (g->pending_head) {
 		GalleryPending *pending = g->pending_head;
 		g->pending_head         = pending->next;
-		int page_before         = g->model.page;
 		gallery_model_update(&g->model, pending->msg);
-		if (g->model.page != page_before || !g->sync_page) rebuild = true;
-		gallery_pending_free(pending);
+		free(pending->owned);
+		free(pending);
 	}
 	g->pending_tail = NULL;
-
-	if (rebuild) gallery_rebuild_page(g);
-	else g->sync_page(g);
-	if (g->model.page != initial_page && g->nav != XENT_NODE_INVALID)
-		flux_nav_select(gallery_store(g), g->nav, g->model.page);
-}
-
-static void gallery_pending_destroy(GalleryApp *g) {
-	while (g->pending_head) {
-		GalleryPending *pending = g->pending_head;
-		g->pending_head         = pending->next;
-		gallery_pending_free(pending);
+	if (g->model.page != initial) {
+		rebuild = true;
+		xtk_nav_setsel(&g->scene, g->nav, g->model.page, (XtkChangeStamp) {0});
 	}
-	g->pending_tail = NULL;
+	if (!rebuild) g->sync_page(g);
+	if (rebuild || g->rebuild_request) rebuild_page(g);
+	g->rebuild_request = false;
 }
 
-static void     gallery_frame(void *ctx) { gallery_flush(( GalleryApp * ) ctx); }
-
-void            gallery_page_sync(GalleryApp *g, GalleryPageSyncFn sync) { g->sync_page = sync; }
-
-static uint32_t on_invoke(void *ud, XtkEvent const *ev) {
-	( void ) ev;
-	GalleryBind *b = ( GalleryBind * ) ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = b->i});
-	return XTK_EVENT_HANDLED;
-}
-
-static uint32_t on_invoke_ev(void *ud, XtkEvent const *ev) {
-	GalleryBind *b = ( GalleryBind * ) ud;
-	int          i = (ev && ev->payload.kind == XTK_EVENT_PAYLOAD_I32) ? ev->payload.u.i32 : b->i;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = i});
-	return XTK_EVENT_HANDLED;
-}
-
-static uint32_t on_bool(void *ud, XtkEvent const *ev) {
-	GalleryBind *b = ( GalleryBind * ) ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .b = ev && ev->payload.u.b});
-	return XTK_EVENT_HANDLED;
-}
-
-static uint32_t on_f32(void *ud, XtkEvent const *ev) {
-	GalleryBind *b = ( GalleryBind * ) ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .f = ev ? ev->payload.u.f32 : 0.0f});
-	return XTK_EVENT_HANDLED;
-}
-
-static uint32_t on_f64(void *ud, XtkEvent const *ev) {
-	GalleryBind *b = ( GalleryBind * ) ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .d = ev ? ev->payload.u.f64 : 0.0});
-	return XTK_EVENT_HANDLED;
-}
-
-static uint32_t on_string(void *ud, XtkEvent const *ev) {
-	GalleryBind *b = ( GalleryBind * ) ud;
-	char const  *s = (ev && ev->payload.kind == XTK_EVENT_PAYLOAD_STRING) ? ev->payload.u.string.data : NULL;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .ptr = ( void * ) s});
-	return XTK_EVENT_HANDLED;
-}
-
-static uint32_t select(void *ud, XtkEvent const *ev) {
-	GalleryBind *b = ( GalleryBind * ) ud;
-	int          i = (ev && ev->payload.kind == XTK_EVENT_PAYLOAD_I32) ? ev->payload.u.i32 : 0;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = i});
-	return XTK_EVENT_HANDLED;
-}
-
-static uint32_t close(void *ud, XtkEvent const *ev) {
-	GalleryBind *b = ( GalleryBind * ) ud;
-	int          i = (ev && ev->payload.kind == XTK_EVENT_PAYLOAD_I32) ? ev->payload.u.i32 : b->i;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = i});
-	return XTK_EVENT_HANDLED;
-}
-
-static void sub(GalleryApp *g, XentNodeId node, XtkEventId id, XtkEventFn fn, GalleryBind *b) {
-	if (!b || node == XENT_NODE_INVALID) return;
-	flux_host_subscribe(g->host, ( XtkCtrl ) node, id, XTK_EVENT_PHASE_MASK_TARGET, fn, b);
-}
-
-void g_on_invoke(GalleryApp *g, XentNodeId node, int tag) {
-	sub(g, node, XTK_EVENT_INVOKE, on_invoke, gallery_bind(g, tag));
-}
-
-void g_on_invoke_i(GalleryApp *g, XentNodeId node, int tag, int i) {
-	sub(g, node, XTK_EVENT_INVOKE, on_invoke, gallery_bind_i(g, tag, i));
-}
-
-void g_on_change_bool(GalleryApp *g, XentNodeId node, int tag) {
-	sub(g, node, XTK_EVENT_CHANGE_BOOL, on_bool, gallery_bind(g, tag));
-}
-
-void g_on_change_f32(GalleryApp *g, XentNodeId node, int tag) {
-	sub(g, node, XTK_EVENT_CHANGE_F32, on_f32, gallery_bind(g, tag));
-}
-
-void g_on_change_f64(GalleryApp *g, XentNodeId node, int tag) {
-	sub(g, node, XTK_EVENT_CHANGE_F64, on_f64, gallery_bind(g, tag));
-}
-
-void g_on_change_string(GalleryApp *g, XentNodeId node, int tag) {
-	sub(g, node, XTK_EVENT_CHANGE_STRING, on_string, gallery_bind(g, tag));
-}
-
-void g_on_select(GalleryApp *g, XentNodeId node, int tag) {
-	sub(g, node, XTK_EVENT_SELECT, select, gallery_bind(g, tag));
-}
-
-void g_on_close(GalleryApp *g, XentNodeId node, int tag) { sub(g, node, XTK_EVENT_CLOSE, close, gallery_bind(g, tag)); }
-
-typedef void (*PageFn)(GalleryApp *g, XentNodeId parent);
-typedef bool (*PageBuildFn)(PageBuild *b);
-
-static void  page_cat_basic(GalleryApp *g, XentNodeId p) {
-	page_category(g, p, "Basic input", "Buttons, checkboxes, radios, combos, sliders, and switches.");
-}
-
-static void page_cat_text(GalleryApp *g, XentNodeId p) {
-	page_category(g, p, "Text", "Text entry and display: TextBox, NumberBox, Typography.");
-}
-
-static void page_cat_status(GalleryApp *g, XentNodeId p) {
-	page_category(g, p, "Status & info", "InfoBar, InfoBadge, progress, and tooltips.");
-}
-
-static void page_cat_media(GalleryApp *g, XentNodeId p) { page_category(g, p, "Media", "Images decoded through WIC."); }
-
-static void page_cat_menus(GalleryApp *g, XentNodeId p) {
-	page_category(g, p, "Menus & layout", "Menus, tabs, links, and layout containers.");
-}
-
-static void page_cat_dialogs(GalleryApp *g, XentNodeId p) {
-	page_category(g, p, "Dialogs & flyouts", "Modal dialogs and popup surfaces.");
-}
-
-static void page_cat_shell(GalleryApp *g, XentNodeId p) {
-	page_category(g, p, "Layout & shell", "SplitView and window scaffolding.");
-}
-
-static void page_cat_collections(GalleryApp *g, XentNodeId p) {
-	page_category(g, p, "Collections", "ListView, GridView, ListBox, TreeView, ItemsView, and PullToRefresh.");
-}
-
-static PageFn const k_pages [PAGE_COUNT] = {
-  [PAGE_CAT_BASIC]       = page_cat_basic,
-  [PAGE_CAT_TEXT]        = page_cat_text,
-  [PAGE_CAT_STATUS]      = page_cat_status,
-  [PAGE_CAT_MEDIA]       = page_cat_media,
-  [PAGE_CAT_MENUS]       = page_cat_menus,
-  [PAGE_CAT_DIALOGS]     = page_cat_dialogs,
-  [PAGE_CAT_SHELL]       = page_cat_shell,
-  [PAGE_CAT_COLLECTIONS] = page_cat_collections,
-  [PAGE_SPLIT]           = page_split,
-  [PAGE_COMBO]           = page_combo,
-  [PAGE_RADIO_BUTTONS]   = page_radio_buttons,
-  [PAGE_TOGGLE_SPLIT]    = page_toggle_split,
-  [PAGE_INFOBAR]         = page_infobar,
-  [PAGE_IMAGE]           = page_image,
-  [PAGE_PERSON_PICTURE]  = page_person_picture,
-  [PAGE_PAGER]           = page_pager,
-  [PAGE_SPLIT_VIEW]      = page_split_view,
-  [PAGE_TITLE_BAR]       = page_title_bar,
-  [PAGE_MENUS]           = page_menus,
-  [PAGE_TABVIEW]         = page_tabview,
-  [PAGE_EXPANDER]        = page_expander,
-  [PAGE_BREADCRUMB]      = page_breadcrumb,
-  [PAGE_SELECTOR_BAR]    = page_selector_bar,
-  [PAGE_LISTVIEW]        = page_listview,
-  [PAGE_GRIDVIEW]        = page_gridview,
-  [PAGE_LISTBOX]         = page_listbox,
-  [PAGE_TREE_VIEW]       = page_tree_view,
-  [PAGE_ITEMS_VIEW]      = page_items_view,
-  [PAGE_PULL_REFRESH]    = page_pull_refresh,
-  [PAGE_FLIPVIEW]        = page_flipview,
-  [PAGE_AUTOSUGGEST]     = page_autosuggest,
-  [PAGE_DIALOG]          = page_dialog,
-  [PAGE_TEACHING_TIP]    = page_teaching_tip,
-  [PAGE_SETTINGS]        = page_settings,
-};
-
-static PageBuildFn const k_page_builders [PAGE_COUNT] = {
-  [PAGE_HOME]       = page_home_build,
-  [PAGE_BUTTON]     = page_button_build,
-  [PAGE_CHECKBOX]   = page_checkbox_build,
-  [PAGE_RADIO]      = page_radio_build,
-  [PAGE_SLIDER]     = page_slider_build,
-  [PAGE_TOGGLE]     = page_toggle_build,
-  [PAGE_TYPOGRAPHY] = page_typography_build,
-  [PAGE_TOOLTIP]    = page_tooltip_build,
-  [PAGE_NUMBERBOX]  = page_numberbox_build,
-  [PAGE_RATING]     = page_rating_build,
-  [PAGE_TEXTBOX]    = page_textbox_build,
-  [PAGE_BADGE]      = page_badge_build,
-  [PAGE_PROGRESS]   = page_progress_build,
-};
-
-void gallery_rebuild_page(GalleryApp *g) {
-	if (g->content_host == XENT_NODE_INVALID) return;
-	g->rebuilding = 1;
-
-	int page      = g->model.page;
-	if (( unsigned ) page >= PAGE_COUNT || (!k_page_builders [page] && !k_pages [page])) page = PAGE_HOME;
-	if (k_page_builders [page]) {
-		PageBuild build = {0};
-		bool      ok    = page_begin(&build, g) && k_page_builders [page](&build) && page_commit(&build);
-		if (!ok && build.active) page_abort(&build);
-		g->rebuilding = 0;
-		return;
-	}
-
-	if (g->page_root != XENT_NODE_INVALID) {
-		flux_tree_drop(gallery_store(g), g->page_root);
-		g->page_root = XENT_NODE_INVALID;
-	}
-	gallery_page_allocs_destroy(g);
-	gallery_binds_reset(g);
-	memset(g->live_control, 0, sizeof(g->live_control));
-	memset(g->live_output, 0, sizeof(g->live_output));
-	memset(g->live_data, 0, sizeof(g->live_data));
-	g->sync_page      = NULL;
-
-	XentNodeId scroll = g_scroll(g, g->content_host);
-	XentNodeId col    = g_col(g, scroll, 20.0f, 36.0f, 28.0f, 36.0f, 28.0f);
-	g->page_root      = scroll;
-
-	k_pages [page](g, col);
-	g->rebuilding = 0;
+static bool shell_build(GalleryApp *g) {
+	XtkTxn txn;
+	if (!xtk_txn_begin(&g->scene, &txn)) return false;
+	XtkLocalId nav = xtk_nav_create(
+	  &txn, xtk_ref_existing(xtk_scene_root(&g->scene)),
+	  &(XtkNavProps) {.set = XTK_NAV_GROW_MASK | XTK_NAV_SEL_MASK, .grow = 1.0f, .sel = g->model.page}
+	);
+	xtk_txn_setnav(
+	  &txn, xtk_ref_local(nav),
+	  &(XtkNavDesc) {
+		.items            = kNavItems,
+		.nitem            = PAGE_COUNT,
+		.sel              = g->model.page,
+		.window_title_bar = true,
+		.app_title        = "FluXent Gallery",
+	  }
+	);
+	g->nav_bind = (GalleryBind) {.app = g, .tag = MSG_NAV};
+	xtk_nav_onselect(&txn, xtk_ref_local(nav), page_post, &g->nav_bind);
+	XtkBatchResult *result = xtk_txn_commit(&txn, NULL);
+	if (!result) return false;
+	g->nav = result_ctrl(result, nav);
+	xtk_batchresult_destroy(result);
+	return g->nav != XTK_CTRL_INVALID;
 }
 
 bool gallery_app_create(GalleryApp *g) {
 	memset(g, 0, sizeof(*g));
 	gallery_model_init(&g->model);
-
-	FluxAppCfg cfg = {
+	g->flux = flux_app_create(&(FluxAppCfg) {
 	  .title     = L"FluXent Gallery (Imperative)",
 	  .width     = 1100,
 	  .height    = 760,
 	  .dark_mode = flux_theme_systemdark(),
 	  .backdrop  = FLUX_BACKDROP_MICA,
-	};
-	g->flux = flux_app_create(&cfg);
+	});
 	if (!g->flux) return false;
-
-	g->bctx.ctx   = flux_app_ctx(g->flux);
-	g->bctx.store = flux_app_store(g->flux);
-	g->bctx.app   = g->flux;
-	g->host       = flux_host_adopt(g->bctx.ctx, g->bctx.store, flux_app_root(g->flux));
+	g->host = flux_app_attachhost(g->flux);
 	if (!g->host) return false;
-	g->bctx.host = g->host;
-
-	g->backend   = flux_xtk_backend_create(&g->bctx, g->host);
-	if (!g->backend) return false;
-	flux_app_sethost(g->flux, g->host, g->backend);
-	g->scene = xtk_scene_from_host(g->host);
-	flux_app_onframe(g->flux, gallery_frame, g);
-
-	if (!gallery_shell_build(g)) return false;
-	gallery_rebuild_page(g);
+	g->scene = xtk_scene_fromhost(g->host);
+	flux_app_onframe(g->flux, flush, g);
+	if (!shell_build(g)) return false;
+	rebuild_page(g);
 	return true;
 }
 
 void gallery_app_destroy(GalleryApp *g) {
 	if (g->flux) flux_app_onframe(g->flux, NULL, NULL);
-	gallery_pending_destroy(g);
+	while (g->pending_head) {
+		GalleryPending *next = g->pending_head->next;
+		free(g->pending_head->owned);
+		free(g->pending_head);
+		g->pending_head = next;
+	}
 	if (g->host) flux_host_destroy(g->host);
-	g->host = NULL;
 	if (g->flux) flux_app_destroy(g->flux);
-	gallery_page_allocs_destroy(g);
-	gallery_binds_destroy(g);
+	bind_blocks_destroy(g->bind_blocks);
+	allocs_destroy(g->page_allocs);
 	memset(g, 0, sizeof(*g));
 }
 

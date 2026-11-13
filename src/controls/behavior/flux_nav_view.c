@@ -6,7 +6,6 @@
 #include "render/flux_icon.h"
 #include "runtime/flux_anim_driver.h"
 #include "runtime/flux_str.h"
-#include <fluxent/flux_nav_trace.h>
 
 #include "controls/factory/flux_init_container.h"
 #include "controls/factory/flux_init_nav.h"
@@ -19,30 +18,18 @@
 #include <stdlib.h>
 #include <windows.h>
 
-/* WinUI NavigationView (left nav). See flux_nav_data.h for the layout model.
- * Geometry (pane width, content offset, minimal slide, scrim) and the selection
- * indicator are recomputed on a shared 60fps timer while animating. */
-
-#define NAV_PANE_ANIM_MS     250.0f /* Expanded<->Compact inline width. */
+#define NAV_PANE_ANIM_MS     250.0f
 #define NAV_MINIMAL_OPEN_MS  350.0f
 #define NAV_MINIMAL_CLOSE_MS 120.0f
 #define NAV_IND_MS           600.0f
 #define NAV_IND_OP_MS        200.0f
-#define NAV_SCRIM_ALPHA      0x4d /* SmokeFillColorDefault (#4D000000), matching ContentDialog's scrim. */
+#define NAV_SCRIM_ALPHA      0x4d
 #define NAV_ADAPT_COMPACT    641.0f
 #define NAV_ADAPT_EXPANDED   1008.0f
-#define NAV_EXPAND_MS        200.0f /* inline children reveal */
-#define NAV_CHEVRON_ZONE     40.0f  /* right-edge press region that only toggles */
-#define NAV_CHILD_INDENT     31.0f  /* NavigationViewItemBase c_itemIndentation */
+#define NAV_EXPAND_MS        200.0f
+#define NAV_CHEVRON_ZONE     40.0f
+#define NAV_CHILD_INDENT     31.0f
 
-/* WinUI NavigationView::PlayIndicatorAnimations, decomposed to pill edges:
- * over the 600 ms run, the LEADING edge does all of its travel in the first
- * third (200 ms) on c_frame1 = bezier(0.9, 0.1, 1.0, 0.2) — a slow-start
- * burst that stretches the pill across both items — then holds; the
- * TRAILING edge holds for that first third, then settles over the
- * remaining 400 ms on c_frame2 = bezier(0.1, 0.9, 0.2, 1). (The original
- * composes Offset/Scale/CenterPoint with a single-frame step at 33.3%;
- * this is the equivalent edge trajectory.) */
 static float nav_ease_lead(float t) {
 	if (t >= 1.0f / 3.0f) return 1.0f;
 	return flux_cubic_bezier(t * 3.0f, 0.9f, 0.1f, 1.0f, 0.2f);
@@ -62,7 +49,7 @@ static void nav_tween_to(FluxNavTween *tw, float target, float duration_ms) {
 	if (fabsf(target - tw->target) < 0.01f) return;
 	tw->start    = tw->current;
 	tw->target   = target;
-	tw->start_ms = GetTickCount();
+	tw->start_ms = flux_anim_now();
 	tw->duration = duration_ms;
 	tw->active   = true;
 }
@@ -90,17 +77,6 @@ static FluxNavViewData *nav_data(FluxStore *store, XentNodeId nav) {
 	return ( FluxNavViewData * ) nd->component_data;
 }
 
-static void nav_trace(FluxNavViewData const *d, char const *action, int index) {
-	if (!d) return;
-	flux_nav_trace_log(
-	  "nav.action",
-	  "%s index=%d node=%llu count=%d selected=%d mode=%d minimal_open=%d "
-	  "flyout=%d revision=%llu",
-	  action, index, ( unsigned long long ) d->root, d->count, d->selected, d->mode, d->minimal_open, d->flyout_parent,
-	  ( unsigned long long ) d->selection_revision
-	);
-}
-
 static void nav_repaint(FluxNavViewData *d) {
 	HWND h = flux_window_hwnd(d->window);
 	if (h) InvalidateRect(h, NULL, FALSE);
@@ -119,7 +95,6 @@ static void  nav_set_abs(FluxNavViewData *d, XentNodeId node, float x, float y, 
 	xent_setsize(d->ctx, node, (XentSize) {w, h});
 }
 
-/* Update section header heights when label visibility changes. */
 static void nav_sync_header_heights(FluxNavViewData *d) {
 	float h = d->labels_visible ? FLUX_NAV_HEADER_H : 0.0f;
 	for (int i = 0; i < d->count; i++)
@@ -141,13 +116,8 @@ static void nav_apply_geometry_top(FluxNavViewData *d) {
 }
 
 static void nav_apply_geometry_minimal(FluxNavViewData *d) {
-	/* Content clears the integrated caption row (48) or the built-in toggle (40) —
-	 * same rule as inline mode and the pane top-pad at nav_build_tree. */
 	float top      = d->window_title_bar ? FLUX_TB_HEIGHT : (FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD);
 	float pane_x   = -(1.0f - d->minimal_t.current) * FLUX_NAV_PANE_EXPANDED;
-	/* The scrim is an interactive (on_click) full-window overlay used to light-dismiss
-	 * the open flyout. Only size it while the flyout is actually open — a closed,
-	 * alpha-0 but full-window scrim still hit-tests and would eat every content click. */
 	bool  scrim_on = d->minimal_t.current > 0.01f;
 	nav_set_abs(d, d->content, 0.0f, top, d->width, flux_maxf(0.0f, d->height - top));
 	nav_set_abs(d, d->pane, pane_x, 0.0f, FLUX_NAV_PANE_EXPANDED, d->height);
@@ -156,19 +126,15 @@ static void nav_apply_geometry_minimal(FluxNavViewData *d) {
 }
 
 static void nav_apply_geometry_inline(FluxNavViewData *d) {
-	float flow = d->pane_w.current;                           /* animates between 320 and 48 */
-	float tb   = d->window_title_bar ? FLUX_TB_HEIGHT : 0.0f; /* content clears the caption row */
+	float flow = d->pane_w.current;
+	float tb   = d->window_title_bar ? FLUX_TB_HEIGHT : 0.0f;
 	nav_set_abs(d, d->pane, 0.0f, 0.0f, flow, d->height);
 	nav_set_abs(d, d->content, flow, tb, flux_maxf(0.0f, d->width - flow), flux_maxf(0.0f, d->height - tb));
 	nav_set_abs(d, d->scrim, 0.0f, 0.0f, 0.0f, 0.0f);
 	nav_set_scrim_alpha(d, 0);
 }
 
-/* Place pane + content + scrim from the current mode and animated values. */
 static void nav_apply_geometry(FluxNavViewData *d) {
-	/* Labels track the animated pane width, not the mode flag: the moment mode
-	 * flips to Compact the pane still has to *animate* shut, so gating labels on
-	 * mode blanks them while the pane is still wide (wide-rail-no-labels). */
 	bool labels_was   = d->labels_visible;
 	d->labels_visible = d->pane_w.current > (FLUX_NAV_PANE_COMPACT + FLUX_NAV_ICON_BOX);
 	if (d->labels_visible != labels_was && d->mode != FLUX_NAV_TOP) {
@@ -183,8 +149,6 @@ static void nav_apply_geometry(FluxNavViewData *d) {
 		return;
 	}
 
-	/* The integrated title bar owns the hamburger, so hide the built-in one and
-	 * park the strip full-width across the top (drawn last => over pane/content). */
 	if (d->title_bar != XENT_NODE_INVALID) nav_set_abs(d, d->title_bar, 0.0f, 0.0f, d->width, FLUX_TB_HEIGHT);
 	xent_setsize(
 	  d->ctx, d->toggle,
@@ -199,11 +163,6 @@ static void nav_apply_geometry(FluxNavViewData *d) {
 	nav_apply_geometry_inline(d);
 }
 
-/* Pane-local center of the selected item along the pane axis (Y for the left
- * pane, X for the Top bar), or -1 if unavailable. */
-/* The item the indicator should sit on: the selection itself, or — when it is
- * hidden inside a collapsed/flyout-only parent — its nearest visible ancestor
- * (WinUI IsChildSelected on the parent chain). */
 static int nav_indicator_item(FluxNavViewData *d) {
 	int cur = d->selected;
 	for (int p = (cur >= 0) ? d->items [cur].parent : -1; p >= 0; p = d->items [p].parent)
@@ -219,18 +178,13 @@ static float nav_selected_center(FluxNavViewData *d) {
 	if (!xent_layout_rect(d->ctx, d->items [ind].node, &ir)) return -1.0f;
 	if (!xent_layout_rect(d->ctx, d->pane, &pr)) return -1.0f;
 	if (ir.h <= 0.0f) return -1.0f;
-	/* Layout rects are scroll-agnostic; the snapshot shifts the pill by the live
-	 * viewport offset for menu items (footer items sit outside the viewport). */
 	d->ind_visible   = ind;
 	d->ind_in_scroll = (d->items [ind].kind != FLUX_NAV_ITEM_FOOTER);
 	if (d->mode == FLUX_NAV_TOP) return (ir.x + ir.w * 0.5f) - pr.x;
 	return (ir.y + ir.h * 0.5f) - pr.y;
 }
 
-/* Drive the indicator: animate on selection change, snap on layout drift. */
 static void nav_update_indicator(FluxNavViewData *d) {
-	/* The pill lives on the pane; hide it whenever the pane is off-screen (Minimal,
-	 * closed) so it never floats over the content. */
 	bool  pane_visible = (d->mode != FLUX_NAV_MINIMAL) || d->minimal_open;
 	float center       = pane_visible ? nav_selected_center(d) : -1.0f;
 	if (center < 0.0f) {
@@ -258,7 +212,6 @@ static void nav_update_indicator(FluxNavViewData *d) {
 		d->ind_index = d->selected;
 		return;
 	}
-	/* Same item: keep the pill glued to it if layout shifted (no animation). */
 	if (!d->ind_top.active && fabsf(d->ind_top.target - top) > 0.5f) nav_tween_snap(&d->ind_top, top);
 	if (!d->ind_bot.active && fabsf(d->ind_bot.target - bot) > 0.5f) nav_tween_snap(&d->ind_bot, bot);
 }
@@ -278,9 +231,6 @@ static bool nav_tick_one(FluxNavViewData *d, DWORD now) {
 	active      |= nav_tick_expand(d, now);
 	nav_update_indicator(d);
 	active |= d->ind_top.active || d->ind_bot.active || d->ind_op.active;
-	/* Keep ticking until the indicator can prime: at startup the selected item's
-	 * layout rect is not ready on the first tick, so center is unknown and nothing
-	 * else is animating -- without this the timer would stop before the pill appears. */
 	active |= (d->selected >= 0 && !d->ind_primed);
 	nav_apply_geometry(d);
 	return active;
@@ -300,15 +250,13 @@ static void nav_anim_start(FluxNavViewData *d) {
 }
 
 static void nav_set_mode(FluxNavViewData *d, FluxNavDisplayMode mode) {
-	nav_trace(d, "set-mode.request", mode);
-	if (d->mode == mode || mode == FLUX_NAV_TOP || d->mode == FLUX_NAV_TOP)
-		return; /* Top transitions via the pane-display API */
+	if (d->mode == mode || mode == FLUX_NAV_TOP || d->mode == FLUX_NAV_TOP) return;
 	FluxNavDisplayMode prev = d->mode;
 	d->mode                 = mode;
 
 	if (mode == FLUX_NAV_MINIMAL) {
 		d->minimal_open = false;
-		nav_tween_snap(&d->minimal_t, 0.0f); /* pane starts off-screen left */
+		nav_tween_snap(&d->minimal_t, 0.0f);
 		nav_tween_snap(&d->pane_w, FLUX_NAV_PANE_EXPANDED);
 	}
 	else {
@@ -319,12 +267,10 @@ static void nav_set_mode(FluxNavViewData *d, FluxNavDisplayMode mode) {
 	nav_snap_children(d);
 	nav_apply_geometry(d);
 	nav_anim_start(d);
-	nav_trace(d, "set-mode.applied", mode);
 }
 
 static void nav_toggle_click(void *ctx) {
 	FluxNavViewData *d = ( FluxNavViewData * ) ctx;
-	nav_trace(d, "toggle.click", -1);
 	if (d->mode == FLUX_NAV_TOP) return;
 	if (d->mode == FLUX_NAV_MINIMAL) {
 		d->minimal_open = !d->minimal_open;
@@ -332,16 +278,11 @@ static void nav_toggle_click(void *ctx) {
 		  &d->minimal_t, d->minimal_open ? 1.0f : 0.0f, d->minimal_open ? NAV_MINIMAL_OPEN_MS : NAV_MINIMAL_CLOSE_MS
 		);
 		nav_anim_start(d);
-		nav_trace(d, "toggle.minimal", -1);
 		return;
 	}
 	nav_set_mode(d, d->mode == FLUX_NAV_EXPANDED ? FLUX_NAV_COMPACT : FLUX_NAV_EXPANDED);
 }
 
-/* WinUI: Escape light-dismisses the open Minimal overlay pane (NavigationView.cpp
- * OnKeyDown, DisplayMode==Minimal && IsPaneOpen). Reaches us because clicking or
- * keyboard-activating the toggle/item focuses it, so the framework routes the key
- * to the focused node's on_key. ctx is the owning FluxNavViewData. */
 static bool nav_escape_key(void *ctx, FluxKey key, bool down) {
 	if (!down || key != FLUX_KEY_ESCAPE) return false;
 	FluxNavViewData *d = ( FluxNavViewData * ) ctx;
@@ -349,34 +290,27 @@ static bool nav_escape_key(void *ctx, FluxKey key, bool down) {
 	d->minimal_open = false;
 	nav_tween_to(&d->minimal_t, 0.0f, NAV_MINIMAL_CLOSE_MS);
 	nav_anim_start(d);
-	nav_trace(d, "escape.close", -1);
 	return true;
 }
 
 static void nav_apply_selection(FluxNavViewData *d, int index, bool notify) {
-	nav_trace(d, notify ? "select.user.request" : "select.model.request", index);
 	if (index < 0 || index >= d->count) return;
 	if (d->selected == index) return;
 	if (d->selected >= 0) xent_sem_setselected(d->ctx, d->items [d->selected].node, false);
 	d->selected = index;
 	xent_sem_setselected(d->ctx, d->items [index].node, true);
-	/* Light-dismiss the overlay pane only for leaf items: parents expand in place
-	 * so a child can be picked (WinUI ClosePaneIfNeccessaryAfterItemIsClicked
-	 * requires !DoesNavigationViewItemHaveChildren). */
 	if (d->mode == FLUX_NAV_MINIMAL && d->minimal_open && !d->items [index].has_children) {
 		d->minimal_open = false;
 		nav_tween_to(&d->minimal_t, 0.0f, NAV_MINIMAL_CLOSE_MS);
 	}
 	nav_anim_start(d);
 	d->selection_revision++;
-	nav_trace(d, notify ? "select.user.applied" : "select.model.applied", index);
 	if (notify && d->on_selection_changed) d->on_selection_changed(d->on_sel_ctx, index);
 }
 
 static void nav_item_click(void *ctx) {
 	FluxNavViewItem *it = ( FluxNavViewItem * ) ctx;
 	FluxNavViewData *d  = it->nav;
-	nav_trace(d, "item.click", it->index);
 	if (it->has_children) {
 		bool chevron         = it->press_on_chevron;
 		it->press_on_chevron = false;
@@ -385,7 +319,7 @@ static void nav_item_click(void *ctx) {
 			return;
 		}
 		nav_toggle_expand(d, it->index);
-		if (chevron) return; /* chevron press toggles without selecting */
+		if (chevron) return;
 	}
 	nav_apply_selection(d, it->index, true);
 }
@@ -405,11 +339,8 @@ static void nav_scrim_click(void *ctx) {
 	d->minimal_open = false;
 	nav_tween_to(&d->minimal_t, 0.0f, NAV_MINIMAL_CLOSE_MS);
 	nav_anim_start(d);
-	nav_trace(d, "scrim.close", -1);
 }
 
-/* Children render inline only where the full pane is visible; Compact rails and
- * the Top bar show them in a flyout (TabViewItem::ShouldRepeaterShowInFlyout). */
 static bool nav_children_inline(FluxNavViewData const *d) {
 	if (d->mode == FLUX_NAV_MINIMAL) return true;
 	return d->mode != FLUX_NAV_TOP && d->labels_visible;
@@ -422,17 +353,12 @@ static float nav_children_content_h(FluxNavViewData *d, int parent) {
 	return n > 0 ? ( float ) n * (FLUX_NAV_ITEM_HEIGHT + FLUX_NAV_ITEM_GAP) - FLUX_NAV_ITEM_GAP : 0.0f;
 }
 
-/* Rebuild items_host child order so each parent's children-host follows it. */
-/* A children-host is in the flex flow only while inline-shown; otherwise it would
- * still consume items_host's gap on both sides and make a collapsed parent taller
- * than a leaf (WinUI keeps every item at NavigationViewItemOnLeftMinHeight=36). */
 static bool nav_host_shown(FluxNavViewData const *d, FluxNavViewItem const *it) {
 	return it->children_host != XENT_NODE_INVALID
 	    && nav_children_inline(d)
 	    && (it->expanded || it->expand_t.active || it->expand_t.current > 0.001f);
 }
 
-/* Only menu-list roots live in items_host; footer items stay in footer_host. */
 static bool nav_in_items_host(FluxNavViewItem const *it) { return it->parent < 0 && it->kind != FLUX_NAV_ITEM_FOOTER; }
 
 static void nav_items_restack(FluxNavViewData *d) {
@@ -459,12 +385,11 @@ static void nav_make_children_host(FluxNavViewData *d, FluxNavViewItem *par) {
 	xent_setshrink(d->ctx, par->children_host, 0.0f);
 	xent_setsize(d->ctx, par->children_host, (XentSize) {NAN, 0.0f});
 	FluxNodeData *hn = flux_store_find(d->store, par->children_host);
-	if (hn) hn->clips_children = true; /* the reveal animation clips children */
+	if (hn) hn->clips_children = true;
 	nav_tween_init(&par->expand_t, 0.0f);
 	nav_items_restack(d);
 }
 
-/* Snap every children-host to its resting height for the current mode. */
 static void nav_snap_children(FluxNavViewData *d) {
 	bool inline_ok = nav_children_inline(d);
 	for (int i = 0; i < d->count; i++) {
@@ -501,7 +426,6 @@ static bool nav_tick_expand(FluxNavViewData *d, DWORD now) {
 	return active;
 }
 
-/* UTF-8 of a single Segoe Fluent glyph for the flyout item definition. */
 static char const *nav_glyph_utf8(char const *icon_name, char buf [4]) {
 	wchar_t const *g = flux_icon_lookup(icon_name);
 	if (!g || !g [0]) return NULL;
@@ -519,14 +443,10 @@ static void nav_flyout_child_click(void *ctx) {
 	nav_apply_selection(it->nav, it->index, true);
 }
 
-/* Compact/Top: children open in a flyout beside (rail) or under (bar) the parent. */
-/* Flyout dismissed (light-dismiss or child picked): drop the parent's expanded
- * state so its chevron rotates back down (WinUI OnFlyoutClosing -> IsExpanded(false)). */
 static void nav_child_flyout_dismissed(void *ctx) {
 	FluxNavViewData *d = ( FluxNavViewData * ) ctx;
 	if (d->flyout_parent >= 0 && d->flyout_parent < d->count) d->items [d->flyout_parent].expanded = false;
 	d->flyout_parent = -1;
-	nav_trace(d, "child-flyout.dismiss", -1);
 	nav_repaint(d);
 }
 
@@ -537,12 +457,7 @@ static void nav_show_child_flyout(FluxNavViewData *d, int parent) {
 		flux_menu_setthememanager(d->child_flyout, d->theme);
 		flux_menu_settext(d->child_flyout, d->text);
 		flux_menu_ondismiss(d->child_flyout, nav_child_flyout_dismissed, d);
-		/* WinUI shows these children as NavigationViewItems, not dense menu rows:
-		 * pin the slot to the pane's row pitch (36 min-height + 4 button margin). */
 		flux_menu_setminh(d->child_flyout, FLUX_NAV_ITEM_HEIGHT + FLUX_NAV_ITEM_GAP);
-		/* WinUI's ChildrenFlyout is a plain Flyout (Placement RightEdgeAlignedTop), not a
-		 * MenuFlyout — it enters with the PopupThemeTransition directional slide + fade
-		 * (emerging from the left rail edge), not a vertical menu scale-reveal. */
 		flux_menu_setanim(d->child_flyout, FLUX_POPUP_ANIM_FLYOUT);
 	}
 	flux_menu_clear(d->child_flyout);
@@ -561,10 +476,9 @@ static void nav_show_child_flyout(FluxNavViewData *d, int parent) {
 		};
 		flux_menu_additem(d->child_flyout, &def);
 	}
-	d->items [parent].expanded = true; /* chevron points open while the flyout is up */
+	d->items [parent].expanded = true;
 	d->flyout_parent           = parent;
-	nav_trace(d, "child-flyout.show", parent);
-	FluxRect anchor = flux_binding_screen_anchor(d->window, d->ctx, d->store, d->items [parent].node);
+	FluxRect anchor            = flux_binding_screen_anchor(d->window, d->ctx, d->store, d->items [parent].node);
 	flux_menu_show(d->child_flyout, anchor, d->mode == FLUX_NAV_TOP ? FLUX_PLACEMENT_BOTTOM : FLUX_PLACEMENT_RIGHT);
 	nav_repaint(d);
 }
@@ -577,72 +491,9 @@ static void nav_toggle_expand(FluxNavViewData *d, int idx) {
 		return;
 	}
 	it->expanded = !it->expanded;
-	nav_trace(d, it->expanded ? "child.expand" : "child.collapse", idx);
-	nav_items_restack(d); /* host enters the flow on open; tick detaches it after collapse */
+	nav_items_restack(d);
 	nav_tween_to(&it->expand_t, it->expanded ? 1.0f : 0.0f, NAV_EXPAND_MS);
 	nav_anim_start(d);
-}
-
-static void nav_pane_axis(FluxNavViewData *d, XentFlexDirection dir, XentFlexAlign align) {
-	bool row = (dir == XENT_FLEX_ROW);
-	xent_setflexdir(d->ctx, d->pane, dir);
-	xent_setitems(d->ctx, d->pane, align);
-	xent_setflexdir(d->ctx, d->items_scroll, dir);
-	xent_setitems(d->ctx, d->items_scroll, align);
-	xent_setflexdir(d->ctx, d->items_host, dir);
-	xent_setitems(d->ctx, d->items_host, align);
-	xent_setfit(d->ctx, d->items_host, row, !row); /* content-sized along the pane axis */
-	xent_setflexdir(d->ctx, d->footer_host, dir);
-	xent_setitems(d->ctx, d->footer_host, align);
-	xent_setfit(d->ctx, d->footer_host, row, !row);
-}
-
-static float nav_top_item_width(FluxNavViewData *d, FluxNavViewItem const *it) {
-	float w = FLUX_NAV_TOP_ITEM_PAD_H * 2.0f + (it->has_children ? 20.0f : 0.0f);
-	if (it->icon_name) w += FLUX_NAV_ICON_GLYPH + (it->label ? FLUX_NAV_TOP_ICON_GAP : 0.0f);
-	if (it->label && d->text) {
-		FluxTextStyle ts  = {0};
-		ts.font_size      = FLUX_NAV_LABEL_FONT;
-		w                += flux_text_measure(d->text, it->label, &ts, 1e9f).w;
-	}
-	return w;
-}
-
-/* Re-orient the pane into a 48px horizontal bar with measured-width items (xent
- * has no wrap-content); footer items end up trailing via items_host's grow. */
-static void nav_enter_top(FluxNavViewData *d) {
-	d->mode         = FLUX_NAV_TOP;
-	d->minimal_open = false;
-	nav_tween_snap(&d->minimal_t, 0.0f);
-	nav_pane_axis(d, XENT_FLEX_ROW, XENT_FLEX_ALIGN_CENTER);
-	xent_setp(d->ctx, d->pane, (XentInsets) {FLUX_NAV_TOP_ITEM_PAD_H, 0.0f, FLUX_NAV_TOP_ITEM_PAD_H, 0.0f});
-	for (int i = 0; i < d->count; i++) {
-		FluxNavViewItem *it = &d->items [i];
-		if (it->parent >= 0) continue; /* children live in collapsed hosts (flyout-only) */
-		if (it->kind == FLUX_NAV_ITEM_SEPARATOR)
-			xent_setsize(d->ctx, it->node, (XentSize) {FLUX_NAV_SEP_TOP_W, FLUX_NAV_SEP_TOP_LINE_H});
-		else xent_setsize(d->ctx, it->node, (XentSize) {nav_top_item_width(d, it), FLUX_NAV_TOP_ITEM_H});
-	}
-	d->ind_primed = false; /* re-prime the indicator along the new axis */
-	nav_snap_children(d);
-	nav_apply_geometry(d);
-	nav_anim_start(d);
-}
-
-static void nav_leave_top(FluxNavViewData *d) {
-	if (d->mode != FLUX_NAV_TOP) return;
-	nav_pane_axis(d, XENT_FLEX_COLUMN, XENT_FLEX_ALIGN_STRETCH);
-	xent_setp(
-	  d->ctx, d->pane,
-	  (XentInsets) {FLUX_NAV_ITEM_MARGIN_H, FLUX_NAV_TOGGLE_H + FLUX_NAV_PANE_TOP_PAD, FLUX_NAV_ITEM_MARGIN_H, 4.0f}
-	);
-	for (int i = 0; i < d->count; i++)
-		if (d->items [i].parent < 0)
-			xent_setsize(d->ctx, d->items [i].node, (XentSize) {NAN, nav_item_height(d->items [i].kind)});
-	d->ind_primed = false;
-	d->mode       = FLUX_NAV_EXPANDED; /* concrete left mode applied by the caller */
-	nav_tween_snap(&d->pane_w, FLUX_NAV_PANE_EXPANDED);
-	nav_snap_children(d);
 }
 
 static FluxNavDisplayMode nav_mode_for_width(float w) {
@@ -656,17 +507,11 @@ static float nav_dip_scale(FluxNavViewData *d) {
 	return dpi.dpi_x > 0.0f ? dpi.dpi_x / 96.0f : 1.0f;
 }
 
-/* Window client width in DIPs — the metric WinUI's adaptive thresholds use. */
 static float nav_window_dip_width(FluxNavViewData *d) {
 	FluxSize cs = flux_window_size(d->window);
 	return cs.w / nav_dip_scale(d);
 }
 
-/* Width that keeps the control inside the visible window so the content region
- * never runs off the right edge: track the window minus the host's left/right
- * inset, capped at the creation width. The display *mode* still uses the raw
- * window width (so the 641/1008 thresholds match WinUI), but the laid-out width
- * shrinks with the window. */
 #define NAV_HOST_INSET 72.0f
 
 static float nav_fit_width(FluxNavViewData *d, float window_dip) {
@@ -717,9 +562,6 @@ static void nav_set_pane_padding(FluxNavViewData *d) {
 	xent_setp(d->ctx, d->pane, (XentInsets) {FLUX_NAV_ITEM_MARGIN_H, top_pad, FLUX_NAV_ITEM_MARGIN_H, 4.0f});
 }
 
-/* The pane holds only the item list + footer; the hamburger lives at root level
- * (see nav_make_toggle) so it stays visible in Minimal when the pane is off-screen.
- * The top padding reserves the hamburger row so the first item clears it. */
 static void nav_setup_pane(FluxNavViewData *d) {
 	xent_setproto(d->ctx, d->pane, XENT_PROTOCOL_FLEX);
 	xent_setflexdir(d->ctx, d->pane, XENT_FLEX_COLUMN);
@@ -727,10 +569,6 @@ static void nav_setup_pane(FluxNavViewData *d) {
 	xent_setgap(d->ctx, d->pane, FLUX_NAV_ITEM_GAP);
 	nav_set_pane_padding(d);
 
-	/* The menu list lives inside a scroll viewport: a zero-base grow child that
-	 * eats the pane's free space (pinning the footer to the trailing edge) and
-	 * clips + scrolls the list when it outgrows the pane. Wheel/scrollbar input
-	 * and the auto-derived extent are the standard FLUX_CONTROL_SCROLL paths. */
 	d->items_scroll = flux_scroll_init(&(FluxContainerDesc) {d->ctx, d->store, d->pane});
 	xent_setitems(d->ctx, d->items_scroll, XENT_FLEX_ALIGN_STRETCH);
 	xent_setgrow(d->ctx, d->items_scroll, 1.0f);
@@ -744,8 +582,6 @@ static void nav_setup_pane(FluxNavViewData *d) {
 	xent_setflexdir(d->ctx, d->items_host, XENT_FLEX_COLUMN);
 	xent_setitems(d->ctx, d->items_host, XENT_FLEX_ALIGN_STRETCH);
 	xent_setgap(d->ctx, d->items_host, FLUX_NAV_ITEM_GAP);
-	/* Content-sized, never compressed: xent treats auto as fill-available and its
-	 * flex shrink compresses child POSITIONS while they draw full-size (overlap). */
 	xent_setfit(d->ctx, d->items_host, false, true);
 	xent_setshrink(d->ctx, d->items_host, 0.0f);
 
@@ -758,9 +594,6 @@ static void nav_setup_pane(FluxNavViewData *d) {
 	xent_setshrink(d->ctx, d->footer_host, 0.0f);
 }
 
-/* The pane-toggle (hamburger) is an absolutely-positioned root child drawn last,
- * so it floats above the pane/content and stays put in every mode — in Minimal it
- * is the only affordance to open the overlay pane. */
 static void nav_make_toggle(FluxNavViewData *d) {
 	d->toggle = flux_factory_create_node(d->ctx, d->store, d->root, FLUX_CONTROL_NAV_VIEW_ITEM);
 	xent_setpos(d->ctx, d->toggle, (XentPoint) {FLUX_NAV_ITEM_MARGIN_H, FLUX_NAV_PANE_TOP_PAD});
@@ -820,7 +653,6 @@ static void nav_init_data(FluxNavViewData *d, FluxNavViewDesc const *info, XentN
 	nav_tween_init(&d->ind_op, 0.0f);
 }
 
-/* Build the ABSOLUTE root with content (under), scrim, pane (on top), toggle. */
 static void nav_build_tree(FluxNavViewData *d) {
 	xent_setproto(d->ctx, d->root, XENT_PROTOCOL_ABSOLUTE);
 	xent_setsize(d->ctx, d->root, (XentSize) {d->width, d->height});
@@ -835,21 +667,14 @@ static void nav_build_tree(FluxNavViewData *d) {
 	}
 
 	d->pane          = flux_factory_create_node(d->ctx, d->store, d->root, FLUX_CONTROL_NAV_VIEW);
-	/* Borrowed (root owns d's lifetime): lets the selection-indicator snapshot run on
-	 * the pane, so the pill tracks the pane and slides off-screen with it in Minimal
-	 * instead of being drawn at the always-on-screen root's left edge. */
 	FluxNodeData *pn = flux_store_find(d->store, d->pane);
 	if (pn) pn->component_data = d;
 	nav_setup_pane(d);
-	nav_make_toggle(d); /* last root child: floats above pane + content in every mode */
+	nav_make_toggle(d);
 
-	/* Integrated title bar: extends into the OS caption, owns the pane-toggle
-	 * (wired straight to nav_toggle_click) + app title, and draws the min/max/close
-	 * caption buttons. Created last so it draws over the pane/content top strip. */
 	if (d->window_title_bar) d->title_bar = nav_make_titlebar(d, d->app_title);
 }
 
-/* Fit the nav view to the current window and apply initial geometry. */
 static void nav_apply_initial_window(FluxNavViewData *d) {
 	float win_dip = nav_window_dip_width(d);
 	if (d->fill_window) {
@@ -880,7 +705,7 @@ XentNodeId flux_nav_init(FluxNavViewDesc const *info) {
 	nav_init_data(d, info, root);
 	nd->component_data         = d;
 	nd->destroy_component_data = nav_destroy;
-	nd->clips_children         = true; /* contain the slid-away Minimal pane within the control */
+	nd->clips_children         = true;
 	nav_build_tree(d);
 	nav_apply_initial_window(d);
 
@@ -927,8 +752,6 @@ static int nav_add(FluxNavViewData *d, XentNodeId host, char const *icon, char c
 	}
 	XentNodeId node = flux_factory_create_node(d->ctx, d->store, host, FLUX_CONTROL_NAV_VIEW_ITEM);
 	if (node == XENT_NODE_INVALID) return -1;
-	/* Width is auto (NAN) so the host's align-stretch sizes it to the pane content
-	 * width — 312 in Expanded, 40 in Compact — keeping labels visible when open. */
 	xent_setsize(d->ctx, node, (XentSize) {NAN, nav_item_height(kind)});
 	xent_setshrink(d->ctx, node, 0.0f);
 
@@ -956,7 +779,6 @@ static int nav_add(FluxNavViewData *d, XentNodeId host, char const *icon, char c
 	}
 
 	int index = d->count++;
-	nav_trace(d, "model.add-item", index);
 	if (d->selected < 0 && kind == FLUX_NAV_ITEM_MENU) nav_apply_selection(d, index, false);
 	return index;
 }
@@ -964,7 +786,6 @@ static int nav_add(FluxNavViewData *d, XentNodeId host, char const *icon, char c
 bool flux_nav_reset_items(FluxStore *store, XentNodeId nav) {
 	FluxNavViewData *d = nav_data(store, nav);
 	if (!d) return false;
-	nav_trace(d, "model.reset-items.begin", -1);
 	if (d->child_flyout) {
 		flux_menu_destroy(d->child_flyout);
 		d->child_flyout = NULL;
@@ -988,7 +809,6 @@ bool flux_nav_reset_items(FluxStore *store, XentNodeId nav) {
 	nav_tween_snap(&d->ind_top, 0.0f);
 	nav_tween_snap(&d->ind_bot, 0.0f);
 	nav_tween_snap(&d->ind_op, 0.0f);
-	nav_trace(d, "model.reset-items.end", -1);
 	return true;
 }
 
@@ -1030,52 +850,17 @@ int flux_nav_addchild(FluxStore *store, XentNodeId nav, int parent_index, char c
 	return idx;
 }
 
-char const *flux_nav_item_label(FluxStore *store, XentNodeId nav, int index) {
-	FluxNavViewData *d = nav_data(store, nav);
-	if (!d || index < 0 || index >= d->count) return NULL;
-	return d->items [index].label;
-}
-
 void flux_nav_select(FluxStore *store, XentNodeId nav, int index) {
 	FluxNavViewData *d = nav_data(store, nav);
-	nav_trace(d, "api.select", index);
 	if (d) nav_apply_selection(d, index, true);
 }
 
 void flux_nav_set_selected(FluxStore *store, XentNodeId nav, int index) {
 	FluxNavViewData *d = nav_data(store, nav);
-	nav_trace(d, "host.set-selected", index);
 	if (d) nav_apply_selection(d, index, false);
 }
 
 XentNodeId flux_nav_content_node(FluxStore *store, XentNodeId nav) {
 	FluxNavViewData *d = nav_data(store, nav);
 	return d ? d->content : XENT_NODE_INVALID;
-}
-
-void flux_nav_setmode(FluxStore *store, XentNodeId nav, int mode) {
-	FluxNavViewData *d = nav_data(store, nav);
-	if (!d) return;
-	nav_trace(d, "host.set-pane-mode", mode);
-	if (mode == FLUX_NAV_PANE_TOP) {
-		d->adaptive = false;
-		if (d->mode != FLUX_NAV_TOP) nav_enter_top(d);
-		nav_repaint(d);
-		return;
-	}
-	nav_leave_top(d);
-	if (mode == FLUX_NAV_PANE_AUTO) {
-		d->adaptive = true;
-		nav_set_mode(d, nav_mode_for_width(nav_window_dip_width(d)));
-	}
-	else {
-		d->adaptive          = false;
-		FluxNavDisplayMode m = (mode == FLUX_NAV_PANE_LEFT_COMPACT) ? FLUX_NAV_COMPACT
-		                     : (mode == FLUX_NAV_PANE_LEFT_MINIMAL) ? FLUX_NAV_MINIMAL
-		                                                            : FLUX_NAV_EXPANDED;
-		nav_set_mode(d, m);
-	}
-	nav_apply_geometry(d);
-	nav_anim_start(d);
-	nav_repaint(d);
 }

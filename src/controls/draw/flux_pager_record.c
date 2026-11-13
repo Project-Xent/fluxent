@@ -1,8 +1,3 @@
-/**
- * @file flux_pager_record.c
- * @brief Pagination recorders (PagerControl / PipsPager): cells or dots driven
- * by a shared selected/pressed page model.
- */
 #include "controls/draw/flux_control_record_internal.h"
 
 #include "controls/data/flux_pager_data.h"
@@ -162,12 +157,12 @@ bool flux_rec_build_pips(
 	bool     over_n  = hovering && along_hit >= end && along_hit < end + PIP_NAV;
 
 	if ((prev_en || snap->u.pips.nav_vis == 1)
-		&& !pips_draw_caret(
+	    && !pips_draw_caret(
 		  b, t, &prev, vertical ? L"\xEDDB" : L"\xEDD9", over_p, over_p && snap->u.pips.pressed_nav == 1, prev_en
 		))
 		return false;
 	if ((next_en || snap->u.pips.nav_vis == 1)
-		&& !pips_draw_caret(
+	    && !pips_draw_caret(
 		  b, t, &next, vertical ? L"\xEDDC" : L"\xEDDA", over_n, over_n && snap->u.pips.pressed_nav == 2, next_en
 		))
 		return false;

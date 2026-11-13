@@ -22,7 +22,7 @@ XtkEl *page_settings(XtkUi *ui, Model const *m) {
 		  xtk_kids(
 			xtk_text(ui, "About", (XtkTextDesc) {.size = 16, .weight = FLUX_FONT_SEMI_BOLD}),
 			xtk_text(
-			  ui, "FluXent Gallery — fluxent 0.3.0, declarative layer over retained controls.",
+			  ui, "FluXent Gallery — fluxent 0.3.1, declarative layer over retained controls.",
 			  (XtkTextDesc) {.size = 13}
 			),
 			xtk_link(ui, "Source code", (XtkHyperlinkDesc) {.url = "https://github.com/Project-Xent"})

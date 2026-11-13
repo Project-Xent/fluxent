@@ -1,11 +1,3 @@
-/**
- * @file flux_pager.c
- * @brief PagerControl behavior: a single leaf hosting nav buttons (First /
- * Previous / Next / Last) around a NumberPanel (numbered buttons with
- * ellipses) or a NumberText label. Layout is shared with the renderer via
- * flux_pager_layout so clicks resolve against the drawn geometry; selection
- * recomputes the panel window and re-measures the control.
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "runtime/flux_str.h"
@@ -22,7 +14,6 @@ static FluxPagerData *pager_data(FluxStore *store, XentNodeId id) {
 	return ( FluxPagerData * ) nd->component_data;
 }
 
-/* Build the element list for the current model (shared with the renderer). */
 static int pager_elems(FluxPagerData const *d, FluxPagerElem *elems, float *tw) {
 	bool    at_first = d->selected <= 0;
 	bool    at_last  = d->selected >= d->count - 1;
@@ -42,7 +33,6 @@ static void pager_apply_size(FluxPagerData *d) {
 	xent_setsize(d->ctx, d->node, (XentSize) {tw, FLUX_PAGER_HEIGHT});
 }
 
-/* Element index under a node-local point, or -1. */
 static int pager_hit(FluxPagerData const *d, float x, float y) {
 	if (y < 0.0f || y > FLUX_PAGER_HEIGHT) return -1;
 	FluxPagerElem elems [FLUX_PAGER_MAX_CELLS + 4];
@@ -75,7 +65,6 @@ static void pager_select(FluxPagerData *d, int index) {
 	if (d->on_select) d->on_select(d->on_select_ctx, index);
 }
 
-/* Act on an element (nav button or number cell), respecting nav enabled state. */
 static void pager_activate(FluxPagerData *d, FluxPagerElem const *e) {
 	bool at_first = d->selected <= 0;
 	bool at_last  = d->selected >= d->count - 1;

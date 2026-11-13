@@ -15,8 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static float inline fclampf(float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; }
-
 void flux_button_data_destroy(void *component_data) {
 	FluxButtonData *bd = ( FluxButtonData * ) component_data;
 	if (!bd) return;
@@ -66,9 +64,6 @@ static void info_badge_data_destroy(void *component_data) {
 void flux_leaf_default_metrics(FluxLeafMetrics const *m) {
 	if (m->label && m->label [0]) {
 		xent_settext(m->ctx, m->node, m->label);
-		/* Button-like leaves are single-line; xent's default policy is
-		 * CHAR_WRAP, which stacks the label vertically under tight measure
-		 * constraints instead of keeping the natural one-line size. */
 		xent_setlinebreak(m->ctx, m->node, XENT_LINEBREAK_NOWRAP);
 		xent_setfontsize(m->ctx, m->node, 14.0f);
 		xent_setp(m->ctx, m->node, m->padding);
@@ -95,8 +90,6 @@ XentNodeId flux_factory_create_node(XentCtx *ctx, FluxStore *store, XentNodeId p
 	return node;
 }
 
-/* Roll back a node whose component-data allocation failed: drop its store entry,
- * detach + destroy the xent node, and report failure — never a half-built node. */
 XentNodeId flux_factory_fail_node(XentCtx *ctx, FluxStore *store, XentNodeId node) {
 	flux_store_del(store, node);
 	xent_node_destroy(ctx, node);
@@ -163,7 +156,6 @@ XentNodeId flux_dropdown_init(FluxDropDownButtonDesc const *info) {
 	if (info->label) xent_sem_setlabel(info->ctx, node, info->label);
 	xent_set_focusable(info->ctx, node, true);
 
-	/* Right inset reserves the chevron box (12) + spacing (8) after the label. */
 	flux_leaf_default_metrics(&(FluxLeafMetrics) {
 	  info->ctx, node, info->label, {11.0f, 5.0f, 31.0f, 6.0f},
          {0.0f, 32.0f},
@@ -181,7 +173,7 @@ XentNodeId flux_text_init(FluxTextDesc const *info) {
 
 	xent_settext(info->ctx, node, info->content ? info->content : "");
 	if (info->font_size > 0.0f) xent_setfontsize(info->ctx, node, info->font_size);
-	xent_setfontweight(info->ctx, node, flux_font_weight_numeric(FLUX_FONT_REGULAR));
+	xent_setfontweight(info->ctx, node, flux_font_weightnum(FLUX_FONT_REGULAR));
 	xent_setlinebreak(info->ctx, node, XENT_LINEBREAK_WORDWRAP);
 
 	FluxNodeData *nd = flux_store_find(info->store, node);
@@ -196,6 +188,10 @@ XentNodeId flux_text_init(FluxTextDesc const *info) {
 	td->alignment              = FLUX_TEXT_LEFT;
 	td->vertical_alignment     = FLUX_TEXT_TOP;
 	td->wrap                   = true;
+	td->ctx                    = info->ctx;
+	td->store                  = info->store;
+	td->node                   = node;
+	td->text                   = info->text;
 
 	nd->component_data         = td;
 	nd->destroy_component_data = text_data_destroy;
@@ -206,192 +202,41 @@ XentNodeId flux_text_init(FluxTextDesc const *info) {
 	return node;
 }
 
-typedef struct FluxSliderInputData {
-	FluxSliderData base;
-	XentCtx       *ctx;
-	FluxStore     *store;
-	XentNodeId     node;
-} FluxSliderInputData;
-
-/* Closest snap-grid multiple to fromValue (WinUI Slider::GetClosestStep): grid
- * multiples are absolute (counted from zero, not from min); the candidates are
- * clamped into [min, max] and ties resolve to the previous step. */
-static float slider_closest_step(FluxSliderData const *sd, float step_delta, float from_value) {
-	float num_steps = from_value / step_delta;
-	float next_step = fminf(sd->max_value, ceilf(num_steps) * step_delta);
-	float prev_step = fmaxf(sd->min_value, floorf(num_steps) * step_delta);
-	return (next_step - from_value < from_value - prev_step) ? next_step : prev_step;
-}
-
-/* The grid the value snaps to while dragging (WinUI SnapsTo). */
-static float slider_snap_delta(FluxSliderData const *sd) {
-	return sd->snaps_to == FLUX_SLIDER_SNAPS_TO_TICKS ? sd->tick_frequency : sd->step_frequency;
-}
-
-static void slider_put_value(FluxSliderInputData *sid, float value) {
-	FluxSliderData *sd = &sid->base;
-	if (fabsf(value - sd->current_value) < 1e-6f) return;
-	sd->current_value = value;
-	if (sd->on_change) sd->on_change(sd->on_change_ctx, value);
-	XtkHost *host = flux_store_host(sid->store);
-	if (!host) return;
-	XtkEvent event = {
-	  .id             = XTK_EVENT_CHANGE_F32,
-	  .target         = ( XtkCtrl ) sid->node,
-	  .source         = ( XtkCtrl ) sid->node,
-	  .current_target = ( XtkCtrl ) sid->node,
-	  .phase          = XTK_EVENT_PHASE_TARGET,
-	  .cause          = XTK_EVENT_CAUSE_USER,
-	  .payload        = {.kind = XTK_EVENT_PAYLOAD_F32, .u.f32 = value},
-	};
-	flux_host_route(host, &event);
-}
-
-/* Pointer press/drag (WinUI Slider::MoveThumbToPoint + OnThumbDragDelta):
- * IntermediateValue tracks the pointer continuously (the thumb is drawn from
- * it while pressed), Value snaps to the closest step/tick multiple. */
-static void slider_move_trampoline(void *ctx, float local_x, float local_y) {
-	( void ) local_y;
-	FluxSliderInputData *sid  = ( FluxSliderInputData * ) ctx;
-	FluxSliderData      *sd   = &sid->base;
-
-	XentRect             rect = {0};
-	if (!xent_layout_rect(sid->ctx, sid->node, &rect)) return;
-
-	float thumb_half       = 10.0f;
-	float track_w          = fmaxf(rect.w - thumb_half * 2.0f, 1.0f);
-	float pct              = fclampf((local_x - thumb_half) / track_w, 0.0f, 1.0f);
-
-	float intermediate     = sd->min_value + pct * (sd->max_value - sd->min_value);
-	sd->intermediate_value = intermediate;
-
-	float delta            = slider_snap_delta(sd);
-	slider_put_value(sid, delta > 0.0f ? slider_closest_step(sd, delta, intermediate) : intermediate);
-}
-
-/* Move Value one step in the given direction (WinUI Slider::Step). SnapsTo=Ticks
- * ignores SmallChange in favour of TickFrequency and rounds LargeChange to a
- * tick multiple; stepping back from a max that is off the grid lands on the last
- * multiple before it instead of skipping it. */
-static void slider_step(FluxSliderInputData *sid, bool use_small_change, bool forward) {
-	FluxSliderData *sd = &sid->base;
-	float           step_delta;
-	if (sd->snaps_to == FLUX_SLIDER_SNAPS_TO_TICKS) {
-		if (sd->tick_frequency <= 0.0f) return;
-		step_delta = use_small_change ? sd->tick_frequency
-		                              : floorf(sd->large_change / sd->tick_frequency + 0.5f) * sd->tick_frequency;
-	}
-	else step_delta = use_small_change ? sd->small_change : sd->large_change;
-	if (step_delta <= 0.0f) return;
-
-	float value = sd->current_value;
-	float closest;
-	if (!forward && fabsf(value - sd->max_value) < 1e-6f && fabsf(remainderf(value, step_delta)) > 1e-6f)
-		closest = floorf(value / step_delta) * step_delta;
-	else closest = slider_closest_step(sd, step_delta, forward ? value + step_delta : value - step_delta);
-
-	sd->intermediate_value = closest;
-	slider_put_value(sid, closest);
-}
-
-static void slider_jump_to(FluxSliderInputData *sid, float value) {
-	FluxSliderData *sd     = &sid->base;
-	sd->intermediate_value = value;
-	slider_put_value(sid, value);
-}
-
-static bool slider_dispatch_key(FluxSliderInputData *sid, FluxKey key) {
-	FluxSliderData *sd = &sid->base;
-	switch (key) {
-	case FLUX_KEY_LEFT :
-	case FLUX_KEY_DOWN      : slider_step(sid, true, false); return true;
-	case FLUX_KEY_RIGHT     :
-	case FLUX_KEY_UP        : slider_step(sid, true, true); return true;
-	case FLUX_KEY_PAGE_UP   : slider_step(sid, false, true); return true;
-	case FLUX_KEY_PAGE_DOWN : slider_step(sid, false, false); return true;
-	case FLUX_KEY_HOME      : slider_jump_to(sid, sd->min_value); return true;
-	case FLUX_KEY_END       : slider_jump_to(sid, sd->max_value); return true;
-	default                 : return false;
-	}
-}
-
-static bool slider_on_key(void *ctx, FluxKey key, bool down) {
-	if (!down) return false;
-	return slider_dispatch_key(( FluxSliderInputData * ) ctx, key);
-}
-
-XentNodeId flux_slider_init(FluxSliderDesc const *info) {
-	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_SLIDER);
-	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
-
-	xent_sem_setvalue(info->ctx, node, info->value, info->min, info->max);
-
-	FluxNodeData        *nd  = flux_store_find(info->store, node);
-	FluxSliderInputData *sid = nd ? ( FluxSliderInputData * ) calloc(1, sizeof(FluxSliderInputData)) : NULL;
-	if (!nd || !sid) {
-		free(sid);
-		return flux_factory_fail_node(info->ctx, info->store, node);
-	}
-	/* WinUI Slider defaults (Slider_Partial.h / DependencyProperty.cpp):
-	 * StepFrequency 1, SmallChange 1, LargeChange 10, TickFrequency 0,
-	 * SnapsTo StepValues, TickPlacement Inline. */
-	sid->base.min_value              = info->min;
-	sid->base.max_value              = info->max;
-	sid->base.current_value          = info->value;
-	sid->base.intermediate_value     = info->value;
-	sid->base.step_frequency         = 1.0f;
-	sid->base.small_change           = 1.0f;
-	sid->base.large_change           = 10.0f;
-	sid->base.tick_frequency         = 0.0f;
-	sid->base.snaps_to               = FLUX_SLIDER_SNAPS_TO_STEP_VALUES;
-	sid->base.tick_placement         = FLUX_TICK_INLINE;
-	sid->base.on_change              = info->on_change;
-	sid->base.on_change_ctx          = info->userdata;
-	sid->ctx                         = info->ctx;
-	sid->store                       = info->store;
-	sid->node                        = node;
-
-	nd->component_data               = &sid->base;
-	nd->destroy_component_data       = free;
-	nd->behavior.on_pointer_move     = slider_move_trampoline;
-	nd->behavior.on_pointer_move_ctx = sid;
-	nd->behavior.on_key              = slider_on_key;
-	nd->behavior.on_key_ctx          = sid;
-
-	xent_set_focusable(info->ctx, node, true);
-	xent_setsize(info->ctx, node, (XentSize) {NAN, 32.0f});
-
-	return node;
+static FluxCheckState check_toggle_next(FluxCheckboxData const *cd) {
+	if (cd->state == FLUX_CHECK_UNCHECKED) return FLUX_CHECK_CHECKED;
+	if (cd->state == FLUX_CHECK_CHECKED && cd->is_three_state) return FLUX_CHECK_INDETERMINATE;
+	return FLUX_CHECK_UNCHECKED;
 }
 
 static void checkbox_click_trampoline(void *ctx) {
 	FluxCheckboxData *cd = ( FluxCheckboxData * ) ctx;
 	if (!cd) return;
-	cd->state = (cd->state == FLUX_CHECK_CHECKED) ? FLUX_CHECK_UNCHECKED : FLUX_CHECK_CHECKED;
-	/* No-host / factory path: release only calls on_click. Host path uses
-	 * checkbox_click_flip and fires on_change from flux_input_route_activation. */
+	flux_checkbox_setstate(cd, check_toggle_next(cd));
 	if (cd->on_change) cd->on_change(cd->on_change_ctx, cd->state);
 }
 
-/* Label insets follow the draw code: checkbox box 20 + gap 12; radio ring 20 +
- * gap 8; switch draws a bare 40x20 track and no label. */
-static void toggle_default_metrics(FluxToggleDesc const *info, XentNodeId node, FluxControlType type) {
-	static struct {
-		XentInsets padding;
-		XentSize   fallback;
-	} const metrics [] = {
-	  [FLUX_CONTROL_CHECKBOX] = {{32.0f, 6.0f, 0.0f, 6.0f}, {20.0f, 32.0f}},
-	  [FLUX_CONTROL_RADIO]    = {{28.0f, 6.0f, 0.0f, 6.0f}, {20.0f, 32.0f}},
-	  [FLUX_CONTROL_SWITCH]   = {{0.0f, 0.0f, 0.0f, 0.0f},  {40.0f, 32.0f}},
-	};
-
-	char const *label = type == FLUX_CONTROL_SWITCH ? NULL : info->label;
+void flux_toggle_applymetrics(XentCtx *ctx, XentNodeId node, FluxControlType type, char const *label) {
+	if (type == FLUX_CONTROL_CHECKBOX) {
+		xent_settext(ctx, node, label && label [0] ? label : NULL);
+		xent_setlinebreak(ctx, node, XENT_LINEBREAK_WORDWRAP);
+		xent_setfontsize(ctx, node, 14.0f);
+		xent_setp(ctx, node, (XentInsets) {28.0f, 5.0f, 0.0f, 0.0f});
+		xent_setminsize(ctx, node, (XentSize) {120.0f, 32.0f});
+		xent_setself(ctx, node, XENT_FLEX_ALIGN_START);
+		return;
+	}
+	bool radio = type == FLUX_CONTROL_RADIO;
 	flux_leaf_default_metrics(&(FluxLeafMetrics) {
-	  info->ctx, node, label, metrics [type].padding, {0.0f, 32.0f},
-           metrics [type].fallback
+	  ctx, node, radio ? label : NULL, radio ? (XentInsets) {28.0f, 6.0f, 0.0f, 6.0f}
+                : (XentInsets) {0},
+                {0.0f, 32.0f},
+	  radio ? (XentSize) {20.0f, 32.0f}
+                : (XentSize) {40.0f, 32.0f}
     });
+}
+
+static void toggle_default_metrics(FluxToggleDesc const *info, XentNodeId node, FluxControlType type) {
+	flux_toggle_applymetrics(info->ctx, node, type, info->label);
 }
 
 static XentNodeId create_toggle_node(FluxToggleDesc const *info, FluxControlType type) {
@@ -408,6 +253,8 @@ static XentNodeId create_toggle_node(FluxToggleDesc const *info, FluxControlType
 		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	cd->label                  = flux_str_dup(info->label);
+	cd->ctx                    = info->ctx;
+	cd->node                   = node;
 	cd->state                  = info->checked ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED;
 	cd->on_change              = info->on_change;
 	cd->on_change_ctx          = info->userdata;
@@ -487,28 +334,6 @@ XentNodeId flux_progressring_init(FluxProgressDesc const *info) {
 	nd->destroy_component_data = free;
 
 	xent_setsize(info->ctx, node, (XentSize) {32.0f, 32.0f});
-	return node;
-}
-
-XentNodeId flux_card_init(FluxContainerDesc const *info) {
-	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_CARD);
-	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
-
-	xent_setproto(info->ctx, node, XENT_PROTOCOL_FLEX);
-	xent_setflexdir(info->ctx, node, XENT_FLEX_COLUMN);
-	xent_setp(info->ctx, node, (XentInsets) {16.0f, 16.0f, 16.0f, 16.0f});
-	xent_setgap(info->ctx, node, 8.0f);
-	xent_setfit(info->ctx, node, false, true);
-	return node;
-}
-
-XentNodeId flux_divider_init(FluxContainerDesc const *info) {
-	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
-	XentNodeId node = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_DIVIDER);
-	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
-
-	xent_setsize(info->ctx, node, (XentSize) {NAN, 1.0f});
 	return node;
 }
 
@@ -609,6 +434,7 @@ XentNodeId flux_scroll_init(FluxContainerDesc const *info) {
 
 	xent_setproto(info->ctx, node, XENT_PROTOCOL_FLEX);
 	xent_setflexdir(info->ctx, node, XENT_FLEX_COLUMN);
+	xent_setscroller(info->ctx, node, true);
 	return node;
 }
 

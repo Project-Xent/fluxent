@@ -1,7 +1,3 @@
-/**
- * @file flux_textbox_record.c
- * @brief 1:1 port of 58331ad textbox/password/number chrome + content into DL.
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "controls/textbox/tb_internal.h"
 #include "controls/textbox/tb_metrics.h"
@@ -114,29 +110,29 @@ static FluxTextStyle tb_hit_style(FluxRenderSnap const *snap) {
 	hit.font_family = snap->u.textbox.font_family;
 	hit.font_size   = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
 	hit.vert_align  = FLUX_TEXT_TOP;
+	hit.word_wrap   = snap->u.textbox.edit.multiline;
 	return hit;
 }
 
 static bool
 tb_elevation_border(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *bounds, float radius, bool focused) {
-	/* WinUI centers this stroke on the bounds; unlike button elevation it is not inset. */
 	FluxThemeColors const *t  = flux_rec_theme(rc);
 	float                  y0 = bounds->y + bounds->h;
 	float                  y1 = bounds->y + bounds->h - 2.0f;
 	if (focused) {
 		XentLinearGrad grad = {
 		  0.0f, y0, 0.0f, y1, 1.0f, 1.0f, flux_rec_xcolor(t->accent_default), flux_rec_xcolor(t->ctrl_stroke_default)};
-		return xent_dl_strokerrect_grad(b, flux_rec_xrect(bounds), radius, 1.0f, &grad);
+		return xent_dl_strokerrectgrad(b, flux_rec_xrect(bounds), radius, 1.0f, &grad);
 	}
 	XentLinearGrad grad = {
 	  0.0f, y0, 0.0f, y1, 0.5f, 1.0f, flux_rec_xcolor(t->ctrl_strong_stroke_default),
 	  flux_rec_xcolor(t->ctrl_stroke_default)};
-	return xent_dl_strokerrect_grad(b, flux_rec_xrect(bounds), radius, 1.0f, &grad);
+	return xent_dl_strokerrectgrad(b, flux_rec_xrect(bounds), radius, 1.0f, &grad);
 }
 
 static bool tb_focus_accent(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *bounds, float radius) {
 	FluxThemeColors const *t = flux_rec_theme(rc);
-	if (!xent_dl_pushclip_rrect(b, flux_rec_xrect(bounds), radius)) return false;
+	if (!xent_dl_pushcliprrect(b, flux_rec_xrect(bounds), radius)) return false;
 	float line_y = bounds->y + bounds->h - 1.0f;
 	bool  ok     = xent_dl_strokeline(
 	  b, bounds->x, line_y, bounds->x + bounds->w, line_y, flux_rec_xcolor(t->accent_default), 2.0f,
@@ -159,7 +155,7 @@ static bool tb_draw_selection(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *text_area,
   FluxControlState const *state, TextboxComposedContent const *content
 ) {
-	if (!content->has_text || !state->focused || snap->u.textbox.edit.readonly) return true;
+	if (!content->has_text || !state->focused) return true;
 	if (snap->u.textbox.edit.selection_start == snap->u.textbox.edit.selection_end) return true;
 	if (!rc || !rc->text) return true;
 
@@ -170,7 +166,6 @@ static bool tb_draw_selection(
 		a            = e;
 		e            = tmp;
 	}
-	/* Selection offsets are committed UTF-8 bytes; map via committed text. */
 	char const *committed = snap->u.textbox.text_content;
 	int         sel_s     = ( int ) utf8_bytes_to_utf16_count(committed, a);
 	int         sel_e     = ( int ) utf8_bytes_to_utf16_count(committed, e);
@@ -192,11 +187,11 @@ static bool tb_draw_selection(
 	FluxThemeColors const *t = flux_rec_theme(rc);
 	FluxColor sel = flux_color_af(snap->u.textbox.edit.selection_color) > 0.0f ? snap->u.textbox.edit.selection_color
 	                                                                           : t->accent_default;
-	sel.rgba      = (sel.rgba & 0xffffff00u) | 0x66u; /* ~0.4 alpha */
+	sel.rgba      = (sel.rgba & 0xffffff00u) | 0x66u;
 	for (uint32_t i = 0; i < n; i++) {
 		FluxRect sr = {
-		  text_area->x + rects [i].x - snap->u.textbox.edit.scroll_offset_x, text_area->y + rects [i].y, rects [i].w,
-		  rects [i].h};
+		  text_area->x + rects [i].x - snap->u.textbox.edit.scroll_offset_x,
+		  text_area->y + rects [i].y - snap->u.textbox.edit.scroll_offset_y, rects [i].w, rects [i].h};
 		if (!flux_rec_fill_rect(b, &sr, sel)) return false;
 	}
 	return true;
@@ -220,7 +215,7 @@ static bool tb_draw_composition_underline(
 	FluxColor              ul = state->enabled ? t->text_primary : t->text_disabled;
 	for (uint32_t i = 0; i < n; i++) {
 		float lx0 = text_area->x + rects [i].x - snap->u.textbox.edit.scroll_offset_x;
-		float ly  = text_area->y + rects [i].y + rects [i].h;
+		float ly  = text_area->y + rects [i].y + rects [i].h - snap->u.textbox.edit.scroll_offset_y;
 		float lx1 = lx0 + rects [i].w;
 		if (!flux_rec_line_h(b, lx0, lx1, ly - 0.5f, 1.0f, ul)) return false;
 	}
@@ -228,13 +223,14 @@ static bool tb_draw_composition_underline(
 }
 
 static XentTextStyle tb_content_style(FluxRenderSnap const *snap) {
-	float size = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
-	/* Match original textbox_make_styles: LEFT + VCENTER for painted content. */
+	float size      = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
+	bool  multiline = snap->u.textbox.edit.multiline;
 	return (XentTextStyle) {
 	  .font_size   = size,
 	  .font_weight = 400u,
 	  .h_align     = 0u,
-	  .v_align     = 1u,
+	  .v_align     = multiline ? 0u : 1u,
+	  .flags       = multiline ? XENT_DL_TEXT_WRAP : 0u,
 	  .font_family = snap->u.textbox.font_family,
 	};
 }
@@ -303,7 +299,8 @@ static bool tb_draw_caret(
 		caret_y_local = caret.y;
 	}
 
-	float caret_y = content->has_text ? text_area->y + caret_y_local : text_area->y + (text_area->h - caret_h) * 0.5f;
+	float caret_y = content->has_text ? text_area->y + caret_y_local - snap->u.textbox.edit.scroll_offset_y
+	                                  : text_area->y + (text_area->h - caret_h) * 0.5f;
 	float caret_x = tb_clamp_caret_x(text_area, text_area->x + caret_x_local - snap->u.textbox.edit.scroll_offset_x);
 	FluxThemeColors const *t       = flux_rec_theme(rc);
 	FluxRect               caret_r = {caret_x, caret_y, 1.0f, caret_h};
@@ -316,7 +313,7 @@ static bool tb_draw_content(
   FluxControlState const *state
 ) {
 	FluxThemeColors const *t = flux_rec_theme(rc);
-	if (!xent_dl_pushclip_rect(b, flux_rec_xrect(text_area))) return false;
+	if (!xent_dl_pushcliprect(b, flux_rec_xrect(text_area))) return false;
 
 	TextboxComposedContent content;
 	tb_prepare_content(&content, snap);
@@ -331,8 +328,8 @@ static bool tb_draw_content(
 	if (ok) ok = tb_draw_composition_underline(b, rc, snap, text_area, state, &content);
 	if (ok && content.has_text) {
 		FluxRect draw = {
-		  text_area->x - snap->u.textbox.edit.scroll_offset_x, text_area->y,
-		  text_area->w + snap->u.textbox.edit.scroll_offset_x, text_area->h};
+		  text_area->x - snap->u.textbox.edit.scroll_offset_x, text_area->y - snap->u.textbox.edit.scroll_offset_y,
+		  text_area->w + snap->u.textbox.edit.scroll_offset_x, text_area->h + snap->u.textbox.edit.scroll_offset_y};
 		FluxColor fg = state->enabled ? t->text_primary : t->text_disabled;
 		if (flux_color_af(snap->u.textbox.text_color) > 0.0f) fg = snap->u.textbox.text_color;
 		ok = flux_rec_text_ex(b, &draw, content.content, &style, fg);
@@ -375,26 +372,50 @@ static bool tb_draw_delete(
 	return ok;
 }
 
+static bool tb_draw_combo_overlay(
+  XentDlBuilder *b, FluxThemeColors const *t, FluxRenderSnap const *snap, FluxRect const *bounds,
+  FluxControlState const *state
+) {
+	bool in_zone = state->hovered && snap->hover_local_x >= bounds->w - FLUX_COMBO_GLYPH_COL;
+	if (in_zone && state->enabled) {
+		FluxRect  ov   = {bounds->x + bounds->w - 34.0f, bounds->y + 4.0f, 30.0f, bounds->h - 8.0f};
+		FluxColor pr   = state->focused ? t->ctrl_alt_fill_quarternary : t->subtle_fill_tertiary;
+		FluxColor fill = state->pressed ? pr : t->subtle_fill_secondary;
+		if (!flux_rec_fill_rounded(b, &ov, 4.0f, fill)) return false;
+	}
+	FluxRect glyph = {bounds->x + bounds->w - 26.0f, bounds->y, 12.0f, bounds->h};
+	return flux_rec_glyph_wc(b, &glyph, L"\xE70D", 12.0f, state->enabled ? t->text_secondary : t->text_disabled);
+}
+
+static bool tb_combo_bare(FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state) {
+	bool text_hover = state->hovered && snap->hover_local_x < bounds->w - FLUX_COMBO_GLYPH_COL;
+	return snap->u.textbox.combo_editor && state->enabled && !state->focused && !text_hover;
+}
+
+static bool tb_show_delete(FluxRenderSnap const *snap, FluxControlState const *state, bool has_text) {
+	if (snap->type != FLUX_CONTROL_TEXT_INPUT || snap->u.textbox.combo_editor) return false;
+	return has_text && state->focused && state->enabled && !snap->u.textbox.edit.readonly;
+}
+
 bool flux_rec_textbox_frame(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 ) {
+	if (bounds->w <= 0.0f || bounds->h <= 0.0f) return true;
 	float                  radius   = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
 	bool                   has_text = snap->u.textbox.text_content && snap->u.textbox.text_content [0];
-	bool                   show_del = snap->type == FLUX_CONTROL_TEXT_INPUT
-	                               && has_text
-	                               && state->focused
-	                               && !snap->u.textbox.edit.readonly
-	                               && state->enabled;
-	float                  col1_w   = show_del ? TB_DELETE_BTN_W : 0.0f;
+	bool                   combo    = snap->u.textbox.combo_editor;
+	bool                   show_del = tb_show_delete(snap, state, has_text);
+	float                  col1_w   = combo ? FLUX_COMBO_EDITOR_RESERVE : show_del ? TB_DELETE_BTN_W : 0.0f;
 	float                  col0_w   = flux_maxf(0.0f, bounds->w - col1_w);
 
 	FluxThemeColors const *t        = flux_rec_theme(rc);
 	FluxColor              fill     = flux_input_fill_color(t, state->enabled, state->focused, state->hovered);
 	( void ) flux_rec_animstate(rc, snap, state, false);
-	fill    = flux_rec_tweenfill(rc, snap, fill);
-	bool ok = flux_rec_fillsink(b, rc, bounds, radius, fill);
-	if (ok) ok = tb_draw_frame(b, rc, bounds, state, radius);
+	fill      = flux_rec_tweenfill(rc, snap, fill);
+	bool bare = tb_combo_bare(snap, bounds, state);
+	bool ok   = bare || flux_rec_fillsink(b, rc, bounds, radius, fill);
+	if (ok && !bare) ok = tb_draw_frame(b, rc, bounds, state, radius);
 
 	FluxRect tb = {
 	  bounds->x + FLUX_TEXTBOX_PAD_L, bounds->y + FLUX_TEXTBOX_PAD_T,
@@ -402,6 +423,7 @@ bool flux_rec_textbox_frame(
 	  flux_maxf(0.0f, bounds->h - FLUX_TEXTBOX_PAD_T - FLUX_TEXTBOX_PAD_B)};
 	if (ok) ok = tb_draw_content(b, rc, snap, &tb, state);
 	if (ok && show_del) ok = tb_draw_delete(b, rc, snap, bounds, state, radius, col0_w, col1_w);
+	if (ok && combo) ok = tb_draw_combo_overlay(b, t, snap, bounds, state);
 	return ok;
 }
 
@@ -413,15 +435,12 @@ pb_masked_snapshot(FluxRenderSnap const *snap, bool has_text, bool revealed, cha
 	uint32_t text_len = ( uint32_t ) strlen(snap->u.textbox.text_content);
 	pb_build_mask(snap->u.textbox.text_content, text_len, mask_buf, ( uint32_t ) mask_cap);
 	masked.u.textbox.text_content = mask_buf;
-	/* Remap caret/selection into mask byte space — measuring original offsets on
-	 * bullet UTF-8 cuts mid-codepoint and can fault inside the text backend. */
 	masked.u.textbox.edit.cursor_position
 	  = pb_original_offset_to_mask(snap->u.textbox.text_content, text_len, snap->u.textbox.edit.cursor_position);
 	masked.u.textbox.edit.selection_start
 	  = pb_original_offset_to_mask(snap->u.textbox.text_content, text_len, snap->u.textbox.edit.selection_start);
 	masked.u.textbox.edit.selection_end
 	  = pb_original_offset_to_mask(snap->u.textbox.text_content, text_len, snap->u.textbox.edit.selection_end);
-	/* Do not compose plaintext IME into a masked field (would leak). */
 	masked.u.textbox.edit.composition_text   = NULL;
 	masked.u.textbox.edit.composition_length = 0;
 	masked.u.textbox.edit.composition_cursor = 0;

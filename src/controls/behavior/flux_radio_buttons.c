@@ -1,18 +1,3 @@
-/**
- * @file flux_radio_buttons.c
- * @brief RadioButtons grouping control (WinUI RadioButtons.cpp semantics).
- *
- * Lays child radios column-major into a uniform grid (MaxColumns), enforces
- * single selection, and implements the group keyboard model: Up/Down move by
- * index order, Left/Right jump columns, and moving focus SELECTS the newly
- * focused item unless Ctrl is held (selection-follows-focus). One tab stop:
- * the children are the tab targets, the group is a plain container.
- *
- * Layout note: WinUI's ColumnMajorUniformToLargestGridLayout adapts the
- * column count to the available width; fluxent uses the requested MaxColumns
- * statically (clamped to item count) — faithful for the common single-column
- * case and any fixed multi-column group.
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_init_basic.h"
@@ -33,11 +18,14 @@ static FluxRadioButtonsData *rb_data(FluxStore *store, XentNodeId id) {
 	return ( FluxRadioButtonsData * ) nd->component_data;
 }
 
-/* Enforce single selection: check idx, uncheck the rest, notify. */
-static void rb_select(FluxRadioButtonsData *g, int idx, bool notify) {
-	if (idx < -1 || idx >= g->count || idx == g->selected) return;
+static void rb_apply_checks(FluxRadioButtonsData *g, int idx) {
 	for (int i = 0; i < g->count; i++)
 		flux_prop_checkbox_state(g->store, g->items [i], i == idx ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED);
+}
+
+static void rb_select(FluxRadioButtonsData *g, int idx, bool notify) {
+	if (idx < -1 || idx >= g->count || idx == g->selected) return;
+	rb_apply_checks(g, idx);
 	g->selected = idx;
 	if (!notify || idx < 0) return;
 	void     (*on_select)(void *, int) = g->on_select;
@@ -58,15 +46,11 @@ static void rb_select(FluxRadioButtonsData *g, int idx, bool notify) {
 	if (on_select) on_select(on_select_ctx, idx);
 }
 
-/* Clicking a radio selects it (radios never toggle off via click). */
 static void rb_item_click(void *ctx) {
 	FluxRadioItemCtx *ic = ( FluxRadioItemCtx * ) ctx;
 	rb_select(ic->group, ic->index, true);
 }
 
-/* Column-major geometry: column c holds a contiguous run of rows. The first
- * (count % columns) columns get one extra row. Returns the column index and
- * the row within it for a given item, plus the column's row count. */
 static void rb_locate(FluxRadioButtonsData const *g, int idx, int *col, int *row, int *col_rows) {
 	int cols = g->columns < 1 ? 1 : (g->columns > g->count ? g->count : g->columns);
 	if (cols < 1) cols = 1;
@@ -88,19 +72,17 @@ static void rb_locate(FluxRadioButtonsData const *g, int idx, int *col, int *row
 	*col_rows = g->count;
 }
 
-/* First item index of column c (column-major). */
 static int rb_col_start(FluxRadioButtonsData const *g, int cols, int c) {
 	int base = g->count / cols, extra = g->count % cols, start = 0;
 	for (int i = 0; i < c; i++) start += base + (i < extra ? 1 : 0);
 	return start;
 }
 
-/* Move focus to target (clamped/skip-invalid) and, unless Ctrl, select it. */
 static bool rb_focus_move(FluxRadioButtonsData *g, int target) {
-	if (target < 0 || target >= g->count) return true; /* edge: consume, no wrap (WinUI) */
+	if (target < 0 || target >= g->count) return true;
 	FluxStore *store = g->store;
 	XentNodeId root  = g->root;
-	if (g->input) flux_input_setfocus(g->input, g->items [target]);
+	if (g->input) flux_input_setfocus(g->input, g->items [target], false);
 	g = rb_data(store, root);
 	if (!g) return true;
 	if (!flux_key_held(FLUX_KEY_CONTROL)) rb_select(g, target, true);
@@ -140,10 +122,6 @@ static bool rb_item_key(void *ctx, FluxKey key, bool down) {
 	return false;
 }
 
-/* -------------------------------------------------------------------------
- * Create
- * ---------------------------------------------------------------------- */
-
 static void rb_data_destroy(void *component_data) {
 	FluxRadioButtonsData *g = ( FluxRadioButtonsData * ) component_data;
 	if (!g) return;
@@ -152,8 +130,6 @@ static void rb_data_destroy(void *component_data) {
 	free(g);
 }
 
-/* One radio row inside a column: chrome from the plain radio factory, with
- * the group's shared click/key handlers rebound onto the node. */
 static void rb_make_item(FluxRadioButtonsData *g, FluxRadioButtonsDesc const *info, XentNodeId column, int idx) {
 	char const *label = info->items ? info->items [idx].label : NULL;
 	XentNodeId  radio = flux_radio_init(&(FluxToggleDesc) {info->ctx, info->store, column, label, false, NULL, NULL});
@@ -170,7 +146,6 @@ static void rb_make_item(FluxRadioButtonsData *g, FluxRadioButtonsDesc const *in
 	if (info->items && info->items [idx].disabled) flux_prop_checkbox_enabled(info->store, radio, false);
 }
 
-/* Column-major grid: a flex row of per-column flex columns. */
 static void rb_build_grid(FluxRadioButtonsData *g, FluxRadioButtonsDesc const *info, XentNodeId root, int count) {
 	int cols = g->columns > count ? count : g->columns;
 	if (cols < 1) cols = 1;
@@ -257,7 +232,6 @@ XentNodeId flux_radiogroup_init(FluxRadioButtonsDesc const *info) {
 void flux_radiogroup_set_selected(FluxStore *store, XentNodeId id, int index) {
 	FluxRadioButtonsData *g = rb_data(store, id);
 	if (!g) return;
-	/* Props may arrive before public RADIO children are placed. */
 	if (g->count <= 0) {
 		g->selected = index;
 		return;
@@ -323,5 +297,5 @@ void flux_radiogroup_sync_children(FluxStore *store, XentNodeId id) {
 	xent_setgap(g->ctx, g->root, RB_ROW_SPACING);
 	if (!rb_resize_items(g, rb_public_child_count(g, store))) return;
 	rb_bind_public_children(g, store);
-	if (g->selected >= 0 && g->selected < g->count) rb_select(g, g->selected, false);
+	rb_apply_checks(g, g->selected);
 }

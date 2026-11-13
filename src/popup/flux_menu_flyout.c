@@ -131,7 +131,7 @@ static void menu_inherit_child_context(FluxMenu *parent, FluxMenu *child, int id
 
 static void menu_prepare_child_popup(FluxMenu *child) {
 	menu_measure(child);
-	flux_popup_set_size(child->popup, child->total_w, child->total_h);
+	flux_popup_setsize(child->popup, child->total_w, child->total_h);
 }
 
 static FluxRect menu_submenu_anchor(FluxMenu *m, StoredItem const *it) {
@@ -442,7 +442,6 @@ void flux_menu_show(FluxMenu *m, FluxRect anchor, FluxPlacement placement) {
 void flux_menu_showinput(FluxMenu *m, FluxRect anchor, FluxPlacement placement, FluxMenuInputKind input_kind) {
 	if (!m) return;
 
-	/* WinUI PaddingSizeStates: touch → DefaultPadding (11,8,11,9), others → NarrowPadding (11,4,11,5). */
 	if (input_kind == FLUX_MENU_INPUT_TOUCH) {
 		m->pad_top = FLUX_MENU_ITEM_PAD_TOP_TOUCH;
 		m->pad_bot = FLUX_MENU_ITEM_PAD_BOT_TOUCH;
@@ -454,11 +453,9 @@ void flux_menu_showinput(FluxMenu *m, FluxRect anchor, FluxPlacement placement, 
 
 	m->scroll_y = 0.0f;
 	menu_measure(m);
-	flux_popup_set_size(m->popup, m->total_w, m->total_h);
+	flux_popup_setsize(m->popup, m->total_w, m->total_h);
 
 	m->hovered_index  = -1;
-	/* WinUI FlyoutBase opens a keyboard-invoked MenuFlyout with Keyboard focus on its
-	 * first item, so arrow/Enter work immediately; pointer/touch opens with no highlight. */
 	m->keyboard_index = (input_kind == FLUX_MENU_INPUT_KEYBOARD) ? first_enabled(m) : -1;
 	m->pressed_index  = -1;
 	close_submenu(m);

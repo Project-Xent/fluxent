@@ -14,13 +14,6 @@
 #include <string.h>
 #include <windows.h>
 
-/* WinUI MenuBar (MenuBar.cpp / MenuBarItem.cpp). A horizontal stack of items,
- * each owning a MenuFlyout. At most one flyout is open; while one is open,
- * moving onto another item switches to it (OnMenuBarItemPointerEntered), and a
- * fresh press opens the pressed item (OnMenuBarItemPointerPressed). Down/Enter/
- * Space open the focused item; Left/Right fall through to the app's built-in
- * sibling focus navigation, matching the bar's XYFocus arrangement. */
-
 static FluxMenuBarData *menu_bar_data(FluxStore *store, XentNodeId bar) {
 	FluxNodeData *nd = flux_store_find(store, bar);
 	if (!nd || nd->component_type != FLUX_CONTROL_MENU_BAR) return NULL;
@@ -59,7 +52,6 @@ static void menu_bar_item_click(void *ctx) {
 	else menu_bar_open(it, FLUX_MENU_INPUT_MOUSE);
 }
 
-/* Hovering an item while another item's flyout is open switches to it. */
 static void menu_bar_item_hover(void *ctx, float x, float y) {
 	( void ) x;
 	( void ) y;
@@ -71,14 +63,13 @@ static bool menu_bar_item_key(void *ctx, FluxKey key, bool down) {
 	if (!down) return false;
 	FluxMenuBarItem *it = ( FluxMenuBarItem * ) ctx;
 	switch (key) {
-	case FLUX_KEY_DOWN :
+	case FLUX_KEY_DOWN  :
 	case FLUX_KEY_ENTER :
 	case FLUX_KEY_SPACE : menu_bar_open(it, FLUX_MENU_INPUT_KEYBOARD); return true;
-	default             : return false; /* Left/Right -> built-in sibling focus nav. */
+	default             : return false;
 	}
 }
 
-/* Light-dismiss or item activation closed the flyout from the menu side. */
 static void menu_bar_item_dismissed(void *ctx) {
 	FluxMenuBarItem *it = ( FluxMenuBarItem * ) ctx;
 	if (it->bar->open_index == it->index) {

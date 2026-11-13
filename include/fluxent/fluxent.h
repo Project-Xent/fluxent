@@ -1,16 +1,3 @@
-/**
- * @file fluxent.h
- * @brief Umbrella header for the Fluxent UI framework (pure aggregation).
- *
- * Controls are built via XtkEl / flux_run / XtkHost batches — not a second
- * flux_create_* family.
- *
- * @code
- * #include <fluxent/fluxent.h>
- * return flux_run(&cfg, &model, update, view);
- * @endcode
- */
-
 #ifndef FLUXENT_H
 #define FLUXENT_H
 

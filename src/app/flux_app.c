@@ -1,7 +1,9 @@
 #include "fluxent/fluxent.h"
+#include "controls/factory/flux_init_picker.h"
+#include "controls/behavior/flux_color_picker.h"
 #include "store/flux_node_data.h"
 #include "fluxent/flux_window.h"
-#include "fluxent/flux_graphics.h"
+#include "fluxent/flux_gfx.h"
 #include "fluxent/flux_input.h"
 #include "fluxent/flux_text.h"
 #include "fluxent/flux_host.h"
@@ -12,7 +14,7 @@
 #include "fluxent/flux_tooltip.h"
 #include "app/flux_scene.h"
 #include "runtime/flux_time.h"
-#include <fluxent/flux_nav_trace.h>
+#include "app/flux_post.h"
 #include "input/flux_dmanip_sync.h"
 #include "controls/behavior/flux_control_cursor.h"
 #include "controls/draw/flux_control_draw.h"
@@ -37,7 +39,6 @@
 #define FLUX_APP_SCENE_INITIAL_CAPACITY 512
 #define FLUX_APP_TOOLTIP_ANCHOR_H       20.0f
 
-/** @brief Present the frame with vsync enabled (default FluxApp render path). */
 static bool const                kFluxAppPresentUseVsync = true;
 
 typedef struct FluxRenderBackend FluxRenderBackend;
@@ -45,7 +46,7 @@ typedef struct FluxRenderBackend FluxRenderBackend;
 struct FluxApp {
 	FluxWindow              *window;
 	FluxEngine              *engine;
-	FluxControlRegistry     *registry; /**< Control type → renderer table; built once, shared by both render paths. */
+	FluxControlRegistry     *registry;
 	FluxInput               *input;
 	FluxText                *text;
 	FluxRenderCache         *cache;
@@ -54,24 +55,24 @@ struct FluxApp {
 
 	ID2D1SolidColorBrush    *shared_brush;
 	int64_t                  last_frame_ticks;
-	XentNodeId               last_uia_focus; /**< Last node reported to UIA as focused (focus-event de-dup). */
+	XentNodeId               last_uia_focus;
 
 	FluxTooltip             *tooltip;
+	bool                     auto_tip_open;
 
 	FluxDManip              *dmanip;
 
-	FluxComposeRender       *compose; /**< Retained-composition path (FLUX_USE_COMPOSITION). */
-	FluxRenderBackend const *backend; /**< Chosen render strategy (d2d or composition); set on first frame. */
+	FluxComposeRender       *compose;
+	FluxRenderBackend const *backend;
 	XtkHost                 *host;
 	XtkBackend              *xtk_backend;
+	FluxPostSink            *post_sink;
 
-	void                     (*frame_cb)(void *ctx); /**< Runs at frame start, before layout (xtk message pump). */
+	void                     (*frame_cb)(void *ctx);
 	void                    *frame_cb_ctx;
 	XentNodeId              *stale_lists;
 	uint32_t                 stale_count;
 	uint32_t                 stale_capacity;
-	uint64_t                 pointer_trace;
-	uint64_t                 key_trace;
 };
 
 static XentCtx   *app_ctx(FluxApp const *app) { return app ? flux_scene_context(app->scene) : NULL; }
@@ -101,8 +102,6 @@ static void app_try_dmanip_handoff(FluxApp *app, FluxPointerEvent const *ev) {
 		flux_window_abandonpointer(app->window, ev->pointer_id);
 }
 
-/* Composition counterpart of the DManip handoff: when a touch pan is promoted over
- * a scroll node, hand the pointer to that node's InteractionTracker. */
 static void app_try_interaction_handoff(FluxApp *app, FluxPointerEvent const *ev) {
 	if (!app->compose || !flux_input_takepan(app->input)) return;
 	XentNodeId target = flux_input_pantarget(app->input);
@@ -160,16 +159,28 @@ static bool app_queue_stale_list(FluxApp *app, XentNodeId node) {
 	return true;
 }
 
+static void app_sync_picker_control(FluxApp *app, XentNodeId node, FluxNodeData *nd) {
+	switch (nd->component_type) {
+	case FLUX_CONTROL_LOOPING_SELECTOR :
+		if (flux_looping_sync(node, nd)) flux_window_redraw(app->window);
+		break;
+	case FLUX_CONTROL_DATE_PICKER  :
+	case FLUX_CONTROL_TIME_PICKER  : flux_picker_sync(node, nd); break;
+	case FLUX_CONTROL_COLOR_PICKER : flux_colorpicker_sync(node, nd); break;
+	default                        : break;
+	}
+}
+
 static void app_sync_layout_control(FluxApp *app, XentCtx *ctx, XentNodeId node, FluxNodeData *nd) {
 	if (!nd || !nd->component_data) return;
-	if (xtk_is_list_type(( XtkCtrlType ) nd->component_type) && flux_list_window_stale(ctx, nd))
+	if (xtk_ctrl_islist(( XtkCtrlType ) nd->component_type) && flux_list_window_stale(ctx, nd))
 		( void ) app_queue_stale_list(app, node);
 	switch (nd->component_type) {
 	case FLUX_CONTROL_FLIP_VIEW      : flux_flip_sync(ctx, node, nd); break;
 	case FLUX_CONTROL_SPLIT_VIEW     : flux_splitview_sync(ctx, node, nd); break;
 	case FLUX_CONTROL_BREADCRUMB_BAR : flux_breadcrumb_sync(ctx, node, nd); break;
 	case FLUX_CONTROL_TAB_VIEW       : flux_tabs_sync_layout(app_store(app), node); break;
-	default                          : break;
+	default                          : app_sync_picker_control(app, node, nd); break;
 	}
 }
 
@@ -239,9 +250,6 @@ static FluxRenderCtx app_render_context(FluxApp *app, FluxGfx *gfx, FluxDpi dpi,
 	return rc;
 }
 
-/* With a DWM backdrop (Mica/acrylic) the swap chain clears transparent so the
- * system material shows through everything the UI leaves unpainted; without
- * one the window has no background at all, so clear with the theme's solid. */
 static FluxColor app_clear_color(FluxApp const *app) {
 	if (app->window && flux_window_backdrop(app->window) != FLUX_BACKDROP_NONE) return flux_color_rgba(0, 0, 0, 0);
 	FluxThemeColors const *t = app->theme ? flux_theme_colors(app->theme) : flux_theme_defaults();
@@ -252,7 +260,31 @@ static void app_sync_tooltip_theme(FluxApp *app, FluxRenderCtx const *rc) {
 	if (!app->tooltip) return;
 
 	flux_tooltip_settext(app->tooltip, app->text);
-	flux_tooltip_set_theme(app->tooltip, rc->theme, rc->is_dark);
+	flux_tooltip_settheme(app->tooltip, rc->theme, rc->is_dark);
+}
+
+static void app_sync_auto_tooltip(FluxApp *app) {
+	XentNodeId    node = app->input ? flux_input_focus(app->input) : XENT_NODE_INVALID;
+	FluxNodeData *nd   = node != XENT_NODE_INVALID ? flux_store_find(app_store(app), node) : NULL;
+	char          text [64];
+	FluxRect      local     = {0};
+	FluxPlacement placement = FLUX_PLACEMENT_TOP;
+	bool open               = nd
+	                       && nd->behavior.auto_tooltip
+	                       && nd->behavior.auto_tooltip(nd->behavior.auto_tooltip_ctx, text, sizeof(text), &local, &placement);
+	if (!open) {
+		if (app->auto_tip_open) flux_tooltip_dismiss(app->tooltip);
+		app->auto_tip_open = false;
+		return;
+	}
+	XentRect r = {0};
+	xent_layout_rect(app_ctx(app), node, &r);
+	float scale = flux_window_dpi(app->window).dpi_x / FLUX_DPI_BASE;
+	POINT pt    = {( LONG ) ((r.x + local.x) * scale), ( LONG ) ((r.y + local.y) * scale)};
+	ClientToScreen(flux_window_hwnd(app->window), &pt);
+	FluxRect anchor = {( float ) pt.x, ( float ) pt.y, local.w * scale, local.h * scale};
+	flux_tooltip_showat(app->tooltip, text, anchor, placement);
+	app->auto_tip_open = true;
 }
 
 static void app_ensure_compose(FluxApp *app, FluxGfx *gfx) {
@@ -263,9 +295,6 @@ static void app_ensure_compose(FluxApp *app, FluxGfx *gfx) {
 	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root, app->registry, app->xtk_backend);
 }
 
-/* Retained-composition frame: reconcile the layout into a WUC visual tree and
- * paint each node into its own surface via the existing renderers. The swap
- * chain / immediate-mode execute path is bypassed entirely in this mode. */
 static void app_render_composition(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	app_prepare_layout_tree(app, dpi);
 	if (app->cache) flux_rcache_begin(app->cache);
@@ -279,15 +308,13 @@ static void app_render_composition(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	bool anims_active       = false;
 	rc.animations_active    = &anims_active;
 	app_sync_tooltip_theme(app, &rc);
+	if (app->tooltip) app_sync_auto_tooltip(app);
 
 	flux_compose_render_frame(app->compose, app_ctx(app), app_store(app), app_root(app), &rc);
 
 	if (anims_active) flux_app_redraw(app);
-	flux_nav_trace_clear();
 }
 
-/* Immediate-mode swapchain frame: collect the layout into a command list and
- * execute it into the D2D swap chain. The classic (default) render path. */
 static void app_render_classic(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	app_prepare_layout_tree(app, dpi);
 	if (app->cache) flux_rcache_begin(app->cache);
@@ -302,6 +329,7 @@ static void app_render_classic(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	bool anims_active       = false;
 	rc.animations_active    = &anims_active;
 	app_sync_tooltip_theme(app, &rc);
+	if (app->tooltip) app_sync_auto_tooltip(app);
 
 	flux_gfx_begin(gfx);
 	flux_gfx_clear(gfx, app_clear_color(app));
@@ -311,13 +339,8 @@ static void app_render_classic(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	flux_gfx_present(gfx, kFluxAppPresentUseVsync);
 
 	if (anims_active) flux_app_redraw(app);
-	flux_nav_trace_clear();
 }
 
-/* The render backend is the cohesive strategy chosen once by capability: the
- * immediate-mode D2D swapchain path, or the retained WUC composition path. The
- * animator (tween / flux_compose_anim) and scroller (DManip / InteractionTracker)
- * are facets of the same choice and join this strategy as they are abstracted. */
 struct FluxRenderBackend {
 	char const *name;
 	void        (*render_frame)(FluxApp *app, FluxGfx *gfx, FluxDpi dpi);
@@ -326,10 +349,6 @@ struct FluxRenderBackend {
 static FluxRenderBackend const  g_backend_d2d         = {"d2d", app_render_classic};
 static FluxRenderBackend const  g_backend_composition = {"composition", app_render_composition};
 
-/* Capability gate for the composition backend. It costs per-node GPU surfaces
- * (memory scales with visible nodes), so fall back to the immediate-mode d2d
- * backend where composition is a poor fit: not requested, or a remote session
- * (DWM composition degrades badly over RDP). */
 static FluxRenderBackend const *app_select_backend(FluxGfx *gfx) {
 	if (!flux_graphics_composition_enabled(gfx)) return &g_backend_d2d;
 	if (GetSystemMetrics(SM_REMOTESESSION)) return &g_backend_d2d;
@@ -349,13 +368,7 @@ static void app_render(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return;
 
-	flux_nav_trace_log("frame", "begin");
-	flux_nav_trace_snapshot(app_ctx(app), app_store(app), app_root(app), "frame.before");
-	if (app->frame_cb) {
-		flux_nav_trace_log("frame", "call xtk frame/update/reconcile");
-		app->frame_cb(app->frame_cb_ctx);
-	}
-	flux_nav_trace_snapshot(app_ctx(app), app_store(app), app_root(app), "frame.after");
+	if (app->frame_cb) app->frame_cb(app->frame_cb_ctx);
 	app_pump_uia_focus(app);
 
 	FluxGfx *gfx = flux_app_gfx(app);
@@ -374,7 +387,7 @@ static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool i
 
 	if (!app->tooltip) return;
 	if (is_touch) {
-		flux_tooltip_on_hover(app->tooltip, XENT_NODE_INVALID, NULL, NULL);
+		flux_tooltip_hover(app->tooltip, XENT_NODE_INVALID, NULL, NULL);
 		return;
 	}
 
@@ -390,7 +403,7 @@ static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool i
 		screen_bounds.y = ( float ) pt.y;
 		screen_bounds.h = FLUX_APP_TOOLTIP_ANCHOR_H;
 	}
-	flux_tooltip_on_hover(app->tooltip, hovered, hover_nd, &screen_bounds);
+	flux_tooltip_hover(app->tooltip, hovered, hover_nd, &screen_bounds);
 }
 
 static bool app_active_menu_visible(FluxApp *app, FluxMenu **out_menu) {
@@ -406,13 +419,8 @@ static void app_pointer_move(FluxApp *app, FluxPointerEvent const *ev, bool is_t
 	app_update_cursor_and_tooltip(app, ev->x, ev->y, is_touch);
 }
 
-/* WinUI light-dismiss: a press or wheel landing outside an open flyout / MenuFlyout /
- * ComboBox drop-down closes it (and its whole submenu chain) and is absorbed -- it does
- * not also activate the control underneath. Every popup is a separate window, so any
- * input in the main window is by definition outside them. Returns true if anything was
- * dismissed (and the caller should swallow the event). */
 static bool app_lightdismiss_popups(FluxApp *app) {
-	if (!flux_popup_lightdismiss_visible(flux_app_hwnd(app))) return false;
+	if (!flux_popup_lightdismissvisible(flux_app_hwnd(app))) return false;
 	FluxMenu *menu;
 	if (app_active_menu_visible(app, &menu)) flux_menu_dismissall(menu);
 	flux_popup_dismissowner(flux_app_hwnd(app));
@@ -450,21 +458,9 @@ static void app_pointer(void *ctx, FluxPointerEvent const *ev) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app->input || app_root(app) == XENT_NODE_INVALID || !ev) return;
 
-	if (ev->kind == FLUX_POINTER_DOWN || ev->kind == FLUX_POINTER_WHEEL || ev->kind == FLUX_POINTER_CONTEXT_MENU) {
-		app->pointer_trace = flux_nav_trace_begin(
-		  "win32.pointer kind=%d device=%d pointer=%u x=%.1f y=%.1f", ev->kind, ev->device, ev->pointer_id, ev->x, ev->y
-		);
-	}
-	else if (app->pointer_trace) flux_nav_trace_adopt(app->pointer_trace);
-	flux_nav_trace_log(
-	  "app.pointer", "dispatch kind=%d device=%d pointer=%u buttons=0x%x", ev->kind, ev->device, ev->pointer_id,
-	  ev->buttons
-	);
 	bool const is_touch = (ev->device == FLUX_POINTER_TOUCH);
 	app_pointer_route(app, ev, is_touch);
 	flux_app_redraw(app);
-	if (ev->kind == FLUX_POINTER_UP || ev->kind == FLUX_POINTER_CANCEL) app->pointer_trace = 0;
-	flux_nav_trace_clear();
 }
 
 static void app_setting_changed(void *ctx) {
@@ -493,6 +489,8 @@ static bool app_handle_arrow_key(FluxApp *app, FluxKey key) {
 static bool app_handle_activation_key(FluxApp *app, FluxKey key) {
 	if (key != FLUX_KEY_ENTER && key != FLUX_KEY_SPACE) return false;
 	if (!app_focused_accepts_command(app)) return false;
+	FluxControlType ct = flux_node_type(app_store(app), flux_input_focus(app->input));
+	if (ct == FLUX_CONTROL_CHECKBOX || ct == FLUX_CONTROL_RADIO) return false;
 
 	flux_input_activate(app->input);
 	return true;
@@ -504,9 +502,8 @@ static bool app_handle_key_command(FluxApp *app, FluxKey key) {
 		flux_input_tab(app->input, app_root(app), flux_key_held(FLUX_KEY_SHIFT));
 		return true;
 	}
-	/* The focused control gets first refusal (Slider arrows, ComboBox list, text edit);
-	 * only keys it leaves unconsumed fall through to app-level navigation below. */
 	if (flux_input_keydown(app->input, key)) return true;
+	if (flux_input_buttonkey(app->input, key, true)) return true;
 	if (app_handle_arrow_key(app, key)) return true;
 	if (app_handle_activation_key(app, key)) return true;
 	if (key != FLUX_KEY_ESCAPE) return false;
@@ -519,15 +516,10 @@ static void app_key(void *ctx, FluxKey key, bool down) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app->input) return;
 
-	if (down) app->key_trace = flux_nav_trace_begin("win32.key key=%u", key);
-	else if (app->key_trace) flux_nav_trace_adopt(app->key_trace);
-	flux_nav_trace_log("app.key", "dispatch key=%u down=%d", key, down);
 	if (down && app->tooltip) flux_tooltip_dismiss(app->tooltip);
 	if (down) app_handle_key_command(app, key);
-	else flux_input_keyup(app->input, key);
+	else if (!flux_input_buttonkey(app->input, key, false)) flux_input_keyup(app->input, key);
 	flux_app_redraw(app);
-	if (!down) app->key_trace = 0;
-	flux_nav_trace_clear();
 }
 
 static void app_char(void *ctx, wchar_t ch) {
@@ -648,7 +640,6 @@ static bool app_create_scene(FluxApp *app) {
 }
 
 FluxApp *flux_app_create(FluxAppCfg const *cfg) {
-	flux_nav_trace_reset();
 	FluxApp *app = ( FluxApp * ) calloc(1, sizeof(*app));
 	if (!app) return NULL;
 
@@ -681,7 +672,6 @@ static void app_release_shared_brush(FluxApp *app) {
 }
 
 static void app_destroy_render_state(FluxApp *app) {
-	/* Destroy before the window/graphics: holds WUC visuals tied to the target. */
 	if (app->compose) flux_compose_render_destroy(app->compose);
 	app->compose = NULL;
 	app_release_shared_brush(app);
@@ -691,7 +681,7 @@ static void app_destroy_render_state(FluxApp *app) {
 	if (app->xtk_backend) flux_xtk_backend_destroy(app->xtk_backend);
 	app->xtk_backend = NULL;
 	app->host        = NULL;
-	flux_control_registry_destroy(app->registry); /* after both render paths that reference it */
+	flux_control_registry_destroy(app->registry);
 	app->registry = NULL;
 	if (app->text) flux_text_destroy(app->text);
 }
@@ -703,6 +693,7 @@ static void app_destroy_input_state(FluxApp *app) {
 
 void flux_app_destroy(FluxApp *app) {
 	if (!app) return;
+	flux_postsink_destroy(app->post_sink);
 	app_cleanup_dmanip(app);
 	app_destroy_input_state(app);
 	app_destroy_render_state(app);
@@ -764,7 +755,7 @@ HWND      flux_app_hwnd(FluxApp *app) { return app && app->window ? flux_window_
 
 void      flux_app_sethost(FluxApp *app, XtkHost *host, XtkBackend *backend) {
 	if (!app) return;
-	flux_host_bind_app(host, app);
+	flux_host_bindapp(host, app);
 	app->host        = host;
 	app->xtk_backend = backend;
 	if (app->engine) flux_engine_bind(app->engine, app->registry, backend);
@@ -775,3 +766,17 @@ void      flux_app_sethost(FluxApp *app, XtkHost *host, XtkBackend *backend) {
 XtkHost    *flux_app_host(FluxApp *app) { return app ? app->host : NULL; }
 
 XtkBackend *flux_app_backend(FluxApp *app) { return app ? app->xtk_backend : NULL; }
+
+bool        flux_app_bindruntime(FluxApp *app, XtkRt *rt) {
+	if (!app || app->post_sink) return false;
+	app->post_sink = flux_postsink_create(rt);
+	return app->post_sink != NULL;
+}
+
+XtkPostStatus flux_app_post(FluxApp *app, XtkMsg msg) {
+	return flux_postsink_send(app ? app->post_sink : NULL, msg, NULL, 0u, false);
+}
+
+XtkPostStatus flux_app_poststring(FluxApp *app, XtkMsg msg, char const *data, uint32_t len) {
+	return flux_postsink_send(app ? app->post_sink : NULL, msg, data, len, true);
+}

@@ -1,15 +1,10 @@
 #include "gallery.h"
-#include <fluxent/flux_nav_trace.h>
-
 
 #include <windows.h>
 
 void gallery_decl_update(void *model, XtkMsg msg) {
 	Model *m = ( Model * ) model;
-	flux_nav_trace_adopt(msg.trace_id);
-	flux_nav_trace_log("model.update", "msg=%d i=%d page.before=%d", msg.tag, msg.i, m->page);
 	gallery_model_update(m, msg);
-	flux_nav_trace_log("model.update", "msg=%d page.after=%d", msg.tag, m->page);
 }
 
 typedef XtkEl *(*GalleryPageFn)(XtkUi *ui, Model const *m);
@@ -70,6 +65,10 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_RADIO]           = page_radio,
   [PAGE_COMBO]           = page_combo,
   [PAGE_SLIDER]          = page_slider,
+  [PAGE_SCROLL_BAR]      = page_scroll_bar,
+  [PAGE_LOOPING]         = page_looping,
+  [PAGE_DATE_PICKER]     = page_date_picker,
+  [PAGE_TIME_PICKER]     = page_time_picker,
   [PAGE_TOGGLE]          = page_toggle,
   [PAGE_RADIO_BUTTONS]   = page_radio_buttons,
   [PAGE_RATING]          = page_rating,
@@ -132,7 +131,6 @@ XtkEl *gallery_decl_page_view(XtkUi *ui, void *model) {
 
 XtkEl *gallery_decl_view(XtkUi *ui, void *model) {
 	Model *m = ( Model * ) model;
-	flux_nav_trace_log("view", "build page=%d", m->page);
 	return xtk_grow(
 	  xtk_nav(
 		ui,
@@ -150,7 +148,6 @@ XtkEl *gallery_decl_view(XtkUi *ui, void *model) {
 	);
 }
 
-#ifndef GALLERY_DECL_NO_MAIN
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd) {
 	( void ) hInst;
 	( void ) hPrev;
@@ -169,4 +166,3 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	};
 	return flux_run(&cfg, &model, gallery_decl_update, gallery_decl_view);
 }
-#endif

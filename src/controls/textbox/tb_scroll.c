@@ -46,6 +46,7 @@ static bool tb_password_show_reveal(FluxTextBoxInputData const *tb, FluxControlT
 }
 
 static float tb_text_reserved_width(FluxTextBoxInputData const *tb, FluxControlType ct, FluxNodeData const *nd) {
+	if (tb->base.combo_editor) return FLUX_COMBO_EDITOR_RESERVE;
 	if (ct == FLUX_CONTROL_NUMBER_BOX)
 		return (tb->nb && tb->nb->spin_placement == FLUX_NB_SPIN_INLINE ? FLUX_NUMBER_BOX_SPIN_W : 0.0f)
 		     + (tb_textbox_show_delete(tb, ct, nd) ? FLUX_NUMBER_BOX_DELETE_BTN_W : 0.0f);
@@ -213,7 +214,7 @@ tb_measure_active_caret(FluxTextBoxInputData *tb, FluxText *tr, FluxTextStyle co
 	TbDisplayText display;
 	if (!tb_display_text_init(tb, &display)) return false;
 
-	uint32_t           u16_cursor = tb_byte_to_utf16_offset(display.text, display.len, display.cursor);
+	uint32_t           u16_cursor = flux_utf8_to_utf16_offset(display.text, display.len, display.cursor);
 	FluxTextCaretQuery query      = {
 	  {tr, display.text, ts, width},
       ( int ) u16_cursor
@@ -249,9 +250,35 @@ FluxTextStyle tb_make_style(FluxTextBoxInputData const *tb) {
 	ts.font_size   = tb->base.font_size > 0.0f ? tb->base.font_size : 14.0f;
 	ts.font_weight = FLUX_FONT_REGULAR;
 	ts.text_align  = FLUX_TEXT_LEFT;
-	ts.vert_align  = FLUX_TEXT_VCENTER;
-	ts.word_wrap   = false;
+	ts.vert_align  = tb->base.multiline ? FLUX_TEXT_TOP : FLUX_TEXT_VCENTER;
+	ts.word_wrap   = tb->base.multiline;
 	return ts;
+}
+
+float tb_visible_text_height(FluxTextBoxInputData const *tb, XentRect const *rect) {
+	( void ) tb;
+	return rect->h - FLUX_TEXTBOX_PAD_T - FLUX_TEXTBOX_PAD_B;
+}
+
+float tb_layout_width(FluxTextBoxInputData const *tb, float visible_w) {
+	return tb->base.multiline ? visible_w : visible_w + tb->base.scroll_offset_x;
+}
+
+static float tb_measure_active_text_height(FluxTextBoxInputData *tb, FluxText *tr, FluxTextStyle const *ts, float w) {
+	TbDisplayText display;
+	if (!tb_display_text_init(tb, &display)) return 0.0f;
+
+	FluxSize size = flux_text_measure(tr, display.text, ts, w);
+	tb_display_text_free(&display);
+	return size.h;
+}
+
+static float tb_clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+static void  tb_scroll_axis_into_view(float caret_low, float caret_high, float visible, float *offset) {
+	if (caret_low - *offset < 0.0f) *offset = caret_low;
+	else if (caret_high - *offset > visible) *offset = caret_high - visible;
+	if (*offset < 0.0f) *offset = 0.0f;
 }
 
 void tb_update_scroll(FluxTextBoxInputData *tb) {
@@ -265,12 +292,14 @@ void tb_update_scroll(FluxTextBoxInputData *tb) {
 
 	FluxTextStyle ts    = tb_make_style(tb);
 	TbImeCaret    caret = {0.0f, 0.0f, 0.0f};
-	if (!tb_measure_active_caret(tb, tr, &ts, visible_w + tb->base.scroll_offset_x, &caret)) return;
-	float cx = caret.x;
+	if (!tb_measure_active_caret(tb, tr, &ts, tb_layout_width(tb, visible_w), &caret)) return;
 
-	if (cx - tb->base.scroll_offset_x < 0.0f) tb->base.scroll_offset_x = cx;
-	else if (cx - tb->base.scroll_offset_x > visible_w) tb->base.scroll_offset_x = cx - visible_w;
-	if (tb->base.scroll_offset_x < 0.0f) tb->base.scroll_offset_x = 0.0f;
+	if (!tb->base.multiline) tb_scroll_axis_into_view(caret.x, caret.x, visible_w, &tb->base.scroll_offset_x);
+	else {
+		float visible_h = tb_visible_text_height(tb, &rect);
+		if (visible_h > 0.0f)
+			tb_scroll_axis_into_view(caret.y, caret.y + caret.h, visible_h, &tb->base.scroll_offset_y);
+	}
 	tb_clamp_scroll(tb);
 }
 
@@ -283,14 +312,33 @@ void tb_clamp_scroll(FluxTextBoxInputData *tb) {
 	float visible_w = tb_visible_text_width(tb, &rect);
 	if (visible_w <= 0.0f) {
 		tb->base.scroll_offset_x = 0.0f;
+		tb->base.scroll_offset_y = 0.0f;
 		return;
 	}
 
-	FluxTextStyle ts    = tb_make_style(tb);
-	float         max_x = tb_measure_active_text_width(tb, tr, &ts) - visible_w;
-	if (max_x < 0.0f) max_x = 0.0f;
-	if (tb->base.scroll_offset_x > max_x) tb->base.scroll_offset_x = max_x;
-	if (tb->base.scroll_offset_x < 0.0f) tb->base.scroll_offset_x = 0.0f;
+	FluxTextStyle ts = tb_make_style(tb);
+	if (!tb->base.multiline) {
+		float max_x              = tb_measure_active_text_width(tb, tr, &ts) - visible_w;
+		tb->base.scroll_offset_x = tb_clampf(tb->base.scroll_offset_x, 0.0f, max_x > 0.0f ? max_x : 0.0f);
+		return;
+	}
+
+	tb->base.scroll_offset_x = 0.0f;
+
+	float visible_h          = tb_visible_text_height(tb, &rect);
+	float max_y              = tb_measure_active_text_height(tb, tr, &ts, visible_w) - visible_h;
+	tb->base.scroll_offset_y = tb_clampf(tb->base.scroll_offset_y, 0.0f, max_y > 0.0f ? max_y : 0.0f);
+}
+
+float flux_textbox_wheel(FluxStore *store, XentNodeId node, float delta) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (!nd || nd->component_type != FLUX_CONTROL_TEXT_INPUT || !nd->component_data) return 0.0f;
+	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) nd->component_data;
+	if (!tb->base.multiline) return 0.0f;
+	float before             = tb->base.scroll_offset_y;
+	tb->base.scroll_offset_y = before + delta;
+	tb_clamp_scroll(tb);
+	return tb->base.scroll_offset_y - before;
 }
 
 void tb_notify_change(FluxTextBoxInputData *tb) {
@@ -304,7 +352,7 @@ void tb_notify_change(FluxTextBoxInputData *tb) {
 		  (XtkEventPayload) {
 			.kind     = XTK_EVENT_PAYLOAD_STRING,
 			.u.string = {content, ( uint32_t ) strlen(content)},
-        },
+		},
 		  XTK_EVENT_CAUSE_USER
 		);
 	if (notify) notify(notify_ctx, content);
@@ -324,11 +372,11 @@ void tb_update_ime_position(FluxTextBoxInputData *tb) {
 	float visible_w  = tb_visible_text_width(tb, &rect);
 	if (visible_w <= 0.0f) return;
 	TbImeCaret measured = {0.0f, 0.0f, 0.0f};
-	bool       ok       = tb_measure_active_caret(tb, tr, &ts, visible_w + tb->base.scroll_offset_x, &measured);
+	bool       ok       = tb_measure_active_caret(tb, tr, &ts, tb_layout_width(tb, visible_w), &measured);
 	if (!ok) return;
 
 	float   cx      = rect.x + FLUX_TEXTBOX_PAD_L + measured.x - tb->base.scroll_offset_x;
-	float   cy      = rect.y + FLUX_TEXTBOX_PAD_T + measured.y;
+	float   cy      = rect.y + FLUX_TEXTBOX_PAD_T + measured.y - tb->base.scroll_offset_y;
 	float   ch      = measured.h > 0.0f ? measured.h : (ts.font_size > 0.0f ? ts.font_size : 14.0f) * 1.2f;
 	FluxDpi dpi     = flux_window_dpi(window);
 	float   x_scale = dpi.dpi_x / FLUX_DPI_BASE;

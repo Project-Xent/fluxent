@@ -16,6 +16,24 @@ XtkEl *page_checkbox(XtkUi *ui, Model const *m) {
 		  )
 		),
 		example(
+		  ui, "A 3-state CheckBox: a click cycles unchecked, checked, indeterminate.",
+		  demo_card(
+			ui,
+			xtk_checkbox(
+			  ui, "Three-state CheckBox",
+			  (XtkToggleDesc) {
+				.checked       = m->check_state == XTK_CHECK_CHECKED,
+				.indeterminate = m->check_state == XTK_CHECK_INDETERMINATE,
+				.three_state   = true,
+				.change_state  = xtk_msg(MSG_CHECK_TRI)}
+			),
+			m->check_state == XTK_CHECK_CHECKED         ? "Checked"
+			: m->check_state == XTK_CHECK_INDETERMINATE ? "Indeterminate"
+			                                            : "Unchecked",
+			NULL
+		  )
+		),
+		example(
 		  ui, "CheckBoxes can be disabled.",
 		  xtk_card(
 			ui, (XtkStackDesc) {0},

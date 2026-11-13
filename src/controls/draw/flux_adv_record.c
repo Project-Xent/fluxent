@@ -1,8 +1,3 @@
-/**
- * @file flux_adv_record.c
- * @brief 1:1 display-list ports of advanced control chrome from HEAD draw files
- * (nav / list / tree / menu bar / breadcrumb / selector bar / items container).
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "controls/draw/flux_control_draw.h"
 
@@ -248,96 +243,86 @@ static FluxColor tree_row_fg(FluxThemeColors const *t, FluxControlState const *s
 	return t->text_primary;
 }
 
+static FluxCheckState tree_check_state(uint8_t sel_state) {
+	return sel_state == FLUX_TREE_SEL_SELECTED ? FLUX_CHECK_CHECKED
+	     : sel_state == FLUX_TREE_SEL_PARTIAL  ? FLUX_CHECK_INDETERMINATE
+	                                           : FLUX_CHECK_UNCHECKED;
+}
+
 static bool tree_rec_checkbox(
-  XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *box, FluxControlState const *state, uint8_t sel_state
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, float ix,
+  FluxControlState const *st, uint8_t sel_state
 ) {
-	if (sel_state == FLUX_TREE_SEL_NONE) {
-		bool ok = flux_rec_fill_rounded(b, box, 3.0f, t->ctrl_alt_fill_secondary);
-		if (!ok) return false;
-		FluxColor stroke = state->enabled ? t->ctrl_strong_stroke_default : t->ctrl_strong_stroke_disabled;
-		return flux_rec_stroke_rounded(b, box, 3.0f, stroke, 1.0f);
+	float            col_x = ix + FLUX_TREE_CHECK_MARGIN_L;
+	float            hx    = snap->hover_local_x + bounds->x;
+	bool             over  = snap->hover_local_x >= 0.0f && hx >= col_x && hx < col_x + FLUX_TREE_CHECK_W;
+	FluxControlState cs    = *st;
+	cs.hovered             = st->hovered && over;
+	cs.pressed             = st->pressed && over;
+	FluxRect box = {col_x, bounds->y + (bounds->h - FLUX_CHECKBOX_SIZE) * 0.5f, FLUX_CHECKBOX_SIZE, FLUX_CHECKBOX_SIZE};
+	return flux_rec_checkbox_box(b, rc, snap, &box, &cs, tree_check_state(sel_state));
+}
+
+static bool tree_rec_background(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *ib, FluxControlState const *st, bool multi, bool selected
+) {
+	FluxThemeColors const *t    = flux_rec_theme(rc);
+	FluxColor              fill = tree_row_fill(t, st, selected && !multi);
+	bool                   ok   = true;
+	if (flux_color_af(fill) > 0.0f) ok = flux_rec_fill_rounded(b, ib, FLUX_CORNER_RADIUS, fill);
+	if (!ok || !selected) return ok;
+	if (multi) return flux_rec_fill_rounded(b, ib, FLUX_CORNER_RADIUS, t->subtle_fill_secondary);
+	FluxRect pill = {ib->x, ib->y + (ib->h - FLUX_TREE_PILL_H) * 0.5f, FLUX_TREE_PILL_W, FLUX_TREE_PILL_H};
+	pill.x        = flux_rec_snapx(rc, pill.x);
+	return flux_rec_fill_rounded(b, &pill, FLUX_TREE_PILL_R, st->enabled ? t->accent_default : t->text_disabled);
+}
+
+static bool tree_rec_content(
+  XentDlBuilder *b, FluxTreeItemSnapshot const *ti, FluxRect const *cr, float chevron_x, float text_x, FluxColor fg
+) {
+	bool ok = true;
+	if (ti->flags & FLUX_TREE_ROW_HAS_CHILDREN) {
+		FluxRect       cb   = {chevron_x, cr->y, FLUX_TREE_CHEVRON_BOX, cr->h};
+		wchar_t const *chev = (ti->flags & FLUX_TREE_ROW_EXPANDED) ? L"\xE70D" : L"\xE76C";
+		ok                  = flux_rec_glyph_wc(b, &cb, chev, FLUX_TREE_CHEVRON_FONT, fg);
 	}
-	FluxColor fill = !state->enabled ? t->accent_disabled
-	               : state->pressed  ? t->accent_tertiary
-	               : state->hovered  ? t->accent_secondary
-	                                 : t->accent_default;
-	bool      ok   = flux_rec_fill_rounded(b, box, 3.0f, fill);
-	if (!ok) return false;
-	FluxColor glyph = !state->enabled ? t->text_on_accent_disabled
-	                : state->pressed  ? t->text_on_accent_secondary
-	                                  : t->text_on_accent_primary;
-	if (sel_state == FLUX_TREE_SEL_SELECTED) return flux_rec_glyph_wc(b, box, L"\xE73E", 16.0f, glyph);
-	return flux_rec_glyph_wc(b, box, L"\xE73C", 12.0f, glyph);
+	if (ok && ti->glyph) {
+		wchar_t  glyph [2]  = {( wchar_t ) ti->glyph, 0};
+		FluxRect gb         = {text_x, cr->y, FLUX_TREE_ICON_GLYPH, cr->h};
+		ok                  = flux_rec_glyph_wc(b, &gb, glyph, FLUX_TREE_ICON_GLYPH, fg);
+		text_x             += FLUX_TREE_ICON_ADVANCE;
+	}
+	if (!ok || !ti->label || !ti->label [0]) return ok;
+	FluxRect tr = {text_x, cr->y, cr->x + cr->w - text_x - 4.0f, cr->h};
+	return tr.w <= 0.0f || flux_rec_text(b, &tr, ti->label, FLUX_TREE_FONT, 400u, fg);
 }
 
 bool flux_rec_treeitem(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 ) {
-	FluxThemeColors const      *t  = flux_rec_theme(rc);
 	FluxTreeItemSnapshot const *ti = &snap->u.tree_item;
-
 	FluxControlState            st = *state;
 	if (ti->flags & FLUX_TREE_ROW_DISABLED) st.enabled = 0;
 
-	bool     multi    = (ti->flags & FLUX_TREE_ROW_MULTI) != 0;
-	bool     selected = ti->sel_state == FLUX_TREE_SEL_SELECTED;
-
-	FluxRect ib       = {
+	bool     multi = (ti->flags & FLUX_TREE_ROW_MULTI) != 0;
+	FluxRect ib    = {
 	  bounds->x + FLUX_TREE_ROW_MARGIN_H, bounds->y + FLUX_TREE_ROW_MARGIN_V, bounds->w - 2.0f * FLUX_TREE_ROW_MARGIN_H,
 	  bounds->h - 2.0f * FLUX_TREE_ROW_MARGIN_V};
 	if (ib.w < 1.0f || ib.h < 1.0f) return true;
+	if (!tree_rec_background(b, rc, &ib, &st, multi, ti->sel_state == FLUX_TREE_SEL_SELECTED)) return false;
 
-	bool      ok   = true;
-	FluxColor fill = tree_row_fill(t, &st, selected);
-	if (flux_color_af(fill) > 0.0f) ok = flux_rec_fill_rounded(b, &ib, FLUX_CORNER_RADIUS, fill);
-
-	if (ok && !multi && selected) {
-		FluxRect pill = {ib.x, ib.y + (ib.h - FLUX_TREE_PILL_H) * 0.5f, FLUX_TREE_PILL_W, FLUX_TREE_PILL_H};
-		pill.x        = flux_rec_snapx(rc, pill.x);
-		ok = flux_rec_fill_rounded(b, &pill, FLUX_TREE_PILL_R, st.enabled ? t->accent_default : t->text_disabled);
-	}
-
-	FluxColor fg = tree_row_fg(t, &st);
-	float     ix = bounds->x + FLUX_TREE_ROW_MARGIN_H + FLUX_TREE_INDENT * ( float ) ti->depth;
-	float     chevron_x, text_x;
-	if (multi) {
-		FluxRect box = {
-		  ix + FLUX_TREE_CHECK_MARGIN_L, ib.y + (ib.h - FLUX_TREE_CHECK_BOX) * 0.5f, FLUX_TREE_CHECK_BOX,
-		  FLUX_TREE_CHECK_BOX};
-		if (ok) ok = tree_rec_checkbox(b, t, &box, &st, ti->sel_state);
-		chevron_x = ix + FLUX_TREE_MULTI_CHEVRON_X;
-		text_x    = chevron_x + FLUX_TREE_CHEVRON_ZONE_MULTI;
-	}
-	else {
-		chevron_x = ix + FLUX_TREE_CHEVRON_PAD;
-		text_x    = ix + FLUX_TREE_CHEVRON_ZONE;
-	}
-
-	if (ok && (ti->flags & FLUX_TREE_ROW_HAS_CHILDREN)) {
-		FluxRect cb = {chevron_x, ib.y, FLUX_TREE_CHEVRON_BOX, ib.h};
-		ok          = flux_rec_glyph_wc(
-		  b, &cb, (ti->flags & FLUX_TREE_ROW_EXPANDED) ? L"\xE70D" : L"\xE76C", FLUX_TREE_CHEVRON_FONT, fg
-		);
-	}
-
-	if (ok && ti->glyph) {
-		wchar_t  glyph [2]  = {( wchar_t ) ti->glyph, 0};
-		FluxRect gb         = {text_x, ib.y, FLUX_TREE_ICON_GLYPH, ib.h};
-		ok                  = flux_rec_glyph_wc(b, &gb, glyph, FLUX_TREE_ICON_GLYPH, fg);
-		text_x             += FLUX_TREE_ICON_ADVANCE;
-	}
-
-	if (ok && ti->label && ti->label [0]) {
-		FluxRect tr = {text_x, ib.y, ib.x + ib.w - text_x - 4.0f, ib.h};
-		if (tr.w > 0.0f) ok = flux_rec_text(b, &tr, ti->label, FLUX_TREE_FONT, 400u, fg);
-	}
-
-	if (ok && st.focused && st.enabled) {
-		FluxRect fr = {ib.x, ib.y - 1.0f, ib.w, ib.h + 2.0f};
-		ok          = flux_rec_focus_rect(b, &fr, FLUX_CORNER_RADIUS);
-	}
-	return ok;
+	float    ix        = bounds->x + FLUX_TREE_ROW_MARGIN_H + FLUX_TREE_INDENT * ( float ) ti->depth;
+	float    pt        = multi ? 0.0f : FLUX_TREE_CONTENT_PAD_T;
+	float    pb        = multi ? 0.0f : FLUX_TREE_CONTENT_PAD_B;
+	FluxRect cr        = {ib.x, ib.y + pt, ib.w, ib.h - pt - pb};
+	float    chevron_x = ix + (multi ? FLUX_TREE_MULTI_CHEVRON_X : FLUX_TREE_CHEVRON_PAD);
+	float    text_x    = multi ? chevron_x + FLUX_TREE_CHEVRON_ZONE_MULTI : ix + FLUX_TREE_CHEVRON_ZONE;
+	if (multi && !tree_rec_checkbox(b, rc, snap, &ib, ix, &st, ti->sel_state)) return false;
+	if (!tree_rec_content(b, ti, &cr, chevron_x, text_x, tree_row_fg(flux_rec_theme(rc), &st))) return false;
+	if (!st.focused || !st.enabled) return true;
+	FluxRect fr = {ib.x, ib.y - 1.0f, ib.w, ib.h + 2.0f};
+	return flux_rec_focus_rect(b, flux_rec_theme(rc), &fr, FLUX_CORNER_RADIUS);
 }
 
 static bool nav_rec_shadow(XentDlBuilder *b, FluxRect const *pb, float opacity) {
@@ -360,7 +345,7 @@ nav_rec_content_layer(XentDlBuilder *b, FluxRect const *root, FluxRenderSnap con
 
 	float    r   = FLUX_NAV_CONTENT_RADIUS;
 	FluxRect ext = {layer.x, layer.y, layer.w + (snap->u.nav.nav_top ? 0.0f : r), layer.h + r};
-	bool     ok  = xent_dl_pushclip_rect(b, flux_rec_xrect(&layer));
+	bool     ok  = xent_dl_pushcliprect(b, flux_rec_xrect(&layer));
 	if (ok) ok = flux_rec_fill_rounded(b, &ext, r, t->layer_default);
 	if (ok) {
 		FluxRect stroke = {ext.x + 0.5f, ext.y + 0.5f, ext.w - 1.0f, ext.h - 1.0f};
@@ -398,7 +383,6 @@ static FluxColor nav_rec_with_opacity(FluxColor c, float op) {
 bool flux_rec_nav_overlay(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds
 ) {
-	/* 1:1 with flux_draw_nav_view_overlay — selection indicator pill. */
 	if (snap->u.nav.nav_ind_opacity <= 0.01f) return true;
 	float lead   = snap->u.nav.nav_ind_top;
 	float extent = snap->u.nav.nav_ind_bottom - snap->u.nav.nav_ind_top;
@@ -417,7 +401,7 @@ bool flux_rec_nav_overlay(
 	float    ct   = bounds->y + snap->u.nav.nav_ind_clip_top;
 	float    cb   = bounds->y + snap->u.nav.nav_ind_clip_bottom;
 	FluxRect clip = {bounds->x, ct, bounds->w, cb - ct};
-	if (!xent_dl_pushclip_rect(b, flux_rec_xrect(&clip))) return false;
+	if (!xent_dl_pushcliprect(b, flux_rec_xrect(&clip))) return false;
 	bool ok = flux_rec_fill_rounded(b, &pill, FLUX_NAV_INDICATOR_R, fill);
 	return xent_dl_popclip(b) && ok;
 }
@@ -531,7 +515,8 @@ bool flux_rec_build_breadcrumb(
 		FluxRect cell = {bounds->x + content_w, bounds->y, bounds->w - content_w, bounds->h};
 		ok = flux_rec_glyph_wc(b, &cell, FLUX_BREADCRUMB_CHEVRON_LTR, FLUX_BREADCRUMB_CHEVRON_FONT, t->text_primary);
 	}
-	if (ok && state->focused && state->enabled) ok = flux_rec_focus_rect(b, &content, FLUX_CORNER_RADIUS);
+	if (ok && state->focused && state->enabled)
+		ok = flux_rec_focus_rect(b, flux_rec_theme(rc), &content, FLUX_CORNER_RADIUS);
 	return ok;
 }
 
@@ -573,7 +558,7 @@ bool flux_rec_selectoritem(
 	if (!selector_draw_pill(b, bounds, snap->u.selector.pill_t, t, state->enabled)) return false;
 	if (state->focused && state->enabled) {
 		FluxRect fr = {bounds->x - 2.0f, bounds->y - 2.0f, bounds->w + 4.0f, bounds->h + 4.0f};
-		if (!flux_rec_focus_rect(b, &fr, FLUX_CORNER_RADIUS)) return false;
+		if (!flux_rec_focus_rect(b, flux_rec_theme(rc), &fr, FLUX_CORNER_RADIUS)) return false;
 	}
 	return true;
 }

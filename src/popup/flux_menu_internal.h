@@ -3,7 +3,7 @@
 
 #include <cd2d.h>
 
-#include "fluxent/flux_graphics.h"
+#include "fluxent/flux_gfx.h"
 #include "fluxent/flux_menu.h"
 
 typedef struct StoredItem {
@@ -52,7 +52,7 @@ struct FluxMenu {
 	float                 total_h;
 	float                 pad_top;
 	float                 pad_bot;
-	float                 min_item_height; /**< Per-item slot floor (DIPs); 0 = intrinsic. */
+	float                 min_item_height;
 
 	float                 scroll_y;
 	float                 scroll_max;
@@ -70,46 +70,32 @@ struct FluxMenu {
 	void                 *dismiss_ctx;
 };
 
-/** @brief Resolve menu theme from explicit colors or the theme manager. */
 void      menu_resolve_theme(FluxMenu const *m, FluxThemeColors const **out_theme, bool *out_is_dark);
 
-/** @brief Recompute menu columns, item slots, size, and scroll range. */
 void      menu_measure(FluxMenu *m);
 
-/** @brief Return the enabled item under a menu-local point, or -1. */
 int       menu_hit_test(FluxMenu const *m, float px, float py);
 
-/** @brief Invalidate the popup window backing this menu. */
 void      invalidate(FluxMenu *m);
 
-/** @brief Return the root menu for a submenu chain. */
 FluxMenu *root_of(FluxMenu *m);
 
-/** @brief Set the active leaf to the deepest visible submenu. */
 void      refresh_active_leaf(FluxMenu *root);
 
-/** @brief Return the first enabled non-separator item, or -1. */
 int       first_enabled(FluxMenu const *m);
 
-/** @brief Return the last enabled non-separator item, or -1. */
 int       last_enabled(FluxMenu const *m);
 
-/** @brief Find the next enabled item from an index. */
 int       find_next(FluxMenu const *m, int from, int dir, bool wrap);
 
-/** @brief Dismiss a menu, optionally firing its dismiss callback. */
 void      _dismiss_internal(FluxMenu *m, bool fire_cb);
 
-/** @brief Close the visible direct child submenu, if any. */
 void      close_submenu(FluxMenu *m);
 
-/** @brief Open the submenu owned by an item index. */
 void      open_submenu(FluxMenu *m, int idx, bool focus_first);
 
-/** @brief Invoke or toggle the item at an index. */
 void      activate_item(FluxMenu *m, int idx);
 
-/** @brief Paint callback registered with FluxPopup. */
 void      menu_paint(void *ctx, FluxPopup *popup);
 
 #endif

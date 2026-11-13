@@ -9,9 +9,12 @@
 #include "controls/factory/flux_init_popup.h"
 #include "controls/factory/flux_init_value.h"
 #include "controls/behavior/flux_host_menu.h"
+#include "controls/behavior/flux_slider.h"
 #include "host/flux_prop_apply.h"
+#include "host/flux_host_picker_prop.h"
+#include "controls/factory/flux_init_picker.h"
 #include "render/flux_resource_intern.h"
-#include <fluxent/flux_nav_trace.h>
+#include "runtime/flux_time.h"
 #include <controls/data/flux_list_view_data.h>
 #include <controls/data/flux_pager_data.h>
 #include <controls/data/flux_person_picture_data.h>
@@ -20,11 +23,12 @@
 #include <controls/data/flux_title_bar_data.h>
 #include "controls/behavior/flux_tree_internal.h"
 #include <fluxent/flux_control_type.h>
-#include <xtk/xtk_nav_model.h>
-#include <xtk/xtk_tree_model.h>
+#include <xtk/xtk_navmodel.h>
+#include <xtk/xtk_treemodel.h>
 
 #include <limits.h>
 #include <math.h>
+#include "controls/behavior/flux_calendar.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -209,14 +213,27 @@ MARGIN_APPLY(top)
 MARGIN_APPLY(right)
 MARGIN_APPLY(bottom)
 
+static void apply_slider_orientation(FluxHostState *R, XtkCtrl control, XentNodeId node, bool vertical) {
+	flux_slider_setvertical(R->store, node, vertical);
+	if (!flux_host_prop_findc(R, control, XTK_PROP_WIDTH)) xent_setw(R->ctx, node, vertical ? 32.0f : NAN);
+	if (!flux_host_prop_findc(R, control, XTK_PROP_HEIGHT)) xent_seth(R->ctx, node, vertical ? NAN : 32.0f);
+}
+
 static bool apply_orientation(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
-	( void ) control;
+	if (type == XTK_CTRL_SLIDER) {
+		apply_slider_orientation(R, control, node, v->u.u32 != XTK_STACK_ROW);
+		return true;
+	}
 	if (type == XTK_CTRL_FLIP) {
 		flux_flip_set_vertical(R->store, node, v->u.u32 != 0u);
 		return true;
 	}
 	if (type == XTK_CTRL_PIPS) {
 		flux_pips_set_vertical(R->store, node, v->u.u32 != 0u);
+		return true;
+	}
+	if (type == XTK_CTRL_SCROLLBAR) {
+		flux_scroll_bar_setorientation(R->ctx, R->store, node, v->u.u32);
 		return true;
 	}
 	if (!xent_setproto(R->ctx, node, XENT_PROTOCOL_FLEX)) return false;
@@ -242,10 +259,26 @@ static bool apply_gap(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtr
 	return xent_setgap(R->ctx, node, v->u.f32);
 }
 
-static bool apply_padding(FluxHostState *R, XtkCtrl control, XentNodeId node) {
+static void progress_bar_min_height(FluxHostState *R, XentNodeId node, FluxNodeData const *nd) {
+	FluxProgressData const *bar    = ( FluxProgressData const * ) nd->component_data;
+	float                   height = 3.0f + bar->padding.top + bar->padding.bottom + 2.0f * nd->visuals.border_width;
+	xent_setminsize(R->ctx, node, (XentSize) {0.0f, height});
+}
+
+static void progress_bar_padding(FluxHostState *R, XentNodeId node, XentInsets insets) {
+	FluxNodeData     *nd  = flux_store_find(R->store, node);
+	FluxProgressData *bar = nd ? ( FluxProgressData * ) nd->component_data : NULL;
+	if (!bar) return;
+	bar->padding = (XentInsets) {
+	  fmaxf(0.0f, insets.left), fmaxf(0.0f, insets.top), fmaxf(0.0f, insets.right), fmaxf(0.0f, insets.bottom)};
+	progress_bar_min_height(R, node, nd);
+}
+
+static bool apply_padding(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type) {
 	XentInsets insets = {
 	  stored_f32(R, control, XTK_PROP_PADDING_LEFT), stored_f32(R, control, XTK_PROP_PADDING_TOP),
 	  stored_f32(R, control, XTK_PROP_PADDING_RIGHT), stored_f32(R, control, XTK_PROP_PADDING_BOTTOM)};
+	if (type == XTK_CTRL_PROGRESS) progress_bar_padding(R, node, insets);
 	return xent_setp(R->ctx, node, insets);
 }
 
@@ -253,9 +286,8 @@ static bool apply_padding(FluxHostState *R, XtkCtrl control, XentNodeId node) {
 	static bool apply_padding_##name(                                                       \
 	  FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v \
 	) {                                                                                     \
-		( void ) type;                                                                      \
 		( void ) v;                                                                         \
-		return apply_padding(R, control, node);                                             \
+		return apply_padding(R, control, node, type);                                       \
 	}
 
 PADDING_APPLY(left)
@@ -326,6 +358,7 @@ static bool        apply_text(FluxHostState *R, XtkCtrl control, XentNodeId node
 	  [XTK_CTRL_INFOBAR]     = flux_prop_infobar_title,
 	  [XTK_CTRL_AVATAR]      = flux_avatar_setname,
 	  [XTK_CTRL_SUGGEST]     = flux_suggest_set_content,
+	  [XTK_CTRL_COMBO]       = flux_prop_combo_text,
 	};
 	if (( unsigned ) type >= XTK_CTRL_TYPE_COUNT) return true;
 	FluxStrPropFn fn = by_type [type];
@@ -393,20 +426,43 @@ static bool apply_enabled(FluxHostState *R, XtkCtrl control, XentNodeId node, Xt
 		return true;
 	}
 	static FluxBoolPropFn const by_type [XTK_CTRL_TYPE_COUNT] = {
-	  [XTK_CTRL_BUTTON]   = flux_prop_button_enabled,
-	  [XTK_CTRL_REPEAT]   = flux_prop_repeat_enabled,
-	  [XTK_CTRL_LINK]     = flux_prop_hyperlink_enabled,
-	  [XTK_CTRL_CHECKBOX] = flux_prop_checkbox_enabled,
-	  [XTK_CTRL_RADIO]    = flux_prop_checkbox_enabled,
-	  [XTK_CTRL_SWITCH]   = flux_prop_checkbox_enabled,
-	  [XTK_CTRL_TEXTBOX]  = flux_prop_textbox_enabled,
-	  [XTK_CTRL_SLIDER]   = flux_prop_slider_enabled,
-	  [XTK_CTRL_SUGGEST]  = flux_suggest_set_enabled,
+	  [XTK_CTRL_BUTTON]     = flux_prop_button_enabled,
+	  [XTK_CTRL_REPEAT]     = flux_prop_repeat_enabled,
+	  [XTK_CTRL_LINK]       = flux_prop_hyperlink_enabled,
+	  [XTK_CTRL_CHECKBOX]   = flux_prop_checkbox_enabled,
+	  [XTK_CTRL_RADIO]      = flux_prop_checkbox_enabled,
+	  [XTK_CTRL_SWITCH]     = flux_prop_checkbox_enabled,
+	  [XTK_CTRL_TEXTBOX]    = flux_prop_textbox_enabled,
+	  [XTK_CTRL_SLIDER]     = flux_prop_slider_enabled,
+	  [XTK_CTRL_SUGGEST]    = flux_suggest_set_enabled,
+	  [XTK_CTRL_SCROLLBAR]  = flux_scroll_bar_setenabled,
+	  [XTK_CTRL_LOOPING]    = flux_looping_setenabled,
+	  [XTK_CTRL_DATEPICKER] = flux_picker_setenabled,
+	  [XTK_CTRL_TIMEPICKER] = flux_picker_setenabled,
 	};
 	if (( unsigned ) type >= XTK_CTRL_TYPE_COUNT) return true;
 	FluxBoolPropFn fn = by_type [type];
 	if (fn) fn(R->store, node, v->u.b);
 	return true;
+}
+
+static FluxCheckboxData *checkbox_data(FluxHostState *R, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(R->store, node);
+	return nd ? ( FluxCheckboxData * ) nd->component_data : NULL;
+}
+
+static void checkbox_apply_state(FluxHostState *R, XentNodeId node, FluxCheckState state) {
+	FluxCheckboxData *cd = checkbox_data(R, node);
+	if (!cd) return;
+	( void ) node;
+	flux_checkbox_setstate(cd, state);
+}
+
+static bool apply_three_state(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	FluxCheckboxData *cd = type == XTK_CTRL_CHECKBOX ? checkbox_data(R, node) : NULL;
+	if (cd) cd->is_three_state = v->u.b;
+	return cd != NULL;
 }
 
 static bool apply_checked(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
@@ -420,7 +476,7 @@ static bool apply_checked(FluxHostState *R, XtkCtrl control, XentNodeId node, Xt
 		return true;
 	}
 	if (type == XTK_CTRL_CHECKBOX || type == XTK_CTRL_RADIO || type == XTK_CTRL_SWITCH)
-		flux_prop_checkbox_state(R->store, node, v->u.b ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED);
+		checkbox_apply_state(R, node, v->u.b ? FLUX_CHECK_CHECKED : FLUX_CHECK_UNCHECKED);
 	return true;
 }
 
@@ -514,6 +570,10 @@ static bool apply_value_f32(FluxHostState *R, XtkCtrl control, XentNodeId node, 
 
 static bool apply_value_f64(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
+	if (type == XTK_CTRL_SCROLLBAR) {
+		flux_scroll_bar_setvalue(R->store, node, v->u.f64);
+		return true;
+	}
 	if (type == XTK_CTRL_RATING) {
 		flux_rating_set_value(R->store, node, v->u.f64);
 		return true;
@@ -524,6 +584,10 @@ static bool apply_value_f64(FluxHostState *R, XtkCtrl control, XentNodeId node, 
 }
 
 static bool apply_maximum_f64(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	if (type == XTK_CTRL_SCROLLBAR) {
+		flux_scroll_bar_setmaximum(R->store, node, v->u.f64);
+		return true;
+	}
 	if (type == XTK_CTRL_RATING) {
 		flux_rating_set_max(R->store, node, ( int ) v->u.f64);
 		return true;
@@ -535,6 +599,10 @@ static bool apply_maximum_f64(FluxHostState *R, XtkCtrl control, XentNodeId node
 }
 
 static bool apply_minimum_f64(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	if (type == XTK_CTRL_SCROLLBAR) {
+		flux_scroll_bar_setminimum(R->store, node, v->u.f64);
+		return true;
+	}
 	if (type != XTK_CTRL_NUMBER) return false;
 	double max = stored_f64(R, control, XTK_PROP_MAX_F64, 100.0);
 	flux_prop_numberbox_range(R->store, node, v->u.f64, max);
@@ -624,6 +692,10 @@ apply_slider_snaps_to(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtr
 static bool
 apply_slider_small_change(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
+	if (type == XTK_CTRL_SCROLLBAR) {
+		flux_scroll_bar_setsmallchange(R->store, node, v->u.f32);
+		return true;
+	}
 	if (type != XTK_CTRL_SLIDER) return false;
 	flux_prop_slider_small_change(R->store, node, v->u.f32);
 	return true;
@@ -632,16 +704,103 @@ apply_slider_small_change(FluxHostState *R, XtkCtrl control, XentNodeId node, Xt
 static bool
 apply_slider_large_change(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
+	if (type == XTK_CTRL_SCROLLBAR) {
+		flux_scroll_bar_setlargechange(R->store, node, v->u.f32);
+		return true;
+	}
 	if (type != XTK_CTRL_SLIDER) return false;
 	flux_prop_slider_large_change(R->store, node, v->u.f32);
 	return true;
 }
 
+static bool apply_viewport_size(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_SCROLLBAR) return false;
+	flux_scroll_bar_setviewport(R->store, node, v->u.f64);
+	return true;
+}
+
+static bool
+apply_indicator_mode(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_SCROLLBAR) return false;
+	flux_scroll_bar_setindicator(R->store, node, v->u.u32);
+	return true;
+}
+
+static bool apply_checkbox_indeterminate(FluxHostState *R, XentNodeId node, bool on) {
+	FluxCheckboxData *cd = checkbox_data(R, node);
+	if (!cd) return false;
+	if (on) checkbox_apply_state(R, node, FLUX_CHECK_INDETERMINATE);
+	else if (cd->state == FLUX_CHECK_INDETERMINATE) checkbox_apply_state(R, node, FLUX_CHECK_UNCHECKED);
+	return true;
+}
+
 static bool apply_indeterminate(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
+	if (type == XTK_CTRL_CHECKBOX) return apply_checkbox_indeterminate(R, node, v->u.b);
 	if (type == XTK_CTRL_PROGRESS) flux_prop_progress_indeterminate(R->store, node, v->u.b);
 	else if (type == XTK_CTRL_PROGRESSRING) flux_prop_progressring_indeterminate(R->store, node, v->u.b);
 	else return false;
+	return true;
+}
+
+static bool
+apply_progress_state(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	FluxNodeData     *nd = type == XTK_CTRL_PROGRESS ? flux_store_find(R->store, node) : NULL;
+	FluxProgressData *pd = nd ? ( FluxProgressData * ) nd->component_data : NULL;
+	if (!pd) return false;
+	if (pd->state == v->u.u32) return true;
+	pd->state = ( uint8_t ) v->u.u32;
+	return true;
+}
+
+static bool
+apply_progress_border_width(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	FluxNodeData *nd = type == XTK_CTRL_PROGRESS ? flux_store_find(R->store, node) : NULL;
+	if (!nd || !nd->component_data) return false;
+	nd->visuals.border_width = fmaxf(0.0f, v->u.f32);
+	progress_bar_min_height(R, node, nd);
+	return true;
+}
+
+static bool
+apply_progress_active(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	FluxNodeData         *nd   = type == XTK_CTRL_PROGRESSRING ? flux_store_find(R->store, node) : NULL;
+	FluxProgressRingData *ring = nd ? ( FluxProgressRingData * ) nd->component_data : NULL;
+	if (!ring) return false;
+	ring->inactive = !v->u.b;
+	return true;
+}
+
+static bool apply_is_range(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_SLIDER) return false;
+	flux_slider_setrange(R->store, node, v->u.b);
+	return true;
+}
+
+static bool apply_range_start(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_SLIDER) return false;
+	flux_slider_setthumb(R->store, node, 0, v->u.f32);
+	return true;
+}
+
+static bool apply_range_end(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_SLIDER) return false;
+	flux_slider_setthumb(R->store, node, 1, v->u.f32);
+	return true;
+}
+
+static bool apply_is_editable(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_COMBO) return false;
+	flux_prop_combo_editable(R->store, node, v->u.b);
 	return true;
 }
 
@@ -779,12 +938,17 @@ apply_plain_items(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId 
 		flux_prop_combo_selected(R->store, node, stored_selected(R, control));
 		return true;
 	}
+	if (type == XTK_CTRL_LOOPING) {
+		flux_looping_setitems(R->store, node, wire->items, wire->count);
+		flux_looping_setselected(R->store, node, stored_selected(R, control));
+		return true;
+	}
 	return false;
 }
 
 static bool apply_tree_items(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkValue const *v) {
 	XtkTreeModelView model;
-	if (!xtk_tree_model_open(v->u.bytes.data, v->u.bytes.len, &model) || !flux_tree_set_model(R->store, node, &model))
+	if (!xtk_treemodel_open(v->u.bytes.data, v->u.bytes.len, &model) || !flux_tree_set_model(R->store, node, &model))
 		return false;
 	int flat     = stored_selected(R, control);
 	int selected = flat < 0 ? -1 : flux_tree_flat_node(R->store, node, flat);
@@ -801,6 +965,12 @@ static bool apply_items(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkC
 	                                    : apply_plain_items(R, control, node, type, &wire);
 	free(wire.items);
 	return ok;
+}
+
+static bool apply_should_loop(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type == XTK_CTRL_LOOPING) flux_looping_setloop(R->store, node, v->u.b);
+	return true;
 }
 
 static bool apply_image_source(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
@@ -875,12 +1045,17 @@ static void apply_tree_height(FluxHostState *R, XentNodeId node, float height) {
 static bool apply_item_height(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
 	if (list_type(type)) apply_list_height(R, node, v->u.f32);
-	else if (type == XTK_CTRL_TREE) apply_tree_height(R, node, v->u.f32);
+	if (type == XTK_CTRL_TREE) apply_tree_height(R, node, v->u.f32);
+	if (type == XTK_CTRL_LOOPING) flux_looping_setitemheight(R->store, node, v->u.f32);
 	return true;
 }
 
 static bool apply_item_width(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
+	if (type == XTK_CTRL_LOOPING) {
+		flux_looping_setitemwidth(R->store, node, v->u.f32);
+		return true;
+	}
 	if (!list_type(type)) return true;
 	FluxNodeData     *nd = flux_store_find(R->store, node);
 	FluxListViewData *ld = nd ? ( FluxListViewData * ) nd->component_data : NULL;
@@ -913,6 +1088,7 @@ apply_selected_index(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrl
 	  [XTK_CTRL_FLIP]       = flux_flip_select,
 	  [XTK_CTRL_PIPS]       = flux_pips_set_selected,
 	  [XTK_CTRL_TABS]       = flux_tabs_select,
+	  [XTK_CTRL_LOOPING]    = flux_looping_setselected,
 	};
 	if (( unsigned ) type >= XTK_CTRL_TYPE_COUNT) return true;
 	FluxIndexPropFn fn = by_type [type];
@@ -935,19 +1111,15 @@ static bool apply_nav_model(FluxHostState *R, XtkCtrl control, XentNodeId node, 
 	( void ) control;
 	if (type != XTK_CTRL_NAV) return false;
 	XtkNavModelView model;
-	if (!xtk_nav_model_open(v->u.bytes.data, v->u.bytes.len, &model)) return false;
+	if (!xtk_navmodel_open(v->u.bytes.data, v->u.bytes.len, &model)) return false;
 	if (model.count > FLUX_NAV_VIEW_MAX_ITEMS) return false;
-	flux_nav_trace_log(
-	  "host.nav-model", "apply node=%llu count=%u flags=0x%x", ( unsigned long long ) node, model.count, model.flags
-	);
 	if (!flux_nav_reset_items(R->store, node)) return false;
 	if (!flux_nav_set_chrome(R->store, node, (model.flags & XTK_NAV_MODEL_WINDOW_TITLE_BAR) != 0u, model.app_title))
 		return false;
 	for (uint32_t i = 0; i < model.count; i++) {
 		XtkNavModelItemView item;
-		if (!xtk_nav_model_item(&model, i, &item) || append_nav_item(R, node, &item) < 0) return false;
+		if (!xtk_navmodel_item(&model, i, &item) || append_nav_item(R, node, &item) < 0) return false;
 	}
-	flux_nav_trace_log("host.nav-model", "complete node=%llu count=%u", ( unsigned long long ) node, model.count);
 	return true;
 }
 
@@ -981,8 +1153,9 @@ static bool apply_selected(FluxHostState *R, XtkCtrl control, XentNodeId node, X
 static bool
 apply_selection_mode(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
+	if (type == XTK_CTRL_CALENDAR) return flux_calendar_set(R->store, node, XTK_PROP_SELECTION_MODE, v);
 	if (list_type(type)) flux_list_setmode(R->store, node, ( XtkListSelMode ) v->u.u32);
-	else if (type == XTK_CTRL_TREE) flux_tree_setmode(R->store, node, ( XtkTreeSelMode ) v->u.u32);
+	if (type == XTK_CTRL_TREE) flux_tree_setmode(R->store, node, ( XtkTreeSelMode ) v->u.u32);
 	return true;
 }
 
@@ -1130,8 +1303,47 @@ static bool apply_group(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkC
 
 static bool apply_read_only(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
+	if (type == XTK_CTRL_TEXTBOX) {
+		flux_prop_textbox_readonly(R->store, node, v->u.b);
+		return true;
+	}
 	if (type != XTK_CTRL_RATING) return false;
 	flux_rating_setreadonly(R->store, node, v->u.b);
+	return true;
+}
+
+static bool apply_multiline(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_TEXTBOX) return false;
+	flux_prop_textbox_multiline(R->store, node, v->u.b);
+	return true;
+}
+
+static bool apply_max_lines(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_TEXT) return false;
+	flux_prop_text_maxlines(R->store, node, v->u.i32 > 0 ? ( uint32_t ) v->u.i32 : 0u);
+	return true;
+}
+
+static bool apply_text_trim(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_TEXT || v->u.u32 > XENT_TEXT_TRIM_WORD_ELLIPSIS) return false;
+	flux_prop_text_trim(R->store, node, ( XentTextTrim ) v->u.u32);
+	return true;
+}
+
+static bool apply_text_wrap(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_TEXT) return false;
+	flux_prop_text_wrap(R->store, node, v->u.b);
+	return true;
+}
+
+static bool apply_selectable(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type != XTK_CTRL_TEXT) return false;
+	flux_prop_text_selectable(R->store, node, v->u.b);
 	return true;
 }
 
@@ -1186,113 +1398,143 @@ typedef struct FluxNativePropEntry {
 } FluxNativePropEntry;
 
 static FluxNativePropEntry const native_props [] = {
-  {XTK_PROP_WIDTH,                XTK_VALUE_F32,      apply_width                },
-  {XTK_PROP_HEIGHT,               XTK_VALUE_F32,      apply_height               },
-  {XTK_PROP_GROW,                 XTK_VALUE_F32,      apply_grow                 },
-  {XTK_PROP_SHRINK,               XTK_VALUE_F32,      apply_shrink               },
-  {XTK_PROP_ALIGN_SELF,           XTK_VALUE_ENUM,     apply_align_self           },
-  {XTK_PROP_MARGIN_LEFT,          XTK_VALUE_F32,      apply_margin_left          },
-  {XTK_PROP_MARGIN_TOP,           XTK_VALUE_F32,      apply_margin_top           },
-  {XTK_PROP_MARGIN_RIGHT,         XTK_VALUE_F32,      apply_margin_right         },
-  {XTK_PROP_MARGIN_BOTTOM,        XTK_VALUE_F32,      apply_margin_bottom        },
-  {XTK_PROP_TEXT,                 XTK_VALUE_STRING,   apply_text                 },
-  {XTK_PROP_ICON,                 XTK_VALUE_STRING,   apply_icon                 },
-  {XTK_PROP_ENABLED,              XTK_VALUE_BOOL,     apply_enabled              },
-  {XTK_PROP_BUTTON_STYLE,         XTK_VALUE_ENUM,     apply_button_style         },
-  {XTK_PROP_CHECKED,              XTK_VALUE_BOOL,     apply_checked              },
-  {XTK_PROP_MIN_F32,              XTK_VALUE_F32,      apply_slider_range         },
-  {XTK_PROP_MAX_F32,              XTK_VALUE_F32,      apply_slider_range         },
-  {XTK_PROP_VALUE_F32,            XTK_VALUE_F32,      apply_value_f32            },
-  {XTK_PROP_VALUE_F64,            XTK_VALUE_F64,      apply_value_f64            },
-  {XTK_PROP_MIN_F64,              XTK_VALUE_F64,      apply_minimum_f64          },
-  {XTK_PROP_MAX_F64,              XTK_VALUE_F64,      apply_maximum_f64          },
-  {XTK_PROP_STEP_F32,             XTK_VALUE_F32,      apply_slider_step          },
-  {XTK_PROP_TICK_FREQUENCY,       XTK_VALUE_F32,      apply_slider_tick_frequency},
-  {XTK_PROP_TICK_PLACEMENT,       XTK_VALUE_ENUM,     apply_slider_tick_placement},
-  {XTK_PROP_SLIDER_SNAPS_TO,      XTK_VALUE_ENUM,     apply_slider_snaps_to      },
-  {XTK_PROP_SMALL_CHANGE,         XTK_VALUE_F32,      apply_slider_small_change  },
-  {XTK_PROP_LARGE_CHANGE,         XTK_VALUE_F32,      apply_slider_large_change  },
-  {XTK_PROP_STEP_F64,             XTK_VALUE_F64,      apply_step_f64             },
-  {XTK_PROP_INDETERMINATE,        XTK_VALUE_BOOL,     apply_indeterminate        },
-  {XTK_PROP_FONT_SIZE,            XTK_VALUE_F32,      apply_font_size            },
-  {XTK_PROP_FONT_WEIGHT,          XTK_VALUE_ENUM,     apply_font_weight          },
-  {XTK_PROP_TEXT_ALIGN,           XTK_VALUE_ENUM,     apply_text_align           },
-  {XTK_PROP_FOREGROUND,           XTK_VALUE_COLOR,    apply_foreground           },
-  {XTK_PROP_TOOLTIP,              XTK_VALUE_STRING,   apply_tooltip              },
-  {XTK_PROP_ORIENTATION,          XTK_VALUE_ENUM,     apply_orientation          },
-  {XTK_PROP_ALIGN_ITEMS,          XTK_VALUE_ENUM,     apply_align_items          },
-  {XTK_PROP_JUSTIFY_CONTENT,      XTK_VALUE_ENUM,     apply_justify_content      },
-  {XTK_PROP_ITEM_COUNT,           XTK_VALUE_I32,      apply_item_count           },
-  {XTK_PROP_ITEMS,                XTK_VALUE_BYTES,    apply_items                },
-  {XTK_PROP_ITEM_HEIGHT,          XTK_VALUE_F32,      apply_item_height          },
-  {XTK_PROP_ITEM_WIDTH,           XTK_VALUE_F32,      apply_item_width           },
-  {XTK_PROP_COLUMN_COUNT,         XTK_VALUE_I32,      apply_column_count         },
-  {XTK_PROP_SELECTED_INDEX,       XTK_VALUE_I32,      apply_selected_index       },
-  {XTK_PROP_SELECTED,             XTK_VALUE_BOOL,     apply_selected             },
-  {XTK_PROP_OPEN,                 XTK_VALUE_BOOL,     apply_open                 },
-  {XTK_PROP_EXPANDED,             XTK_VALUE_BOOL,     apply_expanded             },
-  {XTK_PROP_CONTENT_HEIGHT,       XTK_VALUE_F32,      apply_content_height       },
-  {XTK_PROP_MESSAGE,              XTK_VALUE_STRING,   apply_message              },
-  {XTK_PROP_SEVERITY,             XTK_VALUE_ENUM,     apply_severity             },
-  {XTK_PROP_CLOSABLE,             XTK_VALUE_BOOL,     apply_closable             },
-  {XTK_PROP_PULL_DIRECTION,       XTK_VALUE_ENUM,     apply_pull_direction       },
-  {XTK_PROP_VISUALIZER_SIZE,      XTK_VALUE_F32,      apply_visualizer_size      },
-  {XTK_PROP_THRESHOLD_RATIO,      XTK_VALUE_F32,      apply_threshold_ratio      },
-  {XTK_PROP_REFRESHING,           XTK_VALUE_BOOL,     apply_refreshing           },
-  {XTK_PROP_SELECTION_MODE,       XTK_VALUE_ENUM,     apply_selection_mode       },
-  {XTK_PROP_ITEM_INVOKED_ENABLED, XTK_VALUE_BOOL,     apply_item_invoked_enabled },
-  {XTK_PROP_MAX_VISIBLE,          XTK_VALUE_I32,      apply_max_visible          },
-  {XTK_PROP_NAV_VISIBILITY,       XTK_VALUE_ENUM,     apply_nav_visibility       },
-  {XTK_PROP_GAP,				  XTK_VALUE_F32,      apply_gap                  },
-  {XTK_PROP_PADDING_LEFT,         XTK_VALUE_F32,      apply_padding_left         },
-  {XTK_PROP_PADDING_TOP,          XTK_VALUE_F32,      apply_padding_top          },
-  {XTK_PROP_PADDING_RIGHT,        XTK_VALUE_F32,      apply_padding_right        },
-  {XTK_PROP_PADDING_BOTTOM,       XTK_VALUE_F32,      apply_padding_bottom       },
-  {XTK_PROP_FILL,                 XTK_VALUE_BOOL,     apply_fill                 },
-  {XTK_PROP_FIT_WIDTH,            XTK_VALUE_BOOL,     apply_fit_width            },
-  {XTK_PROP_FIT_HEIGHT,           XTK_VALUE_BOOL,     apply_fit_height           },
-  {XTK_PROP_WRAP,                 XTK_VALUE_ENUM,     apply_wrap                 },
-  {XTK_PROP_PLACEHOLDER,          XTK_VALUE_STRING,   apply_placeholder          },
-  {XTK_PROP_IMAGE_SOURCE,         XTK_VALUE_RESOURCE, apply_image_source         },
-  {XTK_PROP_IMAGE_STRETCH,        XTK_VALUE_ENUM,     apply_image_stretch        },
-  {XTK_PROP_NAV_MODEL,            XTK_VALUE_BYTES,    apply_nav_model            },
-  {XTK_PROP_SUBTITLE,             XTK_VALUE_STRING,   apply_subtitle             },
-  {XTK_PROP_PRIMARY_TEXT,         XTK_VALUE_STRING,   apply_dialog_text          },
-  {XTK_PROP_SECONDARY_TEXT,       XTK_VALUE_STRING,   apply_dialog_text          },
-  {XTK_PROP_CLOSE_TEXT,           XTK_VALUE_STRING,   apply_close_text           },
-  {XTK_PROP_ACTION_TEXT,          XTK_VALUE_STRING,   apply_teachtip_config_prop },
-  {XTK_PROP_PREFIX,               XTK_VALUE_STRING,   apply_pager_text           },
-  {XTK_PROP_SUFFIX,               XTK_VALUE_STRING,   apply_pager_text           },
-  {XTK_PROP_INITIALS,             XTK_VALUE_STRING,   apply_initials             },
-  {XTK_PROP_BADGE_GLYPH,          XTK_VALUE_STRING,   apply_badge_glyph          },
-  {XTK_PROP_BADGE_MODE,           XTK_VALUE_ENUM,     apply_badge_mode           },
-  {XTK_PROP_BADGE_VALUE,          XTK_VALUE_I32,      apply_badge_value          },
-  {XTK_PROP_DISPLAY_MODE,         XTK_VALUE_ENUM,     apply_display_mode         },
-  {XTK_PROP_PLACEMENT,            XTK_VALUE_ENUM,     apply_placement            },
-  {XTK_PROP_TAIL_VISIBILITY,      XTK_VALUE_ENUM,     apply_teachtip_config_prop },
-  {XTK_PROP_FIRST_BUTTON,         XTK_VALUE_ENUM,     apply_pager_button         },
-  {XTK_PROP_PREVIOUS_BUTTON,      XTK_VALUE_ENUM,     apply_pager_button         },
-  {XTK_PROP_NEXT_BUTTON,          XTK_VALUE_ENUM,     apply_pager_button         },
-  {XTK_PROP_LAST_BUTTON,          XTK_VALUE_ENUM,     apply_pager_button         },
-  {XTK_PROP_PANE_PLACEMENT,       XTK_VALUE_ENUM,     apply_pane_config          },
-  {XTK_PROP_ACTION_ACCENT,        XTK_VALUE_BOOL,     apply_teachtip_config_prop },
-  {XTK_PROP_UNTARGETED,           XTK_VALUE_BOOL,     apply_untargeted           },
-  {XTK_PROP_LIGHT_DISMISS,        XTK_VALUE_BOOL,     apply_teachtip_config_prop },
-  {XTK_PROP_IS_GROUP,             XTK_VALUE_BOOL,     apply_group                },
-  {XTK_PROP_READ_ONLY,            XTK_VALUE_BOOL,     apply_read_only            },
-  {XTK_PROP_CLEAR_ENABLED,        XTK_VALUE_BOOL,     apply_rating_behavior_prop },
-  {XTK_PROP_BACK_DISABLED,        XTK_VALUE_BOOL,     apply_back_state           },
-  {XTK_PROP_INTEGRATE_WINDOW,     XTK_VALUE_BOOL,     apply_integrate_window     },
-  {XTK_PROP_HIDE_SPIN,            XTK_VALUE_BOOL,     apply_hide_spin            },
-  {XTK_PROP_SHOW_BACK,            XTK_VALUE_BOOL,     apply_back_state           },
-  {XTK_PROP_SHOW_PANE_TOGGLE,     XTK_VALUE_BOOL,     apply_show_toggle          },
-  {XTK_PROP_OPEN_PANE_LENGTH,     XTK_VALUE_F32,      apply_pane_config          },
-  {XTK_PROP_COMPACT_PANE_LENGTH,  XTK_VALUE_F32,      apply_pane_config          },
-  {XTK_PROP_PLACEMENT_MARGIN,     XTK_VALUE_F32,      apply_teachtip_config_prop },
-  {XTK_PROP_PLACEHOLDER_F64,      XTK_VALUE_F64,      apply_rating_behavior_prop },
-  {XTK_PROP_INITIAL_VALUE,        XTK_VALUE_I32,      apply_rating_behavior_prop },
-  {XTK_PROP_URL,				  XTK_VALUE_STRING,   apply_url                  },
-  {XTK_PROP_ADD_VISIBLE,          XTK_VALUE_BOOL,     apply_add_visible          },
+  {XTK_PROP_WIDTH,                 XTK_VALUE_F32,      apply_width                     },
+  {XTK_PROP_HEIGHT,                XTK_VALUE_F32,      apply_height                    },
+  {XTK_PROP_GROW,                  XTK_VALUE_F32,      apply_grow                      },
+  {XTK_PROP_SHRINK,                XTK_VALUE_F32,      apply_shrink                    },
+  {XTK_PROP_ALIGN_SELF,            XTK_VALUE_ENUM,     apply_align_self                },
+  {XTK_PROP_MARGIN_LEFT,           XTK_VALUE_F32,      apply_margin_left               },
+  {XTK_PROP_MARGIN_TOP,            XTK_VALUE_F32,      apply_margin_top                },
+  {XTK_PROP_MARGIN_RIGHT,          XTK_VALUE_F32,      apply_margin_right              },
+  {XTK_PROP_MARGIN_BOTTOM,         XTK_VALUE_F32,      apply_margin_bottom             },
+  {XTK_PROP_TEXT,                  XTK_VALUE_STRING,   apply_text                      },
+  {XTK_PROP_ICON,                  XTK_VALUE_STRING,   apply_icon                      },
+  {XTK_PROP_ENABLED,               XTK_VALUE_BOOL,     apply_enabled                   },
+  {XTK_PROP_BUTTON_STYLE,          XTK_VALUE_ENUM,     apply_button_style              },
+  {XTK_PROP_CHECKED,               XTK_VALUE_BOOL,     apply_checked                   },
+  {XTK_PROP_MIN_F32,               XTK_VALUE_F32,      apply_slider_range              },
+  {XTK_PROP_MAX_F32,               XTK_VALUE_F32,      apply_slider_range              },
+  {XTK_PROP_VALUE_F32,             XTK_VALUE_F32,      apply_value_f32                 },
+  {XTK_PROP_VALUE_F64,             XTK_VALUE_F64,      apply_value_f64                 },
+  {XTK_PROP_MIN_F64,               XTK_VALUE_F64,      apply_minimum_f64               },
+  {XTK_PROP_MAX_F64,               XTK_VALUE_F64,      apply_maximum_f64               },
+  {XTK_PROP_STEP_F32,              XTK_VALUE_F32,      apply_slider_step               },
+  {XTK_PROP_TICK_FREQUENCY,        XTK_VALUE_F32,      apply_slider_tick_frequency     },
+  {XTK_PROP_TICK_PLACEMENT,        XTK_VALUE_ENUM,     apply_slider_tick_placement     },
+  {XTK_PROP_SLIDER_SNAPS_TO,       XTK_VALUE_ENUM,     apply_slider_snaps_to           },
+  {XTK_PROP_SMALL_CHANGE,          XTK_VALUE_F32,      apply_slider_small_change       },
+  {XTK_PROP_LARGE_CHANGE,          XTK_VALUE_F32,      apply_slider_large_change       },
+  {XTK_PROP_VIEWPORT_SIZE,         XTK_VALUE_F64,      apply_viewport_size             },
+  {XTK_PROP_INDICATOR_MODE,        XTK_VALUE_ENUM,     apply_indicator_mode            },
+  {XTK_PROP_STEP_F64,              XTK_VALUE_F64,      apply_step_f64                  },
+  {XTK_PROP_INDETERMINATE,         XTK_VALUE_BOOL,     apply_indeterminate             },
+  {XTK_PROP_FONT_SIZE,             XTK_VALUE_F32,      apply_font_size                 },
+  {XTK_PROP_FONT_WEIGHT,           XTK_VALUE_ENUM,     apply_font_weight               },
+  {XTK_PROP_TEXT_ALIGN,            XTK_VALUE_ENUM,     apply_text_align                },
+  {XTK_PROP_FOREGROUND,            XTK_VALUE_COLOR,    apply_foreground                },
+  {XTK_PROP_TOOLTIP,               XTK_VALUE_STRING,   apply_tooltip                   },
+  {XTK_PROP_ORIENTATION,           XTK_VALUE_ENUM,     apply_orientation               },
+  {XTK_PROP_ALIGN_ITEMS,           XTK_VALUE_ENUM,     apply_align_items               },
+  {XTK_PROP_JUSTIFY_CONTENT,       XTK_VALUE_ENUM,     apply_justify_content           },
+  {XTK_PROP_ITEM_COUNT,            XTK_VALUE_I32,      apply_item_count                },
+  {XTK_PROP_ITEMS,                 XTK_VALUE_BYTES,    apply_items                     },
+  {XTK_PROP_SHOULD_LOOP,           XTK_VALUE_BOOL,     apply_should_loop               },
+  {XTK_PROP_ITEM_HEIGHT,           XTK_VALUE_F32,      apply_item_height               },
+  {XTK_PROP_ITEM_WIDTH,            XTK_VALUE_F32,      apply_item_width                },
+  {XTK_PROP_COLUMN_COUNT,          XTK_VALUE_I32,      apply_column_count              },
+  {XTK_PROP_SELECTED_INDEX,        XTK_VALUE_I32,      apply_selected_index            },
+  {XTK_PROP_SELECTED,              XTK_VALUE_BOOL,     apply_selected                  },
+  {XTK_PROP_OPEN,                  XTK_VALUE_BOOL,     apply_open                      },
+  {XTK_PROP_EXPANDED,              XTK_VALUE_BOOL,     apply_expanded                  },
+  {XTK_PROP_CONTENT_HEIGHT,        XTK_VALUE_F32,      apply_content_height            },
+  {XTK_PROP_MESSAGE,               XTK_VALUE_STRING,   apply_message                   },
+  {XTK_PROP_SEVERITY,              XTK_VALUE_ENUM,     apply_severity                  },
+  {XTK_PROP_CLOSABLE,              XTK_VALUE_BOOL,     apply_closable                  },
+  {XTK_PROP_PULL_DIRECTION,        XTK_VALUE_ENUM,     apply_pull_direction            },
+  {XTK_PROP_VISUALIZER_SIZE,       XTK_VALUE_F32,      apply_visualizer_size           },
+  {XTK_PROP_THRESHOLD_RATIO,       XTK_VALUE_F32,      apply_threshold_ratio           },
+  {XTK_PROP_REFRESHING,            XTK_VALUE_BOOL,     apply_refreshing                },
+  {XTK_PROP_SELECTION_MODE,        XTK_VALUE_ENUM,     apply_selection_mode            },
+  {XTK_PROP_ITEM_INVOKED_ENABLED,  XTK_VALUE_BOOL,     apply_item_invoked_enabled      },
+  {XTK_PROP_MAX_VISIBLE,           XTK_VALUE_I32,      apply_max_visible               },
+  {XTK_PROP_NAV_VISIBILITY,        XTK_VALUE_ENUM,     apply_nav_visibility            },
+  {XTK_PROP_GAP,                   XTK_VALUE_F32,      apply_gap                       },
+  {XTK_PROP_PADDING_LEFT,          XTK_VALUE_F32,      apply_padding_left              },
+  {XTK_PROP_PADDING_TOP,           XTK_VALUE_F32,      apply_padding_top               },
+  {XTK_PROP_PADDING_RIGHT,         XTK_VALUE_F32,      apply_padding_right             },
+  {XTK_PROP_PADDING_BOTTOM,        XTK_VALUE_F32,      apply_padding_bottom            },
+  {XTK_PROP_FILL,                  XTK_VALUE_BOOL,     apply_fill                      },
+  {XTK_PROP_FIT_WIDTH,             XTK_VALUE_BOOL,     apply_fit_width                 },
+  {XTK_PROP_FIT_HEIGHT,            XTK_VALUE_BOOL,     apply_fit_height                },
+  {XTK_PROP_WRAP,                  XTK_VALUE_ENUM,     apply_wrap                      },
+  {XTK_PROP_PLACEHOLDER,           XTK_VALUE_STRING,   apply_placeholder               },
+  {XTK_PROP_IMAGE_SOURCE,          XTK_VALUE_RESOURCE, apply_image_source              },
+  {XTK_PROP_IMAGE_STRETCH,         XTK_VALUE_ENUM,     apply_image_stretch             },
+  {XTK_PROP_NAV_MODEL,             XTK_VALUE_BYTES,    apply_nav_model                 },
+  {XTK_PROP_SUBTITLE,              XTK_VALUE_STRING,   apply_subtitle                  },
+  {XTK_PROP_PRIMARY_TEXT,          XTK_VALUE_STRING,   apply_dialog_text               },
+  {XTK_PROP_SECONDARY_TEXT,        XTK_VALUE_STRING,   apply_dialog_text               },
+  {XTK_PROP_CLOSE_TEXT,            XTK_VALUE_STRING,   apply_close_text                },
+  {XTK_PROP_ACTION_TEXT,           XTK_VALUE_STRING,   apply_teachtip_config_prop      },
+  {XTK_PROP_PREFIX,                XTK_VALUE_STRING,   apply_pager_text                },
+  {XTK_PROP_SUFFIX,                XTK_VALUE_STRING,   apply_pager_text                },
+  {XTK_PROP_INITIALS,              XTK_VALUE_STRING,   apply_initials                  },
+  {XTK_PROP_BADGE_GLYPH,           XTK_VALUE_STRING,   apply_badge_glyph               },
+  {XTK_PROP_BADGE_MODE,            XTK_VALUE_ENUM,     apply_badge_mode                },
+  {XTK_PROP_BADGE_VALUE,           XTK_VALUE_I32,      apply_badge_value               },
+  {XTK_PROP_DISPLAY_MODE,          XTK_VALUE_ENUM,     apply_display_mode              },
+  {XTK_PROP_PLACEMENT,             XTK_VALUE_ENUM,     apply_placement                 },
+  {XTK_PROP_TAIL_VISIBILITY,       XTK_VALUE_ENUM,     apply_teachtip_config_prop      },
+  {XTK_PROP_FIRST_BUTTON,          XTK_VALUE_ENUM,     apply_pager_button              },
+  {XTK_PROP_PREVIOUS_BUTTON,       XTK_VALUE_ENUM,     apply_pager_button              },
+  {XTK_PROP_NEXT_BUTTON,           XTK_VALUE_ENUM,     apply_pager_button              },
+  {XTK_PROP_LAST_BUTTON,           XTK_VALUE_ENUM,     apply_pager_button              },
+  {XTK_PROP_PANE_PLACEMENT,        XTK_VALUE_ENUM,     apply_pane_config               },
+  {XTK_PROP_ACTION_ACCENT,         XTK_VALUE_BOOL,     apply_teachtip_config_prop      },
+  {XTK_PROP_UNTARGETED,            XTK_VALUE_BOOL,     apply_untargeted                },
+  {XTK_PROP_LIGHT_DISMISS,         XTK_VALUE_BOOL,     apply_teachtip_config_prop      },
+  {XTK_PROP_IS_GROUP,              XTK_VALUE_BOOL,     apply_group                     },
+  {XTK_PROP_READ_ONLY,             XTK_VALUE_BOOL,     apply_read_only                 },
+  {XTK_PROP_MULTILINE,             XTK_VALUE_BOOL,     apply_multiline                 },
+  {XTK_PROP_MAX_LINES,             XTK_VALUE_I32,      apply_max_lines                 },
+  {XTK_PROP_TEXT_TRIM,             XTK_VALUE_ENUM,     apply_text_trim                 },
+  {XTK_PROP_TEXT_WRAP,             XTK_VALUE_BOOL,     apply_text_wrap                 },
+  {XTK_PROP_SELECTABLE,            XTK_VALUE_BOOL,     apply_selectable                },
+  {XTK_PROP_CLEAR_ENABLED,         XTK_VALUE_BOOL,     apply_rating_behavior_prop      },
+  {XTK_PROP_BACK_DISABLED,         XTK_VALUE_BOOL,     apply_back_state                },
+  {XTK_PROP_INTEGRATE_WINDOW,      XTK_VALUE_BOOL,     apply_integrate_window          },
+  {XTK_PROP_HIDE_SPIN,             XTK_VALUE_BOOL,     apply_hide_spin                 },
+  {XTK_PROP_SHOW_BACK,             XTK_VALUE_BOOL,     apply_back_state                },
+  {XTK_PROP_SHOW_PANE_TOGGLE,      XTK_VALUE_BOOL,     apply_show_toggle               },
+  {XTK_PROP_OPEN_PANE_LENGTH,      XTK_VALUE_F32,      apply_pane_config               },
+  {XTK_PROP_COMPACT_PANE_LENGTH,   XTK_VALUE_F32,      apply_pane_config               },
+  {XTK_PROP_PLACEMENT_MARGIN,      XTK_VALUE_F32,      apply_teachtip_config_prop      },
+  {XTK_PROP_PLACEHOLDER_F64,       XTK_VALUE_F64,      apply_rating_behavior_prop      },
+  {XTK_PROP_INITIAL_VALUE,         XTK_VALUE_I32,      apply_rating_behavior_prop      },
+  {XTK_PROP_URL,                   XTK_VALUE_STRING,   apply_url                       },
+  {XTK_PROP_ADD_VISIBLE,           XTK_VALUE_BOOL,     apply_add_visible               },
+  {XTK_PROP_HEADER,                XTK_VALUE_STRING,   flux_host_apply_header          },
+  {XTK_PROP_DATE,                  XTK_VALUE_I32,      flux_host_apply_date            },
+  {XTK_PROP_TIME,                  XTK_VALUE_I32,      flux_host_apply_time            },
+  {XTK_PROP_MIN_YEAR,              XTK_VALUE_I32,      flux_host_apply_min_year        },
+  {XTK_PROP_MAX_YEAR,              XTK_VALUE_I32,      flux_host_apply_max_year        },
+  {XTK_PROP_MIN_DATE,              XTK_VALUE_I32,      flux_host_apply_min_date        },
+  {XTK_PROP_MAX_DATE,              XTK_VALUE_I32,      flux_host_apply_max_date        },
+  {XTK_PROP_FIRST_DAY,             XTK_VALUE_I32,      flux_host_apply_first_day       },
+  {XTK_PROP_CLOCK,                 XTK_VALUE_ENUM,     flux_host_apply_clock           },
+  {XTK_PROP_MINUTE_INCREMENT,      XTK_VALUE_I32,      flux_host_apply_minute_increment},
+  {XTK_PROP_COLOR,                 XTK_VALUE_COLOR,    flux_host_apply_color           },
+  {XTK_PROP_ALPHA_ENABLED,         XTK_VALUE_BOOL,     flux_host_apply_alpha_enabled   },
+  {XTK_PROP_MORE_BUTTON_VISIBLE,   XTK_VALUE_BOOL,     flux_host_apply_more_button     },
+  {XTK_PROP_SPECTRUM,              XTK_VALUE_ENUM,     flux_host_apply_spectrum        },
+  {XTK_PROP_IS_THREE_STATE,        XTK_VALUE_BOOL,     apply_three_state               },
+  {XTK_PROP_PROGRESS_STATE,        XTK_VALUE_ENUM,     apply_progress_state            },
+  {XTK_PROP_PROGRESS_ACTIVE,       XTK_VALUE_BOOL,     apply_progress_active           },
+  {XTK_PROP_PROGRESS_BORDER_WIDTH, XTK_VALUE_F32,      apply_progress_border_width     },
+  {XTK_PROP_IS_EDITABLE,           XTK_VALUE_BOOL,     apply_is_editable               },
+  {XTK_PROP_IS_RANGE,              XTK_VALUE_BOOL,     apply_is_range                  },
+  {XTK_PROP_RANGE_START,           XTK_VALUE_F32,      apply_range_start               },
+  {XTK_PROP_RANGE_END,             XTK_VALUE_F32,      apply_range_end                 },
 };
 
 static FluxNativePropEntry const *native_prop_entry(XtkPropPatch const *patch) {

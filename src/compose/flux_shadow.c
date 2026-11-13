@@ -36,7 +36,3 @@ flux_shadow_apply(FluxCompositor *c, WUC_Sprite *sprite, FluxColor color, float 
 	}
 	return shadow;
 }
-
-void flux_shadow_destroy(WUC_DropShadow *shadow) {
-	if (shadow) (( IUnknown * ) shadow)->lpVtbl->Release(( IUnknown * ) shadow);
-}

@@ -8,7 +8,6 @@
 
 typedef struct FluxWindow FluxWindow;
 
-/** @brief Handle WM_GETOBJECT via the UIA provider callback; 0 if not applicable. */
 LRESULT                   flux_uia_get_object(FluxWindow *win, HWND hwnd, WPARAM wp, LPARAM lp);
 
 #endif

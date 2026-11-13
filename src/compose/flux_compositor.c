@@ -9,8 +9,6 @@
 #include <cwinrt/cast.h>
 #include <cwinrt/bootstrap.h>
 
-/* The SDK's <dispatcherqueue.h> is C++-only (declares ABI:: types), so hand-declare
- * the CoreMessaging C ABI. Layout/values match the SDK header exactly. */
 typedef enum DISPATCHERQUEUE_THREAD_TYPE
 {
 	DQTYPE_THREAD_DEDICATED = 1,
@@ -38,22 +36,25 @@ HRESULT WINAPI CreateDispatcherQueueController(DispatcherQueueOptions options, P
 #include <stdlib.h>
 
 struct FluxCompositor {
-	IUnknown *dispatcher;  /**< DispatcherQueueController for this thread. */
-	WUC_Comp *comp;        /**< WUC Compositor. */
+	IUnknown *dispatcher;
+	WUC_Comp *comp;
 	uint32_t  refcount;
-	bool      winrt_owned; /**< true if this instance called cwinrt_init. */
+	bool      winrt_owned;
 };
 
 struct FluxWindowTarget {
-	FluxCompositor              *owner;
-	WUC_CompositionTarget       *target;
-	WUC_Sprite                  *root;
-	WUC_Visual                  *root_visual; /**< IVisual facet of root (sizing). */
-	WUC_CompositionSurfaceBrush *brush;       /**< Swap chain surface brush (root brush, classic mode). */
-	WUC_Sprite                  *content;     /**< Child hosting the swap chain over an acrylic root (popup mode). */
-	WUC_Visual                  *content_visual;
-	WUC_CompositionSurfaceBrush *content_brush;
-	WUC_Brush                   *backdrop; /**< Root backplate material (popup acrylic). */
+	FluxCompositor                          *owner;
+	WUC_CompositionTarget                   *target;
+	WUC_Sprite                              *root;
+	WUC_Visual                              *root_visual;
+	WUC_CompositionSurfaceBrush             *brush;
+	WUC_Sprite                              *content;
+	WUC_Visual                              *content_visual;
+	WUC_CompositionSurfaceBrush             *content_brush;
+	WUC_Brush                               *backdrop;
+	WUC_Sprite                              *plate;
+	WUC_Visual                              *plate_visual;
+	WUC_CompositionRoundedRectangleGeometry *plate_geom;
 };
 
 WUC_Visual *flux_compose_as_visual(void *obj) {
@@ -62,26 +63,15 @@ WUC_Visual *flux_compose_as_visual(void *obj) {
 	return v;
 }
 
-/* Single UI thread => a process-wide singleton is the natural model. */
 static FluxCompositor g_compositor;
 
 static bool           compositor_init(FluxCompositor *c) {
-	/* Windows.UI.Composition's Compositor requires the thread to be an ASTA with a
-	 * DispatcherQueue. The apartment type is fixed at the moment the dispatcher
-	 * controller is created, so it must come FIRST (before RoInitialize) using the
-	 * CoreMessaging Win32 entry point with DQTAT_COM_ASTA. The WinRT
-	 * CreateOnCurrentThread path (or a prior RoInitialize STA) leaves a plain STA
-	 * and Compositor() then fails with E_ACCESSDENIED (0x80070005). This mirrors
-	 * Microsoft's "Using the Visual Layer with Win32" sample. */
 	DispatcherQueueOptions dqopts;
 	dqopts.dwSize        = sizeof(dqopts);
 	dqopts.threadType    = DQTYPE_THREAD_CURRENT;
 	dqopts.apartmentType = DQTAT_COM_ASTA;
 	if (FAILED(CreateDispatcherQueueController(dqopts, ( PDISPATCHERQUEUECONTROLLER * ) &c->dispatcher))) return false;
 
-	/* The dispatcher controller has now initialized this thread's apartment.
-	 * cwinrt_init just registers WinRT use on top (S_FALSE = already initialized,
-	 * expected here); we did not own the apartment, so we never uninitialize it. */
 	HRESULT hr = cwinrt_init(RO_INIT_SINGLETHREADED);
 	if (hr != S_OK && hr != S_FALSE) return false;
 	c->winrt_owned = false;
@@ -130,7 +120,6 @@ WUC_CompositionGraphicsDevice *flux_compositor_dev_create(FluxCompositor *c, IUn
 	interop->lpVtbl->Release(interop);
 	if (FAILED(hr)) return NULL;
 
-	/* The interop returns the ICompositionGraphicsDevice default interface. */
 	return ( WUC_CompositionGraphicsDevice * ) device;
 }
 
@@ -169,20 +158,26 @@ fail:
 	return NULL;
 }
 
+static void compose_release(void *p) {
+	if (p) (( IUnknown * ) p)->lpVtbl->Release(( IUnknown * ) p);
+}
+
 void flux_window_target_destroy(FluxWindowTarget *t) {
 	if (!t) return;
-	if (t->backdrop) (( IUnknown * ) t->backdrop)->lpVtbl->Release(( IUnknown * ) t->backdrop);
-	if (t->content_brush) (( IUnknown * ) t->content_brush)->lpVtbl->Release(( IUnknown * ) t->content_brush);
-	if (t->content_visual) (( IUnknown * ) t->content_visual)->lpVtbl->Release(( IUnknown * ) t->content_visual);
-	if (t->content) (( IUnknown * ) t->content)->lpVtbl->Release(( IUnknown * ) t->content);
-	if (t->brush) (( IUnknown * ) t->brush)->lpVtbl->Release(( IUnknown * ) t->brush);
-	if (t->root_visual) (( IUnknown * ) t->root_visual)->lpVtbl->Release(( IUnknown * ) t->root_visual);
-	if (t->root) (( IUnknown * ) t->root)->lpVtbl->Release(( IUnknown * ) t->root);
-	if (t->target) (( IUnknown * ) t->target)->lpVtbl->Release(( IUnknown * ) t->target);
+	compose_release(t->backdrop);
+	compose_release(t->plate_geom);
+	compose_release(t->plate_visual);
+	compose_release(t->plate);
+	compose_release(t->content_brush);
+	compose_release(t->content_visual);
+	compose_release(t->content);
+	compose_release(t->brush);
+	compose_release(t->root_visual);
+	compose_release(t->root);
+	compose_release(t->target);
 	free(t);
 }
 
-/* Wrap a swap chain as a composition surface brush (caller releases). */
 static WUC_CompositionSurfaceBrush *swapchain_surface_brush(FluxWindowTarget *t, IUnknown *swapchain) {
 	FluxICompositorInterop *interop = NULL;
 	if (FAILED(cwinrt_query(t->owner->comp, &FluxIID_ICompositorInterop, ( void ** ) &interop))) return NULL;
@@ -197,12 +192,6 @@ static WUC_CompositionSurfaceBrush *swapchain_surface_brush(FluxWindowTarget *t,
 	(( IUnknown * ) surface)->lpVtbl->Release(( IUnknown * ) surface);
 	if (FAILED(hr)) return NULL;
 
-	/* Draw the swap chain 1:1 at the top-left instead of the default Fill
-	 * stretch. During a live resize the visual takes the new window size one
-	 * compositor frame before the freshly-presented buffer arrives; Fill
-	 * stretches the stale frame to the new size for that frame (a visible
-	 * zoom pulse), while None leaves it pinned and at most exposes a sliver
-	 * of backdrop on the growing edge. */
 	( void ) wuc_composition_surface_brush_put__stretch(brush, WUC_CompositionStretch_None);
 	( void ) wuc_composition_surface_brush_put__horizontal_alignment_ratio(brush, 0.0f);
 	( void ) wuc_composition_surface_brush_put__vertical_alignment_ratio(brush, 0.0f);
@@ -226,7 +215,6 @@ HRESULT flux_wintarget_setswapchain(FluxWindowTarget *t, IUnknown *swapchain) {
 	return S_OK;
 }
 
-/* Insert the content sprite at the top of the root visual's child collection. */
 static void swapchain_attach_content_to_root(FluxWindowTarget *t) {
 	WUC_Container *root_container = NULL;
 	if (FAILED(cwinrt_query(t->root, &CWINRT_IID_WUC_IContainerVisual, ( void ** ) &root_container))) return;
@@ -239,14 +227,12 @@ static void swapchain_attach_content_to_root(FluxWindowTarget *t) {
 	(( IUnknown * ) root_container)->lpVtbl->Release(( IUnknown * ) root_container);
 }
 
-/* Create the content sprite visual on first present and attach it to the root. */
 static HRESULT swapchain_ensure_content(FluxWindowTarget *t) {
 	HRESULT hr = wuc_comp_create_sprite_visual(t->owner->comp, &t->content);
 	if (FAILED(hr)) return hr;
 	t->content_visual = flux_compose_as_visual(t->content);
 	if (!t->content_visual) return E_NOINTERFACE;
 
-	/* Fill the root regardless of window size, so only the root is resized. */
 	WFN_Vector_2 fill = {1.0f, 1.0f};
 	( void ) wuc_visual_put__relative_size_adjustment(t->content_visual, fill);
 	swapchain_attach_content_to_root(t);
@@ -283,6 +269,50 @@ void flux_wintarget_setbackdrop(FluxWindowTarget *t, WUC_Brush *brush) {
 	if (brush) (( IUnknown * ) brush)->lpVtbl->AddRef(( IUnknown * ) brush);
 	if (t->backdrop) (( IUnknown * ) t->backdrop)->lpVtbl->Release(( IUnknown * ) t->backdrop);
 	t->backdrop = brush;
+}
+
+static bool plate_ensure(FluxWindowTarget *t) {
+	if (t->plate) return true;
+	WUC_Comp *comp = t->owner->comp;
+	if (FAILED(wuc_comp_create_sprite_visual(comp, &t->plate))) return false;
+	t->plate_visual = flux_compose_as_visual(t->plate);
+	if (!t->plate_visual || FAILED(wuc_comp_create_rounded_rectangle_geometry(comp, &t->plate_geom))) return false;
+	WUC_CompositionGeometry      *geom = NULL;
+	WUC_CompositionGeometricClip *gc   = NULL;
+	WUC_CompositionClip          *clip = NULL;
+	if (SUCCEEDED(cwinrt_query(t->plate_geom, &CWINRT_IID_WUC_ICompositionGeometry, ( void ** ) &geom))
+	    && SUCCEEDED(wuc_comp_create_geometric_clip_p_p(comp, geom, &gc))
+	    && SUCCEEDED(cwinrt_query(gc, &CWINRT_IID_WUC_ICompositionClip, ( void ** ) &clip)))
+		( void ) wuc_visual_put__clip(t->plate_visual, clip);
+	if (clip) (( IUnknown * ) clip)->lpVtbl->Release(( IUnknown * ) clip);
+	if (gc) (( IUnknown * ) gc)->lpVtbl->Release(( IUnknown * ) gc);
+	if (geom) (( IUnknown * ) geom)->lpVtbl->Release(( IUnknown * ) geom);
+
+	WUC_Container *root_container = NULL;
+	if (FAILED(cwinrt_query(t->root, &CWINRT_IID_WUC_IContainerVisual, ( void ** ) &root_container))) return false;
+	WUC_VisualCollection *children = NULL;
+	if (SUCCEEDED(wuc_container_get__children(root_container, &children))) {
+		( void ) wuc_visual_collection_insert_at_bottom(children, t->plate_visual);
+		(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
+	}
+	(( IUnknown * ) root_container)->lpVtbl->Release(( IUnknown * ) root_container);
+	return true;
+}
+
+void flux_wintarget_setopacity(FluxWindowTarget *t, float opacity) {
+	if (t && t->root_visual) ( void ) wuc_visual_put__opacity(t->root_visual, opacity);
+}
+
+void flux_wintarget_setplate(FluxWindowTarget *t, float x, float y, float w, float h, float radius) {
+	if (!t || !t->root || !t->backdrop || !plate_ensure(t)) return;
+	( void ) wuc_sprite_put__brush(t->root, NULL);
+	( void ) wuc_sprite_put__brush(t->plate, t->backdrop);
+	( void ) wuc_visual_put__offset(t->plate_visual, (WFN_Vector_3) {x, y, 0.0f});
+	( void ) wuc_visual_put__size(t->plate_visual, (WFN_Vector_2) {w, h});
+	( void ) wuc_composition_rounded_rectangle_geometry_put__size(t->plate_geom, (WFN_Vector_2) {w, h});
+	( void ) wuc_composition_rounded_rectangle_geometry_put__corner_radius(
+	  t->plate_geom, (WFN_Vector_2) {radius, radius}
+	);
 }
 
 void flux_wintarget_setsize(FluxWindowTarget *t, float w, float h) {

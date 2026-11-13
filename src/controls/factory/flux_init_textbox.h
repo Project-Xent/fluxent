@@ -1,8 +1,3 @@
-/**
- * @file flux_init_textbox.h
- * @brief Private Desc + init prototypes for the text-input family:
- * TextBox / PasswordBox / NumberBox (+ the app-owned-context variants).
- */
 #ifndef FLUX_INIT_TEXTBOX_H
 #define FLUX_INIT_TEXTBOX_H
 
@@ -50,28 +45,22 @@ typedef struct FluxAppNumberBoxDesc {
 	void      *userdata;
 } FluxAppNumberBoxDesc;
 
-/** @brief Create a text box node. */
 XentNodeId flux_textbox_init(FluxTextBoxDesc const *info);
 
-/** @brief Point absorbed TextBox / PasswordBox / NumberBox runtime at the live Host node. */
 void       flux_textbox_retarget(XentCtx *ctx, FluxStore *store, XentNodeId node);
 
-/** @brief Refresh the focused text control's native IME anchor after layout. */
 void       flux_textbox_sync_ime(FluxStore *store, XentNodeId node);
 
-/** @brief Create a text box node using the app-owned context and store. */
+float      flux_textbox_wheel(FluxStore *store, XentNodeId node, float delta);
+
 XentNodeId flux_app_create_textbox(FluxAppTextBoxDesc const *info);
 
-/** @brief Create a password box node using the app-owned context and store. */
 XentNodeId flux_app_create_password(FluxAppTextBoxDesc const *info);
 
-/** @brief Create a number box node using the app-owned context and store. */
 XentNodeId flux_app_create_number(FluxAppNumberBoxDesc const *info);
 
-/** @brief Create a password box node. */
 XentNodeId flux_password_init(FluxTextBoxDesc const *info);
 
-/** @brief Create a number box node. */
 XentNodeId flux_number_init(FluxNumberBoxDesc const *info);
 
 #endif

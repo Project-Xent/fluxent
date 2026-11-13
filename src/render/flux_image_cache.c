@@ -1,7 +1,3 @@
-/* Decodes images with WIC and uploads them to Direct2D bitmaps. Uses cd2d.h for
- * the Direct2D side (same COM type system as the renderer) and <wincodec.h> for
- * decoding. The public interface speaks void* so flux_image_cache.h stays free of
- * platform headers. */
 #ifndef COBJMACROS
   #define COBJMACROS
 #endif
@@ -76,8 +72,8 @@ static ID2D1Bitmap1 *image_decode(ID2D1DeviceContext *dc, char const *source, fl
 	IWICFormatConverter   *conv   = NULL;
 	ID2D1Bitmap1          *bitmap = NULL;
 	if (SUCCEEDED(IWICBitmapDecoder_GetFrame(decoder, 0, &frame))
-		&& SUCCEEDED(IWICImagingFactory_CreateFormatConverter(wic, &conv))
-		&& SUCCEEDED(IWICFormatConverter_Initialize(
+	    && SUCCEEDED(IWICImagingFactory_CreateFormatConverter(wic, &conv))
+	    && SUCCEEDED(IWICFormatConverter_Initialize(
 		  conv, ( IWICBitmapSource * ) frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, NULL, 0.0,
 		  WICBitmapPaletteTypeMedianCut
 		)))

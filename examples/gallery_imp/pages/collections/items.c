@@ -1,61 +1,46 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include "host/flux_prop_apply.h"
-#include "virtual.h"
 
-static void fill_items_cell(GalleryApp *g, XentNodeId item, int index) {
-	XentNodeId card = g_card(g, item);
-	xent_setp(gallery_ctx(g), card, (XentInsets) {12, 12, 12, 12});
-	xent_setitems(gallery_ctx(g), card, XENT_FLEX_ALIGN_CENTER);
-	g_text(g, card, gallery_fmt(g, "Item %d", index), 14.0f, FLUX_FONT_SEMI_BOLD);
-	g_text(g, card, "Tap to invoke", 11.0f, FLUX_FONT_REGULAR);
+static void items_cell(GalleryApp *g, XtkTxn *txn, XtkNodeRef item, int index) {
+	XtkNodeRef card = xtk_ref_local(ui_card(txn, item, 0.0f, XENT_FLEX_ALIGN_CENTER, 12.0f));
+	ui_text(txn, card, gallery_fmt(g, "Item %d", index), 14.0f, FLUX_FONT_SEMI_BOLD);
+	ui_text(txn, card, "Tap to invoke", 11.0f, FLUX_FONT_REGULAR);
 }
 
-void page_items_view(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_items_view_sync);
-	Model const *m   = &g->model;
-	char const  *inv = m->items_invoke >= 0 ? gallery_fmt(g, "Invoked: %d", m->items_invoke) : "Tap a cell to invoke.";
-	g_page_header(
-	  g, parent, "ItemsView", "ItemsRepeater + layout + ItemContainer chrome. Here: a wrapping flow of 24 cards."
-	);
-	{
-		XentNodeId ex   = g_example(g, parent, "Flow layout with ItemInvoked (no selection chrome).");
-		XentNodeId col  = g_col(g, ex, 12.0f, 0, 0, 0, 0);
-		XentNodeId view = flux_itemsview_init(&(FluxItemsViewDesc) {
-		  .ctx                  = gallery_ctx(g),
-		  .store                = gallery_store(g),
-		  .parent               = col,
-		  .layout               = XTK_ITEMS_LAYOUT_FLOW,
-		  .selection_mode       = XTK_LIST_SELECT_NONE,
-		  .item_spacing         = 8.0f,
-		  .item_invoked_enabled = true,
-		  .input                = flux_app_input(g->flux),
-		  .on_invoke            = gallery_list_invoke,
-		  .userdata             = gallery_bind(g, MSG_ITEMS_INVOKE),
-		});
-		xent_seth(gallery_ctx(g), view, 360.0f);
-		flux_itemsview_set_extent(gallery_store(g), view, 24, 96.0f, 140.0f, 4);
-		XentNodeId host = flux_itemsview_content_node(gallery_store(g), view);
-		gallery_list_clear(g, host);
-		for (int i = 0; i < 24; i++) {
-			XentNodeId item = flux_listitem_init(&(FluxListItemDesc) {
-			  .ctx = gallery_ctx(g), .store = gallery_store(g), .parent = host});
-			float      x    = ( float ) (i % 4) * 148.0f;
-			float      y    = ( float ) (i / 4) * 104.0f;
-			fluxlistitem_set_place(gallery_store(g), item, i, x, y);
-			fill_items_cell(g, item, i);
-		}
-		flux_list_set_realized(gallery_store(g), view, 0, 23, 4);
-		g->live_control [MSG_ITEMS_INVOKE] = view;
-		g->live_output [MSG_ITEMS_INVOKE]  = g_text(g, col, inv, 13.0f, FLUX_FONT_REGULAR);
-	}
+static char const *invoke_text(GalleryApp *g) {
+	return g->model.items_invoke >= 0 ? gallery_fmt(g, "Invoked: %d", g->model.items_invoke) : "Tap a cell to invoke.";
 }
 
-void page_items_view_sync(GalleryApp *g) {
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_ITEMS_INVOKE],
-	  g->model.items_invoke >= 0 ? gallery_fmt(g, "Invoked: %d", g->model.items_invoke) : "Tap a cell to invoke."
+static void items_sync(GalleryApp *g) { gallery_settext(g, g->live_output [MSG_ITEMS_INVOKE], invoke_text(g)); }
+
+bool        page_items_view_build(PageBuild *b) {
+	page_sync(b, items_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(
+	  b, parent, "ItemsView", "ItemsRepeater + layout + ItemContainer chrome. Here: a wrapping flow of 24 cards."
 	);
+	XtkNodeRef col  = xtk_ref_local(ui_column(
+	  &b->txn, page_example(b, parent, "Flow layout with ItemInvoked (no selection chrome)."), 12.0f,
+	  XENT_FLEX_ALIGN_STRETCH
+	));
+	XtkLocalId view = xtk_itemsview_create(
+	  &b->txn, col,
+	  &(XtkItemsViewProps) {
+		.set     = XTK_ITEMSVIEW_H_MASK
+	             | XTK_ITEMSVIEW_NITEM_MASK
+	             | XTK_ITEMSVIEW_ITEMH_MASK
+	             | XTK_ITEMSVIEW_ITEMW_MASK
+	             | XTK_ITEMSVIEW_MODE_MASK
+	             | XTK_ITEMSVIEW_INVOKED_MASK,
+		.h       = 360.0f,
+		.nitem   = 24,
+		.itemh   = 96.0f,
+		.itemw   = 140.0f,
+		.mode    = XTK_LIST_SELECT_NONE,
+		.invoked = true,
+	  }
+	);
+	xtk_itemsview_oninvoke(&b->txn, xtk_ref_local(view), page_post, page_bind(b, MSG_ITEMS_INVOKE));
+	page_list(b, view, items_cell);
+	page_keepout(b, MSG_ITEMS_INVOKE, page_note(b, col, invoke_text(b->app)));
+	return true;
 }

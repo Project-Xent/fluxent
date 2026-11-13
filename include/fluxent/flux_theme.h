@@ -1,27 +1,16 @@
-/**
- * @file flux_theme.h
- * @brief Fluent Design theme colors and token definitions.
- *
- * Provides FluxThemeColors containing all color tokens needed by controls
- * to render in light or dark mode. Use `flux_theme_get_colors()` to obtain
- * the appropriate palette based on the current theme mode.
- */
-
 #ifndef FLUX_THEME_H
 #define FLUX_THEME_H
 
 #include "flux_types.h"
 #include <stdbool.h>
 
-/** @brief Theme mode selection. */
 typedef enum FluxThemeMode
 {
-	FLUX_THEME_LIGHT,  /**< Light theme. */
-	FLUX_THEME_DARK,   /**< Dark theme. */
-	FLUX_THEME_SYSTEM, /**< Follow system setting. */
+	FLUX_THEME_LIGHT,
+	FLUX_THEME_DARK,
+	FLUX_THEME_SYSTEM,
 } FluxThemeMode;
 
-/** @brief All Fluent Design color tokens needed by controls. */
 typedef struct FluxThemeColors {
 	FluxColor ctrl_fill_default;
 	FluxColor ctrl_fill_secondary;
@@ -71,52 +60,43 @@ typedef struct FluxThemeColors {
 
 	FluxColor layer_default;
 	FluxColor layer_alt;
-	FluxColor layer_on_mica_alt_default;   /**< LayerOnMicaBaseAltFillColorDefault. */
-	FluxColor layer_on_mica_alt_secondary; /**< LayerOnMicaBaseAltFillColorSecondary. */
+	FluxColor layer_on_mica_alt_default;
+	FluxColor layer_on_mica_alt_secondary;
 	FluxColor solid_background;
-	FluxColor solid_background_tertiary;   /**< SolidBackgroundFillColorTertiary. */
+	FluxColor solid_background_tertiary;
 
-	FluxColor ctrl_on_image_default;       /**< ControlOnImageFillColorDefault (GridView overlay check). */
-	FluxColor ctrl_on_image_secondary;     /**< ControlOnImageFillColorSecondary. */
-	FluxColor ctrl_on_image_tertiary;      /**< ControlOnImageFillColorTertiary. */
-	FluxColor ctrl_on_image_disabled;      /**< ControlOnImageFillColorDisabled. */
+	FluxColor ctrl_on_image_default;
+	FluxColor ctrl_on_image_secondary;
+	FluxColor ctrl_on_image_tertiary;
+	FluxColor ctrl_on_image_disabled;
 
-	FluxColor list_box_bg;                 /**< SystemControlBackgroundChromeMediumLow (ListBox surface). */
+	FluxColor list_box_bg;
 
-	FluxColor flip_nav_bg_default;         /**< FlipView nav chip fill (AcrylicInApp fallback, all states). */
-	FluxColor flip_view_bg;                /**< FlipView surface (SolidBackgroundFillColorBase). */
+	FluxColor flip_nav_bg_default;
+	FluxColor flip_view_bg;
 
-	FluxColor flyout_background;           /**< Popup surface (ComboBox dropdown, suggestions). */
-	FluxColor flyout_border;               /**< Popup 1px border. */
+	FluxColor flyout_background;
+	FluxColor flyout_border;
+
+	FluxColor accent_text_primary;
+	FluxColor accent_text_tertiary;
+	FluxColor accent_text_disabled;
 } FluxThemeColors;
 
-/** @brief Opaque theme manager. */
 typedef struct FluxTheme  FluxTheme;
 
-/** @brief Create a theme manager. */
 XENT_NODISCARD FluxTheme *flux_theme_create(void);
-/** @brief Destroy a theme manager. */
 void                      flux_theme_destroy(FluxTheme *tm);
 
-/** @brief Set the active theme mode. */
 void                      flux_theme_setmode(FluxTheme *tm, FluxThemeMode mode);
-/** @brief Get the active theme mode. */
 FluxThemeMode             flux_theme_mode(FluxTheme const *tm);
 
-/** @brief Return the resolved colors for the currently active theme.
- *  Applies any pending system accent change on the calling (UI) thread. */
 FluxThemeColors const    *flux_theme_colors(FluxTheme *tm);
 
-/** @brief Return the built-in default (light) palette. Never NULL; use as a
- *  fallback so draw code can read colors unconditionally instead of guarding
- *  every field against a missing theme. */
 FluxThemeColors const    *flux_theme_defaults(void);
 
-/** @brief Return a version counter incremented whenever theme colors may have changed. */
 uint32_t                  flux_theme_ver(FluxTheme const *tm);
 
-/** @brief Return true if the operating system is currently using dark mode. */
 bool                      flux_theme_systemdark(void);
-
 
 #endif

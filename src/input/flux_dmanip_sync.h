@@ -1,10 +1,3 @@
-/**
- * @file flux_dmanip_sync.h
- * @brief DirectManipulation viewport synchronization for ScrollView nodes.
- *
- * Provides tree-walking functions to lazily create and sync DManip viewports
- * with the current layout, and to clean them up on teardown.
- */
 #ifndef FLUX_DMANIP_SYNC_H
 #define FLUX_DMANIP_SYNC_H
 
@@ -14,54 +7,12 @@
 
 typedef struct FluxInput FluxInput;
 
-
-/**
- * @brief Sync DManip viewports for all SCROLL nodes in the tree.
- *
- * Walks the layout tree from the given root, and for each SCROLL node:
- * - Lazily creates a DManip viewport if not yet present
- * - Updates viewport rect and content size from current layout
- * - Syncs the DManip transform if the node was scrolled externally
- *
- * Call once per frame after xent_layout() and flux_dmanip_tick().
- *
- * @param dmanip DManip manager (NULL = no-op).
- * @param ctx Xent layout context.
- * @param store FluxStore for control metadata.
- * @param root Root node to walk.
- * @param scale DPI scale (pixels per DIP).
- */
 void flux_dmanip_sync_tree(FluxDManip *dmanip, XentCtx *ctx, FluxStore *store, XentNodeId root, float scale);
 
-/**
- * @brief Transfer the newly promoted touch pan from FluxInput to the DManip viewport for its scroll target.
- *
- * @param dmanip DManip manager.
- * @param input Input router tracking the promoted touch pan.
- * @param store FluxStore for control metadata.
- * @param pointer_id WM_POINTER contact identifier.
- * @return true if DManip accepted the contact and FluxInput's manual pan state was cleared.
- */
 bool flux_dmanip_pan_handoff(FluxDManip *dmanip, FluxInput *input, FluxStore *store, uint32_t pointer_id);
 
-/**
- * @brief Destroy all DManip viewports attached to SCROLL nodes.
- *
- * Must be called before destroying the FluxDManip manager.
- *
- * @param ctx Xent layout context.
- * @param store FluxStore for control metadata.
- * @param root Root node to walk.
- */
 void flux_dmanip_cleanup_tree(XentCtx *ctx, FluxStore *store, XentNodeId root);
 
-/**
- * @brief Release one node's DManip viewport, if it is a scroll node that has one.
- *
- * Identity is read from the store (not the layout tree), so this is safe to
- * call from the node-removed listener after the node is already dead in xent.
- */
 void flux_dmanip_vp_release(FluxStore *store, XentNodeId node);
 
-
-#endif /* FLUX_DMANIP_SYNC_H */
+#endif

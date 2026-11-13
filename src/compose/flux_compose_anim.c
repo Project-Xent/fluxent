@@ -12,10 +12,9 @@
 
 struct FluxAnimKit {
 	WUC_Comp                      *c;
-	WUC_CubicBezierEasingFunction *easings [FLUX_EASE_COUNT]; /**< Lazily created; [LINEAR] unused. */
+	WUC_CubicBezierEasingFunction *easings [FLUX_EASE_COUNT];
 };
 
-/* WinUI-ish cubic-bezier control points. */
 static WFN_Vector_2 const kEaseCP1 [FLUX_EASE_COUNT] = {
   {0.0f, 0.0f},
   {0.1f, 0.9f},
@@ -47,12 +46,10 @@ void flux_anim_kit_destroy(FluxAnimKit *kit) {
 	free(kit);
 }
 
-/* Returns a CompositionEasingFunction (caller releases) for the curve, or NULL
- * for linear / on failure (NULL easing => the compositor's linear default). */
 static WUC_CompositionEasingFunction *kit_easing(FluxAnimKit *kit, FluxEaseId ease) {
 	if (ease <= FLUX_EASE_LINEAR || ease >= FLUX_EASE_COUNT) return NULL;
 	if (!kit->easings [ease]
-		&& FAILED(
+	    && FAILED(
 		  wuc_comp_create_cubic_bezier_easing_function(kit->c, kEaseCP1 [ease], kEaseCP2 [ease], &kit->easings [ease])
 		))
 		return NULL;
@@ -65,7 +62,7 @@ static WUC_CompositionEasingFunction *kit_easing(FluxAnimKit *kit, FluxEaseId ea
 
 static WF_TimeSpan seconds_to_timespan(double s) {
 	WF_TimeSpan ts;
-	ts.Duration = ( int64_t ) (s * 10000000.0); /* 100ns units */
+	ts.Duration = ( int64_t ) (s * 10000000.0);
 	return ts;
 }
 

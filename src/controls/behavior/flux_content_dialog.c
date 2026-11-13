@@ -16,11 +16,6 @@
 #include <string.h>
 #include <windows.h>
 
-/* WinUI ContentDialog (ContentDialog_themeresources.xaml): card MinWidth 320,
- * MaxWidth 548, MinHeight 184, MaxHeight 756, corner 8, padding 24, button spacing
- * 8, title 20/SemiBold. The card is centered in a full-window scrim overlay; the
- * scrim node is rendered by flux_draw_content_dialog and the card/children are real
- * nodes. SurfaceStrokeColorDefault = #66757575. */
 #define DLG_MIN_W       320.0f
 #define DLG_MAX_W       548.0f
 #define DLG_MIN_H       184.0f
@@ -30,8 +25,8 @@
 #define DLG_BTN_SPACING 8.0f
 #define DLG_TITLE_GAP   12.0f
 #define DLG_TITLE_SIZE  20.0f
-#define DLG_TITLE_H     28.0f /* 20pt SemiBold line box (ContentDialogTitleMargin handles the 12 gap). */
-#define DLG_BTN_H       32.0f /* standard button height; xent has no wrap-content so sizes are explicit. */
+#define DLG_TITLE_H     28.0f
+#define DLG_BTN_H       32.0f
 
 typedef struct FluxDialogRuntime FluxDialogRuntime;
 
@@ -61,12 +56,9 @@ struct FluxDialogRuntime {
 	float            width;
 	float            content_height;
 	bool             open;
-	DWORD            anim_start; /**< Entrance animation start tick (GetTickCount). */
+	DWORD            anim_start;
 };
 
-/* Entrance animation (DialogShowing): card scale 1.05->1.0 over 250ms with a
- * FastOutSlowIn (ease-out cubic) curve, opacity 0->1 over 83ms. Driven by a shared
- * thread timer because the dialog has no per-frame hook of its own. */
 #define DLG_ANIM_MS 250.0f
 #define DLG_FADE_MS 83.0f
 
@@ -83,9 +75,6 @@ static void dialog_repaint(FluxDialogRuntime *rt) {
 
 static float dialog_clamp01(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
 
-/* WinUI animates ScaleTransform on the card (BackgroundElement) but Opacity on
- * LayoutRoot — i.e. the scrim fades in with the card, not just the card. So scale
- * goes on the card and opacity on the dialog root (whose subtree is scrim + card). */
 static void  dialog_set_card_transform(FluxDialogRuntime *rt, float scale, float opacity) {
 	FluxNodeData *card = flux_store_find(rt->store, rt->card);
 	FluxNodeData *root = flux_store_find(rt->store, rt->root);
@@ -95,9 +84,6 @@ static void  dialog_set_card_transform(FluxDialogRuntime *rt, float scale, float
 
 static void dialog_anim_remove(FluxDialogRuntime *rt) { flux_anim_unregister(rt); }
 
-/* Declarative trees keep a ContentDialog el under the page, but the live node must
- * not sit in page layout (size_percent 1×1 would crush siblings). Park = orphan +
- * zero size; show reattaches under the scene overlay. */
 static void dialog_park(FluxDialogRuntime *rt) {
 	if (!rt || rt->open) return;
 	XentNodeId parent = xent_node_parent(rt->ctx, rt->root);
@@ -129,7 +115,7 @@ static bool dialog_step(void *ctx, unsigned long now) {
 
 static void dialog_anim_start(FluxDialogRuntime *rt) {
 	dialog_set_card_transform(rt, 1.05f, 0.0f);
-	rt->anim_start = GetTickCount();
+	rt->anim_start = flux_anim_now();
 	flux_anim_register(rt, dialog_step);
 }
 
@@ -177,8 +163,6 @@ static void dialog_destroy(void *component_data) {
 }
 
 static void dialog_setup_root(XentCtx *ctx, XentNodeId root) {
-	/* Full-viewport overlay: absolute origin so an absolute-protocol host stacks it
-	 * over the page rather than in flow; the scrim then dims the page behind it. */
 	xent_setpos(ctx, root, (XentPoint) {0.0f, 0.0f});
 	xent_setsizepct(ctx, root, (XentSize) {1.0f, 1.0f});
 	xent_setproto(ctx, root, XENT_PROTOCOL_GRID);
@@ -226,15 +210,12 @@ static void dialog_add_button(
 	if (rt->default_focus == XENT_NODE_INVALID) rt->default_focus = n;
 }
 
-/* xent has no wrap-content (auto-sized flex fills available space), so the card and
- * every region get explicit sizes. Width clamps to [320,548]; height is the content
- * region (padding + title + body) plus the fixed command bar, clamped to [184,756]. */
 typedef struct DialogDims {
-	float w;         /**< Card width. */
-	float inner_w;   /**< Width inside the 24px padding. */
-	float card_h;    /**< Total card height. */
-	float content_h; /**< Content region height (card minus command bar). */
-	float command_h; /**< Fixed command bar height. */
+	float w;
+	float inner_w;
+	float card_h;
+	float content_h;
+	float command_h;
 } DialogDims;
 
 static DialogDims dialog_dims(FluxContentDialogDesc const *info) {
@@ -247,9 +228,6 @@ static DialogDims dialog_dims(FluxContentDialogDesc const *info) {
 	return (DialogDims) {w, w - DLG_PADDING * 2.0f, card_h, card_h - command_h, command_h};
 }
 
-/* Build the padded content region (optional title + caller's body host) under the card.
- * Explicit height (not flex-grow): grow absorbs xent's slightly-too-large free space and
- * shoves the command bar past the card bottom; a definite height keeps the bar flush. */
 static XentNodeId dialog_build_content_region(FluxContentDialogDesc const *info, XentNodeId card, DialogDims const *d) {
 	XentNodeId region = dialog_make_padded_region(
 	  info->ctx, info->store, card, FLUX_CONTROL_DIALOG_CONTENT, XENT_FLEX_COLUMN, DLG_TITLE_GAP
@@ -336,7 +314,7 @@ void flux_dialog_show(FluxStore *store, XentNodeId dialog) {
 	rt->open = true;
 	dialog_anim_start(rt);
 	dialog_repaint(rt);
-	if (rt->default_focus != XENT_NODE_INVALID) flux_input_setfocus_programmatic(rt->input, rt->default_focus);
+	if (rt->default_focus != XENT_NODE_INVALID) flux_input_setfocus(rt->input, rt->default_focus, true);
 }
 
 void flux_dialog_hide(FluxStore *store, XentNodeId dialog) {
@@ -349,7 +327,7 @@ void flux_dialog_sync_host(FluxStore *store, XentNodeId dialog, bool open) {
 	if (!rt) return;
 	if (open)
 		if (!rt->open) flux_dialog_show(store, dialog);
-		else dialog_ensure_on_overlay(rt); /* reconciler may have reparented under the page */
+		else dialog_ensure_on_overlay(rt);
 	else if (rt->open) flux_dialog_hide(store, dialog);
 	else dialog_park(rt);
 }
@@ -393,11 +371,11 @@ void flux_dialog_configure(
 	FluxDialogRuntime *rt = dialog_runtime(store, dialog);
 	if (!rt) return;
 	if (dialog_text_equal(rt->title, title)
-		&& dialog_text_equal(rt->primary, primary)
-		&& dialog_text_equal(rt->secondary, secondary)
-		&& dialog_text_equal(rt->close, close)
-		&& rt->width == width
-		&& rt->content_height == content_height)
+	    && dialog_text_equal(rt->primary, primary)
+	    && dialog_text_equal(rt->secondary, secondary)
+	    && dialog_text_equal(rt->close, close)
+	    && rt->width == width
+	    && rt->content_height == content_height)
 		return;
 	flux_str_replace(&rt->title, title);
 	flux_str_replace(&rt->primary, primary);

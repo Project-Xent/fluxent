@@ -1,14 +1,11 @@
-/**
- * @file flux_value_record.c
- * @brief Value-input recorders (Slider / RatingControl): a value over a range
- * with hover-preview visuals.
- */
 #include "controls/draw/flux_control_record_internal.h"
+#include "controls/behavior/flux_color_picker.h"
 
 #include "controls/data/flux_slider_data.h"
 #include "controls/data/flux_rating_data.h"
 
 #include "render/flux_anim.h"
+#include "render/flux_slider_geom.h"
 
 #include <math.h>
 
@@ -19,14 +16,14 @@ static float slider_clampf(float value, float min_v, float max_v) {
 }
 
 typedef struct {
-	float cy;
-	float track_h;
-	float track_left;
-	float track_w;
-	float thumb_x;
-	float thumb_outer;
-	float pct;
-	float range;
+	FluxSliderLine line;
+	float          track_h;
+	float          thumb_outer;
+	float          range;
+	int            thumbs;
+	float          pct [2];
+	float          fill_lo;
+	float          fill_hi;
 } SliderGeom;
 
 typedef struct {
@@ -37,46 +34,60 @@ typedef struct {
 	FluxColor inner;
 } SliderColors;
 
-/* While the thumb is held it tracks IntermediateValue; Value stays on the snap
- * grid and the thumb glides back on release (WinUI IntermediateValue contract). */
+static float slider_thumb_value(FluxSliderSnapshot const *s, FluxControlState const *state, int i) {
+	if (!s->is_range) return state->pressed ? s->slider_intermediate : s->current_value;
+	bool held = state->pressed && s->thumb_held && s->active_thumb == i;
+	return held ? s->range_live [i] : s->range_value [i];
+}
+
 static SliderGeom slider_geom(FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state) {
-	float      value = state->pressed ? snap->u.slider.slider_intermediate : snap->u.slider.current_value;
-	SliderGeom g;
-	g.track_h     = 4.0f;
-	g.thumb_outer = 10.0f;
-	g.range       = snap->u.slider.max_value - snap->u.slider.min_value;
-	g.pct         = g.range > 0.0f ? (value - snap->u.slider.min_value) / g.range : 0.0f;
-	g.pct         = slider_clampf(g.pct, 0.0f, 1.0f);
-	g.cy          = bounds->y + bounds->h * 0.5f;
-	g.track_left  = bounds->x + g.thumb_outer;
-	g.track_w     = slider_clampf(bounds->w - g.thumb_outer * 2.0f, 0.0f, bounds->w);
-	g.thumb_x     = g.track_left + g.track_w * g.pct;
+	FluxSliderSnapshot const *s = &snap->u.slider;
+	SliderGeom                g = {.track_h = 4.0f, .thumb_outer = FLUX_SLIDER_THUMB_OUTER};
+	g.line                      = flux_slider_line(bounds->x, bounds->y, bounds->w, bounds->h, s->vertical);
+	g.range                     = s->max_value - s->min_value;
+	g.thumbs                    = s->is_range ? 2 : 1;
+	for (int i = 0; i < g.thumbs; i++) {
+		float v   = slider_thumb_value(s, state, i);
+		g.pct [i] = g.range > 0.0f ? slider_clampf((v - s->min_value) / g.range, 0.0f, 1.0f) : 0.0f;
+	}
+	g.fill_lo = g.thumbs == 2 ? fminf(g.pct [0], g.pct [1]) : 0.0f;
+	g.fill_hi = g.thumbs == 2 ? fmaxf(g.pct [0], g.pct [1]) : g.pct [0];
 	return g;
 }
 
-static bool slider_draw_tick_run(
-  XentDlBuilder *b, SliderGeom const *g, float y, float h, int count, float interval_px, FluxColor color
+static FluxRect slider_span(SliderGeom const *g, float a0, float a1, float cross, float thickness) {
+	float lo  = fminf(a0, a1);
+	float len = fabsf(a1 - a0);
+	if (g->line.vertical) return (FluxRect) {cross, lo, thickness, len};
+	return (FluxRect) {lo, cross, len, thickness};
+}
+
+static float slider_track_edge(SliderGeom const *g) { return g->line.cross - g->track_h * 0.5f; }
+
+static bool  slider_draw_tick_run(
+  XentDlBuilder *b, SliderGeom const *g, float cross, float h, int count, float interval_px, FluxColor color
 ) {
 	for (int j = 0; j < count; j++) {
-		FluxRect tick = {g->track_left + ( float ) j * interval_px, y, 1.0f, h};
+		float    offset = ( float ) j * interval_px;
+		float    a = g->line.vertical ? g->line.start + g->line.length - offset - 0.5f : g->line.start + offset - 0.5f;
+		FluxRect tick = slider_span(g, a, a + 1.0f, cross, h);
 		if (!flux_rec_fill_rect(b, &tick, color)) return false;
 	}
 	return true;
 }
 
-/* WinUI TickBar: marks every TickFrequency; intervals closer than 20px are thinned. */
 static bool slider_draw_ticks(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, SliderGeom const *g,
   FluxControlState const *state
 ) {
 	float frequency = snap->u.slider.slider_tick_frequency;
-	if (frequency <= 0.0f || g->range <= 0.0f || g->track_w <= 0.0f) return true;
+	if (frequency <= 0.0f || g->range <= 0.0f || g->line.length <= 0.0f) return true;
 	FluxTickPlacement placement = ( FluxTickPlacement ) snap->u.slider.slider_tick_placement;
 	if (placement == FLUX_TICK_NONE) return true;
 
 	float num_intervals = fmaxf(1.0f, g->range / frequency);
 	int   count         = ( int ) floorf(num_intervals);
-	float interval_px   = fmaxf(1.0f, g->track_w / num_intervals);
+	float interval_px   = fmaxf(1.0f, g->line.length / num_intervals);
 	float min_gap       = 20.0f;
 	if (interval_px < min_gap) {
 		int ratio    = ( int ) ceilf(min_gap / interval_px);
@@ -87,94 +98,119 @@ static bool slider_draw_ticks(
 
 	FluxThemeColors const *t          = flux_rec_theme(rc);
 	FluxColor              outside    = state->enabled ? t->ctrl_strong_fill_default : t->ctrl_strong_fill_disabled;
-	float                  track_top  = g->cy - g->track_h * 0.5f;
+	float                  near_edge  = slider_track_edge(g);
 	float                  bar_h      = 4.0f;
 	float                  gap        = 4.0f;
 	bool                   ok         = true;
 	if (placement == FLUX_TICK_INLINE)
-		ok = slider_draw_tick_run(b, g, track_top, g->track_h, count, interval_px, t->ctrl_fill_input_active);
+		ok = slider_draw_tick_run(b, g, near_edge, g->track_h, count, interval_px, t->ctrl_fill_input_active);
 	if (ok && (placement == FLUX_TICK_TOP_LEFT || placement == FLUX_TICK_OUTSIDE))
-		ok = slider_draw_tick_run(b, g, track_top - gap - bar_h, bar_h, count, interval_px, outside);
+		ok = slider_draw_tick_run(b, g, near_edge - gap - bar_h, bar_h, count, interval_px, outside);
 	if (ok && (placement == FLUX_TICK_BOTTOM_RIGHT || placement == FLUX_TICK_OUTSIDE))
-		ok = slider_draw_tick_run(b, g, track_top + g->track_h + gap, bar_h, count, interval_px, outside);
+		ok = slider_draw_tick_run(b, g, near_edge + g->track_h + gap, bar_h, count, interval_px, outside);
 	return ok;
 }
 
-static SliderColors
-slider_colors(FluxThemeColors const *t, FluxControlState const *state, FluxRecStateAnim const *anim) {
+static SliderColors slider_colors(FluxThemeColors const *t, FluxControlState const *state) {
 	SliderColors c = {
 	  .track_bg     = t->ctrl_strong_fill_default,
 	  .thumb_fill   = t->ctrl_solid_fill_default,
 	  .thumb_stroke = t->ctrl_stroke_default,
+	  .val          = state->pressed ? t->accent_tertiary
+	                : state->hovered ? t->accent_secondary
+	                                 : t->accent_default,
 	};
 	if (!state->enabled) {
-		c.track_bg     = t->ctrl_strong_fill_disabled;
-		c.val          = t->accent_disabled;
-		c.inner        = t->accent_disabled;
-		c.thumb_stroke = t->ctrl_strong_stroke_disabled;
-		return c;
+		c.track_bg = t->ctrl_strong_fill_disabled;
+		c.val      = t->accent_disabled;
 	}
-	c.val = flux_anim_lerp_color(
-	  flux_anim_lerp_color(t->accent_default, t->accent_secondary, anim->hover), t->accent_tertiary, anim->press
-	);
 	c.inner = c.val;
 	return c;
 }
 
 static bool slider_draw_track(XentDlBuilder *b, SliderGeom const *g, SliderColors const *c) {
-	FluxRect track = {g->track_left, g->cy - g->track_h * 0.5f, g->track_w, g->track_h};
+	float    edge  = slider_track_edge(g);
+	float    lo    = g->line.start - FLUX_SLIDER_THUMB_TRAVEL;
+	float    hi    = g->line.start + g->line.length + FLUX_SLIDER_THUMB_TRAVEL;
+	FluxRect track = slider_span(g, lo, hi, edge, g->track_h);
 	if (!flux_rec_fill_rounded(b, &track, g->track_h * 0.5f, c->track_bg)) return false;
-	float val_w = g->track_w * g->pct;
-	if (val_w <= 0.0f) return true;
-	FluxRect val_r = {g->track_left, g->cy - g->track_h * 0.5f, val_w, g->track_h};
-	return flux_rec_fill_rounded(b, &val_r, g->track_h * 0.5f, c->val);
+	if (g->fill_hi <= g->fill_lo && g->thumbs == 2) return true;
+	float    a0   = g->thumbs == 2 ? flux_slider_along(&g->line, g->fill_lo) : (g->line.vertical ? hi : lo);
+	float    a1   = flux_slider_along(&g->line, g->fill_hi);
+	FluxRect fill = slider_span(g, a0, a1, edge, g->track_h);
+	return flux_rec_fill_rounded(b, &fill, g->track_h * 0.5f, c->val);
+}
+
+static int slider_hot_thumb(
+  FluxRenderSnap const *snap, FluxRect const *bounds, SliderGeom const *g, FluxControlState const *state
+) {
+	FluxSliderSnapshot const *s = &snap->u.slider;
+	if (!s->is_range) return 0;
+	bool hovering = state->hovered && !state->pressed && snap->hover_local_x >= 0.0f;
+	if (!hovering) return s->active_thumb;
+	float pos = g->line.vertical ? bounds->y + snap->hover_local_y : bounds->x + snap->hover_local_x;
+	float d0  = fabsf(pos - flux_slider_along(&g->line, g->pct [0]));
+	float d1  = fabsf(pos - flux_slider_along(&g->line, g->pct [1]));
+	return d1 < d0 ? 1 : 0;
+}
+
+static float ease_slider_scale(float t) { return flux_cubic_bezier(t, 0.0f, 0.0f, 0.0f, 1.0f); }
+
+static float slider_target_scale(FluxControlState const *state) {
+	if (!state->enabled) return FLUX_SLIDER_SCALE_HOVER;
+	if (state->pressed) return FLUX_SLIDER_SCALE_PRESSED;
+	if (state->hovered && state->pointer_type != 1) return FLUX_SLIDER_SCALE_HOVER;
+	return FLUX_SLIDER_SCALE_NORMAL;
 }
 
 static float slider_thumb_scale(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state) {
-	/* Touch keeps full-size thumb (pointer_type 1); mouse/pen scale with hover/press. */
-	float target_scale = 1.0f;
-	if (state->pointer_type != 1)
-		target_scale = state->pressed ? FLUX_SLIDER_SCALE_PRESSED
-		             : state->hovered ? FLUX_SLIDER_SCALE_HOVER
-		                              : FLUX_SLIDER_SCALE_NORMAL;
-	if (!rc || !snap || !rc->cache) return target_scale;
+	float target = slider_target_scale(state);
+	if (!rc || !snap || !rc->cache) return target;
 	FluxCacheEntry *ce = flux_rcache_ensure(rc->cache, snap->id);
-	if (!ce) return target_scale;
-	float scale = target_scale;
-	flux_rec_note_animating(
-	  rc, flux_tween_update(&ce->slider_anim, target_scale, FLUX_ANIM_DURATION_SLIDER, rc->now, &scale)
-	);
+	if (!ce) return target;
+	float  scale           = target;
+	double duration        = target == FLUX_SLIDER_SCALE_NORMAL ? 0.167 : 0.25;
+	ce->slider_anim.easing = ease_slider_scale;
+	flux_rec_note_animating(rc, flux_tween_update(&ce->slider_anim, target, duration, rc->now, &scale));
 	return scale;
 }
 
+static FluxPoint slider_thumb_center(SliderGeom const *g, int i) {
+	float along = flux_slider_along(&g->line, g->pct [i]);
+	if (g->line.vertical) return (FluxPoint) {g->line.cross, along};
+	return (FluxPoint) {along, g->line.cross};
+}
+
 static bool slider_draw_thumb(
-  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state,
-  SliderGeom const *g, SliderColors const *c
+  XentDlBuilder *b, FluxRenderCtx const *rc, SliderGeom const *g, SliderColors const *c, int i, float scale
 ) {
-	float outer_d = g->thumb_outer * 2.0f;
-	if (!flux_rec_fill_circle(b, g->thumb_x, g->cy, outer_d, c->thumb_fill)) return false;
-	if (!flux_rec_stroke_circle(b, g->thumb_x, g->cy, outer_d, c->thumb_stroke, 1.0f)) return false;
-	float scale   = slider_thumb_scale(rc, snap, state);
-	float inner_d = 6.0f * scale * 2.0f; /* original: ellipse radii 6*scale */
-	return flux_rec_fill_circle(b, g->thumb_x, g->cy, inner_d, c->inner);
+	FluxPoint at    = slider_thumb_center(g, i);
+	float     d     = g->thumb_outer * 2.0f;
+	FluxRect  outer = {at.x - g->thumb_outer, at.y - g->thumb_outer, d, d};
+	if (!flux_rec_fill_rounded(b, &outer, 10.0f, c->thumb_fill)) return false;
+	if (!flux_rec_elevation_border(b, rc, &outer, 10.0f, false)) return false;
+	return flux_rec_fill_circle(b, at.x, at.y, FLUX_SLIDER_INNER_THUMB * scale, c->inner);
 }
 
 bool flux_rec_build_slider(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 ) {
-	FluxRecStateAnim anim   = flux_rec_animstate(rc, snap, state, false);
-	SliderGeom       geom   = slider_geom(snap, bounds, state);
-	SliderColors     colors = slider_colors(flux_rec_theme(rc), state, &anim);
+	if (snap->u.slider.color_picker) return flux_colorpicker_slider_record(b, rc, snap, bounds, state);
+	SliderGeom   geom   = slider_geom(snap, bounds, state);
+	SliderColors colors = slider_colors(flux_rec_theme(rc), state);
 
-	bool             ok     = slider_draw_track(b, &geom, &colors);
+	bool         ok     = slider_draw_track(b, &geom, &colors);
 	if (ok) ok = slider_draw_ticks(b, rc, snap, &geom, state);
-	if (ok) ok = slider_draw_thumb(b, rc, snap, state, &geom, &colors);
+
+	int   hot        = slider_hot_thumb(snap, bounds, &geom, state);
+	float hot_scale  = slider_thumb_scale(rc, snap, state);
+	float idle_scale = state->enabled ? FLUX_SLIDER_SCALE_NORMAL : FLUX_SLIDER_SCALE_HOVER;
+	if (ok && geom.thumbs == 2) ok = slider_draw_thumb(b, rc, &geom, &colors, 1 - hot, idle_scale);
+	if (ok) ok = slider_draw_thumb(b, rc, &geom, &colors, hot, hot_scale);
 	if (ok && state->focused && state->enabled) {
-		FluxRect thumb = {
-		  geom.thumb_x - geom.thumb_outer, geom.cy - geom.thumb_outer, geom.thumb_outer * 2.0f,
-		  geom.thumb_outer * 2.0f};
-		ok = flux_rec_focus_rect(b, &thumb, geom.thumb_outer);
+		FluxRect fr = {bounds->x - 4.0f, bounds->y + 3.0f, bounds->w + 8.0f, bounds->h - 6.0f};
+		ok          = flux_rec_focus_rect(b, flux_rec_theme(rc), &fr, FLUX_CORNER_RADIUS);
 	}
 	return ok;
 }
@@ -186,7 +222,7 @@ static bool rating_star_fill(
 	if (( double ) i + 1.0 <= fill_v) return flux_rec_glyph_wc(b, box, set, size, fill);
 	float    frac = ( float ) (fill_v - floor(fill_v));
 	FluxRect cell = {box->x, box->y, box->w * frac, box->h};
-	if (!xent_dl_pushclip_rect(b, flux_rec_xrect(&cell))) return false;
+	if (!xent_dl_pushcliprect(b, flux_rec_xrect(&cell))) return false;
 	bool ok = flux_rec_glyph_wc(b, box, set, size, fill);
 	return xent_dl_popclip(b) && ok;
 }

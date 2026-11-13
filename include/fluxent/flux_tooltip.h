@@ -1,11 +1,3 @@
-/**
- * @file flux_tooltip.h
- * @brief Tooltip popup control (WinUI 3 ToolTip equivalent).
- *
- * Displays informational text when hovering over a target element.
- * Supports delayed show/hide and automatic repositioning.
- */
-
 #ifndef FLUX_TOOLTIP_H
 #define FLUX_TOOLTIP_H
 
@@ -16,7 +8,6 @@
 #include "flux_theme.h"
 #include "flux_node_store.h"
 #include <xent/xent.h>
-
 
 #define FLUX_TOOLTIP_DELAY_MS      800
 #define FLUX_TOOLTIP_MAX_WIDTH     320.0f
@@ -29,52 +20,22 @@
 #define FLUX_TOOLTIP_BORDER_WIDTH  1.0f
 #define FLUX_TOOLTIP_OFFSET        4.0f
 
-/** @brief Opaque tooltip manager. */
 typedef struct FluxTooltip  FluxTooltip;
 
-/**
- * @brief Create the app-level tooltip system.
- * Only one instance should exist per application.
- */
 XENT_NODISCARD FluxTooltip *flux_tooltip_create(FluxWindow *owner);
 
-/**
- * @brief Destroy the tooltip system and release all resources.
- */
 void                        flux_tooltip_destroy(FluxTooltip *tt);
 
-/**
- * @brief Set the shared text renderer used to measure and draw tooltip text.
- */
 void                        flux_tooltip_settext(FluxTooltip *tt, FluxText *tr);
 
-/**
- * @brief Update theme colours used for tooltip rendering.
- * Call this whenever the theme changes.
- */
-void                        flux_tooltip_set_theme(FluxTooltip *tt, FluxThemeColors const *theme, bool is_dark);
+void                        flux_tooltip_settheme(FluxTooltip *tt, FluxThemeColors const *theme, bool is_dark);
 
-/**
- * @brief Notify the tooltip system that the hover target changed.
- *
- * @param hovered   The node currently under the cursor
- *                  (XENT_NODE_INVALID if nothing is hovered).
- * @param nd        FluxNodeData for @p hovered (may be NULL).
- * @param screen_bounds  Layout rect of the hovered node in *screen*
- *                       coordinates (used for popup placement).
- *                       Ignored when hovered == XENT_NODE_INVALID.
- */
-void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const *nd, FluxRect const *screen_bounds);
+void flux_tooltip_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const *nd, FluxRect const *screen_bounds);
 
-/**
- * @brief Force-dismiss the current tooltip.
- */
 void flux_tooltip_dismiss(FluxTooltip *tt);
 
-/**
- * @brief Returns true if the tooltip popup is currently visible.
- */
-bool flux_tooltip_visible(FluxTooltip const *tt);
+void flux_tooltip_showat(FluxTooltip *tt, char const *text, FluxRect anchor, FluxPlacement placement);
 
+bool flux_tooltip_visible(FluxTooltip const *tt);
 
 #endif

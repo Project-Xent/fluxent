@@ -54,7 +54,6 @@ XtkEl *page_tree_view(XtkUi *ui, Model const *m) {
 					.roots  = roots,
 					.nroot  = 3,
 					.sel    = m->tree_sel,
-					.rowh   = 28.0f,
 					.select = xtk_msg(MSG_TREE_SELECT),
 					.invoke = xtk_msg(MSG_TREE_INVOKE),
 					.expand = xtk_msg(MSG_TREE_EXPAND),

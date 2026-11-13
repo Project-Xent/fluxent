@@ -38,7 +38,7 @@ typedef struct FluxHostState {
 	XentCtx       *ctx;
 	FluxStore     *store;
 	XentNodeId     root;
-	bool           owns_tree; /* create() vs adopt() */
+	bool           owns_tree;
 	uint64_t       revision;
 	XtkCtrlId     *types;
 	uint32_t       types_cap;

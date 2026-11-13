@@ -1,7 +1,3 @@
-/**
- * @file flux_checkbox_data.h
- * @brief Data structure for FluxCheckbox control.
- */
 #ifndef FLUX_CHECKBOX_DATA_H
 #define FLUX_CHECKBOX_DATA_H
 
@@ -9,28 +5,32 @@
 
 #include <stdbool.h>
 
-/** @brief Check state shared by checkbox-style controls. */
 typedef enum FluxCheckState
 {
 	FLUX_CHECK_UNCHECKED,
 	FLUX_CHECK_CHECKED,
-	FLUX_CHECK_INDETERMINATE, /**< Mixed state (e.g., partial selection) */
+	FLUX_CHECK_INDETERMINATE,
 } FluxCheckState;
 
-/**
- * @brief Configuration for a checkbox control.
- *
- * Supports three states: unchecked, checked, and indeterminate.
- * on_change is called when the user toggles the checkbox.
- */
 typedef struct FluxCheckboxData {
-	char const    *label;                                             /**< Checkbox label text (UTF-8) */
-	FluxColor      check_color;                                       /**< Checkmark / fill color */
-	FluxColor      box_color;                                         /**< Border / box color */
-	FluxCheckState state;                                             /**< Current check state */
-	void           (*on_change)(void *ctx, FluxCheckState new_state); /**< Callback invoked when state changes. */
+	char const    *label;
+	XentCtx       *ctx;
+	XentNodeId     node;
+	FluxCheckState state;
+	bool           is_three_state;
+	void           (*on_change)(void *ctx, FluxCheckState new_state);
 	void          *on_change_ctx;
 } FluxCheckboxData;
 
+static void inline flux_checkbox_setstate(FluxCheckboxData *cd, FluxCheckState state) {
+	cd->state = state;
+	if (cd->ctx)
+		xent_sem_setchecked(
+		  cd->ctx, cd->node,
+		  state == FLUX_CHECK_CHECKED         ? 1u
+		  : state == FLUX_CHECK_INDETERMINATE ? 2u
+		                                      : 0u
+		);
+}
 
 #endif

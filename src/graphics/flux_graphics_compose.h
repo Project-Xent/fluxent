@@ -1,46 +1,22 @@
-/**
- * @file flux_graphics_compose.h
- * @brief Composition-mode accessors on FluxGfx (internal).
- *
- * Kept out of the public `flux_graphics.h` so that header stays free of cwinrt /
- * Windows.UI.Composition types. Used by the app to drive the retained
- * composition render path when `FLUX_USE_COMPOSITION` is set.
- */
 #ifndef FLUX_GRAPHICS_COMPOSE_H
 #define FLUX_GRAPHICS_COMPOSE_H
 
-#include "fluxent/flux_graphics.h"
+#include "fluxent/flux_gfx.h"
 #include "compose/flux_compose.h"
 
 #include <stdbool.h>
 
+void                           flux_gfx_setopacity(FluxGfx *gfx, float opacity);
+void                           flux_gfx_setplate(FluxGfx *gfx, float x, float y, float w, float h, float radius);
 
-/** @brief True when the retained-composition path is active for this context. */
 bool                           flux_graphics_composition_enabled(FluxGfx const *gfx);
 
-/** @brief The thread-shared compositor (not owned). */
 FluxCompositor                *flux_graphics_compositor(FluxGfx *gfx);
 
-/** @brief The root visual hosting the reconciled tree in composition mode (not owned). */
 WUC_Visual                    *flux_graphics_composition_root(FluxGfx *gfx);
 
-/** @brief The graphics device for per-node surfaces, created lazily (not owned). */
 WUC_CompositionGraphicsDevice *flux_graphics_graphics_device(FluxGfx *gfx);
 
-/**
- * @brief Give a top-level window a host-backdrop acrylic backplate (popup mode).
- *
- * In composition mode, makes the window's composition root sample the desktop
- * behind it through a Gaussian blur, and moves the swap chain content into a
- * child sprite composed on top. The window's own painting must leave its
- * background translucent for the acrylic to show through. Idempotent; re-arms
- * after device loss. No-op (returns false) when composition is disabled.
- *
- * @param gfx  Graphics bound to the popup window.
- * @param blur Gaussian standard deviation (DIPs).
- * @return true when the acrylic backplate is active.
- */
 bool                           flux_gfx_enable_acrylic(FluxGfx *gfx, float blur);
 
-
-#endif /* FLUX_GRAPHICS_COMPOSE_H */
+#endif

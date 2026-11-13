@@ -9,11 +9,10 @@ typedef struct FluxBackendCtx FluxBackendCtx;
 typedef struct FluxRenderCtx  FluxRenderCtx;
 
 XtkBackend                   *flux_xtk_backend_create(FluxBackendCtx *bctx, XtkHost *host);
+FluxBackendCtx               *flux_xtk_backendctx(XtkBackend *backend);
 void                          flux_xtk_backend_destroy(XtkBackend *backend);
 void                          flux_xtk_setrc(XtkBackend *backend, FluxRenderCtx const *rc);
-void                          flux_xtk_regimage(XtkBackend *backend, XentResourceId id, char const *path);
 
-/** @brief Replay a display list onto an arbitrary FluxRenderCtx (popup surfaces). */
 bool                          flux_xtk_replay_rc(FluxRenderCtx const *rc, XentDl const *list);
 
 #endif

@@ -12,11 +12,10 @@
 #include <stdlib.h>
 #include <windows.h>
 
-/* Close hit zone: InfoBarCloseButtonSize (38) + InfoBarCloseButtonMargin (5). */
 #define IB_CLOSE_ZONE_W    43.0f
 #define IB_MIN_HEIGHT      48.0f
-#define IB_PAD_LEFT_TOTAL  46.0f /* 16 + 16 + 14: pad + icon + gap */
-#define IB_PAD_RIGHT_CLOSE 55.0f /* 12 + 5 + 38: gap + margin + close */
+#define IB_PAD_LEFT_TOTAL  46.0f
+#define IB_PAD_RIGHT_CLOSE 55.0f
 #define IB_TEXT_TOP        14.0f
 #define IB_TEXT_FONT       14.0f
 
@@ -24,7 +23,7 @@ typedef struct FluxInfoBarBinding {
 	FluxStore *store;
 	XentNodeId node;
 	XentCtx   *ctx;
-	bool       pressed_close; /**< The active press landed on the close button. */
+	bool       pressed_close;
 } FluxInfoBarBinding;
 
 typedef struct FluxInfoBarRuntime {
@@ -73,8 +72,6 @@ static void info_bar_destroy(void *component_data) {
 	free(d);
 }
 
-/* The close button is a Button: it closes on Click (release within the button), not on
- * press. Record whether the press hit the close zone, then act on release. */
 static void info_bar_on_pointer_down(void *ctx, float local_x, float local_y, int click_count) {
 	( void ) local_y;
 	( void ) click_count;
@@ -87,8 +84,6 @@ static void info_bar_on_click(void *ctx) {
 	if (b && b->pressed_close) info_bar_do_close(b);
 }
 
-/* The close button is the InfoBar's only tab stop: Space/Enter closes it (WinUI InfoBar
- * CloseButton). The focus rectangle is drawn around the close glyph by flux_draw_info_bar. */
 static bool info_bar_on_key(void *ctx, FluxKey key, bool down) {
 	FluxInfoBarBinding *b = ( FluxInfoBarBinding * ) ctx;
 	if (!down || !b || (key != FLUX_KEY_ENTER && key != FLUX_KEY_SPACE)) return false;
@@ -151,8 +146,6 @@ XentNodeId flux_infobar_init(FluxInfoBarDesc const *info) {
 	ib_set_layout_text(info->ctx, node, info->title, info->message);
 	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_CONTAINER);
 	if (info->title) xent_sem_setlabel(info->ctx, node, info->title);
-	/* Only a closable InfoBar is a tab stop -- its single interactive part is the close
-	 * button. The focus rectangle renders around the close glyph (flux_draw_info_bar). */
 	if (info->is_closable) xent_set_focusable(info->ctx, node, true);
 
 	return node;

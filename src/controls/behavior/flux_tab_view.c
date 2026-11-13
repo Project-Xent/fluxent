@@ -19,21 +19,10 @@
 #include <string.h>
 #include <windows.h>
 
-/* WinUI TabView (TabView.cpp / TabViewItem.cpp / TabView.xaml). Strip row =
- * [header][scroll-dec][scrollable tab host][scroll-inc][add][footer] over a
- * content host; the selected tab owns the attached content subtree. Tabs share
- * the strip equally by default (TabWidthMode::Equal, clamped [100,240]) and
- * overflow into repeat-button scrolling (50px per click). Closing collapses the
- * tab's width on a shared timer, then detaches it; widths recompute only after
- * the pointer leaves the strip so the next close button lands under the cursor
- * (TabView::OnTabStripPointerExited). Tabs drag-reorder with the pointer
- * (CanReorderTabs default), close on middle-click release, and follow WinUI
- * keyboarding: arrows move focus, Ctrl+Tab cycles selection, Ctrl+F4 closes. */
-
 #define TAB_CLOSE_MS        166.0f
-#define TAB_WIDTH_ANIM_MS   250.0f /* AddDeleteThemeTransition feel */
-#define TAB_SLIDE_MS        250.0f /* ReorderThemeTransition feel */
-#define TAB_SCROLL_ANIM_MS  250.0f /* ScrollViewer::ChangeView smooth scroll */
+#define TAB_WIDTH_ANIM_MS   250.0f
+#define TAB_SLIDE_MS        250.0f
+#define TAB_SCROLL_ANIM_MS  250.0f
 #define TAB_REPEAT_DELAY_MS 400
 #define TAB_REPEAT_INTERVAL 100
 #define TAB_SCROLL_RESERVE  (2.0f * (FLUX_TAB_SCROLL_W + FLUX_TAB_SCROLL_PAD_OUT + FLUX_TAB_SCROLL_PAD_IN))
@@ -106,7 +95,6 @@ static int tv_model_slot(FluxTabViewData const *tv, int index) {
 	return -1;
 }
 
-/* Next open tab slot scanning the display order from @p pos (exclusive). */
 static int tv_open_from(FluxTabViewData const *tv, int pos, int dir) {
 	for (int p = pos + dir; p >= 0 && p < tv->count; p += dir)
 		if (tv_slot_open(tv, tv->order [p])) return tv->order [p];
@@ -134,7 +122,6 @@ static void tv_animate_width(FluxTabViewData *tv, FluxTabViewItem *it, bool anim
 static void tv_sync_scroll_enabled(FluxTabViewData *tv);
 static void tv_restack_strip(FluxTabViewData *tv);
 
-/* Keep the selected tab inside the scrolled host viewport (BringIntoView). */
 static void tv_scroll_into_view(FluxTabViewData *tv, int slot) {
 	FluxScrollData *sd = tv_scroll(tv);
 	XentRect        hr = {0};
@@ -144,7 +131,7 @@ static void tv_scroll_into_view(FluxTabViewData *tv, int slot) {
 	float x0 = 0.0f;
 	for (int p = 0; p < tv_order_pos(tv, slot); p++)
 		if (tv_slot_open(tv, tv->order [p])) x0 += tv->tabs [tv->order [p]].cur_w;
-	float x1 = x0 + tv->tabs [slot].cur_w; /* target widths: where tabs settle */
+	float x1 = x0 + tv->tabs [slot].cur_w;
 	if (x0 < sd->scroll_x) tv_scroll_to(tv, x0);
 	else if (x1 > sd->scroll_x + hr.w) tv_scroll_to(tv, x1 - hr.w);
 }
@@ -179,7 +166,7 @@ static float tv_measure_width(FluxTabViewData *tv, char const *icon, char const 
 	if (label && tv->text) {
 		FluxTextStyle ts  = {0};
 		ts.font_size      = FLUX_TAB_FONT;
-		ts.font_weight    = FLUX_FONT_SEMI_BOLD; /* widest weight, avoids reflow on select */
+		ts.font_weight    = FLUX_FONT_SEMI_BOLD;
 		w                += flux_text_measure(tv->text, label, &ts, FLT_MAX).w;
 	}
 	return flux_clampf(w, FLUX_TAB_MIN_W, FLUX_TAB_MAX_W);
@@ -191,10 +178,6 @@ static float tv_node_width(FluxTabViewData *tv, XentNodeId node) {
 	return r.w;
 }
 
-/* Width available to tabs when no overflow buttons are shown, from the STRIP's
- * laid-out rect (stable geometry: it never depends on tab widths or on the
- * scroll-button visibility, so the overflow decision cannot feed back into
- * itself). -1 before the first layout lands. */
 static float tv_avail_base(FluxTabViewData *tv) {
 	XentRect sr = {0};
 	if (!xent_layout_rect(tv->ctx, tv->strip, &sr) || sr.w <= 0.0f) return -1.0f;
@@ -203,15 +186,12 @@ static float tv_avail_base(FluxTabViewData *tv) {
 	return base;
 }
 
-/* Per-mode target width for one open tab. */
 static float tv_mode_width(FluxTabViewData const *tv, FluxTabViewItem const *it, float equal_w) {
 	if (tv->width_mode == FLUX_TAB_WIDTH_EQUAL) return equal_w;
 	if (tv->width_mode == FLUX_TAB_WIDTH_COMPACT && tv->selected != it->index) return FLUX_TAB_COMPACT_W;
 	return it->width;
 }
 
-/* Tween a tab's displayed width toward cur_w, or snap when the caller follows
- * live geometry (resize / first settle) or the delta is negligible. */
 static void tv_animate_width(FluxTabViewData *tv, FluxTabViewItem *it, bool animate) {
 	if (!animate || fabsf(it->cur_w - it->disp_w) < 0.5f) {
 		it->disp_w = it->cur_w;
@@ -220,7 +200,7 @@ static void tv_animate_width(FluxTabViewData *tv, FluxTabViewItem *it, bool anim
 		return;
 	}
 	it->w_from  = it->disp_w;
-	it->w_start = GetTickCount();
+	it->w_start = flux_anim_now();
 	it->w_anim  = true;
 	tv_anim_start(tv);
 }
@@ -230,9 +210,6 @@ static bool tv_node_hot(FluxTabViewData *tv, XentNodeId node) {
 	return nd && (nd->state.hovered || nd->state.pressed);
 }
 
-/* CloseButtonOverlayMode: Auto/Always keep the button on every closable tab
- * (TabViewItem::UpdateCloseButton's default branch); OnPointerOver gates it on
- * selection or hover (of the tab or of the button itself). */
 static void tv_sync_close(FluxTabViewData *tv, FluxTabViewItem *it) {
 	if (it->close_node == XENT_NODE_INVALID) return;
 	bool show = it->closable && !it->closing;
@@ -248,8 +225,6 @@ static void tv_hover_changed(void *ctx, bool hovered) {
 	tv_repaint(it->tv);
 }
 
-/* WinUI disables the repeat buttons at the ends (threshold 0.1). The tween
- * target is the offset the view is headed to, so the state flips immediately. */
 static void tv_sync_scroll_enabled(FluxTabViewData *tv) {
 	if (!tv->scroll_visible) return;
 	FluxScrollData *sd = tv_scroll(tv);
@@ -277,8 +252,6 @@ static void tv_show_scroll_buttons(FluxTabViewData *tv, bool show) {
 	xent_setm(tv->ctx, tv->scroll_inc, tv_scroll_btn_margin(show, FLUX_TAB_SCROLL_PAD_IN, FLUX_TAB_SCROLL_PAD_OUT));
 }
 
-/* Apply per-mode tab widths, toggle overflow scroll buttons, sync scroll range. */
-/* Sum of per-mode target widths if tabs were sized against @p avail. */
 static float tv_mode_total(FluxTabViewData *tv, int n, float avail) {
 	float equal_w = flux_clampf(avail / ( float ) n, FLUX_TAB_MIN_W, FLUX_TAB_MAX_W);
 	float total   = 0.0f;
@@ -287,7 +260,6 @@ static float tv_mode_total(FluxTabViewData *tv, int n, float avail) {
 	return total;
 }
 
-/* Apply per-tab target widths and return total displayed width. */
 static float tv_apply_tab_widths(FluxTabViewData *tv, float equal_w, bool animate) {
 	float total = 0.0f;
 	for (int i = 0; i < tv->count; i++) {
@@ -314,7 +286,6 @@ static void tv_size_tabs_host(FluxTabViewData *tv, float avail) {
 	xent_setsize(tv->ctx, tv->tabs_host, (XentSize) {flux_maxf(0.0f, width), FLUX_TAB_MIN_H});
 }
 
-/* Clamp scroll data extents after a width recompute. */
 static void tv_clamp_scroll(FluxTabViewData *tv, float total, float avail) {
 	FluxScrollData *sd = tv_scroll(tv);
 	if (!sd) return;
@@ -339,8 +310,6 @@ static void tv_update_widths(FluxTabViewData *tv, bool animate) {
 	}
 	tv->widths_valid = true;
 	tv->layout_w     = base;
-	/* Overflow is decided against the button-less width only, so showing the
-	 * buttons can never flip the decision back (no oscillation). */
 	bool  overflow   = tv_mode_total(tv, n, base) > base + 0.5f;
 	float avail      = base - (overflow ? TAB_SCROLL_RESERVE : 0.0f);
 	float equal_w    = flux_clampf(avail / ( float ) n, FLUX_TAB_MIN_W, FLUX_TAB_MAX_W);
@@ -352,10 +321,8 @@ static void tv_update_widths(FluxTabViewData *tv, bool animate) {
 	tv_sync_scroll_enabled(tv);
 }
 
-/* WinUI defers the recompute while the pointer is over the strip, so closing a
- * row of tabs keeps each next close button under the cursor. */
 static bool tv_pointer_in_strip(FluxTabViewData const *tv) {
-	return tv->input && flux_input_pointer_inside(tv->input, tv->strip);
+	return tv->input && flux_input_pointerinside(tv->input, tv->strip);
 }
 
 static void tv_queue_width_update(FluxTabViewData *tv, bool defer) {
@@ -438,7 +405,7 @@ static void tv_begin_close(FluxTabViewData *tv, int idx, bool pointer_close) {
 	xent_layout_rect(tv->ctx, tv->tabs [idx].tab_node, &r);
 	tv->tabs [idx].w_anim             = false;
 	tv->tabs [idx].close_w0           = r.w > 0.0f ? r.w : tv->tabs [idx].disp_w;
-	tv->tabs [idx].close_start        = GetTickCount();
+	tv->tabs [idx].close_start        = flux_anim_now();
 	tv->tabs [idx].closing            = true;
 	bool last                         = tv_model_index(tv, idx) == tv_open_count(tv) - 1;
 	tv->tabs [idx].defer_width_update = pointer_close && !last && tv_pointer_in_strip(tv);
@@ -446,15 +413,13 @@ static void tv_begin_close(FluxTabViewData *tv, int idx, bool pointer_close) {
 	tv_anim_start(tv);
 }
 
-/* Animated offset change (WinUI ChangeView). Consecutive steps retarget the
- * running tween so held repeat-buttons glide continuously. */
 static void tv_scroll_to(FluxTabViewData *tv, float target) {
 	FluxScrollData *sd = tv_scroll(tv);
 	if (!sd) return;
 	float avail       = tv_avail_base(tv) - (tv->scroll_visible ? TAB_SCROLL_RESERVE : 0.0f);
 	tv->scroll_target = flux_clampf(target, 0.0f, flux_maxf(0.0f, sd->content_w - avail));
 	tv->scroll_from   = sd->scroll_x;
-	tv->scroll_start  = GetTickCount();
+	tv->scroll_start  = flux_anim_now();
 	tv->scroll_anim   = true;
 	tv_sync_scroll_enabled(tv);
 	tv_anim_start(tv);
@@ -475,7 +440,7 @@ static void tv_scroll_btn_down(void *ctx, float x, float y, int clicks) {
 	int              d  = (it->kind == FLUX_TAB_KIND_SCROLL_DEC) ? -1 : +1;
 	tv_scroll_by(tv, ( float ) d * FLUX_TAB_SCROLL_AMOUNT);
 	tv->scroll_held = d;
-	tv->scroll_next = GetTickCount() + TAB_REPEAT_DELAY_MS;
+	tv->scroll_next = flux_anim_now() + TAB_REPEAT_DELAY_MS;
 	tv_anim_start(tv);
 }
 
@@ -504,7 +469,6 @@ static void tv_drag_swap(FluxTabViewData *tv, int pos_a, int pos_b) {
 	tv_rebuild_tab_order(tv);
 }
 
-/* Swap with neighbours while the pointer has crossed past half their width. */
 static float tv_drag_reorder_step(FluxTabViewData *tv, FluxTabViewItem *it, float dx) {
 	for (;;) {
 		int dir      = dx > 0.0f ? +1 : -1;
@@ -514,11 +478,9 @@ static float tv_drag_reorder_step(FluxTabViewData *tv, FluxTabViewItem *it, floa
 		float nw = tv->tabs [neighbor].cur_w;
 		if (fabsf(dx) <= nw * 0.5f) return dx;
 		tv_drag_swap(tv, pos, tv_order_pos(tv, neighbor));
-		/* The displaced neighbour shifts by the dragged tab's width; let it
-		 * slide from its old spot (ReorderThemeTransition). */
 		FluxTabViewItem *nb  = &tv->tabs [neighbor];
 		nb->slide_x0         = (dx > 0.0f) ? it->disp_w : -it->disp_w;
-		nb->slide_start      = GetTickCount();
+		nb->slide_start      = flux_anim_now();
 		nb->sliding          = true;
 		tv->drag_press_x    += ( float ) ((dx > 0.0f) ? nw : -nw);
 		dx                  -= ( float ) ((dx > 0.0f) ? nw : -nw);
@@ -582,7 +544,6 @@ static void tv_item_cancel(void *ctx) {
 	tv_drag_end(it->tv);
 }
 
-/* WinUI: middle-button release closes a closable tab (TabViewItem::OnPointerReleased). */
 static void tv_item_middle_click(void *ctx) {
 	FluxTabViewItem *it = ( FluxTabViewItem * ) ctx;
 	if (it->kind == FLUX_TAB_KIND_TAB) tv_begin_close(it->tv, it->index, true);
@@ -590,14 +551,13 @@ static void tv_item_middle_click(void *ctx) {
 
 static bool tv_ctrl_down(void) { return flux_key_held(FLUX_KEY_CONTROL); }
 
-/* Arrows move focus between headers (not selection), Home/End jump the strip. */
 static bool tv_key_focus(FluxTabViewData *tv, int from_slot, FluxKey key) {
 	int target = -1;
 	if (key == FLUX_KEY_LEFT) target = tv_open_from(tv, tv_order_pos(tv, from_slot), -1);
 	if (key == FLUX_KEY_RIGHT) target = tv_open_from(tv, tv_order_pos(tv, from_slot), +1);
 	if (key == FLUX_KEY_HOME) target = tv_open_from(tv, -1, +1);
 	if (key == FLUX_KEY_END) target = tv_open_from(tv, tv->count, -1);
-	if (target >= 0 && tv->input) flux_input_setfocus(tv->input, tv->tabs [target].tab_node);
+	if (target >= 0 && tv->input) flux_input_setfocus(tv->input, tv->tabs [target].tab_node, false);
 	return true;
 }
 
@@ -620,9 +580,9 @@ static bool tv_item_key(void *ctx, FluxKey key, bool down) {
 	FluxTabViewItem *it = ( FluxTabViewItem * ) ctx;
 	FluxTabViewData *tv = it->tv;
 	switch (key) {
-	case FLUX_KEY_LEFT :
+	case FLUX_KEY_LEFT  :
 	case FLUX_KEY_RIGHT :
-	case FLUX_KEY_HOME :
+	case FLUX_KEY_HOME  :
 	case FLUX_KEY_END   : return tv_key_focus(tv, it->index, key);
 	case FLUX_KEY_TAB   : return tv_ctrl_down() ? tv_key_ctrl_tab(tv) : false;
 	case FLUX_KEY_F4    : return tv_key_ctrl_f4(tv);
@@ -780,8 +740,8 @@ static void tv_on_window_resize(void *ctx, int width_px, int height_px) {
 	( void ) width_px;
 	( void ) height_px;
 	FluxTabViewData *tv = ( FluxTabViewData * ) ctx;
-	tv_update_widths(tv, false); /* resize tracks live geometry; no tween */
-	tv_anim_start(tv);           /* re-measure once the post-resize layout lands */
+	tv_update_widths(tv, false);
+	tv_anim_start(tv);
 }
 
 static void tv_destroy(void *component_data) {
@@ -807,13 +767,13 @@ static void tv_make_strip_item(FluxTabViewData *tv, FluxTabViewItem *slot, XentN
 
 static void tv_make_scroll_button(FluxTabViewData *tv, XentNodeId *out, FluxTabViewItem *slot, FluxTabKind kind) {
 	*out = flux_factory_create_node(tv->ctx, tv->store, tv->strip, FLUX_CONTROL_TAB_VIEW_ITEM);
-	xent_setsize(tv->ctx, *out, (XentSize) {0.0f, 0.0f}); /* hidden until overflow */
+	xent_setsize(tv->ctx, *out, (XentSize) {0.0f, 0.0f});
 	tv_make_strip_item(tv, slot, *out, kind);
 	FluxNodeData *nd = flux_store_find(tv->store, *out);
 	if (nd) {
 		nd->behavior.on_pointer_down     = tv_scroll_btn_down;
 		nd->behavior.on_pointer_down_ctx = slot;
-		nd->behavior.on_click            = tv_scroll_btn_release; /* repeat ends on release */
+		nd->behavior.on_click            = tv_scroll_btn_release;
 		nd->behavior.on_click_ctx        = slot;
 		nd->behavior.on_cancel           = tv_scroll_btn_release;
 		nd->behavior.on_cancel_ctx       = slot;
@@ -833,10 +793,10 @@ static void tv_make_tabs_host(FluxTabViewData *tv) {
 		free(sd);
 		return;
 	}
-	sd->h_vis                  = FLUX_SCROLL_NEVER; /* WinUI hides the strip ScrollViewer bars */
+	sd->h_vis                  = FLUX_SCROLL_NEVER;
 	sd->v_vis                  = FLUX_SCROLL_NEVER;
 	sd->content_h              = FLUX_TAB_MIN_H;
-	sd->content_manual         = 1; /* strip extent tracks tab metrics, not child layout */
+	sd->content_manual         = 1;
 	nd->component_type         = FLUX_CONTROL_SCROLL;
 	nd->component_data         = sd;
 	nd->destroy_component_data = free;
@@ -926,8 +886,6 @@ static void tv_close_click(void *ctx) {
 	tv_begin_close(it->tv, it->index, true);
 }
 
-/* The template CloseButton: a real child node so hover/press/click come from
- * the normal input pipeline (IsTabStop=False, hidden until selected/hover). */
 static void tv_make_close_button(FluxTabViewData *tv, FluxTabViewItem *slot) {
 	slot->close_node = flux_factory_create_node(tv->ctx, tv->store, slot->tab_node, FLUX_CONTROL_TAB_VIEW_ITEM);
 	xent_setsize(tv->ctx, slot->close_node, (XentSize) {0.0f, 0.0f});
@@ -1046,7 +1004,7 @@ int flux_tabs_add_tab(
 	tv_make_close_button(tv, slot);
 	tv_sync_close(tv, slot);
 	tv_update_widths(tv, true);
-	tv_anim_start(tv); /* re-measure against the real strip rect next frame */
+	tv_anim_start(tv);
 
 	if (out_content) *out_content = content;
 	if (tv->selected < 0) tv_select(tv, idx);
@@ -1151,31 +1109,6 @@ void flux_tabs_select(FluxStore *store, XentNodeId tabview, int index) {
 	if (slot >= 0) tv_select(tv, slot);
 }
 
-void flux_tabs_close(FluxStore *store, XentNodeId tabview, int index) {
-	FluxTabViewData *tv   = tv_data(store, tabview);
-	int              slot = tv ? tv_model_slot(tv, index) : -1;
-	if (slot >= 0) tv_begin_close(tv, slot, false);
-}
-
-void flux_tabs_set_closable(FluxStore *store, XentNodeId tabview, int index, bool closable) {
-	FluxTabViewData *tv   = tv_data(store, tabview);
-	int              slot = tv ? tv_model_slot(tv, index) : -1;
-	if (slot < 0) return;
-	tv->tabs [slot].closable = closable;
-	tv->tabs [slot].width    = tv_measure_width(tv, tv->tabs [slot].icon_name, tv->tabs [slot].label, closable);
-	tv_sync_close(tv, &tv->tabs [slot]);
-	tv_update_widths(tv, true);
-	tv_repaint(tv);
-}
-
-void flux_tabs_setmode(FluxStore *store, XentNodeId tabview, int width_mode) {
-	FluxTabViewData *tv = tv_data(store, tabview);
-	if (!tv) return;
-	tv->width_mode = ( FluxTabWidthMode ) width_mode;
-	tv_update_widths(tv, true);
-	tv_repaint(tv);
-}
-
 void flux_tabs_setaddvisible(FluxStore *store, XentNodeId tabview, bool visible) {
 	FluxTabViewData *tv = tv_data(store, tabview);
 	if (!tv || (tv->add_visible == visible && tv->add_node != XENT_NODE_INVALID)) return;
@@ -1225,7 +1158,6 @@ bool flux_tabs_mount_items(
 	return true;
 }
 
-/* Rebuild the strip child order: [header][dec][tabs][inc][add][footer]. */
 static void tv_restack_strip(FluxTabViewData *tv) {
 	XentNodeId seq [6]
 	  = {tv->strip_header, tv->scroll_dec, tv->tabs_host, tv->scroll_inc, tv->add_node, tv->strip_footer};
@@ -1233,24 +1165,4 @@ static void tv_restack_strip(FluxTabViewData *tv) {
 		if (seq [i] != XENT_NODE_INVALID) xent_node_remove(tv->ctx, tv->strip, seq [i]);
 	for (int i = 0; i < 6; i++)
 		if (seq [i] != XENT_NODE_INVALID) xent_node_append(tv->ctx, tv->strip, seq [i]);
-}
-
-void flux_tabs_setheader(FluxStore *store, XentNodeId tabview, XentNodeId node) {
-	FluxTabViewData *tv = tv_data(store, tabview);
-	if (!tv) return;
-	tv->strip_header = node;
-	xent_node_append(tv->ctx, tv->strip, node);
-	tv_restack_strip(tv);
-	tv->layout_sync_pending = true;
-	tv_anim_start(tv);
-}
-
-void flux_tabs_setfooter(FluxStore *store, XentNodeId tabview, XentNodeId node) {
-	FluxTabViewData *tv = tv_data(store, tabview);
-	if (!tv) return;
-	tv->strip_footer = node;
-	xent_node_append(tv->ctx, tv->strip, node);
-	tv_restack_strip(tv);
-	tv->layout_sync_pending = true;
-	tv_anim_start(tv);
 }

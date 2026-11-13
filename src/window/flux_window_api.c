@@ -1,5 +1,5 @@
 #include "flux_window_internal.h"
-#include "fluxent/flux_graphics.h"
+#include "fluxent/flux_gfx.h"
 
 #include <objbase.h>
 #include <stdlib.h>
@@ -132,19 +132,23 @@ void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *pas
 	for (int i = 0; i < count; i++) win->title_bar_pass [i] = passthrough [i];
 }
 
+void flux_window_applyframe(FluxWindow *win, bool deferred) {
+	if (!win || !win->hwnd) return;
+	MARGINS m = win->title_bar_extended ? (MARGINS) {0, 0, 1, 0} : (MARGINS) {0, 0, 0, 0};
+	DwmExtendFrameIntoClientArea(win->hwnd, &m);
+	if (deferred) {
+		PostMessageW(win->hwnd, FLUX_WM_APPLY_FRAME, 0, 0);
+		return;
+	}
+	SetWindowPos(
+	  win->hwnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+	);
+}
+
 void flux_window_extendtitlebar(FluxWindow *win, bool enabled) {
 	if (!win || win->title_bar_extended == enabled) return;
 	win->title_bar_extended = enabled;
-	if (!win->hwnd) return;
-
-	/* A 1px top glass strip keeps the DWM drop shadow/rounded corners while the
-	 * client covers the whole window. Defer the SWP_FRAMECHANGED (re-runs
-	 * WM_NCCALCSIZE) to after the current frame: extend is typically requested
-	 * from a control's create during reconcile, and a synchronous SetWindowPos
-	 * there re-enters WM_SIZE/render mid-frame and double-composites the scene. */
-	MARGINS m = enabled ? (MARGINS) {0, 0, 1, 0} : (MARGINS) {0, 0, 0, 0};
-	DwmExtendFrameIntoClientArea(win->hwnd, &m);
-	PostMessageW(win->hwnd, FLUX_WM_APPLY_FRAME, 0, 0);
+	if (win->shown) flux_window_applyframe(win, true);
 }
 
 bool flux_window_titlebar(FluxWindow const *win) { return win && win->title_bar_extended; }

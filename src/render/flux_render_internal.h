@@ -1,12 +1,3 @@
-/**
- * @file flux_render_internal.h
- * @brief Internal render context and D2D helper utilities.
- *
- * Defines FluxRenderCtx passed to control render functions and
- * provides inline helpers for D2D color/rect conversion.
- * @note This is an internal header; do not include from public API.
- */
-
 #ifndef FLUX_RENDER_INTERNAL_H
 #define FLUX_RENDER_INTERNAL_H
 
@@ -25,31 +16,14 @@
 #include "fluxent/flux_theme.h"
 #include "flux_anim.h"
 
-/**
- * @brief Maximum depth of the per-frame clip/transform stack.
- *
- * Pushes are clamped at FLUX_RENDER_MAX_TRANSFORM_DEPTH; nested clip/scroll
- * frames beyond this depth are coalesced into the topmost frame and a counter
- * on FluxEngine is bumped so overflow is observable rather than silent.
- */
 #define FLUX_RENDER_MAX_TRANSFORM_DEPTH      32
 
-/** @brief Initial capacity (commands) for the engine's command buffer. */
 #define FLUX_RENDER_COMMAND_INITIAL_CAPACITY 256
 
-/** @brief Render context passed to all control render functions. */
-/**
- * @brief Lets a control defer its solid background fill to the compositor.
- *
- * In the composition path the per-node visual carries an animated
- * CompositionColorBrush, so a control writes its resolved fill here and skips
- * painting it into the D2D surface; the compositor animates the fill off-thread.
- * NULL in the classic path, where the control paints its own fill.
- */
 typedef struct FluxFillSink {
-	FluxColor color;         /**< Resolved background fill the control would have drawn. */
-	float     corner_radius; /**< Corner radius for the deferred fill. */
-	bool      written;       /**< Set by the control when it deferred its fill. */
+	FluxColor color;
+	float     corner_radius;
+	bool      written;
 } FluxFillSink;
 
 void flux_engine_bind(FluxEngine *eng, FluxControlRegistry const *registry, XtkBackend *backend);
@@ -61,11 +35,11 @@ struct FluxRenderCtx {
 	FluxText              *text;
 	FluxDpi                dpi;
 	FluxThemeColors const *theme;
-	double                 now;               /**< Monotonic time in seconds. */
-	float                  dt;                /**< Seconds since last frame. */
-	bool                  *animations_active; /**< Writable animation flag owned by the caller. */
-	bool                   is_dark;           /**< Current theme is dark. */
-	FluxFillSink          *fill_sink;         /**< Compositor-animated fill target, or NULL (classic path). */
+	double                 now;
+	float                  dt;
+	bool                  *animations_active;
+	bool                   is_dark;
+	FluxFillSink          *fill_sink;
 };
 
 typedef struct FluxEllipseSpec {
@@ -116,17 +90,6 @@ static inline D2D1_ROUNDED_RECT flux_rounded_rect(FluxRect const *r, float radiu
 	return rr;
 }
 
-static inline D2D1_ROUNDED_RECT flux_rounded_rect_inset(FluxRect const *r, float radius, float inset) {
-	D2D1_ROUNDED_RECT rr;
-	rr.rect.left   = r->x + inset;
-	rr.rect.top    = r->y + inset;
-	rr.rect.right  = r->x + r->w - inset;
-	rr.rect.bottom = r->y + r->h - inset;
-	rr.radiusX     = radius > inset ? radius - inset : 0.0f;
-	rr.radiusY     = radius > inset ? radius - inset : 0.0f;
-	return rr;
-}
-
 static inline D2D1_ELLIPSE flux_ellipse(FluxEllipseSpec const *spec) {
 	D2D1_ELLIPSE e;
 	e.point.x = spec->cx;
@@ -168,31 +131,6 @@ static void inline flux_fill_rect(FluxRenderCtx const *rc, FluxRect const *r, Fl
 	ID2D1RenderTarget_FillRectangle(rt, &dr, ( ID2D1Brush * ) rc->brush);
 }
 
-/** @brief Fill a rect with a left→right linear gradient between two colors. */
-static void inline flux_fill_h_gradient(FluxRenderCtx const *rc, FluxRect const *r, FluxColor left, FluxColor right) {
-	ID2D1RenderTarget *rt = FLUX_RT(rc);
-	D2D1_GRADIENT_STOP stops [2];
-	stops [0].position                      = 0.0f;
-	stops [0].color                         = flux_d2d_color(left);
-	stops [1].position                      = 1.0f;
-	stops [1].color                         = flux_d2d_color(right);
-
-	ID2D1GradientStopCollection *collection = NULL;
-	ID2D1RenderTarget_CreateGradientStopCollection(rt, stops, 2, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &collection);
-	if (!collection) return;
-
-	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp   = {flux_point(r->x, r->y), flux_point(r->x + r->w, r->y)};
-	ID2D1LinearGradientBrush             *grad = NULL;
-	/* NULL brush properties = identity transform + opacity 1.0. */
-	ID2D1RenderTarget_CreateLinearGradientBrush(rt, &gp, NULL, collection, &grad);
-	ID2D1GradientStopCollection_Release(collection);
-	if (!grad) return;
-
-	D2D1_RECT_F dr = flux_d2d_rect(r);
-	ID2D1RenderTarget_FillRectangle(rt, &dr, ( ID2D1Brush * ) grad);
-	ID2D1LinearGradientBrush_Release(grad);
-}
-
 static void inline flux_fill_ellipse(FluxRenderCtx const *rc, FluxEllipseSpec const *spec, FluxColor color) {
 	D2D1_ELLIPSE       e  = flux_ellipse(spec);
 	ID2D1RenderTarget *rt = FLUX_RT(rc);
@@ -215,26 +153,6 @@ static void inline flux_draw_line(FluxRenderCtx const *rc, FluxLineSpec const *l
 	ID2D1RenderTarget_DrawLine(
 	  rt, flux_point(line->x0, line->y0), flux_point(line->x1, line->y1), ( ID2D1Brush * ) rc->brush, width, NULL
 	);
-}
-
-static void inline flux_fill_background(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
-	if (flux_color_af(snap->background) <= 0.0f) return;
-	if (snap->corner_radius > 0.0f) flux_fill_rounded_rect(rc, bounds, snap->corner_radius, snap->background);
-	else flux_fill_rect(rc, bounds, snap->background);
-}
-
-static void inline flux_stroke_border(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
-	if (snap->border_width <= 0.0f || flux_color_af(snap->border_color) <= 0.0f) return;
-	float    half  = snap->border_width * 0.5f;
-	FluxRect inset = {bounds->x + half, bounds->y + half, bounds->w - half * 2.0f, bounds->h - half * 2.0f};
-	if (snap->corner_radius > 0.0f)
-		flux_draw_rounded_rect(rc, &inset, snap->corner_radius, snap->border_color, snap->border_width);
-	else {
-		D2D1_RECT_F        dr = flux_d2d_rect(&inset);
-		ID2D1RenderTarget *rt = FLUX_RT(rc);
-		flux_set_brush(rc, snap->border_color);
-		ID2D1RenderTarget_DrawRectangle(rt, &dr, ( ID2D1Brush * ) rc->brush, snap->border_width, NULL);
-	}
 }
 
 #endif

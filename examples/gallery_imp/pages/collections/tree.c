@@ -1,83 +1,57 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include "host/flux_prop_apply.h"
-#include "virtual.h"
 
-static void on_tree_select(void *ud, int flat, bool selected) {
-	if (!selected) return;
-	GalleryBind *b = ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = flat});
+static XtkTreeNodeDesc const kDocs []     = {{.text = "Proposal.docx"}, {.text = "Budget.xlsx"}};
+static XtkTreeNodeDesc const kPictures [] = {{.text = "Vacation"}, {.text = "Screenshots"}};
+
+static char const           *select_text(GalleryApp *g) {
+	return g->model.tree_sel >= 0 ? gallery_fmt(g, "Selected flat row: %d", g->model.tree_sel) : "Nothing selected.";
 }
 
-static void on_tree_expand(void *ud, int flat, bool expanded) {
-	GalleryBind *b = ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = expanded ? flat : -1 - flat});
+static char const *invoke_text(GalleryApp *g) {
+	return g->model.tree_invoke >= 0 ? gallery_fmt(g, "Last invoked: %d", g->model.tree_invoke)
+	                                 : "Double-click a row to invoke.";
 }
 
-static void tree_add_nodes(GalleryApp *g, XentNodeId tree) {
-	FluxStore *store = gallery_store(g);
-	int        docs  = flux_tree_add_node(store, tree, -1, "Documents", "Folder");
-	if (docs >= 0) {
-		flux_tree_set_expanded(store, tree, docs, true);
-		flux_tree_add_node(store, tree, docs, "Proposal.docx", NULL);
-		flux_tree_add_node(store, tree, docs, "Budget.xlsx", NULL);
-	}
-	int pics = flux_tree_add_node(store, tree, -1, "Pictures", "Pictures");
-	if (pics >= 0) {
-		flux_tree_add_node(store, tree, pics, "Vacation", NULL);
-		flux_tree_add_node(store, tree, pics, "Screenshots", NULL);
-	}
-	flux_tree_add_node(store, tree, -1, "Music", "MusicNote");
+static void tree_sync(GalleryApp *g) {
+	gallery_settext(g, g->live_output [MSG_TREE_SELECT], select_text(g));
+	gallery_settext(g, g->live_output [MSG_TREE_INVOKE], invoke_text(g));
 }
 
-void page_tree_view(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_tree_view_sync);
-	Model const *m   = &g->model;
-	char const  *sel = m->tree_sel >= 0 ? gallery_fmt(g, "Selected flat row: %d", m->tree_sel) : "Nothing selected.";
-	char const  *inv
-	  = m->tree_invoke >= 0 ? gallery_fmt(g, "Last invoked: %d", m->tree_invoke) : "Double-click a row to invoke.";
-	g_page_header(
-	  g, parent, "TreeView",
+bool page_tree_view_build(PageBuild *b) {
+	page_sync(b, tree_sync);
+	Model const          *m         = &b->app->model;
+	XtkTreeNodeDesc const roots [3] = {
+	  {.text = "Documents", .icon = "Folder", .expanded = m->tree_docs_expanded, .children = kDocs, .child_count = 2},
+	  {.text         = "Pictures",
+	   .icon        = "Pictures",
+	   .expanded    = m->tree_pictures_expanded,
+	   .children    = kPictures,
+	   .child_count = 2},
+	  {.text = "Music", .icon = "MusicNote"},
+	};
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(
+	  b, parent, "TreeView",
 	  "Hierarchical data flattened into a virtualized list. Chevron toggles expand; row selects and invokes."
 	);
-	{
-		XentNodeId   ex          = g_example(g, parent, "Sample folder tree.");
-		XentNodeId   col         = g_col(g, ex, 12.0f, 0, 0, 0, 0);
-		GalleryBind *select_bind = gallery_bind(g, MSG_TREE_SELECT);
-		GalleryBind *invoke_bind = gallery_bind(g, MSG_TREE_INVOKE);
-		GalleryBind *expand_bind = gallery_bind(g, MSG_TREE_EXPAND);
-		XentNodeId   tree        = flux_tree_init(&(FluxTreeViewDesc) {
-		  .ctx        = gallery_ctx(g),
-		  .store      = gallery_store(g),
-		  .parent     = col,
-		  .window     = flux_app_window(g->flux),
-		  .input      = flux_app_input(g->flux),
-		  .row_height = 28.0f,
-		  .on_select  = on_tree_select,
-		  .select_ctx = select_bind,
-		  .on_invoke  = gallery_list_invoke,
-		  .invoke_ctx = invoke_bind,
-		  .on_expand  = on_tree_expand,
-		  .expand_ctx = expand_bind,
-		});
-		xent_seth(gallery_ctx(g), tree, 280.0f);
-		tree_add_nodes(g, tree);
-		g->live_control [MSG_TREE_SELECT] = tree;
-		g->live_output [MSG_TREE_SELECT]  = g_text(g, col, sel, 13.0f, FLUX_FONT_REGULAR);
-		g->live_output [MSG_TREE_INVOKE]  = g_text(g, col, inv, 13.0f, FLUX_FONT_REGULAR);
-	}
-}
-
-void page_tree_view_sync(GalleryApp *g) {
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_TREE_SELECT],
-	  g->model.tree_sel >= 0 ? gallery_fmt(g, "Selected flat row: %d", g->model.tree_sel) : "Nothing selected."
+	XtkNodeRef col = xtk_ref_local(
+	  ui_column(&b->txn, page_example(b, parent, "Sample folder tree."), 12.0f, XENT_FLEX_ALIGN_STRETCH)
 	);
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_TREE_INVOKE],
-	  g->model.tree_invoke >= 0 ? gallery_fmt(g, "Last invoked: %d", g->model.tree_invoke)
-								: "Double-click a row to invoke."
+	XtkLocalId tree = xtk_tree_create(
+	  &b->txn, col,
+	  &(XtkTreeProps) {
+		.set   = XTK_TREE_H_MASK | XTK_TREE_SEL_MASK | XTK_TREE_ITEMH_MASK,
+		.h     = 280.0f,
+		.sel   = m->tree_sel,
+		.itemh = 28.0f,
+	  }
 	);
+	XtkNodeRef ref = xtk_ref_local(tree);
+	xtk_txn_settree(&b->txn, ref, &(XtkTreeDesc) {.roots = roots, .nroot = 3, .sel = m->tree_sel});
+	page_on(b, tree, XTK_EVENT_TREE_SELECT, MSG_TREE_SELECT, 0);
+	page_on(b, tree, XTK_EVENT_TREE_EXPAND, MSG_TREE_EXPAND, 0);
+	xtk_tree_oninvoke(&b->txn, ref, page_post, page_bind(b, MSG_TREE_INVOKE));
+	page_keepout(b, MSG_TREE_SELECT, page_note(b, col, select_text(b->app)));
+	page_keepout(b, MSG_TREE_INVOKE, page_note(b, col, invoke_text(b->app)));
+	return true;
 }

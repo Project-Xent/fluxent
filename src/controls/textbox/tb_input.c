@@ -53,6 +53,7 @@ static bool tb_show_trailing_button(FluxTextBoxInputData const *tb, FluxNodeData
 }
 
 static float tb_reserved_trailing_w(FluxTextBoxInputData const *tb, FluxControlType ct, FluxNodeData const *nd) {
+	if (tb->base.combo_editor) return FLUX_COMBO_EDITOR_RESERVE;
 	bool show_clear  = tb_show_trailing_button(tb, nd, false);
 	bool show_reveal = tb_show_trailing_button(tb, nd, true);
 
@@ -76,6 +77,7 @@ static float tb_calc_text_max_w(FluxTextBoxInputData *tb, FluxControlType ct) {
 }
 
 static void tb_set_cursor(FluxTextBoxInputData *tb, uint32_t pos, bool extend_selection) {
+	tb->caret_column_held    = false;
 	tb->base.cursor_position = pos;
 	if (extend_selection) {
 		tb->base.selection_end = pos;
@@ -112,6 +114,79 @@ static void tb_move_horizontal(FluxTextBoxInputData *tb, bool forward, bool ctrl
 static void tb_move_to_edge(FluxTextBoxInputData *tb, bool end, bool shift) {
 	tb_set_cursor(tb, end ? tb->buf_len : 0, shift);
 	tb_update_scroll(tb);
+}
+
+static bool tb_caret_geometry(FluxTextBoxInputData *tb, FluxRect *out) {
+	FluxText *tr = tb->app ? flux_app_text(tb->app) : NULL;
+	if (!tr) return false;
+
+	XentRect rect = {0};
+	xent_layout_rect(tb->ctx, tb->node, &rect);
+	float visible_w = tb_calc_text_max_w(tb, flux_node_type(tb->store, tb->node));
+	if (visible_w <= 0.0f) return false;
+
+	FluxTextStyle      ts      = tb_make_style(tb);
+	char const        *content = tb_sync_content(tb);
+	uint32_t           u16     = flux_utf8_to_utf16_offset(content, tb->buf_len, tb->base.cursor_position);
+	FluxTextCaretQuery query   = {
+	  {tr, content, &ts, tb_layout_width(tb, visible_w)},
+      ( int ) u16
+    };
+	*out = flux_text_caret(&query);
+	return true;
+}
+
+static uint32_t tb_offset_at_point(FluxTextBoxInputData *tb, float text_x, float text_y) {
+	FluxText *tr = tb->app ? flux_app_text(tb->app) : NULL;
+	if (!tr) return tb->base.cursor_position;
+
+	float visible_w = tb_calc_text_max_w(tb, flux_node_type(tb->store, tb->node));
+	if (visible_w <= 0.0f) return tb->base.cursor_position;
+
+	FluxTextStyle        ts      = tb_make_style(tb);
+	char const          *content = tb_sync_content(tb);
+	FluxTextHitTestQuery query   = {
+	  {tr, content, &ts, tb_layout_width(tb, visible_w)},
+      text_x, text_y
+    };
+	return flux_utf16_to_utf8_offset(content, tb->buf_len, ( uint32_t ) flux_text_hittest(&query));
+}
+
+static float tb_vertical_column(FluxTextBoxInputData *tb, FluxRect const *caret) {
+	if (tb->caret_column_held) return tb->caret_column_x;
+	tb->caret_column_x    = caret->x;
+	tb->caret_column_held = true;
+	return caret->x;
+}
+
+static void tb_move_vertical(FluxTextBoxInputData *tb, bool down, float page, bool shift) {
+	FluxRect caret = {0};
+	if (!tb_caret_geometry(tb, &caret)) return;
+
+	float line_h = caret.h > 0.0f ? caret.h : (tb->base.font_size > 0.0f ? tb->base.font_size : 14.0f) * 1.2f;
+	float step   = page > 0.0f ? page : (down ? line_h : 1.0f);
+	float column = tb_vertical_column(tb, &caret);
+	float target = down ? caret.y + step : caret.y - step;
+
+	tb_set_cursor(tb, tb_offset_at_point(tb, column, target), shift);
+	tb_update_scroll(tb);
+	tb->caret_column_held = true;
+}
+
+static void tb_move_line_edge(FluxTextBoxInputData *tb, bool end, bool shift) {
+	FluxRect caret = {0};
+	if (!tb_caret_geometry(tb, &caret)) return;
+
+	float x = end ? 1.0e6f : 0.0f;
+	tb_set_cursor(tb, tb_offset_at_point(tb, x, caret.y), shift);
+	tb_update_scroll(tb);
+}
+
+static float tb_page_step(FluxTextBoxInputData *tb) {
+	XentRect rect = {0};
+	xent_layout_rect(tb->ctx, tb->node, &rect);
+	float page = tb_visible_text_height(tb, &rect);
+	return page > 0.0f ? page : 0.0f;
 }
 
 static void tb_delete_selection_or_cursor(FluxTextBoxInputData *tb, bool backward) {
@@ -213,9 +288,11 @@ static char const *tb_password_mask_text(FluxTextBoxInputData *tb, char stack [T
 	return dst;
 }
 
-static uint32_t tb_hit_test_byte_pos(FluxTextBoxInputData *tb, FluxText *tr, FluxControlType ct, float local_x) {
+static uint32_t
+tb_hit_test_byte_pos(FluxTextBoxInputData *tb, FluxText *tr, FluxControlType ct, float local_x, float local_y) {
 	float         max_w    = tb_calc_text_max_w(tb, ct);
 	float         text_x   = local_x - FLUX_TEXTBOX_PAD_L + tb->base.scroll_offset_x;
+	float         text_y   = local_y - FLUX_TEXTBOX_PAD_T + tb->base.scroll_offset_y;
 	FluxTextStyle ts       = tb_make_style(tb);
 	char const   *content  = tb_sync_content(tb);
 
@@ -226,14 +303,14 @@ static uint32_t tb_hit_test_byte_pos(FluxTextBoxInputData *tb, FluxText *tr, Flu
 	if (use_mask) hit_text = tb_password_mask_text(tb, mask_buf, &mask_heap);
 
 	FluxTextHitTestQuery query = {
-	  {tr, hit_text, &ts, max_w + tb->base.scroll_offset_x},
-      text_x, 0.0f
+	  {tr, hit_text, &ts, tb_layout_width(tb, max_w)},
+      text_x, tb->base.multiline ? text_y : 0.0f
     };
 	int u16_pos = flux_text_hittest(&query);
-	if (!use_mask) return tb_utf16_to_byte_offset(content, tb->buf_len, ( uint32_t ) u16_pos);
+	if (!use_mask) return flux_utf16_to_utf8_offset(content, tb->buf_len, ( uint32_t ) u16_pos);
 
 	uint32_t mask_len  = ( uint32_t ) strlen(hit_text);
-	uint32_t mask_byte = tb_utf16_to_byte_offset(hit_text, mask_len, ( uint32_t ) u16_pos);
+	uint32_t mask_byte = flux_utf16_to_utf8_offset(hit_text, mask_len, ( uint32_t ) u16_pos);
 	uint32_t original  = pb_mask_offset_to_original(content, tb->buf_len, mask_byte);
 	free(mask_heap);
 	return original;
@@ -322,12 +399,33 @@ static void tb_apply_click_selection(FluxTextBoxInputData *tb, uint32_t byte_pos
 	tb->drag_anchor = tb->base.selection_start;
 }
 
+static void tb_handle_home_end(FluxTextBoxInputData *tb, bool end, bool shift, bool ctrl) {
+	if (ctrl || !tb->base.multiline) tb_move_to_edge(tb, end, shift);
+	else tb_move_line_edge(tb, end, shift);
+}
+
+static bool tb_owns_vertical_keys(FluxTextBoxInputData *tb) { return tb->base.multiline && !nb_is_number_box(tb); }
+
+static bool tb_handle_vertical_key(FluxTextBoxInputData *tb, FluxKey key, bool shift) {
+	if (!tb_owns_vertical_keys(tb)) return false;
+
+	switch (key) {
+	case FLUX_KEY_UP        : tb_move_vertical(tb, false, 0.0f, shift); return true;
+	case FLUX_KEY_DOWN      : tb_move_vertical(tb, true, 0.0f, shift); return true;
+	case FLUX_KEY_PAGE_UP   : tb_move_vertical(tb, false, tb_page_step(tb), shift); return true;
+	case FLUX_KEY_PAGE_DOWN : tb_move_vertical(tb, true, tb_page_step(tb), shift); return true;
+	default                 : return false;
+	}
+}
+
 static bool tb_handle_navigation_key(FluxTextBoxInputData *tb, FluxKey key, bool shift, bool ctrl) {
+	if (tb_handle_vertical_key(tb, key, shift)) return true;
+
 	switch (key) {
 	case FLUX_KEY_LEFT  : tb_move_horizontal(tb, false, ctrl, shift); return true;
 	case FLUX_KEY_RIGHT : tb_move_horizontal(tb, true, ctrl, shift); return true;
-	case FLUX_KEY_HOME  : tb_move_to_edge(tb, false, shift); return true;
-	case FLUX_KEY_END   : tb_move_to_edge(tb, true, shift); return true;
+	case FLUX_KEY_HOME  : tb_handle_home_end(tb, false, shift, ctrl); return true;
+	case FLUX_KEY_END   : tb_handle_home_end(tb, true, shift, ctrl); return true;
 	default             : return false;
 	}
 }
@@ -352,9 +450,27 @@ static void tb_submit_if_needed(FluxTextBoxInputData *tb, FluxKey key) {
 	if (key == FLUX_KEY_ENTER && tb->base.on_submit) tb->base.on_submit(tb->base.on_submit_ctx);
 }
 
+static bool tb_insert_newline(FluxTextBoxInputData *tb) {
+	if (!tb->base.multiline || tb->base.readonly) return false;
+	if (!tb_insert_would_fit(tb, 1)) return true;
+
+	tb_push_undo(tb);
+	tb->last_op_was_typing = false;
+	if (tb_has_selection(tb)) tb_delete_selection(tb);
+
+	uint32_t at = tb->base.cursor_position;
+	tb_insert_utf8(tb, at, "\n", 1u);
+	tb_set_cursor(tb, at + 1u, false);
+	tb_update_scroll(tb);
+	tb_update_ime_position(tb);
+	tb_notify_change(tb);
+	return true;
+}
+
 static bool tb_handle_submit_key(FluxTextBoxInputData *tb, FluxKey key) {
 	if (!tb_is_submit_key(key)) return false;
 	if (tb_handle_number_key(tb, key)) return true;
+	if (key == FLUX_KEY_ENTER && tb_insert_newline(tb)) return true;
 	tb_submit_if_needed(tb, key);
 	return true;
 }
@@ -437,11 +553,10 @@ void tb_on_pointer_move(void *ctx, float local_x, float local_y) {
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
 	FluxText             *tr = tb->app ? flux_app_text(tb->app) : NULL;
 	if (!tb->base.enabled || !tr) return;
-	( void ) local_y;
 
 	uint32_t        old_cursor = tb->base.cursor_position;
 	FluxControlType ct         = flux_node_type(tb->store, tb->node);
-	uint32_t        byte_pos   = tb_hit_test_byte_pos(tb, tr, ct, local_x);
+	uint32_t        byte_pos   = tb_hit_test_byte_pos(tb, tr, ct, local_x, local_y);
 	tb_apply_pointer_position(tb, byte_pos);
 	if (tb->dragging && tb->base.cursor_position != old_cursor) {
 		tb_update_scroll(tb);
@@ -453,7 +568,6 @@ void tb_on_pointer_down(void *ctx, float local_x, float local_y, int click_count
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
 	FluxText             *tr = tb->app ? flux_app_text(tb->app) : NULL;
 	if (!tb->base.enabled || !tr) return;
-	( void ) local_y;
 
 	uint32_t        old_cursor = tb->base.cursor_position;
 	FluxControlType ct         = flux_node_type(tb->store, tb->node);
@@ -463,7 +577,7 @@ void tb_on_pointer_down(void *ctx, float local_x, float local_y, int click_count
 
 	tb_prepare_number_pointer(tb);
 
-	uint32_t byte_pos = tb_hit_test_byte_pos(tb, tr, ct, local_x);
+	uint32_t byte_pos = tb_hit_test_byte_pos(tb, tr, ct, local_x, local_y);
 	tb_apply_click_selection(tb, byte_pos, click_count);
 
 	if (tb->base.cursor_position != old_cursor) tb_update_ime_position(tb);

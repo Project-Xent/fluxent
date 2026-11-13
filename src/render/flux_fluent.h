@@ -1,25 +1,14 @@
-/**
- * @file flux_fluent.h
- * @brief WinUI 3 Fluent Design constants and rendering utilities.
- *
- * This header provides:
- * - Design token constants (sizes, padding, animation durations)
- * - Fallback color functions (when FluxThemeColors is unavailable)
- * - Common rendering helpers (rounded rects, focus rings, elevation)
- *
- * @note All dimensions are in DIPs (device-independent pixels).
- */
 #ifndef FLUX_FLUENT_H
 #define FLUX_FLUENT_H
 
 #include "flux_render_internal.h"
 #include <math.h>
 
-#define FLUX_CORNER_RADIUS             4.0f  /**< Default control corner radius */
-#define FLUX_STROKE_WIDTH              1.0f  /**< Default border stroke width */
-#define FLUX_PIXEL_SNAP                0.5f  /**< Sub-pixel offset for crisp lines */
-#define FLUX_FONT_SIZE_DEFAULT         14.0f /**< BodyTextBlockStyle font size */
-#define FLUX_VISIBILITY_THRESHOLD      0.01f /**< Minimum alpha for visibility */
+#define FLUX_CORNER_RADIUS             4.0f
+#define FLUX_STROKE_WIDTH              1.0f
+#define FLUX_PIXEL_SNAP                0.5f
+#define FLUX_FONT_SIZE_DEFAULT         14.0f
+#define FLUX_VISIBILITY_THRESHOLD      0.01f
 
 #define FLUX_FOCUS_OUTER_PAD           2.0f
 #define FLUX_FOCUS_OUTER_THICK         2.0f
@@ -33,11 +22,9 @@
 #define FLUX_BTN_CONTENT_GAP           8.0f
 #define FLUX_BTN_ICON_SIZE_MUL         1.14f
 
-#define FLUX_SLIDER_TRACK_H            4.0f
-#define FLUX_SLIDER_THUMB_SIZE         18.0f
 #define FLUX_SLIDER_INNER_THUMB        12.0f
 #define FLUX_SLIDER_SCALE_NORMAL       0.86f
-#define FLUX_SLIDER_SCALE_HOVER        1.0f
+#define FLUX_SLIDER_SCALE_HOVER        1.167f
 #define FLUX_SLIDER_SCALE_PRESSED      0.71f
 
 #define FLUX_TOGGLE_WIDTH              40.0f
@@ -69,6 +56,8 @@
 #define FLUX_TEXTBOX_PAD_T             5.0f
 #define FLUX_TEXTBOX_PAD_R             6.0f
 #define FLUX_TEXTBOX_PAD_B             6.0f
+#define FLUX_COMBO_GLYPH_COL           38.0f
+#define FLUX_COMBO_EDITOR_RESERVE      32.0f
 
 #define FLUX_ELEVATION_HEIGHT          3.0f
 #define FLUX_ELEVATION_STOP1           0.33f
@@ -78,89 +67,11 @@
 #define FLUX_INTERACTION_PRESSED_ALPHA 0.8f
 #define FLUX_INTERACTION_HOVER_ALPHA   0.9f
 
-#define FLUX_ANIM_FAST                 0.083  /**< ~83ms — quick transitions */
-#define FLUX_ANIM_NORMAL               0.167  /**< ~167ms — hover/focus */
-#define FLUX_ANIM_SLOW                 0.250  /**< ~250ms — color fades */
-#define FLUX_ANIM_VALUE_EPS            0.001f /**< Threshold for "close enough" */
+#define FLUX_ANIM_FAST                 0.083
+#define FLUX_ANIM_NORMAL               0.167
+#define FLUX_ANIM_SLOW                 0.250
+#define FLUX_ANIM_VALUE_EPS            0.001f
 
-static FluxColor inline ft_ctrl_fill_default(void) { return flux_color_rgba(255, 255, 255, 0xb3); }
-
-static FluxColor inline ft_ctrl_fill_secondary(void) { return flux_color_rgba(249, 249, 249, 0x80); }
-
-static FluxColor inline ft_ctrl_fill_tertiary(void) { return flux_color_rgba(249, 249, 249, 0x4d); }
-
-static FluxColor inline ft_ctrl_fill_disabled(void) { return flux_color_rgba(249, 249, 249, 0x4d); }
-
-static FluxColor inline ft_ctrl_fill_input_active(void) { return flux_color_rgba(255, 255, 255, 0xff); }
-
-static FluxColor inline ft_ctrl_alt_fill_secondary(void) { return flux_color_rgba(0, 0, 0, 0x06); }
-
-static FluxColor inline ft_ctrl_alt_fill_tertiary(void) { return flux_color_rgba(0, 0, 0, 0x0f); }
-
-static FluxColor inline ft_ctrl_alt_fill_quarternary(void) { return flux_color_rgba(0, 0, 0, 0x12); }
-
-static FluxColor inline ft_ctrl_alt_fill_disabled(void) { return flux_color_rgba(0, 0, 0, 0x00); }
-
-static FluxColor inline ft_subtle_fill_secondary(void) { return flux_color_rgba(0, 0, 0, 0x09); }
-
-static FluxColor inline ft_subtle_fill_tertiary(void) { return flux_color_rgba(0, 0, 0, 0x06); }
-
-static FluxColor inline ft_ctrl_stroke_default(void) { return flux_color_rgba(0, 0, 0, 0x0f); }
-
-static FluxColor inline ft_ctrl_stroke_secondary(void) { return flux_color_rgba(0, 0, 0, 0x29); }
-
-static FluxColor inline ft_ctrl_stroke_on_accent_default(void) { return flux_color_rgba(0, 0, 0, 0x24); }
-
-static FluxColor inline ft_ctrl_stroke_on_accent_secondary(void) { return flux_color_rgba(255, 255, 255, 0x14); }
-
-static FluxColor inline ft_ctrl_strong_stroke_default(void) { return flux_color_rgba(0, 0, 0, 0x9c); }
-
-static FluxColor inline ft_ctrl_strong_stroke_disabled(void) { return flux_color_rgba(0, 0, 0, 0x37); }
-
-static FluxColor inline ft_ctrl_solid_fill_default(void) { return flux_color_rgba(255, 255, 255, 0xff); }
-
-static FluxColor inline ft_ctrl_strong_fill_default(void) { return flux_color_rgba(0, 0, 0, 0x9c); }
-
-static FluxColor inline ft_ctrl_strong_fill_disabled(void) { return flux_color_rgba(0, 0, 0, 0x51); }
-
-static FluxColor inline ft_accent_default(void) { return flux_color_rgb(0, 120, 212); }
-
-static FluxColor inline ft_accent_secondary(void) { return flux_color_rgba(0, 120, 212, 0xe6); }
-
-static FluxColor inline ft_accent_tertiary(void) { return flux_color_rgba(0, 120, 212, 0xcc); }
-
-static FluxColor inline ft_accent_disabled(void) { return flux_color_rgba(0, 0, 0, 0x37); }
-
-static FluxColor inline ft_text_primary(void) { return flux_color_rgba(0, 0, 0, 0xe4); }
-
-static FluxColor inline ft_text_secondary(void) { return flux_color_rgba(0, 0, 0, 0x9e); }
-
-static FluxColor inline ft_text_disabled(void) { return flux_color_rgba(0, 0, 0, 0x5c); }
-
-static FluxColor inline ft_text_on_accent_primary(void) { return flux_color_rgb(255, 255, 255); }
-
-static FluxColor inline ft_text_on_accent_secondary(void) { return flux_color_rgba(255, 255, 255, 0xb3); }
-
-static FluxColor inline ft_text_on_accent_disabled(void) { return flux_color_rgb(255, 255, 255); }
-
-static FluxColor inline ft_card_bg_default(void) { return flux_color_rgba(255, 255, 255, 0xb3); }
-
-static FluxColor inline ft_card_stroke_default(void) { return flux_color_rgba(0, 0, 0, 0x0f); }
-
-static FluxColor inline ft_divider_stroke_default(void) { return flux_color_rgba(0, 0, 0, 0x14); }
-
-static FluxColor inline ft_focus_stroke_outer(void) { return flux_color_rgba(0, 0, 0, 0xe4); }
-
-static FluxColor inline ft_focus_stroke_inner(void) { return flux_color_rgb(255, 255, 255); }
-
-static FluxColor inline ft_transparent(void) { return flux_color_rgba(0, 0, 0, 0); }
-
-/**
- * @brief Per-interaction-state color tokens, resolved by flux_resolve_state_color.
- *
- * Expresses "which token for which state" as data instead of an if/else chain,
- * so retargeting a design system becomes swapping the map, not editing renderers.
- */
 typedef struct FluxStateColorMap {
 	FluxColor disabled;
 	FluxColor focused;
@@ -168,7 +79,6 @@ typedef struct FluxStateColorMap {
 	FluxColor normal;
 } FluxStateColorMap;
 
-/** @brief Resolve a state color with WinUI precedence: disabled > focused > hovered > normal. */
 static FluxColor inline flux_resolve_state_color(FluxStateColorMap const *m, bool enabled, bool focused, bool hovered) {
 	if (!enabled) return m->disabled;
 	if (focused) return m->focused;
@@ -176,13 +86,12 @@ static FluxColor inline flux_resolve_state_color(FluxStateColorMap const *m, boo
 	return m->normal;
 }
 
-/** @brief WinUI input-chrome fill (TextBox/PasswordBox/NumberBox), resolved by state. */
 static FluxColor inline flux_input_fill_color(FluxThemeColors const *t, bool enabled, bool focused, bool hovered) {
 	FluxStateColorMap m = {
-	  .disabled = t ? t->ctrl_fill_disabled : ft_ctrl_fill_disabled(),
-	  .focused  = t ? t->ctrl_fill_input_active : ft_ctrl_fill_input_active(),
-	  .hovered  = t ? t->ctrl_fill_secondary : ft_ctrl_fill_secondary(),
-	  .normal   = t ? t->ctrl_fill_default : ft_ctrl_fill_default(),
+	  .disabled = t->ctrl_fill_disabled,
+	  .focused  = t->ctrl_fill_input_active,
+	  .hovered  = t->ctrl_fill_secondary,
+	  .normal   = t->ctrl_fill_default,
 	};
 	return flux_resolve_state_color(&m, enabled, focused, hovered);
 }
@@ -212,97 +121,20 @@ static FluxRect inline flux_snap_bounds(FluxRect const *bounds, float sx, float 
 	return r;
 }
 
-static void inline flux_draw_focus_rect(FluxRenderCtx const *rc, FluxRect const *bounds, float radius) {
-	FluxRect outer = {
-	  bounds->x - FLUX_FOCUS_OUTER_PAD, bounds->y - FLUX_FOCUS_OUTER_PAD, bounds->w + FLUX_FOCUS_OUTER_PAD * 2.0f,
-	  bounds->h + FLUX_FOCUS_OUTER_PAD * 2.0f};
-	float outer_r = radius + FLUX_FOCUS_OUTER_PAD - 1.0f;
-	if (outer_r < 0.0f) outer_r = 0.0f;
-	flux_draw_rounded_rect(rc, &outer, outer_r, ft_focus_stroke_outer(), FLUX_FOCUS_OUTER_THICK);
-
-	FluxRect inner = {
-	  bounds->x - FLUX_FOCUS_INNER_PAD, bounds->y - FLUX_FOCUS_INNER_PAD, bounds->w + FLUX_FOCUS_INNER_PAD * 2.0f,
-	  bounds->h + FLUX_FOCUS_INNER_PAD * 2.0f};
-	float inner_r = radius + FLUX_FOCUS_INNER_PAD;
-	flux_draw_rounded_rect(rc, &inner, inner_r, ft_focus_stroke_inner(), FLUX_FOCUS_INNER_THICK);
-}
-
-typedef struct FluxSliderLayout {
-	FluxRect track_rect;
-	FluxRect value_rect;
-	FluxRect thumb_rect;
-	float    thumb_center_x;
-	float    track_width;
-	float    track_start_x;
-} FluxSliderLayout;
-
-static FluxSliderLayout inline flux_calc_slider_layout(
-  FluxRect const *bounds, float min_val, float max_val, float value
-) {
-	FluxSliderLayout l;
-	float            val         = flux_clampf(value, min_val, max_val);
-	float            range       = max_val - min_val;
-	float            pct         = (range > 0.0f) ? (val - min_val) / range : 0.0f;
-
-	float            cy          = bounds->y + bounds->h * 0.5f;
-	float            outer_r     = FLUX_SLIDER_THUMB_SIZE * 0.5f;
-	float            track_left  = bounds->x + outer_r;
-	float            track_right = bounds->x + bounds->w - outer_r;
-	float            track_w     = flux_maxf(0.0f, track_right - track_left);
-
-	l.track_width                = track_w;
-	l.track_start_x              = track_left;
-	l.thumb_center_x             = track_left + pct * track_w;
-
-	l.track_rect.x               = bounds->x;
-	l.track_rect.y               = cy - FLUX_SLIDER_TRACK_H * 0.5f;
-	l.track_rect.w               = bounds->w;
-	l.track_rect.h               = FLUX_SLIDER_TRACK_H;
-
-	l.value_rect.x               = bounds->x;
-	l.value_rect.y               = cy - FLUX_SLIDER_TRACK_H * 0.5f;
-	l.value_rect.w               = l.thumb_center_x - bounds->x;
-	l.value_rect.h               = FLUX_SLIDER_TRACK_H;
-
-	l.thumb_rect.x               = l.thumb_center_x - outer_r;
-	l.thumb_rect.y               = cy - outer_r;
-	l.thumb_rect.w               = FLUX_SLIDER_THUMB_SIZE;
-	l.thumb_rect.h               = FLUX_SLIDER_THUMB_SIZE;
-
-	return l;
-}
-
 typedef struct FluxCheckboxLayout {
 	FluxRect box_rect;
 	FluxRect text_rect;
 	float    glyph_size;
 } FluxCheckboxLayout;
 
-static FluxCheckboxLayout inline flux_calc_checkbox_layout(
-  FluxRect const *bounds, float size, float gap, float glyph_font_size
-) {
-	FluxCheckboxLayout l;
-	float              cy = bounds->y + bounds->h * 0.5f;
-	l.box_rect.x          = bounds->x;
-	l.box_rect.y          = cy - size * 0.5f;
-	l.box_rect.w          = size;
-	l.box_rect.h          = size;
-	l.glyph_size          = glyph_font_size;
-	l.text_rect.x         = bounds->x + size + gap;
-	l.text_rect.y         = bounds->y;
-	l.text_rect.w         = flux_maxf(0.0f, bounds->w - (size + gap));
-	l.text_rect.h         = bounds->h;
-	return l;
-}
-
 static FluxColor inline flux_elevation_secondary(FluxRenderCtx const *rc, bool is_accent) {
-	if (is_accent) return rc->theme ? rc->theme->ctrl_stroke_on_accent_secondary : ft_ctrl_stroke_on_accent_secondary();
-	return rc->theme ? rc->theme->ctrl_stroke_secondary : ft_ctrl_stroke_secondary();
+	FluxThemeColors const *t = rc->theme ? rc->theme : flux_theme_defaults();
+	return is_accent ? t->ctrl_stroke_on_accent_secondary : t->ctrl_stroke_secondary;
 }
 
 static FluxColor inline flux_elevation_primary(FluxRenderCtx const *rc, bool is_accent) {
-	if (is_accent) return rc->theme ? rc->theme->ctrl_stroke_on_accent_default : ft_ctrl_stroke_on_accent_default();
-	return rc->theme ? rc->theme->ctrl_stroke_default : ft_ctrl_stroke_default();
+	FluxThemeColors const *t = rc->theme ? rc->theme : flux_theme_defaults();
+	return is_accent ? t->ctrl_stroke_on_accent_default : t->ctrl_stroke_default;
 }
 
 static void inline flux_elevation_band(FluxRect const *bounds, bool flip, float *band_start, float *band_end) {
@@ -310,21 +142,6 @@ static void inline flux_elevation_band(FluxRect const *bounds, bool flip, float 
 	if (flip) *band_start = bounds->y + bounds->h - band_h;
 	else *band_start = bounds->y;
 	*band_end = *band_start + band_h;
-}
-
-static D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES inline flux_elevation_gradient_props(
-  bool flip, float band_start, float band_end
-) {
-	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp;
-	if (flip) {
-		gp.startPoint = flux_point(0.0f, band_end);
-		gp.endPoint   = flux_point(0.0f, band_start);
-	}
-	else {
-		gp.startPoint = flux_point(0.0f, band_start);
-		gp.endPoint   = flux_point(0.0f, band_end);
-	}
-	return gp;
 }
 
 static D2D1_BRUSH_PROPERTIES inline flux_default_brush_props(void) {
@@ -337,50 +154,6 @@ static D2D1_BRUSH_PROPERTIES inline flux_default_brush_props(void) {
 	bp.transform._31 = 0;
 	bp.transform._32 = 0;
 	return bp;
-}
-
-static void inline flux_draw_elevation_border(
-  FluxRenderCtx const *rc, FluxRect const *bounds, float radius, bool is_accent
-) {
-	float     thickness = FLUX_STROKE_WIDTH;
-	float     half      = thickness * 0.5f;
-	FluxColor secondary = flux_elevation_secondary(rc, is_accent);
-	FluxColor primary   = flux_elevation_primary(rc, is_accent);
-	bool      flip      = !rc->is_dark || is_accent;
-	float     band_start, band_end;
-	flux_elevation_band(bounds, flip, &band_start, &band_end);
-
-	D2D1_GRADIENT_STOP stops [2];
-	stops [0].position                      = FLUX_ELEVATION_STOP1;
-	stops [0].color                         = flux_d2d_color(secondary);
-	stops [1].position                      = FLUX_ELEVATION_STOP2;
-	stops [1].color                         = flux_d2d_color(primary);
-
-	ID2D1GradientStopCollection *collection = NULL;
-	ID2D1RenderTarget_CreateGradientStopCollection(
-	  FLUX_RT(rc), stops, 2, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &collection
-	);
-	if (!collection) return;
-
-	D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES gp   = flux_elevation_gradient_props(flip, band_start, band_end);
-	D2D1_BRUSH_PROPERTIES                 bp   = flux_default_brush_props();
-
-	ID2D1LinearGradientBrush             *grad = NULL;
-	ID2D1RenderTarget_CreateLinearGradientBrush(FLUX_RT(rc), &gp, &bp, collection, &grad);
-	ID2D1GradientStopCollection_Release(collection);
-	if (!grad) return;
-
-	D2D1_ROUNDED_RECT rr;
-	rr.rect.left   = bounds->x + half;
-	rr.rect.top    = bounds->y + half;
-	rr.rect.right  = bounds->x + bounds->w - half;
-	rr.rect.bottom = bounds->y + bounds->h - half;
-	rr.radiusX     = radius;
-	rr.radiusY     = radius;
-
-	ID2D1RenderTarget_DrawRoundedRectangle(FLUX_RT(rc), &rr, ( ID2D1Brush * ) grad, thickness, NULL);
-
-	ID2D1LinearGradientBrush_Release(grad);
 }
 
 #endif

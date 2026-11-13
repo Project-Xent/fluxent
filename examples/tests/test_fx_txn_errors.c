@@ -1,15 +1,8 @@
-/**
- * @file test_fx_txn_errors.c
- * @brief Commit-time error granularity: injected allocation failure must surface
- * as XTK_BATCH_ERR_OOM, a tree that diverged from preflight as XTK_BATCH_ERR_VALIDATION.
- */
 #include <fluxent/flux_host.h>
 #include <xtk/xtk_batch.h>
 #include <xtk/xtk_catalog.h>
 
-#include "bridge/flux_internal.h"
-
-#include "xtk_alloc_internal.h" /* kit fault-injection hooks; tests may reach into kit's src */
+#include <xtk/xtk_alloc.h>
 
 #include <stdio.h>
 
@@ -58,9 +51,6 @@ static XtkBatch *allocation_batch(XtkHost *host) {
 	return batch;
 }
 
-/* Sweep every allocation point from host creation through commit: any failure,
- * wherever it lands, must be reported as OOM — never VALIDATION — and the host
- * must stay destructible with balanced xtk allocation stats. */
 static int test_commit_oom_sweep(void) {
 	bool saw_failure = false;
 	bool saw_success = false;
@@ -103,7 +93,7 @@ static int test_commit_oom_sweep(void) {
 			saw_failure = true;
 		}
 		else {
-			xtk_batch_result_destroy(result);
+			xtk_batchresult_destroy(result);
 			saw_success = true;
 		}
 		xtk_batch_free(batch);
@@ -118,9 +108,6 @@ static int test_commit_oom_sweep(void) {
 	return 0;
 }
 
-/* The batch passes preflight with live refs, but `before` is not a child of
- * `parent`, so apply fails structurally: VALIDATION with the op index, and the
- * rollback must leave the tree untouched. */
 static int test_commit_diverged_tree_reports_validation(void) {
 	XtkHost *host = flux_host_create();
 	EXPECT(host, "host");
@@ -137,8 +124,8 @@ static int test_commit_diverged_tree_reports_validation(void) {
 	XtkCtrl row = result->controls [0].control;
 	XtkCtrl a   = result->controls [1].control;
 	XtkCtrl b   = result->controls [2].control;
-	xtk_batch_result_destroy(result);
-	uint32_t mounted = flux_host_take_invalidations(host);
+	xtk_batchresult_destroy(result);
+	uint32_t mounted = flux_host_takeinvalid(host);
 	EXPECT(
 	  (mounted & (XTK_INVALIDATE_LAYOUT | XTK_INVALIDATE_PAINT)) == (XTK_INVALIDATE_LAYOUT | XTK_INVALIDATE_PAINT),
 	  "successful commit publishes invalidations"
@@ -166,7 +153,7 @@ static int test_commit_diverged_tree_reports_validation(void) {
 	XtkChangeStamp change;
 	EXPECT(host->vt->prop(host, a, XTK_PROP_TEXT, &value, &change), "rolled-back property readable");
 	EXPECT(value.kind == XTK_VALUE_STRING && value.u.string.len == 1u, "rolled-back property preserved");
-	EXPECT(flux_host_take_invalidations(host) == 0u, "failed commit publishes no invalidations");
+	EXPECT(flux_host_takeinvalid(host) == 0u, "failed commit publishes no invalidations");
 	xtk_batch_free(bad);
 
 	flux_host_destroy(host);

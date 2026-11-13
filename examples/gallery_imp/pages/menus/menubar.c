@@ -1,141 +1,117 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
-#include "render/flux_icon.h"
-#include "controls/behavior/flux_flyout_binding.h"
 
-static void on_menu_item(void *ctx) {
-	GalleryBind *b = ctx;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = b->i});
-}
-
-static void on_invoke_ud(void *ud) {
-	GalleryBind *b = ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag});
-}
-
-static void menu_add(GalleryApp *g, FluxMenu *menu, char const *label, char const *icon, int tag, int i) {
-	char glyph [8] = {0};
-	if (icon) flux_icon_to_utf8(flux_icon_lookup(icon), glyph, sizeof(glyph));
-	flux_menu_additem(
-	  menu, &(FluxMenuItemDef) {
-			  .label        = label,
-			  .icon_glyph   = glyph [0] ? glyph : NULL,
-			  .enabled      = true,
-			  .on_click     = on_menu_item,
-			  .on_click_ctx = gallery_bind_i(g, tag, i),
-			}
-	);
-}
-
-static void fill_dropdown(GalleryApp *g, FluxMenu *menu) {
-	menu_add(g, menu, "Send email", "Mail", MSG_MENU, 1);
-	menu_add(g, menu, "Open calendar", "Forward", MSG_MENU, 2);
-	flux_menu_addsep(menu);
-	menu_add(g, menu, "Print", "Print", MSG_MENU, 3);
-}
-
-static void bind_menu_flyout(GalleryApp *g, XentNodeId node, FluxMenu *menu) {
-	flux_menu_setthememanager(menu, flux_app_theme(g->flux));
-	flux_menu_settext(menu, flux_app_text(g->flux));
-	flux_prop_menu_ex(&(FluxContextFlyoutBindingInfo) {
-	  .store  = gallery_store(g),
-	  .id     = node,
-	  .menu   = menu,
-	  .xctx   = gallery_ctx(g),
-	  .window = flux_app_window(g->flux),
-	});
-}
-
-static char const *const kMenuChoices [] = {
+static char const *const kChoices [] = {
   "(nothing yet)", "Send email", "Open calendar", "Print", "File > New", "File > Open...", "File > Exit", "Edit > Undo",
   "Edit > Redo", "Help > About"};
 
-void page_menus(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_menus_sync);
-	Model const *m      = &g->model;
-	int          choice = (m->menu_choice >= 0 && m->menu_choice <= 9) ? m->menu_choice : 0;
-	g_page_header(
-	  g, parent, "Menus & links",
-	  "MenuBar and DropDownButton open flyout menus; RepeatButton fires while held; "
-	  "HyperlinkButton opens a URL."
-	);
-	{
-		XentNodeId ex   = g_example(g, parent, "A MenuBar with File / Edit / Help menus.");
-		XentNodeId bar  = flux_menubar_init(&(FluxMenuBarDesc) {
-		  .ctx    = gallery_ctx(g),
-		  .store  = gallery_store(g),
-		  .parent = g_card(g, ex),
-		  .window = flux_app_window(g->flux),
-		  .text   = flux_app_text(g->flux),
-		  .theme  = flux_app_theme(g->flux),
-		});
-		FluxMenu  *file = flux_menubar_add_menu(gallery_store(g), bar, "File");
-		if (file) {
-			menu_add(g, file, "New", NULL, MSG_MENU, 4);
-			menu_add(g, file, "Open...", NULL, MSG_MENU, 5);
-			flux_menu_addsep(file);
-			menu_add(g, file, "Exit", NULL, MSG_MENU, 6);
-		}
-		FluxMenu *edit = flux_menubar_add_menu(gallery_store(g), bar, "Edit");
-		if (edit) {
-			menu_add(g, edit, "Undo", "Undo", MSG_MENU, 7);
-			menu_add(g, edit, "Redo", "Redo", MSG_MENU, 8);
-		}
-		FluxMenu *help = flux_menubar_add_menu(gallery_store(g), bar, "Help");
-		if (help) menu_add(g, help, "About", NULL, MSG_MENU, 9);
-	}
-	{
-		XentNodeId  ex   = g_example(g, parent, "A DropDownButton with a menu.");
-		GalleryDemo demo = g_demo_card(g, ex);
-		XentNodeId  row  = demo.items;
-		XentNodeId  dd   = flux_dropdown_init(&(FluxDropDownButtonDesc) {
-		  .ctx    = gallery_ctx(g),
-		  .store  = gallery_store(g),
-		  .parent = row,
-		  .label  = "Actions",
-		});
-		FluxMenu   *menu = flux_menu_create(flux_app_window(g->flux));
-		if (menu) {
-			fill_dropdown(g, menu);
-			bind_menu_flyout(g, dd, menu);
-		}
-		g->live_output [MSG_MENU] = g_output(g, demo.row, gallery_fmt(g, "Last choice: %s", kMenuChoices [choice]));
-	}
-	{
-		XentNodeId  ex   = g_example(g, parent, "A RepeatButton keeps firing while pressed.");
-		GalleryDemo demo = g_demo_card(g, ex);
-		XentNodeId  row  = demo.items;
-		XentNodeId  rb   = flux_repeat_init(&(FluxButtonDesc) {
-		  .ctx      = gallery_ctx(g),
-		  .store    = gallery_store(g),
-		  .parent   = row,
-		  .label    = "Click and hold",
-		  .on_click = on_invoke_ud,
-		  .userdata = gallery_bind(g, MSG_REPEAT),
-		});
-		( void ) rb;
-		g->live_output [MSG_REPEAT]
-		  = g_output(g, demo.row, gallery_fmt(g, "Fired %d time%s", m->repeats, m->repeats == 1 ? "" : "s"));
-	}
-	{
-		XentNodeId ex = g_example(g, parent, "A HyperlinkButton opens the project page.");
-		flux_link_init(&(FluxHyperlinkDesc) {
-		  .ctx    = gallery_ctx(g),
-		  .store  = gallery_store(g),
-		  .parent = g_card(g, ex),
-		  .label  = "FluXent on GitHub",
-		  .url    = "https://github.com/Project-Xent",
-		});
+typedef struct MenuEntry {
+	char const *text;
+	char const *icon;
+	int         choice;
+} MenuEntry;
+
+static char const *choice_text(GalleryApp *g) {
+	int choice = g->model.menu_choice >= 0 && g->model.menu_choice <= 9 ? g->model.menu_choice : 0;
+	return gallery_fmt(g, "Last choice: %s", kChoices [choice]);
+}
+
+static char const *repeat_text(GalleryApp *g) {
+	return gallery_fmt(g, "Fired %d time%s", g->model.repeats, g->model.repeats == 1 ? "" : "s");
+}
+
+static void menus_sync(GalleryApp *g) {
+	gallery_settext(g, g->live_output [MSG_MENU], choice_text(g));
+	gallery_settext(g, g->live_output [MSG_REPEAT], repeat_text(g));
+}
+
+static void menu_entries(PageBuild *b, XtkNodeRef menu, MenuEntry const *entries, int count) {
+	for (int i = 0; i < count; i++) {
+		XtkLocalId item = xtk_menuitem_create(
+		  &b->txn, menu,
+		  &(XtkItemProps) {
+			.set  = (entries [i].text ? XTK_ITEM_TEXT_MASK : 0u) | (entries [i].icon ? XTK_ITEM_ICON_MASK : 0u),
+			.text = entries [i].text,
+			.icon = entries [i].icon,
+		  }
+		);
+		if (entries [i].text)
+			xtk_menuitem_oninvoke(
+			  &b->txn, xtk_ref_local(item), page_post, page_bind_i(b, MSG_MENU, entries [i].choice)
+			);
 	}
 }
 
-void page_menus_sync(GalleryApp *g) {
-	int choice = g->model.menu_choice;
-	if (choice < 0 || choice > 9) choice = 0;
-	xent_settext(gallery_ctx(g), g->live_output [MSG_MENU], gallery_fmt(g, "Last choice: %s", kMenuChoices [choice]));
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_REPEAT],
-	  gallery_fmt(g, "Fired %d time%s", g->model.repeats, g->model.repeats == 1 ? "" : "s")
+static void menubar_menu(PageBuild *b, XtkNodeRef bar, char const *title, MenuEntry const *entries, int count) {
+	XtkLocalId menu
+	  = xtk_menufly_create(&b->txn, bar, &(XtkOverlayProps) {.set = XTK_OVERLAY_TEXT_MASK, .text = title});
+	menu_entries(b, xtk_ref_local(menu), entries, count);
+}
+
+static void menubar_example(PageBuild *b, XtkNodeRef parent) {
+	static MenuEntry const kFile [] = {
+	  {"New",     NULL, 4},
+	  {"Open...", NULL, 5},
+	  {NULL,      NULL, 0},
+	  {"Exit",    NULL, 6},
+	};
+	static MenuEntry const kEdit [] = {
+	  {"Undo", "Undo", 7},
+	  {"Redo", "Redo", 8},
+	};
+	static MenuEntry const kHelp [] = {
+	  {"About", NULL, 9},
+	};
+	XtkNodeRef card = xtk_ref_local(ui_card(
+	  &b->txn, page_example(b, parent, "A MenuBar with File / Edit / Help menus."), 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f
+	));
+	XtkNodeRef bar  = xtk_ref_local(xtk_menubar_create(&b->txn, card, NULL));
+	menubar_menu(b, bar, "File", kFile, 4);
+	menubar_menu(b, bar, "Edit", kEdit, 2);
+	menubar_menu(b, bar, "Help", kHelp, 1);
+}
+
+static void dropdown_example(PageBuild *b, XtkNodeRef parent) {
+	static MenuEntry const kActions [] = {
+	  {"Send email",    "Mail",    1},
+	  {"Open calendar", "Forward", 2},
+	  {NULL,            NULL,      0},
+	  {"Print",         "Print",   3},
+	};
+	PageDemo   demo = page_demo(b, page_example(b, parent, "A DropDownButton with a menu."));
+	XtkLocalId drop
+	  = xtk_dropdown_create(&b->txn, demo.items, &(XtkButtonProps) {.set = XTK_BUTTON_TEXT_MASK, .text = "Actions"});
+	menu_entries(b, xtk_ref_local(xtk_menufly_create(&b->txn, xtk_ref_local(drop), NULL)), kActions, 4);
+	page_keepout(b, MSG_MENU, page_output(b, demo.row, choice_text(b->app)));
+}
+
+bool page_menus_build(PageBuild *b) {
+	page_sync(b, menus_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(
+	  b, parent, "Menus & links",
+	  "MenuBar and DropDownButton open flyout menus; RepeatButton fires while held; HyperlinkButton opens a URL."
 	);
+	menubar_example(b, parent);
+	dropdown_example(b, parent);
+	{
+		PageDemo   demo = page_demo(b, page_example(b, parent, "A RepeatButton keeps firing while pressed."));
+		XtkLocalId rep  = xtk_repeat_create(
+		  &b->txn, demo.items, &(XtkButtonProps) {.set = XTK_BUTTON_TEXT_MASK, .text = "Click and hold"}
+		);
+		xtk_repeat_oninvoke(&b->txn, xtk_ref_local(rep), page_post, page_bind(b, MSG_REPEAT));
+		page_keepout(b, MSG_REPEAT, page_output(b, demo.row, repeat_text(b->app)));
+	}
+	{
+		XtkNodeRef ex   = page_example(b, parent, "A HyperlinkButton opens the project page.");
+		XtkNodeRef card = xtk_ref_local(ui_card(&b->txn, ex, 0.0f, XENT_FLEX_ALIGN_START, 16.0f));
+		xtk_link_create(
+		  &b->txn, card,
+		  &(XtkLinkProps) {
+			.set  = XTK_LINK_TEXT_MASK | XTK_LINK_URL_MASK,
+			.text = "FluXent on GitHub",
+			.url  = "https://github.com/Project-Xent",
+		  }
+		);
+	}
+	return true;
 }

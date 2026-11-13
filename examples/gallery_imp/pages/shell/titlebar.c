@@ -1,56 +1,44 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
 
-static void on_tb_back(void *ctx) {
-	GalleryBind *b = ctx;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag});
-}
-
-static void on_tb_pane(void *ctx) {
-	GalleryBind *b = ctx;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag});
-}
-
-void page_title_bar(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_title_bar_sync);
-	Model const *m = &g->model;
-	g_page_header(
-	  g, parent, "TitleBar",
-	  "A window title-bar band: an app icon, title and subtitle, plus optional back and pane-toggle "
-	  "buttons. Opt into window integration to make the band drag the window."
+static char const *clicks_text(GalleryApp *g) {
+	return gallery_fmt(
+	  g, "Back clicks: %d.  Pane-toggle clicks: %d.", g->model.tb_back_clicks, g->model.tb_pane_clicks
 	);
-	{
-		XentNodeId ex = g_example(g, parent, "Icon, title, subtitle, back and pane-toggle buttons.");
-		flux_titlebar_init(&(FluxTitleBarDesc) {
-		  .ctx              = gallery_ctx(g),
-		  .store            = gallery_store(g),
-		  .parent           = g_card(g, ex),
-		  .window           = flux_app_window(g->flux),
-		  .title            = "FluXent Gallery",
-		  .subtitle         = "Preview",
-		  .icon             = "Home",
-		  .show_back        = true,
-		  .show_pane_toggle = true,
-		  .on_back          = on_tb_back,
-		  .back_ctx         = gallery_bind(g, MSG_TB_BACK),
-		  .on_pane_toggle   = on_tb_pane,
-		  .pane_toggle_ctx  = gallery_bind(g, MSG_TB_PANE),
-		});
-	}
-	{
-		XentNodeId ex                = g_example(g, parent, "Button events.");
-		g->live_output [MSG_TB_BACK] = g_text(
-		  g, g_card(g, ex),
-		  gallery_fmt(g, "Back clicks: %d.  Pane-toggle clicks: %d.", m->tb_back_clicks, m->tb_pane_clicks), 13.0f,
-		  FLUX_FONT_REGULAR
-		);
-	}
 }
 
-void page_title_bar_sync(GalleryApp *g) {
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_TB_BACK],
-	  gallery_fmt(g, "Back clicks: %d.  Pane-toggle clicks: %d.", g->model.tb_back_clicks, g->model.tb_pane_clicks)
+static void title_bar_sync(GalleryApp *g) { gallery_settext(g, g->live_output [MSG_TB_BACK], clicks_text(g)); }
+
+bool        page_title_bar_build(PageBuild *b) {
+	page_sync(b, title_bar_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(
+	  b, parent, "TitleBar",
+	  "A window title-bar band: an app icon, title and subtitle, plus optional back and pane-toggle buttons. Opt into "
+	  "window integration to make the band drag the window."
 	);
+	XtkNodeRef card = xtk_ref_local(ui_card(
+	  &b->txn, page_example(b, parent, "Icon, title, subtitle, back and pane-toggle buttons."), 0.0f,
+	  XENT_FLEX_ALIGN_STRETCH, 0.0f
+	));
+	XtkLocalId bar  = xtk_titlebar_create(
+	  &b->txn, card,
+	  &(XtkTitleBarProps) {
+		.set        = XTK_TITLEBAR_TEXT_MASK
+	                | XTK_TITLEBAR_SUBTITLE_MASK
+	                | XTK_TITLEBAR_ICON_MASK
+	                | XTK_TITLEBAR_SHOWBACK_MASK
+	                | XTK_TITLEBAR_SHOWTOGGLE_MASK,
+		.text       = "FluXent Gallery",
+		.subtitle   = "Preview",
+		.icon       = "Home",
+		.showback   = true,
+		.showtoggle = true,
+	  }
+	);
+	xtk_titlebar_oninvoke(&b->txn, xtk_ref_local(bar), page_post, page_bind(b, MSG_TB_BACK));
+	page_on(b, bar, XTK_EVENT_TOGGLE, MSG_TB_PANE, 0);
+	XtkNodeRef events
+	  = xtk_ref_local(ui_card(&b->txn, page_example(b, parent, "Button events."), 0.0f, XENT_FLEX_ALIGN_START, 16.0f));
+	page_keepout(b, MSG_TB_BACK, page_note(b, events, clicks_text(b->app)));
+	return true;
 }

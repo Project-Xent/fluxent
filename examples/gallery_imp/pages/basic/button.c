@@ -1,6 +1,8 @@
 #include "app.h"
 #include <string.h>
 
+static void       page_button_sync(GalleryApp *g);
+
 static XtkNodeRef button_row(PageBuild *b, XtkNodeRef parent) {
 	XtkLocalId card = xtk_card_create(
 	  &b->txn, parent,
@@ -77,8 +79,8 @@ bool page_button_build(PageBuild *b) {
 		xtk_button_oninvoke(&b->txn, xtk_ref_local(btn), page_post, page_bind(b, MSG_CLICK));
 		XtkLocalId dis = xtk_checkbox_create(
 		  &b->txn, demo.items,
-		  &(XtkToggleProps) {
-			.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK | XTK_TOGGLE_ENABLED_MASK,
+		  &(XtkCheckBoxProps) {
+			.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 			.text    = "Disable button",
 			.checked = m->button_disabled,
 			.enabled = true,
@@ -86,9 +88,9 @@ bool page_button_build(PageBuild *b) {
 		);
 		xtk_checkbox_onchange(&b->txn, xtk_ref_local(dis), page_post, page_bind(b, MSG_BUTTON_DISABLE));
 		page_keep(b, MSG_BUTTON_DISABLE, btn);
-		XtkNodeRef output
+		XtkLocalId output
 		  = page_output(b, demo.row, gallery_fmt(b->app, "Clicked %d time%s", m->clicks, m->clicks == 1 ? "" : "s"));
-		page_keepout(b, MSG_CLICK, output.u.local);
+		page_keepout(b, MSG_CLICK, output);
 	}
 	{
 		XtkNodeRef ex  = page_example(b, parent, "Built-in styles applied to Button.");
@@ -108,7 +110,7 @@ bool page_button_build(PageBuild *b) {
 	return true;
 }
 
-void page_button_sync(GalleryApp *g) {
+static void page_button_sync(GalleryApp *g) {
 	xtk_button_setenabled(
 	  &g->scene, ( XtkCtrl ) g->live_control [MSG_BUTTON_DISABLE], !g->model.button_disabled, (XtkChangeStamp) {0}
 	);

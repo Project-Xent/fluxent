@@ -1,11 +1,3 @@
-/**
- * @file flux_control_registry.h
- * @brief Private control type → record/record_overlay table (built-ins only).
- *
- * MAIN: record() builds a node-local XentDl that FluxDisplayPaint
- * attaches and XtkBackend replays. OVERLAY: record_overlay() builds a
- * per-frame list that paint replays then destroys.
- */
 #ifndef FLUX_CONTROL_REGISTRY_H
 #define FLUX_CONTROL_REGISTRY_H
 

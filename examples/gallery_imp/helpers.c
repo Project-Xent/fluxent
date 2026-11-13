@@ -1,12 +1,10 @@
 #include "app.h"
 
 #include <math.h>
-#include <string.h>
-#include <xent/xent.h>
 
-static XtkNodeRef page_text(PageBuild *b, XtkNodeRef parent, char const *text, float size, uint32_t weight) {
-	XtkLocalId local = xtk_text_create(
-	  &b->txn, parent,
+XtkLocalId ui_text(XtkTxn *txn, XtkNodeRef parent, char const *text, float size, uint32_t weight) {
+	return xtk_text_create(
+	  txn, parent,
 	  &(XtkTextProps) {
 		.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTSIZE_MASK | XTK_TEXT_FONTWEIGHT_MASK,
 		.text       = text,
@@ -14,35 +12,110 @@ static XtkNodeRef page_text(PageBuild *b, XtkNodeRef parent, char const *text, f
 		.fontweight = weight,
 	  }
 	);
-	return xtk_ref_local(local);
 }
 
-static XtkNodeRef page_column(PageBuild *b, XtkNodeRef parent, float gap) {
-	XtkLocalId local = xtk_container_create(
-	  &b->txn, parent,
+XtkLocalId ui_column(XtkTxn *txn, XtkNodeRef parent, float gap, uint32_t align) {
+	return xtk_container_create(
+	  txn, parent,
 	  &(XtkContainerProps) {
-		.set    = XTK_CONTAINER_SHRINK_MASK
-	            | XTK_CONTAINER_DIR_MASK
-	            | XTK_CONTAINER_ITEMS_MASK
-	            | XTK_CONTAINER_GAP_MASK
-	            | XTK_CONTAINER_FILL_MASK
-	            | XTK_CONTAINER_FITW_MASK
-	            | XTK_CONTAINER_FITH_MASK,
-		.shrink = 0.0f,
-		.dir    = XTK_STACK_COLUMN,
-		.items  = XENT_FLEX_ALIGN_STRETCH,
-		.gap    = gap,
-		.fill   = true,
-		.fitw   = false,
-		.fith   = true,
+		.set   = XTK_CONTAINER_SHRINK_MASK
+	           | XTK_CONTAINER_DIR_MASK
+	           | XTK_CONTAINER_ITEMS_MASK
+	           | XTK_CONTAINER_GAP_MASK
+	           | XTK_CONTAINER_FITH_MASK,
+		.dir   = XTK_STACK_COLUMN,
+		.items = align,
+		.gap   = gap,
+		.fith  = true,
 	  }
 	);
-	return xtk_ref_local(local);
 }
 
-static XtkNodeRef page_row(PageBuild *b, XtkNodeRef parent, bool fill, XentFlexJustify justify) {
-	XtkLocalId local = xtk_container_create(
-	  &b->txn, parent,
+XtkLocalId ui_row(XtkTxn *txn, XtkNodeRef parent, float gap, bool wrap) {
+	return xtk_container_create(
+	  txn, parent,
+	  &(XtkContainerProps) {
+		.set   = XTK_CONTAINER_DIR_MASK | XTK_CONTAINER_ITEMS_MASK | XTK_CONTAINER_GAP_MASK | XTK_CONTAINER_WRAP_MASK,
+		.dir   = XTK_STACK_ROW,
+		.items = XENT_FLEX_ALIGN_CENTER,
+		.gap   = gap,
+		.wrap  = wrap ? XENT_FLEX_WRAP : XENT_FLEX_NO_WRAP,
+	  }
+	);
+}
+
+XtkLocalId ui_card(XtkTxn *txn, XtkNodeRef parent, float gap, uint32_t align, float pad) {
+	return xtk_card_create(
+	  txn, parent,
+	  &(XtkContainerProps) {
+		.set   = XTK_CONTAINER_DIR_MASK
+	           | XTK_CONTAINER_ITEMS_MASK
+	           | XTK_CONTAINER_GAP_MASK
+	           | XTK_CONTAINER_PL_MASK
+	           | XTK_CONTAINER_PT_MASK
+	           | XTK_CONTAINER_PR_MASK
+	           | XTK_CONTAINER_PB_MASK,
+		.dir   = XTK_STACK_COLUMN,
+		.items = align,
+		.gap   = gap,
+		.pl    = pad,
+		.pt    = pad,
+		.pr    = pad,
+		.pb    = pad,
+	  }
+	);
+}
+
+XtkLocalId ui_button(XtkTxn *txn, XtkNodeRef parent, char const *text, char const *icon, uint32_t style) {
+	return xtk_button_create(
+	  txn, parent,
+	  &(XtkButtonProps) {
+		.set   = (text ? XTK_BUTTON_TEXT_MASK : 0u) | (icon ? XTK_BUTTON_ICON_MASK : 0u) | XTK_BUTTON_STYLE_MASK,
+		.text  = text,
+		.icon  = icon,
+		.style = style,
+	  }
+	);
+}
+
+void ui_size(XtkTxn *txn, XtkLocalId local, float w, float h) {
+	XtkNodeRef ref = xtk_ref_local(local);
+	if (w == w)
+		xtk_txn_set(txn, ref, XTK_PROP_WIDTH, (XtkValue) {.kind = XTK_VALUE_F32, .u.f32 = w}, (XtkChangeStamp) {0});
+	if (h == h)
+		xtk_txn_set(txn, ref, XTK_PROP_HEIGHT, (XtkValue) {.kind = XTK_VALUE_F32, .u.f32 = h}, (XtkChangeStamp) {0});
+}
+
+void ui_enable(XtkTxn *txn, XtkLocalId local, bool enabled) {
+	xtk_txn_set(
+	  txn, xtk_ref_local(local), XTK_PROP_ENABLED, (XtkValue) {.kind = XTK_VALUE_BOOL, .u.b = enabled},
+	  (XtkChangeStamp) {0}
+	);
+}
+
+void ui_center(XtkTxn *txn, XtkLocalId local) {
+	xtk_txn_set(
+	  txn, xtk_ref_local(local), XTK_PROP_JUSTIFY_CONTENT,
+	  (XtkValue) {.kind = XTK_VALUE_ENUM, .u.u32 = XENT_FLEX_JUSTIFY_CENTER}, (XtkChangeStamp) {0}
+	);
+}
+
+XtkNodeRef page_header(PageBuild *b, XtkNodeRef parent, char const *title, char const *blurb) {
+	XtkNodeRef col = xtk_ref_local(ui_column(&b->txn, parent, 8.0f, XENT_FLEX_ALIGN_STRETCH));
+	ui_text(&b->txn, col, title, 28.0f, FLUX_FONT_SEMI_BOLD);
+	ui_text(&b->txn, col, blurb, 13.0f, FLUX_FONT_REGULAR);
+	return col;
+}
+
+XtkNodeRef page_example(PageBuild *b, XtkNodeRef parent, char const *caption) {
+	XtkNodeRef col = xtk_ref_local(ui_column(&b->txn, parent, 8.0f, XENT_FLEX_ALIGN_STRETCH));
+	ui_text(&b->txn, col, caption, 14.0f, FLUX_FONT_REGULAR);
+	return col;
+}
+
+static XtkLocalId demo_row(XtkTxn *txn, XtkNodeRef parent, bool fill, XentFlexJustify justify) {
+	return xtk_container_create(
+	  txn, parent,
 	  &(XtkContainerProps) {
 		.set     = XTK_CONTAINER_DIR_MASK
 	             | XTK_CONTAINER_ITEMS_MASK
@@ -58,323 +131,59 @@ static XtkNodeRef page_row(PageBuild *b, XtkNodeRef parent, bool fill, XentFlexJ
 		.wrap    = XENT_FLEX_WRAP,
 	  }
 	);
-	return xtk_ref_local(local);
-}
-
-static XtkNodeRef page_card(PageBuild *b, XtkNodeRef parent) {
-	XtkLocalId local = xtk_card_create(
-	  &b->txn, parent,
-	  &(XtkContainerProps) {
-		.set   = XTK_CONTAINER_DIR_MASK
-	           | XTK_CONTAINER_ITEMS_MASK
-	           | XTK_CONTAINER_PL_MASK
-	           | XTK_CONTAINER_PT_MASK
-	           | XTK_CONTAINER_PR_MASK
-	           | XTK_CONTAINER_PB_MASK,
-		.dir   = XTK_STACK_COLUMN,
-		.items = XENT_FLEX_ALIGN_STRETCH,
-		.pl    = 16.0f,
-		.pt    = 16.0f,
-		.pr    = 16.0f,
-		.pb    = 16.0f,
-	  }
-	);
-	return xtk_ref_local(local);
-}
-
-XtkNodeRef page_header(PageBuild *b, XtkNodeRef parent, char const *title, char const *blurb) {
-	XtkNodeRef col = page_column(b, parent, 8.0f);
-	page_text(b, col, title, 28.0f, FLUX_FONT_SEMI_BOLD);
-	page_text(b, col, blurb, 13.0f, FLUX_FONT_REGULAR);
-	return col;
-}
-
-XtkNodeRef page_example(PageBuild *b, XtkNodeRef parent, char const *caption) {
-	XtkNodeRef col = page_column(b, parent, 8.0f);
-	page_text(b, col, caption, 14.0f, FLUX_FONT_REGULAR);
-	return col;
 }
 
 PageDemo page_demo(PageBuild *b, XtkNodeRef parent) {
-	XtkNodeRef card  = page_card(b, parent);
-	XtkNodeRef row   = page_row(b, card, true, XENT_FLEX_JUSTIFY_SPACE_BETWEEN);
-	XtkNodeRef items = page_row(b, row, false, XENT_FLEX_JUSTIFY_START);
+	XtkNodeRef card  = xtk_ref_local(ui_card(&b->txn, parent, 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f));
+	XtkNodeRef row   = xtk_ref_local(demo_row(&b->txn, card, true, XENT_FLEX_JUSTIFY_SPACE_BETWEEN));
+	XtkNodeRef items = xtk_ref_local(demo_row(&b->txn, row, false, XENT_FLEX_JUSTIFY_START));
 	return (PageDemo) {.row = row, .items = items};
 }
 
-XtkNodeRef page_output(PageBuild *b, XtkNodeRef parent, char const *value) {
-	XtkLocalId col = xtk_container_create(
+XtkLocalId page_output(PageBuild *b, XtkNodeRef parent, char const *value) {
+	XtkLocalId col = ui_column(&b->txn, parent, 4.0f, XENT_FLEX_ALIGN_STRETCH);
+	ui_size(&b->txn, col, 260.0f, NAN);
+	ui_text(&b->txn, xtk_ref_local(col), "Output:", 12.0f, FLUX_FONT_SEMI_BOLD);
+	return ui_text(&b->txn, xtk_ref_local(col), value, 14.0f, FLUX_FONT_REGULAR);
+}
+
+XtkLocalId page_button(PageBuild *b, XtkNodeRef parent, char const *text, int tag, int i) {
+	XtkLocalId button = ui_button(&b->txn, parent, text, NULL, XTK_BUTTON_STANDARD);
+	xtk_button_oninvoke(&b->txn, xtk_ref_local(button), page_post, page_bind_i(b, tag, i));
+	return button;
+}
+
+XtkLocalId page_checkbox(PageBuild *b, XtkNodeRef parent, char const *text, bool checked, int tag) {
+	XtkLocalId box = xtk_checkbox_create(
 	  &b->txn, parent,
-	  &(XtkContainerProps) {
-		.set    = XTK_CONTAINER_W_MASK
-	            | XTK_CONTAINER_SHRINK_MASK
-	            | XTK_CONTAINER_DIR_MASK
-	            | XTK_CONTAINER_ITEMS_MASK
-	            | XTK_CONTAINER_GAP_MASK
-	            | XTK_CONTAINER_FILL_MASK
-	            | XTK_CONTAINER_FITW_MASK
-	            | XTK_CONTAINER_FITH_MASK,
-		.w      = 260.0f,
-		.shrink = 0.0f,
-		.dir    = XTK_STACK_COLUMN,
-		.items  = XENT_FLEX_ALIGN_STRETCH,
-		.gap    = 4.0f,
-		.fill   = true,
-		.fitw   = false,
-		.fith   = true,
-	  }
+	  &(XtkCheckBoxProps) {.set = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK, .text = text, .checked = checked}
 	);
-	XtkNodeRef ref = xtk_ref_local(col);
-	page_text(b, ref, "Output:", 12.0f, FLUX_FONT_SEMI_BOLD);
-	return page_text(b, ref, value, 14.0f, FLUX_FONT_REGULAR);
+	xtk_checkbox_onchange(&b->txn, xtk_ref_local(box), page_post, page_bind(b, tag));
+	return box;
 }
 
-static XentNodeId map_first(XtkBatchResult *r) {
-	if (!r || r->control_count == 0) return XENT_NODE_INVALID;
-	return ( XentNodeId ) r->controls [0].control;
+XtkLocalId page_note(PageBuild *b, XtkNodeRef parent, char const *text) {
+	return ui_text(&b->txn, parent, text, 13.0f, FLUX_FONT_REGULAR);
 }
 
-static void flex_col(GalleryApp *g, XentNodeId n, float gap) {
-	if (n == XENT_NODE_INVALID) return;
-	xent_setproto(gallery_ctx(g), n, XENT_PROTOCOL_FLEX);
-	xent_setflexdir(gallery_ctx(g), n, XENT_FLEX_COLUMN);
-	xent_setitems(gallery_ctx(g), n, XENT_FLEX_ALIGN_STRETCH);
-	xent_setgap(gallery_ctx(g), n, gap);
-}
+static struct {
+	char const *title;
+	char const *blurb;
+} const k_categories [PAGE_COUNT] = {
+  [PAGE_CAT_BASIC]       = {"Basic input",       "Buttons, checkboxes, radios, combos, sliders, and switches."         },
+  [PAGE_CAT_TEXT]        = {"Text",              "Text entry and display: TextBox, NumberBox, Typography."             },
+  [PAGE_CAT_STATUS]      = {"Status & info",     "InfoBar, InfoBadge, progress, and tooltips."                         },
+  [PAGE_CAT_MEDIA]       = {"Media",             "Images decoded through WIC."                                         },
+  [PAGE_CAT_MENUS]       = {"Menus & layout",    "Menus, tabs, links, and layout containers."                          },
+  [PAGE_CAT_DIALOGS]     = {"Dialogs & flyouts", "Modal dialogs and popup surfaces."                                   },
+  [PAGE_CAT_SHELL]       = {"Layout & shell",    "SplitView and window scaffolding."                                   },
+  [PAGE_CAT_COLLECTIONS] = {"Collections",       "ListView, GridView, ListBox, TreeView, ItemsView, and PullToRefresh."},
+};
 
-XentNodeId g_scroll(GalleryApp *g, XentNodeId parent) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_scroll_create(&sb, xtk_ref_existing(( XtkCtrl ) parent), NULL);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
-}
-
-XentNodeId g_col(GalleryApp *g, XentNodeId parent, float gap, float pad_l, float pad_t, float pad_r, float pad_b) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_container_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent),
-	  &(XtkContainerProps) {
-		.set  = XTK_CONTAINER_GAP_MASK
-	          | XTK_CONTAINER_PL_MASK
-	          | XTK_CONTAINER_PT_MASK
-	          | XTK_CONTAINER_PR_MASK
-	          | XTK_CONTAINER_PB_MASK
-	          | XTK_CONTAINER_FILL_MASK,
-		.gap  = gap,
-		.pl   = pad_l,
-		.pt   = pad_t,
-		.pr   = pad_r,
-		.pb   = pad_b,
-		.fill = true,
-	  }
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	flex_col(g, n, gap);
-	if (n != XENT_NODE_INVALID) {
-		xent_setp(gallery_ctx(g), n, (XentInsets) {pad_l, pad_t, pad_r, pad_b});
-		xent_setfit(gallery_ctx(g), n, false, true);
-		xent_setshrink(gallery_ctx(g), n, 0.0f);
-	}
-	return n;
-}
-
-static XentNodeId
-row_create(GalleryApp *g, XentNodeId parent, float gap, bool fill, bool wrap, XentFlexJustify justify) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_container_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent),
-	  &(XtkContainerProps) {
-		.set     = XTK_CONTAINER_DIR_MASK
-	             | XTK_CONTAINER_ITEMS_MASK
-	             | XTK_CONTAINER_JUSTIFY_MASK
-	             | XTK_CONTAINER_GAP_MASK
-	             | XTK_CONTAINER_FILL_MASK
-	             | XTK_CONTAINER_WRAP_MASK,
-		.dir     = XTK_STACK_ROW,
-		.items   = XENT_FLEX_ALIGN_CENTER,
-		.justify = justify,
-		.gap     = gap,
-		.fill    = fill,
-		.wrap    = wrap ? XENT_FLEX_WRAP : XENT_FLEX_NO_WRAP,
-	  }
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
-}
-
-XentNodeId g_row(GalleryApp *g, XentNodeId parent, float gap) {
-	return row_create(g, parent, gap, true, false, XENT_FLEX_JUSTIFY_START);
-}
-
-XentNodeId g_wraprow(GalleryApp *g, XentNodeId parent, float gap) {
-	return row_create(g, parent, gap, true, true, XENT_FLEX_JUSTIFY_START);
-}
-
-XentNodeId g_card(GalleryApp *g, XentNodeId parent) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_card_create(&sb, xtk_ref_existing(( XtkCtrl ) parent), NULL);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	flex_col(g, n, 0.0f);
-	if (n != XENT_NODE_INVALID) xent_setp(gallery_ctx(g), n, (XentInsets) {16, 16, 16, 16});
-	return n;
-}
-
-XentNodeId g_text(GalleryApp *g, XentNodeId parent, char const *text, float size, uint32_t weight) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_text_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent),
-	  &(XtkTextProps) {
-		.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTSIZE_MASK | XTK_TEXT_FONTWEIGHT_MASK,
-		.text       = text,
-		.fontsize   = size,
-		.fontweight = weight,
-	  }
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
-}
-
-XentNodeId g_spacer(GalleryApp *g, XentNodeId parent) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_container_create(&sb, xtk_ref_existing(( XtkCtrl ) parent), NULL);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	if (n != XENT_NODE_INVALID) xent_setgrow(gallery_ctx(g), n, 1.0f);
-	return n;
-}
-
-XentNodeId g_page_header(GalleryApp *g, XentNodeId parent, char const *title, char const *blurb) {
-	XentNodeId col = g_col(g, parent, 8.0f, 0, 0, 0, 0);
-	g_text(g, col, title, 28.0f, FLUX_FONT_SEMI_BOLD);
-	g_text(g, col, blurb, 13.0f, FLUX_FONT_REGULAR);
-	return col;
-}
-
-XentNodeId g_example(GalleryApp *g, XentNodeId parent, char const *caption) {
-	XentNodeId col = g_col(g, parent, 8.0f, 0, 0, 0, 0);
-	g_text(g, col, caption, 14.0f, FLUX_FONT_REGULAR);
-	return col;
-}
-
-GalleryDemo g_demo_card(GalleryApp *g, XentNodeId parent) {
-	XentNodeId card  = g_card(g, parent);
-	XentNodeId row   = row_create(g, card, 16.0f, true, true, XENT_FLEX_JUSTIFY_SPACE_BETWEEN);
-	XentNodeId items = row_create(g, row, 16.0f, false, true, XENT_FLEX_JUSTIFY_START);
-	return (GalleryDemo) {.row = row, .items = items};
-}
-
-XentNodeId g_output(GalleryApp *g, XentNodeId parent, char const *value) {
-	XentNodeId col = g_col(g, parent, 4.0f, 0, 0, 0, 0);
-	xent_setsize(gallery_ctx(g), col, (XentSize) {260.0f, NAN});
-	g_text(g, col, "Output:", 12.0f, FLUX_FONT_SEMI_BOLD);
-	return g_text(g, col, value, 14.0f, FLUX_FONT_REGULAR);
-}
-
-void page_category(GalleryApp *g, XentNodeId parent, char const *title, char const *blurb) {
-	g_page_header(g, parent, title, blurb);
-	g_text(g, parent, "Expand this group in the navigation pane to pick a control.", 13.0f, FLUX_FONT_REGULAR);
-}
-
-/* ---- control create helpers (scene) ------------------------------------ */
-
-XentNodeId
-g_button(GalleryApp *g, XentNodeId parent, char const *label, char const *icon, uint32_t style, bool enabled) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_button_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent),
-	  &(XtkButtonProps) {
-		.set     = (label ? XTK_BUTTON_TEXT_MASK : 0u)
-	             | (icon ? XTK_BUTTON_ICON_MASK : 0u)
-	             | XTK_BUTTON_STYLE_MASK
-	             | XTK_BUTTON_ENABLED_MASK,
-		.text    = label,
-		.icon    = icon,
-		.style   = style,
-		.enabled = enabled,
-	  }
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
-}
-
-XentNodeId g_checkbox(GalleryApp *g, XentNodeId parent, char const *label, bool checked, bool enabled) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_checkbox_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent),
-	  &(XtkToggleProps) {
-		.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK | XTK_TOGGLE_ENABLED_MASK,
-		.text    = label,
-		.checked = checked,
-		.enabled = enabled,
-	  }
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
-}
-
-XentNodeId g_radio(GalleryApp *g, XentNodeId parent, char const *label, bool checked) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_radio_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent),
-	  &(XtkToggleProps) {.set = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK, .text = label, .checked = checked}
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
-}
-
-XentNodeId g_switch(GalleryApp *g, XentNodeId parent, bool checked) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_switch_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent), &(XtkToggleProps) {.set = XTK_TOGGLE_CHECKED_MASK, .checked = checked}
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
-}
-
-XentNodeId g_slider(GalleryApp *g, XentNodeId parent, float min, float max, float value, float width) {
-	XtkTxn sb;
-	if (!xtk_txn_begin(&g->scene, &sb)) return XENT_NODE_INVALID;
-	xtk_slider_create(
-	  &sb, xtk_ref_existing(( XtkCtrl ) parent),
-	  &(XtkSliderProps) {
-		.set = XTK_SLIDER_MIN_MASK | XTK_SLIDER_MAX_MASK | XTK_SLIDER_VALUE_MASK | (width > 0 ? XTK_SLIDER_W_MASK : 0u),
-		.min = min,
-		.max = max,
-		.value = value,
-		.w     = width,
-	  }
-	);
-	XtkBatchResult *r = xtk_txn_commit(&sb, NULL);
-	XentNodeId      n = map_first(r);
-	if (r) xtk_batch_result_destroy(r);
-	return n;
+bool page_category_build(PageBuild *b) {
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	int        page   = b->app->model.page;
+	page_header(b, parent, k_categories [page].title, k_categories [page].blurb);
+	page_note(b, parent, "Expand this group in the navigation pane to pick a control.");
+	return true;
 }

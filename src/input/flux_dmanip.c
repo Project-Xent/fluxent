@@ -98,6 +98,7 @@ struct FluxDManipViewport {
 	int                          content_w;
 	int                          content_h;
 	float                        dpi_scale;
+	float                        snap_y;
 	FluxDManipContentUpdatedFn   on_updated;
 	void                        *on_updated_ctx;
 };
@@ -195,8 +196,6 @@ void flux_dmanip_destroy(FluxDManip *dm) {
 bool flux_dmanip_tick(FluxDManip *dm) {
 	if (!dm || !dm->update_mgr) return false;
 	IDirectManipulationUpdateManager_Update(dm->update_mgr, NULL);
-	/* Honour the documented contract: report whether any viewport is still
-	 * running/inertial so the caller keeps pumping frames. */
 	return dm->live_viewports > 0;
 }
 
@@ -341,9 +340,36 @@ void flux_dmanip_vp_sync(FluxDManipViewport *vp, float scroll_x, float scroll_y)
 	( void ) IDirectManipulationContent_SyncContentTransform(vp->primary, m, 6);
 }
 
-bool flux_dmanip_vp_manipulating(FluxDManipViewport const *vp) {
-	if (!vp) return false;
-	return vp->status == DIRECTMANIPULATION_RUNNING || vp->status == DIRECTMANIPULATION_INERTIA;
+static void dmanip_apply_snap_y(FluxDManipViewport *vp, float interval) {
+	IDirectManipulationPrimaryContent *pc = NULL;
+	if (FAILED(IDirectManipulationContent_QueryInterface(
+		  vp->primary, &IID_IDirectManipulationPrimaryContent, ( void ** ) &pc
+		)))
+		return;
+
+	if (interval > 0.0f) {
+		( void ) IDirectManipulationPrimaryContent_SetSnapType(
+		  pc, DIRECTMANIPULATION_MOTION_TRANSLATEY, DIRECTMANIPULATION_SNAPPOINT_MANDATORY
+		);
+		( void ) IDirectManipulationPrimaryContent_SetSnapCoordinate(
+		  pc, DIRECTMANIPULATION_MOTION_TRANSLATEY, DIRECTMANIPULATION_COORDINATE_ORIGIN, 0.0f
+		);
+		( void ) IDirectManipulationPrimaryContent_SetSnapInterval(
+		  pc, DIRECTMANIPULATION_MOTION_TRANSLATEY, interval, 0.0f
+		);
+	}
+	else {
+		( void ) IDirectManipulationPrimaryContent_SetSnapPoints(pc, DIRECTMANIPULATION_MOTION_TRANSLATEY, NULL, 0);
+	}
+	IDirectManipulationPrimaryContent_Release(pc);
+}
+
+void flux_dmanip_vp_setsnapy(FluxDManipViewport *vp, float interval) {
+	if (!vp || !vp->primary) return;
+	if (interval < 0.0f) interval = 0.0f;
+	if (interval == vp->snap_y) return;
+	vp->snap_y = interval;
+	dmanip_apply_snap_y(vp, interval);
 }
 
 void flux_dmanip_vp_setdpi(FluxDManipViewport *vp, float scale) {

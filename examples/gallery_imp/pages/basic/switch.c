@@ -1,7 +1,9 @@
 #include "app.h"
 #include <string.h>
 
-bool page_toggle_build(PageBuild *b) {
+static void page_toggle_sync(GalleryApp *g);
+
+bool        page_toggle_build(PageBuild *b) {
 	page_sync(b, page_toggle_sync);
 	Model const *m      = &b->app->model;
 	XtkNodeRef   parent = xtk_ref_local(b->content);
@@ -35,13 +37,13 @@ bool page_toggle_build(PageBuild *b) {
 		  }
 		);
 		page_keep(b, MSG_LIGHT, state);
-		XtkNodeRef output = page_output(b, demo.row, m->light_on ? "The lights are on." : "The lights are off.");
-		page_keepout(b, MSG_LIGHT, output.u.local);
+		XtkLocalId output = page_output(b, demo.row, m->light_on ? "The lights are on." : "The lights are off.");
+		page_keepout(b, MSG_LIGHT, output);
 	}
 	return true;
 }
 
-void page_toggle_sync(GalleryApp *g) {
+static void page_toggle_sync(GalleryApp *g) {
 	char const *state = g->model.light_on ? "On" : "Off";
 	char const *out   = g->model.light_on ? "The lights are on." : "The lights are off.";
 	xtk_text_settext(

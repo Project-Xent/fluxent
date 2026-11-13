@@ -2,18 +2,21 @@
 #include "store/flux_node_data.h"
 
 #include "controls/textbox/tb_metrics.h"
+#include "render/flux_fluent.h"
 #include "controls/data/flux_component_data.h"
 #include "fluxent/flux_window.h"
 
 static int text_input_cursor(XentCtx *ctx, FluxStore *store, XentNodeId node) {
 	FluxNodeData *nd = flux_store_find(store, node);
-	if (!nd || nd->hover_local_x < 0.0f || !nd->state.focused) return FLUX_CURSOR_IBEAM;
+	if (!nd || nd->hover_local_x < 0.0f) return FLUX_CURSOR_IBEAM;
 
 	XentRect rect = {0};
 	xent_layout_rect(ctx, node, &rect);
 
 	FluxTextBoxData *td = ( FluxTextBoxData * ) nd->component_data;
-	if (!td || !td->content || !td->content [0] || td->readonly) return FLUX_CURSOR_IBEAM;
+	if (td && td->combo_editor)
+		return nd->hover_local_x >= rect.w - FLUX_COMBO_GLYPH_COL ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
+	if (!nd->state.focused || !td || !td->content || !td->content [0] || td->readonly) return FLUX_CURSOR_IBEAM;
 
 	return nd->hover_local_x >= rect.w - FLUX_TEXTBOX_ACTION_BUTTON_W ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
 }
@@ -54,14 +57,7 @@ static int number_cursor(XentCtx *ctx, FluxStore *store, XentNodeId node) {
 
 static int default_cursor_for_type(FluxControlType type) {
 	static int const cursors [XTK_CTRL_TYPE_COUNT] = {
-	  [FLUX_CONTROL_BUTTON]        = FLUX_CURSOR_HAND,
-	  [FLUX_CONTROL_TOGGLE_BUTTON] = FLUX_CURSOR_HAND,
-	  [FLUX_CONTROL_CHECKBOX]      = FLUX_CURSOR_HAND,
-	  [FLUX_CONTROL_RADIO]         = FLUX_CURSOR_HAND,
-	  [FLUX_CONTROL_SWITCH]        = FLUX_CURSOR_HAND,
-	  [FLUX_CONTROL_SLIDER]        = FLUX_CURSOR_HAND,
-	  [FLUX_CONTROL_HYPERLINK]     = FLUX_CURSOR_HAND,
-	  [FLUX_CONTROL_REPEAT_BUTTON] = FLUX_CURSOR_HAND,
+	  [FLUX_CONTROL_HYPERLINK] = FLUX_CURSOR_HAND,
 	};
 	if (( unsigned ) type >= XTK_CTRL_TYPE_COUNT) return FLUX_CURSOR_ARROW;
 	return cursors [type] ? cursors [type] : FLUX_CURSOR_ARROW;

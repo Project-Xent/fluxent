@@ -1,9 +1,3 @@
-/**
- * @file flux_control_record_helpers.c
- * @brief Shared drawing primitives for the Flux MAIN paint → XentDl
- * recorders: theme/color/rect conversion, DPI snapping, fill/stroke/text/glyph
- * builders. Control-specific recorders live in their own *_record.c files.
- */
 #include "controls/draw/flux_control_record_internal.h"
 
 #include <math.h>
@@ -21,8 +15,6 @@ XentColor flux_rec_xcolor(FluxColor c) {
 
 XentRect     flux_rec_xrect(FluxRect const *r) { return (XentRect) {r->x, r->y, r->w, r->h}; }
 
-/* WinUI UseLayoutRounding aligns edges to device pixels so fractional-DPI
- * hairlines stay sharp. */
 static float rec_dpi_scale_x(FluxRenderCtx const *rc) {
 	float sx = rc && rc->dpi.dpi_x > 0.0f ? rc->dpi.dpi_x / FLUX_DPI_BASE : 1.0f;
 	return sx > 0.0f ? sx : 1.0f;
@@ -119,8 +111,6 @@ bool flux_rec_fill_shape(XentDlBuilder *b, XentResourceId shape, FluxRect const 
 }
 
 bool flux_rec_text(XentDlBuilder *b, FluxRect const *r, char const *txt, float size, uint16_t weight, FluxColor c) {
-	/* Fluent control labels default to left + vertical center (DWRITE_VCENTER).
-	 * xent_dl_drawtext leaves v_align=0 (top), which looks vertically biased. */
 	XentTextStyle style = {.font_size = size, .font_weight = weight, .h_align = 0u, .v_align = 1u};
 	return flux_rec_text_ex(b, r, txt, &style, c);
 }
@@ -128,14 +118,13 @@ bool flux_rec_text(XentDlBuilder *b, FluxRect const *r, char const *txt, float s
 bool flux_rec_text_ex(XentDlBuilder *b, FluxRect const *r, char const *txt, XentTextStyle const *style, FluxColor c) {
 	if (!txt || !txt [0] || !style) return true;
 	if (flux_color_af(c) <= 0.0f) return true;
-	return xent_dl_drawtext_style(b, flux_rec_xrect(r), txt, style, flux_rec_xcolor(c));
+	return xent_dl_drawtextstyle(b, flux_rec_xrect(r), txt, style, flux_rec_xcolor(c));
 }
 
 bool flux_rec_glyph_wc(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, float size, FluxColor c) {
 	if (!wc || !wc [0]) return true;
 	char utf8 [8];
 	flux_icon_to_utf8(wc, utf8, sizeof(utf8));
-	/* Embed the icon font name in the list — replay must not depend only on the flag. */
 	XentTextStyle style = {
 	  .font_size   = size,
 	  .font_weight = 400u,
@@ -154,7 +143,7 @@ bool flux_rec_fill_triangle(XentDlBuilder *b, float x0, float y0, float x1, floa
 
 bool flux_rec_filltop(XentDlBuilder *b, FluxRect const *r, float radius, FluxColor c) {
 	if (flux_color_af(c) <= 0.0f) return true;
-	bool ok = xent_dl_pushclip_rect(b, flux_rec_xrect(r));
+	bool ok = xent_dl_pushcliprect(b, flux_rec_xrect(r));
 	if (!ok) return false;
 	FluxRect ext = {r->x, r->y, r->w, r->h + radius};
 	ok           = flux_rec_fill_rounded(b, &ext, radius, c);
@@ -163,7 +152,7 @@ bool flux_rec_filltop(XentDlBuilder *b, FluxRect const *r, float radius, FluxCol
 
 bool flux_rec_fillbot(XentDlBuilder *b, FluxRect const *r, float radius, FluxColor c) {
 	if (flux_color_af(c) <= 0.0f) return true;
-	bool ok = xent_dl_pushclip_rect(b, flux_rec_xrect(r));
+	bool ok = xent_dl_pushcliprect(b, flux_rec_xrect(r));
 	if (!ok) return false;
 	FluxRect ext = {r->x, r->y - radius, r->w, r->h + radius};
 	ok           = flux_rec_fill_rounded(b, &ext, radius, c);

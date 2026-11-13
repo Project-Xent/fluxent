@@ -1,6 +1,6 @@
 #include "fluxent/flux_tooltip.h"
 #include "store/flux_node_data.h"
-#include "fluxent/flux_graphics.h"
+#include "fluxent/flux_gfx.h"
 #include "controls/draw/flux_control_record_internal.h"
 #include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
@@ -75,7 +75,7 @@ void flux_tooltip_settext(FluxTooltip *tt, FluxText *tr) {
 	if (tt) tt->text = tr;
 }
 
-void flux_tooltip_set_theme(FluxTooltip *tt, FluxThemeColors const *theme, bool is_dark) {
+void flux_tooltip_settheme(FluxTooltip *tt, FluxThemeColors const *theme, bool is_dark) {
 	if (!tt) return;
 	tt->theme   = theme;
 	tt->is_dark = is_dark;
@@ -118,7 +118,7 @@ static char const *tooltip_text_at(FluxNodeData const *nd) {
 	return nd->tooltip_text && nd->tooltip_text [0] ? nd->tooltip_text : NULL;
 }
 
-void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const *nd, FluxRect const *screen_bounds) {
+void flux_tooltip_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const *nd, FluxRect const *screen_bounds) {
 	if (!tt) return;
 
 	char const *new_text = tooltip_text_at(nd);
@@ -134,8 +134,6 @@ void flux_tooltip_on_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData con
 	}
 
 	tt->hovered_node = hovered;
-	/* Own a copy: the node (and its tooltip string) can be destroyed while the
-	 * show timer is pending or the popup is up. */
 	flux_str_replace(&tt->tooltip_text, new_text);
 	if (screen_bounds) tt->anchor_screen = *screen_bounds;
 
@@ -181,7 +179,7 @@ static void tooltip_show(FluxTooltip *tt) {
 	FluxSize content_size = tooltip_measure_content(tt);
 	if (content_size.w < 1.0f || content_size.h < 1.0f) return;
 
-	flux_popup_set_size(tt->popup, content_size.w, content_size.h);
+	flux_popup_setsize(tt->popup, content_size.w, content_size.h);
 	flux_popup_show(tt->popup, tt->anchor_screen, FLUX_PLACEMENT_BOTTOM);
 	tt->is_visible = true;
 }
@@ -295,7 +293,7 @@ static void tooltip_paint(void *ctx, FluxPopup *popup) {
 	FluxColor border     = {0};
 	FluxColor text_color = {0};
 	tooltip_resolve_colors(tt, &bg, &border, &text_color);
-	bg                       = flux_popup_acrylic_tint(popup, bg);
+	bg                       = flux_popup_acrylictint(popup, bg);
 
 	FluxSize      popup_size = tooltip_measure_content(tt);
 	FluxRect      bounds     = {0.0f, 0.0f, popup_size.w, popup_size.h};
@@ -305,4 +303,18 @@ static void tooltip_paint(void *ctx, FluxPopup *popup) {
 		flux_xtk_replay_rc(&rc, list);
 		xent_dl_free(list);
 	}
+}
+
+void flux_tooltip_showat(FluxTooltip *tt, char const *text, FluxRect anchor, FluxPlacement placement) {
+	if (!tt || !text || !tt->popup) return;
+	tooltip_kill_timer(tt);
+	flux_str_replace(&tt->tooltip_text, text);
+	tt->hovered_node  = XENT_NODE_INVALID;
+	tt->anchor_screen = anchor;
+	FluxSize size     = tooltip_measure_content(tt);
+	if (size.w < 1.0f || size.h < 1.0f) return;
+	flux_popup_setsize(tt->popup, size.w, size.h);
+	flux_popup_show(tt->popup, anchor, placement);
+	tt->is_visible = true;
+	flux_popup_reposition(tt->popup);
 }

@@ -180,25 +180,6 @@ bool flux_host_menuitem_build(XentCtx *ctx, FluxStore *store, XentNodeId node) {
 	return true;
 }
 
-void flux_host_menufly_retarget(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxControlEnv const *env) {
-	FluxHostMenuFlyData *fly = menu_fly_data(store, node);
-	if (!fly) return;
-	fly->ctx   = ctx;
-	fly->store = store;
-	fly->node  = node;
-	if (!env) return;
-	fly->window = env->window;
-	fly->theme  = env->theme;
-	fly->text   = env->text;
-}
-
-void flux_host_menuitem_retarget(FluxStore *store, XentNodeId node) {
-	FluxHostMenuItemData *item = menu_item_data(store, node);
-	if (!item) return;
-	item->store = store;
-	item->node  = node;
-}
-
 void flux_host_menufly_set_text(FluxStore *store, XentNodeId node, char const *text) {
 	FluxHostMenuFlyData *fly = menu_fly_data(store, node);
 	if (fly) flux_str_replace(&fly->title, text);
@@ -270,9 +251,4 @@ void flux_host_menu_sync_bar(FluxStore *store, XentNodeId node) {
 		FluxHostMenuFlyData *fly = menu_fly_data(store, child);
 		if (fly) flux_menubar_add_menu_ref(store, node, fly->title ? fly->title : "", fly->menu);
 	}
-}
-
-FluxMenu *flux_host_menufly_menu(FluxStore *store, XentNodeId node) {
-	FluxHostMenuFlyData *fly = menu_fly_data(store, node);
-	return fly ? fly->menu : NULL;
 }

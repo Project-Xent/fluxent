@@ -22,9 +22,9 @@ struct FluxTheme {
 	FluxThemeColors   dark;
 	FluxThemeColors   current;
 	uint32_t          version;
-	WUIVI_UISettings *settings;     /**< System UISettings; source of the accent palette + change events. */
-	cwinrt_token      accent_token; /**< Subscription to color-values-changed (0 when unsubscribed). */
-	volatile LONG     accent_dirty; /**< Set on the event thread; consumed on the UI thread in flux_theme_colors. */
+	WUIVI_UISettings *settings;
+	cwinrt_token      accent_token;
+	volatile LONG     accent_dirty;
 };
 
 static void init_light_palette(FluxThemeColors *c) {
@@ -36,8 +36,8 @@ static void init_light_palette(FluxThemeColors *c) {
 
 	c->ctrl_alt_fill_secondary         = flux_color_rgba(0, 0, 0, 0x06);
 	c->ctrl_alt_fill_tertiary          = flux_color_rgba(0, 0, 0, 0x0f);
-	c->ctrl_alt_fill_quarternary       = flux_color_rgba(0, 0, 0, 0x12);
-	c->ctrl_alt_fill_disabled          = flux_color_rgba(0, 0, 0, 0x00);
+	c->ctrl_alt_fill_quarternary       = flux_color_rgba(0, 0, 0, 0x18);
+	c->ctrl_alt_fill_disabled          = flux_color_rgba(255, 255, 255, 0x00);
 
 	c->subtle_fill_secondary           = flux_color_rgba(0, 0, 0, 0x09);
 	c->subtle_fill_tertiary            = flux_color_rgba(0, 0, 0, 0x06);
@@ -46,17 +46,17 @@ static void init_light_palette(FluxThemeColors *c) {
 	c->ctrl_stroke_secondary           = flux_color_rgba(0, 0, 0, 0x29);
 	c->ctrl_stroke_on_accent_default   = flux_color_rgba(255, 255, 255, 0x14);
 	c->ctrl_stroke_on_accent_secondary = flux_color_rgba(0, 0, 0, 0x66);
-	c->ctrl_strong_stroke_default      = flux_color_rgba(0, 0, 0, 0x9c);
+	c->ctrl_strong_stroke_default      = flux_color_rgba(0, 0, 0, 0x72);
 	c->ctrl_strong_stroke_disabled     = flux_color_rgba(0, 0, 0, 0x37);
 
 	c->ctrl_solid_fill_default         = flux_color_rgba(255, 255, 255, 0xff);
 
-	c->ctrl_strong_fill_default        = flux_color_rgba(0, 0, 0, 0x9c);
+	c->ctrl_strong_fill_default        = flux_color_rgba(0, 0, 0, 0x72);
 	c->ctrl_strong_fill_disabled       = flux_color_rgba(0, 0, 0, 0x51);
 
-	c->accent_default                  = flux_color_rgb(0, 120, 212);
-	c->accent_secondary                = flux_color_rgba(0, 120, 212, 0xe6);
-	c->accent_tertiary                 = flux_color_rgba(0, 120, 212, 0xcc);
+	c->accent_default                  = flux_color_rgb(0, 95, 184);
+	c->accent_secondary                = flux_color_rgba(0, 95, 184, 0xe6);
+	c->accent_tertiary                 = flux_color_rgba(0, 95, 184, 0xcc);
 	c->accent_disabled                 = flux_color_rgba(0, 0, 0, 0x37);
 
 	c->text_primary                    = flux_color_rgba(0, 0, 0, 0xe4);
@@ -69,10 +69,10 @@ static void init_light_palette(FluxThemeColors *c) {
 
 	c->card_bg_default                 = flux_color_rgba(255, 255, 255, 0xb3);
 	c->card_stroke_default             = flux_color_rgba(0, 0, 0, 0x0f);
-	c->divider_stroke_default          = flux_color_rgba(0, 0, 0, 0x14);
+	c->divider_stroke_default          = flux_color_rgba(0, 0, 0, 0x0f);
 
 	c->focus_stroke_outer              = flux_color_rgba(0, 0, 0, 0xe4);
-	c->focus_stroke_inner              = flux_color_rgb(255, 255, 255);
+	c->focus_stroke_inner              = flux_color_rgba(255, 255, 255, 0xb3);
 
 	c->layer_default                   = flux_color_rgba(255, 255, 255, 0x80);
 	c->layer_alt                       = flux_color_rgb(255, 255, 255);
@@ -88,11 +88,15 @@ static void init_light_palette(FluxThemeColors *c) {
 
 	c->list_box_bg                     = flux_color_rgb(242, 242, 242);
 
-	c->flip_nav_bg_default             = flux_color_rgba(252, 252, 252, 0xe6); /* acrylic in-app fallback */
-	c->flip_view_bg                    = flux_color_rgb(243, 243, 243);        /* SolidBackgroundFillColorBase */
+	c->flip_nav_bg_default             = flux_color_rgba(252, 252, 252, 0xe6);
+	c->flip_view_bg                    = flux_color_rgb(243, 243, 243);
 
 	c->flyout_background               = flux_color_rgb(249, 249, 249);
 	c->flyout_border                   = flux_color_rgba(0, 0, 0, 0x0f);
+
+	c->accent_text_primary             = flux_color_rgb(0, 62, 146);
+	c->accent_text_tertiary            = flux_color_rgb(0, 95, 184);
+	c->accent_text_disabled            = flux_color_rgba(0, 0, 0, 0x5c);
 }
 
 static void init_dark_palette(FluxThemeColors *c) {
@@ -102,8 +106,8 @@ static void init_dark_palette(FluxThemeColors *c) {
 	c->ctrl_fill_disabled              = flux_color_rgba(255, 255, 255, 0x0b);
 	c->ctrl_fill_input_active          = flux_color_rgba(30, 30, 30, 0xb3);
 
-	c->ctrl_alt_fill_secondary         = flux_color_rgba(255, 255, 255, 0x06);
-	c->ctrl_alt_fill_tertiary          = flux_color_rgba(255, 255, 255, 0x0f);
+	c->ctrl_alt_fill_secondary         = flux_color_rgba(0, 0, 0, 0x19);
+	c->ctrl_alt_fill_tertiary          = flux_color_rgba(255, 255, 255, 0x0b);
 	c->ctrl_alt_fill_quarternary       = flux_color_rgba(255, 255, 255, 0x12);
 	c->ctrl_alt_fill_disabled          = flux_color_rgba(255, 255, 255, 0x00);
 
@@ -119,31 +123,31 @@ static void init_dark_palette(FluxThemeColors *c) {
 
 	c->ctrl_solid_fill_default         = flux_color_rgb(69, 69, 69);
 
-	c->ctrl_strong_fill_default        = flux_color_rgba(255, 255, 255, 0x9c);
-	c->ctrl_strong_fill_disabled       = flux_color_rgba(255, 255, 255, 0x28);
+	c->ctrl_strong_fill_default        = flux_color_rgba(255, 255, 255, 0x8b);
+	c->ctrl_strong_fill_disabled       = flux_color_rgba(255, 255, 255, 0x3f);
 
-	c->accent_default                  = flux_color_rgb(51, 154, 244);
-	c->accent_secondary                = flux_color_rgba(51, 154, 244, 0xe6);
-	c->accent_tertiary                 = flux_color_rgba(51, 154, 244, 0xcc);
+	c->accent_default                  = flux_color_rgb(96, 205, 255);
+	c->accent_secondary                = flux_color_rgba(96, 205, 255, 0xe6);
+	c->accent_tertiary                 = flux_color_rgba(96, 205, 255, 0xcc);
 	c->accent_disabled                 = flux_color_rgba(255, 255, 255, 0x28);
 
 	c->text_primary                    = flux_color_rgb(255, 255, 255);
 	c->text_secondary                  = flux_color_rgba(255, 255, 255, 0xc5);
-	c->text_tertiary                   = flux_color_rgba(255, 255, 255, 0x72);
+	c->text_tertiary                   = flux_color_rgba(255, 255, 255, 0x87);
 	c->text_disabled                   = flux_color_rgba(255, 255, 255, 0x5d);
 	c->text_on_accent_primary          = flux_color_rgb(0, 0, 0);
 	c->text_on_accent_secondary        = flux_color_rgba(0, 0, 0, 0x80);
 	c->text_on_accent_disabled         = flux_color_rgba(255, 255, 255, 0x87);
 
-	c->card_bg_default                 = flux_color_rgba(255, 255, 255, 0x0f);
+	c->card_bg_default                 = flux_color_rgba(255, 255, 255, 0x0d);
 	c->card_stroke_default             = flux_color_rgba(0, 0, 0, 0x19);
-	c->divider_stroke_default          = flux_color_rgba(255, 255, 255, 0x14);
+	c->divider_stroke_default          = flux_color_rgba(255, 255, 255, 0x15);
 
 	c->focus_stroke_outer              = flux_color_rgb(255, 255, 255);
 	c->focus_stroke_inner              = flux_color_rgba(0, 0, 0, 0xb3);
 
-	c->layer_default                   = flux_color_rgba(58, 58, 58, 0x80);
-	c->layer_alt                       = flux_color_rgba(255, 255, 255, 0x06);
+	c->layer_default                   = flux_color_rgba(58, 58, 58, 0x4c);
+	c->layer_alt                       = flux_color_rgba(255, 255, 255, 0x0d);
 	c->layer_on_mica_alt_default       = flux_color_rgba(58, 58, 58, 0x73);
 	c->layer_on_mica_alt_secondary     = flux_color_rgba(255, 255, 255, 0x0f);
 	c->solid_background                = flux_color_rgb(32, 32, 32);
@@ -156,11 +160,15 @@ static void init_dark_palette(FluxThemeColors *c) {
 
 	c->list_box_bg                     = flux_color_rgb(43, 43, 43);
 
-	c->flip_nav_bg_default             = flux_color_rgba(44, 44, 44, 0xe6); /* acrylic in-app fallback */
-	c->flip_view_bg                    = flux_color_rgb(32, 32, 32);        /* SolidBackgroundFillColorBase */
+	c->flip_nav_bg_default             = flux_color_rgba(44, 44, 44, 0xe6);
+	c->flip_view_bg                    = flux_color_rgb(32, 32, 32);
 
 	c->flyout_background               = flux_color_rgb(44, 44, 44);
 	c->flyout_border                   = flux_color_rgba(0, 0, 0, 0x33);
+
+	c->accent_text_primary             = flux_color_rgb(153, 235, 255);
+	c->accent_text_tertiary            = flux_color_rgb(96, 205, 255);
+	c->accent_text_disabled            = flux_color_rgba(255, 255, 255, 0x5d);
 }
 
 static void theme_apply_accent(FluxThemeColors *c, WUI_Color a) {
@@ -169,9 +177,9 @@ static void theme_apply_accent(FluxThemeColors *c, WUI_Color a) {
 	c->accent_tertiary  = flux_color_rgba(a.R, a.G, a.B, 0xcc);
 }
 
-static bool theme_read_system_accent(WUIVI_UISettings *settings, WUI_Color *out) {
+static bool theme_read_accent(WUIVI_UISettings *settings, WUIVI_UIColorType type, WUI_Color *out) {
 	if (!settings) return false;
-	return SUCCEEDED(wuivi_u_i_settings_get_color_value(settings, WUIVI_UIColorType_Accent, out));
+	return SUCCEEDED(wuivi_u_i_settings_get_color_value(settings, type, out));
 }
 
 static void resolve_current(FluxTheme *tm) {
@@ -189,10 +197,18 @@ static void theme_rebuild(FluxTheme *tm) {
 	init_dark_palette(&tm->dark);
 
 	WUI_Color accent;
-	if (theme_read_system_accent(tm->settings, &accent)) {
+	if (theme_read_accent(tm->settings, WUIVI_UIColorType_AccentDark1, &accent)) {
 		theme_apply_accent(&tm->light, accent);
-		theme_apply_accent(&tm->dark, accent);
+		tm->light.accent_text_tertiary = flux_color_rgb(accent.R, accent.G, accent.B);
 	}
+	if (theme_read_accent(tm->settings, WUIVI_UIColorType_AccentLight2, &accent)) {
+		theme_apply_accent(&tm->dark, accent);
+		tm->dark.accent_text_tertiary = flux_color_rgb(accent.R, accent.G, accent.B);
+	}
+	if (theme_read_accent(tm->settings, WUIVI_UIColorType_AccentDark2, &accent))
+		tm->light.accent_text_primary = flux_color_rgb(accent.R, accent.G, accent.B);
+	if (theme_read_accent(tm->settings, WUIVI_UIColorType_AccentLight3, &accent))
+		tm->dark.accent_text_primary = flux_color_rgb(accent.R, accent.G, accent.B);
 	resolve_current(tm);
 	tm->version++;
 }

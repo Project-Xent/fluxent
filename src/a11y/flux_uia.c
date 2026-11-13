@@ -9,9 +9,15 @@
 #include "store/flux_node_data.h"
 #include "bridge/flux_internal.h"
 
+#include "controls/data/flux_slider_data.h"
 #include "controls/data/flux_textbox_data.h"
+#include "controls/behavior/flux_slider.h"
+#include "render/flux_slider_geom.h"
 #include "fluxent/flux_control_type.h"
 #include "host/flux_prop_apply.h"
+#include "controls/factory/flux_init_value.h"
+#include "controls/factory/flux_init_popup.h"
+#include "controls/factory/flux_init_picker.h"
 
 #include <windows.h>
 #include <oleauto.h>
@@ -22,8 +28,6 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-/* UIA well-known integer ids. The C SDK headers do not export the UIA_* symbols
- * in this toolchain, so the values are inlined (matching uiautomationclient.h). */
 #define FLUX_UIA_PROP_NAME                  30005
 #define FLUX_UIA_PROP_CONTROL_TYPE          30003
 #define FLUX_UIA_PROP_HAS_KEYBOARD_FOCUS    30008
@@ -49,9 +53,11 @@
 #define FLUX_UIA_CT_HYPERLINK               50005
 #define FLUX_UIA_CT_IMAGE                   50006
 #define FLUX_UIA_CT_LIST                    50008
+#define FLUX_UIA_CT_LISTITEM                50007
 #define FLUX_UIA_CT_MENU                    50009
 #define FLUX_UIA_CT_PROGRESSBAR             50012
 #define FLUX_UIA_CT_RADIO                   50013
+#define FLUX_UIA_CT_SCROLLBAR               50014
 #define FLUX_UIA_CT_SLIDER                  50015
 #define FLUX_UIA_CT_SPINNER                 50016
 #define FLUX_UIA_CT_TAB                     50018
@@ -92,8 +98,6 @@ static const GUID Flux_IID_SelectionItem = {
   0x2acad808, 0xb2d4, 0x452d, {0xa4, 0x07, 0x91, 0xff, 0x1a, 0xd1, 0x67, 0xb2}
 };
 
-/* One object exposes the three provider facets plus every pattern it may answer;
- * QI hands back the matching vtable, gated by the control's pattern support. */
 typedef struct FluxUia {
 	IRawElementProviderSimpleVtbl const       *lpVtblSimple;
 	IRawElementProviderFragmentVtbl const     *lpVtblFragment;
@@ -106,6 +110,7 @@ typedef struct FluxUia {
 	LONG                                       ref;
 	FluxUiaContext                             info;
 	XentNodeId                                 node;
+	int                                        thumb;
 } FluxUia;
 
 #define SELF_SIMPLE(p)    (( FluxUia * ) (( char * ) (p) - offsetof(FluxUia, lpVtblSimple)))
@@ -126,54 +131,66 @@ typedef struct FluxUiaControlInfo {
 	bool selection;
 } FluxUiaControlInfo;
 
-/* Control type -> UIA control type + the patterns it answers. Table-driven so the
- * provider stays free of per-control branching. */
 static FluxUiaControlInfo const kFluxUiaControls [] = {
-  [FLUX_CONTROL_CONTAINER]       = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_TEXT]            = {FLUX_UIA_CT_TEXT,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_BUTTON]          = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
-  [FLUX_CONTROL_TOGGLE_BUTTON]   = {FLUX_UIA_CT_BUTTON,      1, 1, 0, 0, 0},
-  [FLUX_CONTROL_CHECKBOX]        = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
-  [FLUX_CONTROL_RADIO]           = {FLUX_UIA_CT_RADIO,       0, 0, 0, 0, 1},
-  [FLUX_CONTROL_SWITCH]          = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
-  [FLUX_CONTROL_SLIDER]          = {FLUX_UIA_CT_SLIDER,      0, 0, 1, 0, 0},
-  [FLUX_CONTROL_TEXT_INPUT]      = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
-  [FLUX_CONTROL_SCROLL]          = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_IMAGE]           = {FLUX_UIA_CT_IMAGE,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_PROGRESS]        = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
-  [FLUX_CONTROL_LIST]            = {FLUX_UIA_CT_LIST,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_TAB]             = {FLUX_UIA_CT_TAB,         0, 0, 0, 0, 0},
-  [FLUX_CONTROL_CARD]            = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_DIVIDER]         = {FLUX_UIA_CT_SEPARATOR,   0, 0, 0, 0, 0},
-  [FLUX_CONTROL_CANVAS]          = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_PASSWORD_BOX]    = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
-  [FLUX_CONTROL_NUMBER_BOX]      = {FLUX_UIA_CT_SPINNER,     0, 0, 1, 1, 0},
-  [FLUX_CONTROL_HYPERLINK]       = {FLUX_UIA_CT_HYPERLINK,   1, 0, 0, 0, 0},
-  [FLUX_CONTROL_REPEAT_BUTTON]   = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
-  [FLUX_CONTROL_PROGRESS_RING]   = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
-  [FLUX_CONTROL_INFO_BADGE]      = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_TOOLTIP]         = {FLUX_UIA_CT_TOOLTIP,     0, 0, 0, 0, 0},
-  [FLUX_CONTROL_FLYOUT]          = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_MENU_FLYOUT]     = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
-  [FLUX_CONTROL_DROPDOWN_BUTTON] = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
-  [FLUX_CONTROL_SPLIT_BUTTON]    = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
-  [FLUX_CONTROL_COMBO_BOX]       = {FLUX_UIA_CT_COMBOBOX,    0, 0, 0, 1, 0},
-  [FLUX_CONTROL_EXPANDER]        = {FLUX_UIA_CT_GROUP,       1, 0, 0, 0, 0},
-  [FLUX_CONTROL_INFO_BAR]        = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
-  [FLUX_CONTROL_CONTENT_DIALOG]  = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CONTAINER]        = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_TEXT]             = {FLUX_UIA_CT_TEXT,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_BUTTON]           = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_TOGGLE_BUTTON]    = {FLUX_UIA_CT_BUTTON,      1, 1, 0, 0, 0},
+  [FLUX_CONTROL_CHECKBOX]         = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
+  [FLUX_CONTROL_RADIO]            = {FLUX_UIA_CT_RADIO,       0, 0, 0, 0, 1},
+  [FLUX_CONTROL_SWITCH]           = {FLUX_UIA_CT_CHECKBOX,    0, 1, 0, 0, 0},
+  [FLUX_CONTROL_SLIDER]           = {FLUX_UIA_CT_SLIDER,      0, 0, 1, 0, 0},
+  [FLUX_CONTROL_TEXT_INPUT]       = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
+  [FLUX_CONTROL_SCROLL]           = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_SCROLL_BAR]       = {FLUX_UIA_CT_SCROLLBAR,   0, 0, 1, 0, 0},
+  [FLUX_CONTROL_LOOPING_SELECTOR] = {FLUX_UIA_CT_LIST,        0, 0, 0, 0, 1},
+  [FLUX_CONTROL_LOOPING_ITEM]     = {FLUX_UIA_CT_LISTITEM,    0, 0, 0, 0, 0},
+  [FLUX_CONTROL_DATE_PICKER]      = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 1, 0},
+  [FLUX_CONTROL_TIME_PICKER]      = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 1, 0},
+  [FLUX_CONTROL_IMAGE]            = {FLUX_UIA_CT_IMAGE,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_PROGRESS]         = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
+  [FLUX_CONTROL_LIST]             = {FLUX_UIA_CT_LIST,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_TAB]              = {FLUX_UIA_CT_TAB,         0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CARD]             = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_DIVIDER]          = {FLUX_UIA_CT_SEPARATOR,   0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CANVAS]           = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_PASSWORD_BOX]     = {FLUX_UIA_CT_EDIT,        0, 0, 0, 1, 0},
+  [FLUX_CONTROL_NUMBER_BOX]       = {FLUX_UIA_CT_SPINNER,     0, 0, 1, 1, 0},
+  [FLUX_CONTROL_HYPERLINK]        = {FLUX_UIA_CT_HYPERLINK,   1, 0, 0, 0, 0},
+  [FLUX_CONTROL_REPEAT_BUTTON]    = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_PROGRESS_RING]    = {FLUX_UIA_CT_PROGRESSBAR, 0, 0, 1, 0, 0},
+  [FLUX_CONTROL_INFO_BADGE]       = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_TOOLTIP]          = {FLUX_UIA_CT_TOOLTIP,     0, 0, 0, 0, 0},
+  [FLUX_CONTROL_FLYOUT]           = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_MENU_FLYOUT]      = {FLUX_UIA_CT_MENU,        0, 0, 0, 0, 0},
+  [FLUX_CONTROL_DROPDOWN_BUTTON]  = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_SPLIT_BUTTON]     = {FLUX_UIA_CT_BUTTON,      1, 0, 0, 0, 0},
+  [FLUX_CONTROL_COMBO_BOX]        = {FLUX_UIA_CT_COMBOBOX,    0, 0, 0, 1, 0},
+  [FLUX_CONTROL_EXPANDER]         = {FLUX_UIA_CT_GROUP,       1, 0, 0, 0, 0},
+  [FLUX_CONTROL_INFO_BAR]         = {FLUX_UIA_CT_GROUP,       0, 0, 0, 0, 0},
+  [FLUX_CONTROL_CONTENT_DIALOG]   = {FLUX_UIA_CT_PANE,        0, 0, 0, 0, 0},
 };
 
-static FluxUia           *uia_alloc(FluxUiaContext const *info, XentNodeId node);
+static FluxUia      *uia_alloc(FluxUiaContext const *info, XentNodeId node);
+
+static FluxNodeData *uia_node_data(FluxUia const *self) {
+	return self->info.store ? flux_store_find(self->info.store, self->node) : NULL;
+}
+
+static FluxSliderData const *uia_range_slider(FluxUia const *self) {
+	FluxNodeData *nd = uia_node_data(self);
+	if (!nd || nd->component_type != FLUX_CONTROL_SLIDER || !nd->component_data) return NULL;
+	FluxSliderData const *sd = ( FluxSliderData const * ) nd->component_data;
+	return sd->is_range ? sd : NULL;
+}
 
 static FluxUiaControlInfo uia_control_info(FluxUia const *self) {
+	if (self->thumb >= 0) return (FluxUiaControlInfo) {FLUX_UIA_CT_SLIDER, 0, 0, 1, 0, 0};
+	if (uia_range_slider(self)) return (FluxUiaControlInfo) {FLUX_UIA_CT_GROUP, 0, 0, 0, 0, 0};
 	FluxControlType t = flux_node_type(self->info.store, self->node);
 	if (( size_t ) t >= sizeof(kFluxUiaControls) / sizeof(kFluxUiaControls [0]))
 		return (FluxUiaControlInfo) {FLUX_UIA_CT_CUSTOM, 0, 0, 0, 0, 0};
 	return kFluxUiaControls [t];
-}
-
-static FluxNodeData *uia_node_data(FluxUia const *self) {
-	return self->info.store ? flux_store_find(self->info.store, self->node) : NULL;
 }
 
 static void *uia_pattern_iface(FluxUia *self, REFIID riid) {
@@ -271,18 +288,29 @@ static void variant_set_i4(VARIANT *out, int value) {
 
 static bool uia_has_focus(FluxUia *self) {
 	FluxNodeData *nd = uia_node_data(self);
-	return nd && nd->state.focused && GetFocus() == self->info.hwnd;
+	if (!nd || !nd->state.focused || GetFocus() != self->info.hwnd) return false;
+	FluxSliderData const *range = self->thumb >= 0 ? uia_range_slider(self) : NULL;
+	return self->thumb < 0 || (range && range->active_thumb == self->thumb);
 }
 
-/* Returns true when `id` is a scalar property handled directly into `out`; false
- * means the caller falls through to the BSTR name property. */
+static int uia_automation_id(FluxUia const *self) {
+	return self->thumb < 0 ? ( int ) self->node : -(( int ) self->node * 2 + self->thumb + 1);
+}
+
+static bool uia_in_control_view(FluxUia const *self) {
+	FluxNodeData const *nd = flux_store_find(self->info.store, self->node);
+	if (!nd || nd->component_type != FLUX_CONTROL_PROGRESS_RING) return true;
+	FluxProgressRingData const *ring = ( FluxProgressRingData const * ) nd->component_data;
+	return !ring || !ring->inactive;
+}
+
 static bool s_get_scalar_property(FluxUia *self, FluxUiaControlInfo info, PROPERTYID id, VARIANT *out) {
 	switch (id) {
-	case FLUX_UIA_PROP_CONTROL_TYPE       : variant_set_i4(out, info.control_type); return true;
-	case FLUX_UIA_PROP_AUTOMATION_ID      : variant_set_i4(out, ( int ) self->node); return true;
-	case FLUX_UIA_PROP_IS_ENABLED         : variant_set_bool(out, xent_sem_enabled(self->info.ctx, self->node)); return true;
+	case FLUX_UIA_PROP_CONTROL_TYPE  : variant_set_i4(out, info.control_type); return true;
+	case FLUX_UIA_PROP_AUTOMATION_ID : variant_set_i4(out, uia_automation_id(self)); return true;
+	case FLUX_UIA_PROP_IS_ENABLED    : variant_set_bool(out, xent_sem_enabled(self->info.ctx, self->node)); return true;
 	case FLUX_UIA_PROP_IS_CONTROL_ELEMENT :
-	case FLUX_UIA_PROP_IS_CONTENT_ELEMENT : variant_set_bool(out, true); return true;
+	case FLUX_UIA_PROP_IS_CONTENT_ELEMENT : variant_set_bool(out, uia_in_control_view(self)); return true;
 	case FLUX_UIA_PROP_IS_KEYBOARD_FOCUSABLE :
 		variant_set_bool(out, info.control_type != FLUX_UIA_CT_GROUP);
 		return true;
@@ -300,7 +328,8 @@ static HRESULT STDMETHODCALLTYPE s_get_property(IRawElementProviderSimple *p, PR
 	if (s_get_scalar_property(self, info, id, out)) return S_OK;
 	if (id != FLUX_UIA_PROP_NAME) return S_OK;
 
-	BSTR name = utf8_to_bstr(xent_sem_label(self->info.ctx, self->node));
+	char const *thumb_names [2] = {"Range start", "Range end"};
+	BSTR name = utf8_to_bstr(self->thumb >= 0 ? thumb_names [self->thumb] : xent_sem_label(self->info.ctx, self->node));
 	if (name) {
 		out->vt      = VT_BSTR;
 		out->bstrVal = name;
@@ -340,6 +369,22 @@ static IRawElementProviderFragment *uia_wrap(FluxUia *self, XentNodeId node) {
 	return p ? ( IRawElementProviderFragment * ) &p->lpVtblFragment : NULL;
 }
 
+static IRawElementProviderFragment *uia_wrap_thumb(FluxUia *self, int thumb) {
+	FluxUia *p = uia_alloc(&self->info, self->node);
+	if (!p) return NULL;
+	p->thumb = thumb;
+	return ( IRawElementProviderFragment * ) &p->lpVtblFragment;
+}
+
+static IRawElementProviderFragment *uia_navigate_thumb(FluxUia *self, enum NavigateDirection dir) {
+	switch (dir) {
+	case NavigateDirection_Parent          : return uia_wrap(self, self->node);
+	case NavigateDirection_NextSibling     : return self->thumb == 0 ? uia_wrap_thumb(self, 1) : NULL;
+	case NavigateDirection_PreviousSibling : return self->thumb == 1 ? uia_wrap_thumb(self, 0) : NULL;
+	default                                : return NULL;
+	}
+}
+
 static XentNodeId uia_nav_if_not_root(FluxUia *self, XentNodeId (*fn)(XentCtx const *, XentNodeId)) {
 	return self->node == self->info.root ? XENT_NODE_INVALID : fn(self->info.ctx, self->node);
 }
@@ -361,12 +406,19 @@ static XentNodeId uia_navigate_target(FluxUia *self, enum NavigateDirection dir)
 	return XENT_NODE_INVALID;
 }
 
+static IRawElementProviderFragment *uia_navigate(FluxUia *self, enum NavigateDirection dir) {
+	if (self->thumb >= 0) return uia_navigate_thumb(self, dir);
+	bool range = uia_range_slider(self) != NULL;
+	if (range && dir == NavigateDirection_FirstChild) return uia_wrap_thumb(self, 0);
+	if (range && dir == NavigateDirection_LastChild) return uia_wrap_thumb(self, 1);
+	return uia_wrap(self, uia_navigate_target(self, dir));
+}
+
 static HRESULT STDMETHODCALLTYPE f_navigate(
   IRawElementProviderFragment *p, enum NavigateDirection dir, IRawElementProviderFragment **out
 ) {
-	FluxUia *self = SELF_FRAG(p);
 	if (!out) return E_POINTER;
-	*out = uia_wrap(self, uia_navigate_target(self, dir));
+	*out = uia_navigate(SELF_FRAG(p), dir);
 	return S_OK;
 }
 
@@ -374,14 +426,27 @@ static HRESULT STDMETHODCALLTYPE f_get_runtime_id(IRawElementProviderFragment *p
 	FluxUia *self = SELF_FRAG(p);
 	if (!out) return E_POINTER;
 	*out          = NULL;
-	SAFEARRAY *sa = SafeArrayCreateVector(VT_I4, 0, 2);
+	SAFEARRAY *sa = SafeArrayCreateVector(VT_I4, 0, self->thumb >= 0 ? 3 : 2);
 	if (!sa) return E_OUTOFMEMORY;
-	LONG idx0 = 0, idx1 = 1;
-	int  append = FLUX_UIA_APPEND_RUNTIME_ID, id = ( int ) self->node;
+	LONG idx0 = 0, idx1 = 1, idx2 = 2;
+	int  append = FLUX_UIA_APPEND_RUNTIME_ID, id = ( int ) self->node, thumb = self->thumb + 1;
 	SafeArrayPutElement(sa, &idx0, &append);
 	SafeArrayPutElement(sa, &idx1, &id);
+	if (self->thumb >= 0) SafeArrayPutElement(sa, &idx2, &thumb);
 	*out = sa;
 	return S_OK;
+}
+
+static void uia_thumb_rect(FluxUia const *self, XentRect *rect) {
+	FluxSliderData const *sd = uia_range_slider(self);
+	if (!sd) return;
+	FluxSliderLine line  = flux_slider_line(rect->x, rect->y, rect->w, rect->h, sd->vertical);
+	float          range = sd->max_value - sd->min_value;
+	float          at    = range > 0.0f ? (sd->range_value [self->thumb] - sd->min_value) / range : 0.0f;
+	float          along = flux_slider_along(&line, at);
+	float          r     = FLUX_SLIDER_THUMB_OUTER;
+	*rect                = sd->vertical ? (XentRect) {line.cross - r, along - r, r * 2.0f, r * 2.0f}
+	                                    : (XentRect) {along - r, line.cross - r, r * 2.0f, r * 2.0f};
 }
 
 static HRESULT STDMETHODCALLTYPE f_get_bounds(IRawElementProviderFragment *p, struct UiaRect *out) {
@@ -389,6 +454,7 @@ static HRESULT STDMETHODCALLTYPE f_get_bounds(IRawElementProviderFragment *p, st
 	if (!out) return E_POINTER;
 	XentRect rect = {0};
 	xent_layout_rect(self->info.ctx, self->node, &rect);
+	if (self->thumb >= 0) uia_thumb_rect(self, &rect);
 	float scale  = ( float ) GetDpiForWindow(self->info.hwnd) / 96.0f;
 	POINT origin = {0, 0};
 	ClientToScreen(self->info.hwnd, &origin);
@@ -487,7 +553,12 @@ static XentNodeId uia_find_focused(FluxUia *self, XentNodeId node) {
 static HRESULT STDMETHODCALLTYPE r_get_focus(IRawElementProviderFragmentRoot *p, IRawElementProviderFragment **out) {
 	FluxUia *self = SELF_ROOT(p);
 	if (!out) return E_POINTER;
-	*out = uia_wrap(self, uia_find_focused(self, self->info.root));
+	XentNodeId focused          = uia_find_focused(self, self->info.root);
+	FluxUia    probe            = *self;
+	probe.node                  = focused;
+	probe.thumb                 = -1;
+	FluxSliderData const *range = focused == XENT_NODE_INVALID ? NULL : uia_range_slider(&probe);
+	*out                        = range ? uia_wrap_thumb(&probe, range->active_thumb) : uia_wrap(self, focused);
 	return S_OK;
 }
 
@@ -568,18 +639,22 @@ static HRESULT STDMETHODCALLTYPE rng_set_value(IRangeValueProvider *p, double va
 	if (!self->info.store || uia_range_is_readonly(self)) return UIA_E_INVALIDOPERATION;
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 
+	if (self->thumb >= 0)
+		return flux_slider_userthumb(self->info.store, self->node, self->thumb, ( float ) value)
+		       ? S_OK
+		       : UIA_E_INVALIDOPERATION;
 	if (t == FLUX_CONTROL_NUMBER_BOX) flux_prop_numberbox_value(self->info.store, self->node, value);
+	else if (t == FLUX_CONTROL_SCROLL_BAR) flux_scroll_bar_setvalue(self->info.store, self->node, value);
 	else flux_prop_slider_value(self->info.store, self->node, ( float ) value);
 	return S_OK;
 }
 
-/* Shared body for the three range getters: fetch the semantic (value, min, max) triple
- * and return the requested component (0=value, 1=min, 2=max). */
 static HRESULT rng_get_component(IRangeValueProvider *p, double *out, int component) {
 	FluxUia *self = SELF_RANGE(p);
 	if (!out) return E_POINTER;
 	float vals [3] = {0.0f, 0.0f, 0.0f};
-	xent_sem_value(self->info.ctx, self->node, &vals [0], &vals [1], &vals [2]);
+	if (self->thumb >= 0) flux_slider_thumb(self->info.store, self->node, self->thumb, &vals [0], &vals [1], &vals [2]);
+	else xent_sem_value(self->info.ctx, self->node, &vals [0], &vals [1], &vals [2]);
 	*out = vals [component];
 	return S_OK;
 }
@@ -641,23 +716,33 @@ static ULONG STDMETHODCALLTYPE val_release(IValueProvider *p) { return uia_relea
 static char const             *uia_text_content(FluxUia *self) {
 	FluxNodeData *nd = uia_node_data(self);
 	if (!nd || !nd->component_data) return NULL;
-	if (nd->component_type == FLUX_CONTROL_PASSWORD_BOX) return ""; /* never expose secret text */
+	if (nd->component_type == FLUX_CONTROL_COMBO_BOX) return flux_combo_text(self->info.store, self->node);
+	if (nd->component_type == FLUX_CONTROL_DATE_PICKER || nd->component_type == FLUX_CONTROL_TIME_PICKER)
+		return flux_picker_valuetext(self->info.store, self->node);
+	if (nd->component_type == FLUX_CONTROL_PASSWORD_BOX) return "";
 	FluxTextBoxData const *tb = ( FluxTextBoxData const * ) nd->component_data;
 	return tb->content;
+}
+
+static bool uia_value_is_picker(FluxUia const *self) {
+	FluxControlType t = flux_node_type(self->info.store, self->node);
+	return t == FLUX_CONTROL_DATE_PICKER || t == FLUX_CONTROL_TIME_PICKER;
 }
 
 static HRESULT STDMETHODCALLTYPE val_set_value(IValueProvider *p, LPCWSTR value) {
 	FluxUia *self = SELF_VALUE(p);
 	if (!self->info.store) return UIA_E_INVALIDOPERATION;
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
+	if (uia_value_is_picker(self)) return UIA_E_INVALIDOPERATION;
 
 	int   n    = WideCharToMultiByte(CP_UTF8, 0, value ? value : L"", -1, NULL, 0, NULL, NULL);
 	char *utf8 = ( char * ) malloc(n > 0 ? ( size_t ) n : 1);
 	if (!utf8) return E_OUTOFMEMORY;
 	WideCharToMultiByte(CP_UTF8, 0, value ? value : L"", -1, utf8, n, NULL, NULL);
 
-	if (flux_node_type(self->info.store, self->node) == FLUX_CONTROL_PASSWORD_BOX)
-		flux_prop_password_content(self->info.store, self->node, utf8);
+	FluxControlType type = flux_node_type(self->info.store, self->node);
+	if (type == FLUX_CONTROL_PASSWORD_BOX) flux_prop_password_content(self->info.store, self->node, utf8);
+	else if (type == FLUX_CONTROL_COMBO_BOX) flux_prop_combo_text(self->info.store, self->node, utf8);
 	else flux_prop_textbox_content(self->info.store, self->node, utf8);
 	free(utf8);
 	return S_OK;
@@ -674,7 +759,7 @@ static HRESULT STDMETHODCALLTYPE val_get_value(IValueProvider *p, BSTR *out) {
 static HRESULT STDMETHODCALLTYPE val_get_readonly(IValueProvider *p, BOOL *out) {
 	FluxUia *self = SELF_VALUE(p);
 	if (!out) return E_POINTER;
-	*out = xent_sem_enabled(self->info.ctx, self->node) ? FALSE : TRUE;
+	*out = xent_sem_enabled(self->info.ctx, self->node) && !uia_value_is_picker(self) ? FALSE : TRUE;
 	return S_OK;
 }
 
@@ -703,7 +788,7 @@ static HRESULT STDMETHODCALLTYPE sel_add(ISelectionItemProvider *p) { return uia
 
 static HRESULT STDMETHODCALLTYPE sel_remove(ISelectionItemProvider *p) {
 	( void ) p;
-	return UIA_E_INVALIDOPERATION; /* radio groups cannot clear the active item */
+	return UIA_E_INVALIDOPERATION;
 }
 
 static HRESULT STDMETHODCALLTYPE sel_is_selected(ISelectionItemProvider *p, BOOL *out) {
@@ -745,6 +830,7 @@ static FluxUia *uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	p->ref             = 1;
 	p->info            = *info;
 	p->node            = node;
+	p->thumb           = -1;
 	return p;
 }
 

@@ -1,3 +1,4 @@
+#include "controls/behavior/flux_repeat_timer.h"
 #include "controls/factory/flux_factory.h"
 #include "bridge/flux_internal.h"
 #include "store/flux_node_data.h"
@@ -13,20 +14,17 @@
 #include <windows.h>
 
 typedef struct FluxRepeatButtonInputData {
-	FluxRepeatButtonData              base;
-	XentNodeId                        node;
-	UINT_PTR                          timer_id;
-	FluxWindow                       *window;
-	XentCtx                          *ctx;
-	FluxStore                        *store;
-	bool                              pointer_inside;
-	bool                              repeat_active;
-	struct FluxRepeatButtonInputData *timer_next;
+	FluxRepeatButtonData base;
+	XentNodeId           node;
+	FluxRepeatTimer      timer;
+	FluxWindow          *window;
+	XentCtx             *ctx;
+	FluxStore           *store;
+	bool                 pointer_inside;
+	bool                 repeat_active;
 } FluxRepeatButtonInputData;
 
-static FluxRepeatButtonInputData *g_repeat_timers = NULL;
-
-static void                       repeat_notify(FluxRepeatButtonInputData *rb) {
+static void repeat_notify(FluxRepeatButtonInputData *rb) {
 	XtkHost *host = flux_store_host(rb->store);
 	if (host) {
 		flux_input_route_invoke(host, rb->node, XTK_EVENT_CAUSE_USER);
@@ -35,63 +33,22 @@ static void                       repeat_notify(FluxRepeatButtonInputData *rb) {
 	if (rb->base.on_click) rb->base.on_click(rb->base.on_click_ctx);
 }
 
-static FluxRepeatButtonInputData *repeat_find_timer(UINT_PTR id) {
-	for (FluxRepeatButtonInputData *rb = g_repeat_timers; rb; rb = rb->timer_next)
-		if (rb->timer_id == id) return rb;
-	return NULL;
+static void repeat_tick(void *ctx) {
+	FluxRepeatButtonInputData *rb = ( FluxRepeatButtonInputData * ) ctx;
+	if (rb->repeat_active) repeat_notify(rb);
 }
 
-static void repeat_track_timer(FluxRepeatButtonInputData *rb) {
-	if (!rb || rb->timer_next || g_repeat_timers == rb) return;
-	rb->timer_next  = g_repeat_timers;
-	g_repeat_timers = rb;
-}
-
-static void repeat_untrack_timer(FluxRepeatButtonInputData *rb) {
-	FluxRepeatButtonInputData **link = &g_repeat_timers;
-	while (*link && *link != rb) link = &(*link)->timer_next;
-	if (*link) *link = rb->timer_next;
-	rb->timer_next = NULL;
-}
-
-static void CALLBACK repeat_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD elapsed) {
-	( void ) hwnd;
-	( void ) msg;
-	( void ) elapsed;
-	FluxRepeatButtonInputData *rb = repeat_find_timer(id);
-	if (!rb || !rb->repeat_active) return;
-
+static void repeat_start_timer(FluxRepeatButtonInputData *rb) {
+	uint32_t delay    = rb->base.repeat_delay_ms;
 	uint32_t interval = rb->base.repeat_interval_ms;
-	if (interval < 10) interval = 50;
-	repeat_untrack_timer(rb);
-	KillTimer(NULL, rb->timer_id);
-	rb->timer_id = SetTimer(NULL, 0, interval, repeat_timer_proc);
-	if (rb->timer_id) repeat_track_timer(rb);
-	repeat_notify(rb);
-}
-
-static void repeat_start_timer(FluxRepeatButtonInputData *rb, uint32_t delay_ms) {
-	if (!rb || rb->timer_id) return;
-	rb->timer_id = SetTimer(NULL, 0, delay_ms, repeat_timer_proc);
-	if (rb->timer_id) repeat_track_timer(rb);
+	flux_repeat_timer_start(&rb->timer, delay < 10 ? 400 : delay, interval < 10 ? 50 : interval, repeat_tick, rb);
 }
 
 static void repeat_stop_timer(FluxRepeatButtonInputData *rb) {
 	if (!rb) return;
-	if (rb->timer_id) {
-		repeat_untrack_timer(rb);
-		KillTimer(NULL, rb->timer_id);
-		rb->timer_id = 0;
-	}
+	flux_repeat_timer_stop(&rb->timer);
 	rb->pointer_inside = false;
 	rb->repeat_active  = false;
-}
-
-static void repeat_pause_timer(FluxRepeatButtonInputData *rb) {
-	if (!rb || !rb->timer_id) return;
-	repeat_untrack_timer(rb);
-	KillTimer(NULL, rb->timer_id);
-	rb->timer_id = 0;
 }
 
 static void repeat_on_pointer_down(void *ctx, float x, float y, int click_count) {
@@ -103,9 +60,7 @@ static void repeat_on_pointer_down(void *ctx, float x, float y, int click_count)
 
 	rb->pointer_inside = true;
 	rb->repeat_active  = true;
-	uint32_t delay     = rb->base.repeat_delay_ms;
-	if (delay < 10) delay = 400;
-	repeat_start_timer(rb, delay);
+	repeat_start_timer(rb);
 	repeat_notify(rb);
 }
 
@@ -117,7 +72,7 @@ static void repeat_on_pointer_move(void *ctx, float local_x, float local_y) {
 	xent_layout_rect(rb->ctx, rb->node, &rect);
 	bool inside = local_x >= 0.0f && local_x < rect.w && local_y >= 0.0f && local_y < rect.h;
 	if (!inside) {
-		if (rb->pointer_inside) repeat_pause_timer(rb);
+		if (rb->pointer_inside) flux_repeat_timer_stop(&rb->timer);
 		rb->pointer_inside = false;
 		return;
 	}
@@ -125,22 +80,15 @@ static void repeat_on_pointer_move(void *ctx, float local_x, float local_y) {
 	if (rb->pointer_inside) return;
 
 	rb->pointer_inside = true;
-	if (!rb->repeat_active || rb->timer_id) return;
+	if (!rb->repeat_active || flux_repeat_timer_running(&rb->timer)) return;
 
-	/* WinUI re-applies the initial Delay when the pointer re-enters a held button
-	 * (UpdateRepeatState -> StartTimer, which always arms with Delay first). */
-	uint32_t delay = rb->base.repeat_delay_ms;
-	repeat_start_timer(rb, delay < 10 ? 400 : delay);
+	repeat_start_timer(rb);
 }
 
 static void repeat_on_blur(void *ctx) { repeat_stop_timer(( FluxRepeatButtonInputData * ) ctx); }
 
 static void repeat_on_pointer_up(void *ctx) { repeat_stop_timer(( FluxRepeatButtonInputData * ) ctx); }
 
-/* WinUI RepeatButton repeats while Space is held: OnKeyDown fires the first click and
- * starts the timer, OnKeyUp stops it (lost focus also stops, via on_blur). The OS key
- * auto-repeat is ignored -- the control drives its own Delay/Interval. Enter is not a
- * repeat key. */
 static bool repeat_on_key(void *ctx, FluxKey key, bool down) {
 	FluxRepeatButtonInputData *rb = ( FluxRepeatButtonInputData * ) ctx;
 	if (!rb || key != FLUX_KEY_SPACE) return false;
@@ -148,10 +96,9 @@ static bool repeat_on_key(void *ctx, FluxKey key, bool down) {
 		repeat_stop_timer(rb);
 		return true;
 	}
-	if (rb->repeat_active) return true; /* swallow OS auto-repeat key-downs */
+	if (rb->repeat_active) return true;
 	rb->repeat_active = true;
-	uint32_t delay    = rb->base.repeat_delay_ms;
-	repeat_start_timer(rb, delay < 10 ? 400 : delay);
+	repeat_start_timer(rb);
 	repeat_notify(rb);
 	return true;
 }

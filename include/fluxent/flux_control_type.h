@@ -1,16 +1,9 @@
-/**
- * @file flux_control_type.h
- * @brief Control type enumeration for Fluxent UI controls.
- *
- * Type identity is stored on FluxNodeData::component_type.
- */
 #ifndef FLUX_CONTROL_TYPE_H
 #define FLUX_CONTROL_TYPE_H
 
 #include <stdint.h>
 #include <xtk/xtk_descriptor.h>
 #include <xtk/xtk_types.h>
-
 
 typedef XtkCtrlType FluxControlType;
 
@@ -80,5 +73,16 @@ typedef XtkCtrlType FluxControlType;
 #define FLUX_CONTROL_SPLIT_VIEW_PANE     XTK_CTRL_SPLITPANE
 #define FLUX_CONTROL_SPLIT_VIEW_CONTENT  XTK_CTRL_SPLITBODY
 #define FLUX_CONTROL_TITLE_BAR           XTK_CTRL_TITLEBAR
+#define FLUX_CONTROL_SCROLL_BAR          XTK_CTRL_SCROLLBAR
+#define FLUX_CONTROL_LOOPING_SELECTOR    XTK_CTRL_LOOPING
+#define FLUX_CONTROL_LOOPING_ITEM        XTK_CTRL_LOOPITEM
+#define FLUX_CONTROL_DATE_PICKER         XTK_CTRL_DATEPICKER
+#define FLUX_CONTROL_TIME_PICKER         XTK_CTRL_TIMEPICKER
+#define FLUX_CONTROL_PICKER_FLYOUT       XTK_CTRL_PICKERFLYOUT
+#define FLUX_CONTROL_CALENDAR_VIEW       XTK_CTRL_CALENDAR
+#define FLUX_CONTROL_CALENDAR_DAY        XTK_CTRL_CALDAY
+#define FLUX_CONTROL_COLOR_PICKER        XTK_CTRL_COLORPICKER
+#define FLUX_CONTROL_COLOR_SPECTRUM      XTK_CTRL_COLORSPECTRUM
+#define FLUX_CONTROL_COLOR_SLIDER        XTK_CTRL_COLORSLIDER
 
 #endif

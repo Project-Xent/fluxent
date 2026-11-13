@@ -1,8 +1,3 @@
-/**
- * @file flux_button_record.c
- * @brief Button-family display-list recorders: shared chrome/colors/label for
- * Button, plus the DropDownButton / ComboBox / SplitButton recorders built on it.
- */
 #include "controls/draw/flux_control_record_internal.h"
 #include "controls/draw/flux_button_internal.h"
 #include "controls/draw/flux_control_draw.h"
@@ -63,11 +58,12 @@ static ButtonColors button_colors_accent(FluxControlState const *state, FluxThem
 	return c;
 }
 
-static ButtonColors button_colors_subtle(FluxControlState const *state, FluxThemeColors const *t) {
+static ButtonColors
+button_colors_subtle(FluxControlState const *state, FluxThemeColors const *t, bool pressed_primary) {
 	ButtonColors c = {0};
 	if (state->pressed) {
 		c.fill = t->subtle_fill_tertiary;
-		c.text = t->text_secondary;
+		c.text = pressed_primary ? t->text_primary : t->text_secondary;
 		return c;
 	}
 	if (state->hovered) {
@@ -101,7 +97,7 @@ static ButtonColors resolve_button_colors(
 	  = snap->u.button.button_style == FLUX_BUTTON_SUBTLE || snap->u.button.button_style == FLUX_BUTTON_TEXT;
 	if (!state->enabled) return button_colors_disabled(is_accent, is_subtle, t);
 	if (is_accent) return button_colors_accent(state, t);
-	if (is_subtle) return button_colors_subtle(state, t);
+	if (is_subtle) return button_colors_subtle(state, t, snap->u.button.pressed_primary);
 	return button_colors_default(state, t);
 }
 
@@ -150,8 +146,8 @@ static bool button_draw_border(
 		if (rc) return flux_rec_elevation_border(b, rc, sb, radius, colors->is_accent);
 		FluxColor stroke = colors->is_accent ? flux_color_rgba(0, 0, 0, 0) : colors->stroke;
 		if (flux_color_af(stroke) <= 0.0f) {
-			/* Theme defaults when rc missing: primary elevation stop color. */
-			stroke = colors->is_accent ? ft_ctrl_stroke_on_accent_default() : ft_ctrl_stroke_default();
+			FluxThemeColors const *t = flux_theme_defaults();
+			stroke                   = colors->is_accent ? t->ctrl_stroke_on_accent_default : t->ctrl_stroke_default;
 		}
 		return flux_rec_stroke_rounded(b, sb, radius, stroke, FLUX_STROKE_WIDTH);
 	}
@@ -190,7 +186,7 @@ static bool button_paint_chrome(
 	float    fill_radius = button_fill_radius(radius, colors.is_accent);
 	bool     ok          = flux_rec_fillsink(b, rc, &fill_rect, fill_radius, colors.fill);
 	if (ok) ok = button_draw_border(b, rc, bounds, radius, &colors);
-	if (ok && state->focused && state->enabled) ok = flux_rec_focus_rect(b, bounds, radius);
+	if (ok && state->focused && state->enabled) ok = flux_rec_focus_rect(b, flux_rec_theme(rc), bounds, radius);
 	*out = colors;
 	return ok;
 }
@@ -254,7 +250,7 @@ static bool button_draw_icon_label(
 	float    cur_x   = area.x + (area.w - total_w) * 0.5f;
 	bool     ok      = true;
 
-	if (!xent_dl_pushclip_rect(b, flux_rec_xrect(bounds))) return false;
+	if (!xent_dl_pushcliprect(b, flux_rec_xrect(bounds))) return false;
 	if (content.has_icon) {
 		FluxRect      ir = {cur_x, area.y, icon_w, area.h};
 		XentTextStyle is = {
@@ -284,15 +280,11 @@ bool flux_rec_build_button(
 	ButtonColors colors = {0};
 	bool         ok     = button_paint_chrome(b, rc, snap, &sb, state, force_accent, &colors);
 	if (!ok) return false;
-	/* Always record icon+label; measure falls back to icon_size when tr is null. */
 	return button_draw_icon_label(b, rc ? rc->text : NULL, snap, &sb, colors.text);
 }
 
-/* DropDownButton / ComboBox / SplitButton: the button-chrome consumers. */
-
 #define REC_DDB_CHEVRON_GAP 8.0f
 #define REC_CB_PAD_LEFT     12.0f
-#define REC_CB_CHEVRON_W    32.0f
 
 bool flux_rec_build_dropdown(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
@@ -317,38 +309,84 @@ bool flux_rec_build_dropdown(
 
 static bool combo_record_text(XentDlBuilder *b, FluxRect const *bounds, char const *text, FluxColor color) {
 	if (!text || !text [0]) return true;
-	FluxRect tr = {bounds->x + REC_CB_PAD_LEFT, bounds->y, bounds->w - REC_CB_PAD_LEFT - REC_CB_CHEVRON_W, bounds->h};
+	FluxRect tr
+	  = {bounds->x + REC_CB_PAD_LEFT, bounds->y, bounds->w - REC_CB_PAD_LEFT - FLUX_COMBO_GLYPH_COL, bounds->h};
 	if (tr.w <= 0.0f) return true;
-	if (!xent_dl_pushclip_rect(b, flux_rec_xrect(&tr))) return false;
+	if (!xent_dl_pushcliprect(b, flux_rec_xrect(&tr))) return false;
 	bool ok = flux_rec_text(b, &tr, text, FLUX_FONT_SIZE_DEFAULT, 400u, color);
 	return xent_dl_popclip(b) && ok;
+}
+
+static bool combo_record_highlight(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *bounds) {
+	FluxRect hb = {bounds->x - 4.0f, bounds->y - 4.0f, bounds->w + 8.0f, bounds->h + 8.0f};
+	bool     ok = flux_rec_fill_rounded(b, &hb, 7.0f, t->ctrl_fill_default);
+	return ok && flux_rec_stroke_rounded(b, &hb, 7.0f, t->focus_stroke_outer, 2.0f);
+}
+
+static bool combo_record_pill(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *bounds) {
+	FluxRect pill = {bounds->x + 1.0f, bounds->y + (bounds->h - 16.0f) * 0.5f, 3.0f, 16.0f};
+	return flux_rec_fill_rounded(b, &pill, 1.5f, t->accent_default);
+}
+
+static bool combo_record_overlay(
+  XentDlBuilder *b, FluxThemeColors const *t, FluxRenderSnap const *snap, FluxRect const *bounds,
+  FluxControlState const *state
+) {
+	if (!state->enabled || !state->hovered || snap->hover_local_x < bounds->w - FLUX_COMBO_GLYPH_COL) return true;
+	FluxRect ov = {bounds->x + bounds->w - 34.0f, bounds->y + 4.0f, 30.0f, bounds->h - 8.0f};
+	return flux_rec_fill_rounded(b, &ov, 4.0f, state->pressed ? t->subtle_fill_tertiary : t->subtle_fill_secondary);
+}
+
+static float combo_chevron_release_y(double age) {
+	if (age < 0.0833) return 31.5f - 10.5f * flux_cubic_bezier(( float ) (age / 0.0833), 0.55f, 0.0f, 0.75f, 1.0f);
+	return 21.0f + 3.0f * flux_cubic_bezier(( float ) fmin((age - 0.0833) / 0.2333, 1.0), 0.35f, 0.0f, 0.0f, 1.0f);
+}
+
+static float combo_chevron_dy(FluxRenderCtx const *rc, FluxRenderSnap const *snap, bool pressed) {
+	FluxVisualState const *vs = flux_rec_vstate(rc, snap, pressed ? 1u : 0u);
+	if (!vs) return pressed ? 1.875f : 0.0f;
+	double age     = rc->now - vs->since;
+	bool   release = !pressed && vs->prev == 1u && age < 0.3167;
+	float  y       = 24.0f;
+	if (pressed) y += 7.5f * flux_cubic_bezier(( float ) fmin(age / 0.15, 1.0), 0.167f, 0.167f, 0.65f, 1.0f);
+	if (release) y = combo_chevron_release_y(age);
+	if (release || (pressed && age < 0.15)) flux_rec_note_animating(rc, true);
+	return (y - 24.0f) * 0.25f;
+}
+
+static FluxColor combo_text_color(FluxThemeColors const *t, FluxControlState const *st, bool has_sel, bool focused) {
+	if (!st->enabled) return t->text_disabled;
+	bool pressed = st->pressed && !focused;
+	if (has_sel) return pressed ? t->text_secondary : t->text_primary;
+	return pressed ? t->text_tertiary : t->text_secondary;
 }
 
 bool flux_rec_build_combo(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 ) {
-	FluxControlState st = *state;
-	if (snap->u.combo.is_checked) st.pressed = true;
-
-	FluxThemeColors const *t      = flux_rec_theme(rc);
-	float                  radius = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-	FluxRecButtonColors    colors = flux_rec_button_colors(snap, &st, false, t);
-	bool                   ok     = flux_rec_button_chrome(b, rc, snap, &st, bounds, radius, &colors);
-	if (!ok) return false;
+	FluxThemeColors const *t       = flux_rec_theme(rc);
+	float                  radius  = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
+	bool                   focused = state->focused && state->enabled && !snap->u.combo.is_checked;
+	FluxRecButtonColors    colors  = flux_rec_button_colors(snap, state, false, t);
+	bool                   ok      = !focused || combo_record_highlight(b, t, bounds);
+	if (ok) ok = flux_rec_button_chrome(b, rc, snap, state, bounds, radius, &colors);
+	if (!ok || snap->u.combo.edit_active) return ok;
+	if (focused && !combo_record_pill(b, t, bounds)) return false;
+	if (snap->u.combo.editable && !combo_record_overlay(b, t, snap, bounds, state)) return false;
 
 	bool        has_sel = snap->u.combo.text_content && snap->u.combo.text_content [0];
 	char const *text    = has_sel ? snap->u.combo.text_content : snap->u.combo.placeholder;
-	FluxColor   fg      = !state->enabled ? t->text_disabled : has_sel ? t->text_primary : t->text_secondary;
-	if (!combo_record_text(b, bounds, text, fg)) return false;
-	FluxRect chev = {bounds->x + bounds->w - REC_CB_CHEVRON_W, bounds->y, REC_CB_CHEVRON_W, bounds->h};
-	return flux_rec_glyph_wc(b, &chev, L"\xE70D", 12.0f, state->enabled ? t->text_secondary : t->text_disabled);
+	if (!combo_record_text(b, bounds, text, combo_text_color(t, state, has_sel, focused))) return false;
+	float    dy    = combo_chevron_dy(rc, snap, state->pressed && state->enabled);
+	FluxRect glyph = {bounds->x + bounds->w - 26.0f, bounds->y + dy, 12.0f, bounds->h};
+	return flux_rec_glyph_wc(b, &glyph, L"\xE70D", 12.0f, state->enabled ? t->text_secondary : t->text_disabled);
 }
 
 static bool rec_sb_fill_zone(
   XentDlBuilder *b, FluxRect const *zone, FluxRect const *sb, float radius, FluxColor fill, bool round_left
 ) {
-	bool ok = xent_dl_pushclip_rect(b, flux_rec_xrect(zone));
+	bool ok = xent_dl_pushcliprect(b, flux_rec_xrect(zone));
 	if (!ok) return false;
 	FluxRect ext = round_left ? (FluxRect) {zone->x, sb->y, zone->w + radius, sb->h}
 	                          : (FluxRect) {zone->x - radius, sb->y, zone->w + radius, sb->h};
@@ -412,7 +450,7 @@ bool flux_rec_split(
 		  = flux_rec_fill_rect(b, &divider_draw, checked ? t->ctrl_stroke_on_accent_secondary : t->ctrl_stroke_default);
 	if (ok) ok = rec_sb_fill_zone(b, &secondary, &sb, radius, secondary_fill, false);
 	if (ok) ok = rec_sb_border(b, rc, &sb, radius, checked, state, prim_press || sec_press, t);
-	if (ok && state->focused && state->enabled) ok = flux_rec_focus_rect(b, &sb, radius);
+	if (ok && state->focused && state->enabled) ok = flux_rec_focus_rect(b, flux_rec_theme(rc), &sb, radius);
 	FluxColor text = sb_zone_text_color(prim_press, checked, state->enabled, t);
 	if (ok) ok = flux_rec_button_label(b, snap, &primary, text);
 	FluxColor chev     = sb_chevron_color(sec_hov, sec_press, checked, state->enabled, t);

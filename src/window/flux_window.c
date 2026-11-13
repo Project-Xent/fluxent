@@ -1,7 +1,8 @@
 #include "flux_window_internal.h"
 #include "a11y/flux_uia_internal.h"
-#include "fluxent/flux_graphics.h"
+#include "fluxent/flux_gfx.h"
 #include "fluxent/flux_popup.h"
+#include "runtime/flux_anim_driver.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -15,9 +16,6 @@
 #include <dwmapi.h>
 #include <windowsx.h>
 
-/* Windows touch gesture + feedback APIs. Both live in user32.lib which
- * is implicitly linked. `GESTURECONFIG` / `SetGestureConfig` require
- * `WINVER >= 0x0601`; `SetWindowFeedbackSetting` requires `WINVER >= 0x0602`. */
 #ifndef WINVER
   #define WINVER 0x0602
 #endif
@@ -68,7 +66,6 @@ typedef struct WindowContactPointer {
 	FluxPointerEvent *ev;
 } WindowContactPointer;
 
-/* Windows build number via RtlGetVersion (GetVersionEx lies without a manifest). */
 static DWORD os_build(void) {
 	static DWORD build = 0;
 	if (build) return build;
@@ -84,10 +81,8 @@ static DWORD os_build(void) {
 	return build;
 }
 
-/* Mica (DWMWA_SYSTEMBACKDROP_TYPE) needs Windows 11 22H2 (build 22621). */
 static bool os_supports_backdrop(void) { return os_build() >= 22621; }
 
-/* Segoe Fluent Icons ships with Windows 11; Windows 10 has Segoe MDL2 Assets. */
 char const *flux_icon_font_family(void) { return os_build() >= 22000 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets"; }
 
 static void setup_dwm_backdrop(FluxWindow *win) {
@@ -163,11 +158,6 @@ static bool window_rect_contains_pt(FluxRect const *r, float x, float y) {
 	return x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
 }
 
-/* Extend the client area over the OS caption. Run the default frame calc for
- * the side/bottom borders, then remove the caption by pulling the client top up:
- * to the window top when restored (keeping the sizing borders), or to the frame
- * inset when maximized (the maximized window overhangs the monitor by the frame
- * thickness, so the caption row must become the frame inset, not the window top). */
 static LRESULT window_on_nccalcsize(FluxWindow *win, HWND hwnd, WPARAM wp, LPARAM lp) {
 	if (!win->title_bar_extended || !wp) return DefWindowProcW(hwnd, WM_NCCALCSIZE, wp, lp);
 	NCCALCSIZE_PARAMS *p       = ( NCCALCSIZE_PARAMS * ) lp;
@@ -182,8 +172,6 @@ static LRESULT window_on_nccalcsize(FluxWindow *win, HWND hwnd, WPARAM wp, LPARA
 	return ret;
 }
 
-/* Top grab strip of an extended, resizable frame: HTTOP / HTTOPLEFT / HTTOPRIGHT
- * over the DPI-scaled border height. False when the point sits below the strip. */
 static bool window_hittest_top_border(FluxWindow *win, HWND hwnd, POINT pt, LRESULT *result) {
 	UINT dpi = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
 	int  rb  = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
@@ -194,8 +182,6 @@ static bool window_hittest_top_border(FluxWindow *win, HWND hwnd, POINT pt, LRES
 	return true;
 }
 
-/* Drag region: HTCAPTION so the band moves the window, except over a registered
- * interactive rect (a caption button) which stays HTCLIENT. False outside it. */
 static bool window_hittest_drag(FluxWindow *win, float x, float y, LRESULT *result) {
 	if (!window_rect_contains_pt(&win->title_bar_drag, x, y)) return false;
 	for (int i = 0; i < win->title_bar_pass_count; i++)
@@ -207,9 +193,6 @@ static bool window_hittest_drag(FluxWindow *win, float x, float y, LRESULT *resu
 	return true;
 }
 
-/* Custom title-bar hit-testing: a top resize strip (when extended + resizable),
- * caption over the drag region, and client over the interactive rects. Points
- * outside defer to the default frame handling (side/bottom resize borders). */
 static bool window_on_nc_hittest(FluxWindow *win, HWND hwnd, LPARAM lp, LRESULT *result) {
 	if (!win->title_bar_active && !win->title_bar_extended) return false;
 
@@ -220,9 +203,9 @@ static bool window_on_nc_hittest(FluxWindow *win, HWND hwnd, LPARAM lp, LRESULT 
 	float y     = ( float ) pt.y / scale;
 
 	if (win->title_bar_extended
-		&& win->config.resizable
-		&& !IsZoomed(hwnd)
-		&& window_hittest_top_border(win, hwnd, pt, result))
+	    && win->config.resizable
+	    && !IsZoomed(hwnd)
+	    && window_hittest_top_border(win, hwnd, pt, result))
 		return true;
 	if (win->title_bar_active && window_hittest_drag(win, x, y, result)) return true;
 	return false;
@@ -358,9 +341,6 @@ static void window_emit_contact_pointer(WindowContactPointer const *contact) {
 	window_emit_pointer(contact->win, contact->ev);
 }
 
-/* Touch contacts are fully consumed here: handing them to DefWindowProc would
- * make the system promote the tap into legacy mouse messages delivered to
- * whichever window sits under the contact by then. */
 #define WINDOW_TOUCH_HOLD_TIMER 0xf1
 #define WINDOW_TOUCH_HOLD_MS    500
 #define WINDOW_TOUCH_HOLD_SLOP  10.0f
@@ -373,8 +353,8 @@ static void window_track_touch_hold(FluxWindow *win, HWND hwnd, UINT msg, FluxPo
 		return;
 	}
 	if (msg == WM_POINTERUP
-		|| fabsf(ev->x - win->touch_hold_x) > WINDOW_TOUCH_HOLD_SLOP
-		|| fabsf(ev->y - win->touch_hold_y) > WINDOW_TOUCH_HOLD_SLOP)
+	    || fabsf(ev->x - win->touch_hold_x) > WINDOW_TOUCH_HOLD_SLOP
+	    || fabsf(ev->y - win->touch_hold_y) > WINDOW_TOUCH_HOLD_SLOP)
 		KillTimer(hwnd, WINDOW_TOUCH_HOLD_TIMER);
 }
 
@@ -531,19 +511,31 @@ static bool window_pump_messages(int *exit_code) {
 	return keep_running;
 }
 
+static void window_show_first(FluxWindow *win) {
+	if (win->shown) return;
+	win->shown = true;
+	flux_window_applyframe(win, false);
+	ShowWindow(win->hwnd, SW_SHOW);
+	UpdateWindow(win->hwnd);
+}
+
 static void window_render_if_requested(FluxWindow *win) {
 	if (!win->render_requested) return;
 
 	win->render_requested = false;
 	if (win->gfx && !flux_gfx_current(win->gfx)) flux_gfx_devicechange(win->gfx);
 	if (win->on_render) win->on_render(win->render_ctx);
+	window_show_first(win);
 }
 
 static bool window_run_iteration(FluxWindow *win, int *exit_code) {
 	if (!window_pump_messages(exit_code)) return false;
 
+	bool animating = flux_anim_frame();
 	window_render_if_requested(win);
-	if (!win->render_requested) MsgWaitForMultipleObjectsEx(0, NULL, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+	if (win->render_requested) return true;
+	if (!animating) MsgWaitForMultipleObjectsEx(0, NULL, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+	else if (!flux_anim_take_presented()) DwmFlush();
 	return true;
 }
 
@@ -571,31 +563,33 @@ typedef struct WindowKey {
 } WindowKey;
 
 static WindowKey const window_keys [] = {
-  {VK_BACK,    FLUX_KEY_BACKSPACE},
-  {VK_TAB,     FLUX_KEY_TAB      },
-  {VK_RETURN,  FLUX_KEY_ENTER    },
-  {VK_SHIFT,   FLUX_KEY_SHIFT    },
-  {VK_CONTROL, FLUX_KEY_CONTROL  },
-  {VK_MENU,    FLUX_KEY_ALT      },
-  {VK_ESCAPE,  FLUX_KEY_ESCAPE   },
-  {VK_SPACE,   FLUX_KEY_SPACE    },
-  {VK_PRIOR,   FLUX_KEY_PAGE_UP  },
-  {VK_NEXT,    FLUX_KEY_PAGE_DOWN},
-  {VK_END,     FLUX_KEY_END      },
-  {VK_HOME,    FLUX_KEY_HOME     },
-  {VK_LEFT,    FLUX_KEY_LEFT     },
-  {VK_UP,      FLUX_KEY_UP       },
-  {VK_RIGHT,   FLUX_KEY_RIGHT    },
-  {VK_DOWN,    FLUX_KEY_DOWN     },
-  {VK_DELETE,  FLUX_KEY_DELETE   },
-  {'A',		FLUX_KEY_A        },
-  {'C',		FLUX_KEY_C        },
-  {'V',		FLUX_KEY_V        },
-  {'X',		FLUX_KEY_X        },
-  {'Y',		FLUX_KEY_Y        },
-  {'Z',		FLUX_KEY_Z        },
-  {VK_F4,      FLUX_KEY_F4       },
-  {VK_F6,      FLUX_KEY_F6       },
+  {VK_BACK,     FLUX_KEY_BACKSPACE},
+  {VK_TAB,      FLUX_KEY_TAB      },
+  {VK_RETURN,   FLUX_KEY_ENTER    },
+  {VK_SHIFT,    FLUX_KEY_SHIFT    },
+  {VK_CONTROL,  FLUX_KEY_CONTROL  },
+  {VK_MENU,     FLUX_KEY_ALT      },
+  {VK_ESCAPE,   FLUX_KEY_ESCAPE   },
+  {VK_SPACE,    FLUX_KEY_SPACE    },
+  {VK_PRIOR,    FLUX_KEY_PAGE_UP  },
+  {VK_NEXT,     FLUX_KEY_PAGE_DOWN},
+  {VK_END,      FLUX_KEY_END      },
+  {VK_HOME,     FLUX_KEY_HOME     },
+  {VK_LEFT,     FLUX_KEY_LEFT     },
+  {VK_UP,       FLUX_KEY_UP       },
+  {VK_RIGHT,    FLUX_KEY_RIGHT    },
+  {VK_DOWN,     FLUX_KEY_DOWN     },
+  {VK_DELETE,   FLUX_KEY_DELETE   },
+  {'A',         FLUX_KEY_A        },
+  {'C',         FLUX_KEY_C        },
+  {'V',         FLUX_KEY_V        },
+  {'X',         FLUX_KEY_X        },
+  {'Y',         FLUX_KEY_Y        },
+  {'Z',         FLUX_KEY_Z        },
+  {VK_F4,       FLUX_KEY_F4       },
+  {VK_F6,       FLUX_KEY_F6       },
+  {VK_ADD,      FLUX_KEY_ADD      },
+  {VK_SUBTRACT, FLUX_KEY_SUBTRACT },
 };
 
 static FluxKey window_key(WPARAM wp) {
@@ -827,10 +821,11 @@ static HRESULT window_create_hwnd(FluxWindow *win, HINSTANCE hinst) {
 }
 
 static HRESULT window_create_graphics(FluxWindow *win) {
-	win->gfx = flux_gfx_create();
-	if (!win->gfx) return E_FAIL;
+	HRESULT hr = S_OK;
+	win->gfx   = flux_gfx_create(&hr);
+	if (!win->gfx) return hr;
 
-	HRESULT hr = flux_gfx_attach(win->gfx, win->hwnd);
+	hr = flux_gfx_attach(win->gfx, win->hwnd);
 	if (FAILED(hr)) return hr;
 
 	flux_gfx_setdpi(win->gfx, win->dpi);
@@ -873,17 +868,13 @@ HRESULT flux_window_create(FluxWindowCfg const *cfg, FluxWindow **out) {
 		return hr;
 	}
 
-	ShowWindow(win->hwnd, SW_SHOW);
-	UpdateWindow(win->hwnd);
-
-	*out = win;
+	win->render_requested = true;
+	*out                  = win;
 	return S_OK;
 }
 
 void flux_window_setbackdrop(FluxWindow *win, int backdrop_type) {
 	if (!win || !win->hwnd) return;
-	/* Before Win11 22H2 the attribute is ignored; the transparent clear would then
-	 * show the desktop, so fall back to no backdrop (opaque window). */
 	if (backdrop_type != 0 && !os_supports_backdrop()) backdrop_type = 0;
 	DWORD bd = DWMSBT_NONE;
 	switch (backdrop_type) {

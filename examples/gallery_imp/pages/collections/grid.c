@@ -1,43 +1,44 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include "host/flux_prop_apply.h"
-#include "virtual.h"
 
-static void fill_grid_cell(GalleryApp *g, XentNodeId item, int index) {
-	XentNodeId col = g_col(g, item, 0.0f, 0, 0, 0, 0);
-	xent_setitems(gallery_ctx(g), col, XENT_FLEX_ALIGN_CENTER);
-	xent_setjustify(gallery_ctx(g), col, XENT_FLEX_JUSTIFY_CENTER);
-	g_text(g, col, gallery_fmt(g, "%d", index), 20.0f, FLUX_FONT_SEMI_BOLD);
-	g_text(g, col, gallery_fmt(g, "Item %d", index), 11.0f, FLUX_FONT_REGULAR);
+static void grid_cell(GalleryApp *g, XtkTxn *txn, XtkNodeRef item, int index) {
+	XtkLocalId col = ui_column(txn, item, 0.0f, XENT_FLEX_ALIGN_CENTER);
+	ui_center(txn, col);
+	ui_text(txn, xtk_ref_local(col), gallery_fmt(g, "%d", index), 20.0f, FLUX_FONT_SEMI_BOLD);
+	ui_text(txn, xtk_ref_local(col), gallery_fmt(g, "Item %d", index), 11.0f, FLUX_FONT_REGULAR);
 }
 
-void page_gridview(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_gridview_sync);
-	Model const *m      = &g->model;
-	char const  *status = m->grid_sel >= 0 ? gallery_fmt(g, "Selected cell: %d", m->grid_sel) : "Nothing selected yet.";
-	g_page_header(
-	  g, parent, "GridView",
-	  "The same virtualized items host wrapping cells across auto-fit columns. "
-	  "Arrow keys navigate in 2D; the selection ring is the WinUI accent border."
-	);
-	{
-		XentNodeId ex  = g_example(g, parent, "10,000 uniform cells; columns follow the width.");
-		XentNodeId col = g_col(g, ex, 12.0f, 0, 0, 0, 0);
-		gallery_list_create(
-		  g, col, XTK_LIST_KIND_GRID, 10000, 104.0f, 152.0f, 0, m->grid_sel, XTK_LIST_SELECT_SINGLE, MSG_GRID_SELECT,
-		  fill_grid_cell, 420.0f
-		);
-		g->live_output [MSG_GRID_SELECT] = g_text(g, col, status, 13.0f, FLUX_FONT_REGULAR);
-	}
+static char const *grid_text(GalleryApp *g) {
+	return g->model.grid_sel >= 0 ? gallery_fmt(g, "Selected cell: %d", g->model.grid_sel) : "Nothing selected yet.";
 }
 
-void page_gridview_sync(GalleryApp *g) {
-	flux_list_set_selected(gallery_store(g), g->live_control [MSG_GRID_SELECT], g->model.grid_sel);
-	gallery_list_realize(g->live_data [MSG_GRID_SELECT]);
-	xent_settext(
-	  gallery_ctx(g), g->live_output [MSG_GRID_SELECT],
-	  g->model.grid_sel >= 0 ? gallery_fmt(g, "Selected cell: %d", g->model.grid_sel) : "Nothing selected yet."
+static void gridview_sync(GalleryApp *g) { gallery_settext(g, g->live_output [MSG_GRID_SELECT], grid_text(g)); }
+
+bool        page_gridview_build(PageBuild *b) {
+	page_sync(b, gridview_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(
+	  b, parent, "GridView",
+	  "The same virtualized items host wrapping cells across auto-fit columns. Arrow keys navigate in 2D; the "
+	  "selection "
+	  "ring is the WinUI accent border."
 	);
+	XtkNodeRef col  = xtk_ref_local(ui_column(
+	  &b->txn, page_example(b, parent, "10,000 uniform cells; columns follow the width."), 12.0f,
+	  XENT_FLEX_ALIGN_STRETCH
+	));
+	XtkLocalId grid = xtk_gridview_create(
+	  &b->txn, col,
+	  &(XtkListProps) {
+		.set   = XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK | XTK_LIST_ITEMW_MASK,
+		.h     = 420.0f,
+		.sel   = b->app->model.grid_sel,
+		.nitem = 10000,
+		.itemh = 104.0f,
+		.itemw = 152.0f,
+	  }
+	);
+	xtk_gridview_onselect(&b->txn, xtk_ref_local(grid), page_post, page_bind(b, MSG_GRID_SELECT));
+	page_list(b, grid, grid_cell);
+	page_keepout(b, MSG_GRID_SELECT, page_note(b, col, grid_text(b->app)));
+	return true;
 }

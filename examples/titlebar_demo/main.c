@@ -1,10 +1,3 @@
-/**
- * @file main.c
- * @brief Extended-title-bar demo: a window with the OS caption removed, whose
- * title bar (icon, title, subtitle, back + pane-toggle, and min/max/close
- * caption buttons) is drawn by a window-integrated FluxTitleBar. Dragging the
- * band moves the window; the caption buttons minimize / maximize / close it.
- */
 #include <fluxent/fluxent.h>
 #include <fluxent/flux_app.h>
 
@@ -30,8 +23,6 @@ static void update(void *model, XtkMsg msg) {
 
 static XtkEl *view(XtkUi *ui, void *model) {
 	DemoModel *m = ( DemoModel * ) model;
-	/* The scene root sizes children to content, so a fixed-width body pins the
-	 * whole column (and thus the stretched title bar) to the window's width. */
 	return xtk_column(
 	  ui,
 	  (XtkStackDesc) {

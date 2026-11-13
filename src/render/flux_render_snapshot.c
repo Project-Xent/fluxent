@@ -1,5 +1,6 @@
 #include "render/flux_render_snapshot.h"
 #include "store/flux_node_data.h"
+#include "runtime/flux_anim_driver.h"
 #include "controls/textbox/tb_internal.h"
 
 #include <windows.h>
@@ -11,6 +12,8 @@
 #include "controls/behavior/flux_flip_internal.h"
 #include "controls/behavior/flux_refresh_internal.h"
 #include "controls/behavior/flux_tree_internal.h"
+#include "render/flux_looping_geom.h"
+#include "controls/behavior/flux_picker_internal.h"
 
 #include <string.h>
 
@@ -55,7 +58,11 @@ static void snapshot_text(FluxRenderSnap *snap, FluxTextData const *t) {
 	snap->u.text.text_alignment      = t->alignment;
 	snap->u.text.text_vert_alignment = t->vertical_alignment;
 	snap->u.text.max_lines           = t->max_lines;
+	snap->u.text.trim                = t->trim;
 	snap->u.text.word_wrap           = t->wrap;
+	snap->u.text.selectable          = t->selectable;
+	snap->u.text.selection_start     = t->selection_start;
+	snap->u.text.selection_end       = t->selection_end;
 }
 
 static void snapshot_button_fields(FluxRenderSnap *snap, SnapshotButtonFields fields) {
@@ -70,7 +77,8 @@ static void snapshot_button(FluxRenderSnap *snap, FluxButtonData const *b) {
 	snapshot_button_fields(
 	  snap, (SnapshotButtonFields) {b->label, b->icon_name, b->label_color, b->font_size, b->style}
 	);
-	snap->u.button.is_checked = b->is_checked;
+	snap->u.button.pressed_primary = b->pressed_primary;
+	snap->u.button.is_checked      = b->is_checked;
 }
 
 static void snapshot_textbox(FluxRenderSnap *snap, FluxTextBoxData const *tb) {
@@ -83,11 +91,14 @@ static void snapshot_textbox(FluxRenderSnap *snap, FluxTextBoxData const *tb) {
 	snap->u.textbox.edit.selection_start    = tb->selection_start;
 	snap->u.textbox.edit.selection_end      = tb->selection_end;
 	snap->u.textbox.edit.scroll_offset_x    = tb->scroll_offset_x;
+	snap->u.textbox.edit.scroll_offset_y    = tb->scroll_offset_y;
 	snap->u.textbox.edit.composition_text   = tb->composition_text;
 	snap->u.textbox.edit.composition_length = tb->composition_length;
 	snap->u.textbox.edit.composition_cursor = tb->composition_cursor;
 	snap->u.textbox.edit.selection_color    = tb->selection_color;
 	snap->u.textbox.edit.readonly           = tb->readonly;
+	snap->u.textbox.edit.multiline          = tb->multiline;
+	snap->u.textbox.combo_editor            = tb->combo_editor;
 }
 
 static void snapshot_checkbox_like(FluxRenderSnap *snap, FluxCheckboxData const *c) {
@@ -108,6 +119,15 @@ static void snapshot_slider(FluxRenderSnap *snap, FluxSliderData const *s) {
 	snap->u.slider.slider_intermediate   = s->intermediate_value;
 	snap->u.slider.slider_tick_frequency = s->tick_frequency;
 	snap->u.slider.slider_tick_placement = ( uint8_t ) s->tick_placement;
+	snap->u.slider.vertical              = s->vertical;
+	snap->u.slider.is_range              = s->is_range;
+	snap->u.slider.color_picker          = s->color_picker;
+	snap->u.slider.thumb_held            = s->thumb_held;
+	snap->u.slider.active_thumb          = s->active_thumb;
+	for (int i = 0; i < 2; i++) {
+		snap->u.slider.range_value [i] = s->range_value [i];
+		snap->u.slider.range_live [i]  = s->range_live [i];
+	}
 }
 
 static void snapshot_scroll(FluxRenderSnap *snap, FluxScrollData const *sc) {
@@ -140,6 +160,8 @@ snapshot_progress_fields(FluxRenderSnap *snap, float value, float min_value, flo
 
 static void snapshot_progress(FluxRenderSnap *snap, FluxProgressData const *p) {
 	snapshot_progress_fields(snap, p->value, p->min_value, p->max_value, p->indeterminate);
+	snap->u.progress.state   = p->state;
+	snap->u.progress.padding = p->padding;
 }
 
 static void snapshot_number_box_spin(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId node) {
@@ -171,6 +193,7 @@ static void snapshot_repeat_button(FluxRenderSnap *snap, FluxRepeatButtonData co
 
 static void snapshot_progress_ring(FluxRenderSnap *snap, FluxProgressRingData const *pr) {
 	snapshot_progress_fields(snap, pr->value, pr->min_value, pr->max_value, pr->indeterminate);
+	snap->u.progress.inactive = pr->inactive;
 }
 
 static void snapshot_info_badge(FluxRenderSnap *snap, FluxInfoBadgeData const *ib) {
@@ -207,8 +230,11 @@ static void snapshot_handle_image(SnapshotContext const *ctx) {
 static void snapshot_combo_box(FluxRenderSnap *snap, FluxComboBoxData const *cb) {
 	bool valid                 = cb->selected_index >= 0 && cb->selected_index < cb->item_count;
 	snap->u.combo.text_content = valid ? cb->items [cb->selected_index] : NULL;
-	snap->u.combo.placeholder  = cb->placeholder;
-	snap->u.combo.is_checked   = cb->open;
+	if (cb->editable) snap->u.combo.text_content = cb->edit_text ? *cb->edit_text : NULL;
+	snap->u.combo.placeholder = cb->placeholder;
+	snap->u.combo.is_checked  = cb->open;
+	snap->u.combo.editable    = cb->editable;
+	snap->u.combo.edit_active = cb->editable && cb->edit_active;
 }
 
 static void snapshot_handle_combo_box(SnapshotContext const *ctx) {
@@ -224,9 +250,6 @@ static void snapshot_handle_menu_bar_item(SnapshotContext const *ctx) {
 static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	FluxNavViewData const *d = ( FluxNavViewData const * ) ctx->data;
 	ctx->snap->u.nav.nav_top = (d->mode == FLUX_NAV_TOP);
-	/* Root and pane are both NAV_VIEW and share d; the root draws the content
-	 * layer, only the pane carries the moving indicator so it slides off-screen
-	 * in Minimal (the root stays full-width). */
 	if (ctx->node != d->pane) {
 		XentRect rr = {0}, cr = {0};
 		if (xent_layout_rect(d->ctx, d->root, &rr) && xent_layout_rect(d->ctx, d->content, &cr)) {
@@ -236,12 +259,7 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 		return;
 	}
 	ctx->snap->u.nav.nav_is_pane    = true;
-	/* Inline panes are transparent over the window backdrop; the Minimal overlay
-	 * pane floats above content and needs an opaque background. */
 	ctx->snap->u.nav.nav_pane_solid = (d->mode == FLUX_NAV_MINIMAL);
-	/* The pill is drawn by the pane (outside the items viewport) from layout-space
-	 * tween values; shift it by the live scroll offset so it stays glued to the
-	 * visually translated item rows. */
 	float scroll                    = 0.0f;
 	if (d->ind_in_scroll && d->items_scroll_data)
 		scroll = (d->mode == FLUX_NAV_TOP) ? flux_scroll_off_x(d->items_scroll_data)
@@ -249,12 +267,6 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	ctx->snap->u.nav.nav_ind_top     = d->ind_top.current - scroll;
 	ctx->snap->u.nav.nav_ind_bottom  = d->ind_bot.current - scroll;
 	ctx->snap->u.nav.nav_ind_opacity = d->ind_op.current;
-	/* The pill tracks the item content, so it indents with the item's depth and
-	 * (for menu items) is clipped to the scroll viewport so it never bleeds over
-	 * the pinned footer. Footer-item pills sit outside the viewport (no clip).
-	 * Depth comes from the *visible* item the pill sits on, not the raw selection:
-	 * a compact-flyout child is drawn on its parent's rail row, so indenting by the
-	 * child's own (unshown) depth would shove the pill a level to the right. */
 	int ind_item                     = (d->ind_visible >= 0 && d->ind_visible < d->count) ? d->ind_visible : -1;
 	ctx->snap->u.nav.nav_ind_indent  = ind_item >= 0 ? ( float ) d->items [ind_item].depth * 31.0f : 0.0f;
 	if (d->ind_in_scroll) {
@@ -266,9 +278,8 @@ static void snapshot_handle_nav_view(SnapshotContext const *ctx) {
 	}
 	else {
 		ctx->snap->u.nav.nav_ind_clip_top    = 0.0f;
-		ctx->snap->u.nav.nav_ind_clip_bottom = 1.0e6f; /* footer pill: unclipped */
+		ctx->snap->u.nav.nav_ind_clip_bottom = 1.0e6f;
 	}
-	/* Drop shadow only while the pane overlays content (Minimal); fades with the slide. */
 	ctx->snap->u.nav.nav_shadow_opacity = (d->mode == FLUX_NAV_MINIMAL) ? d->minimal_t.current : 0.0f;
 }
 
@@ -284,9 +295,6 @@ static void snapshot_handle_nav_view_item(SnapshotContext const *ctx) {
 	ctx->snap->u.nav.is_checked       = (it->kind != FLUX_NAV_ITEM_TOGGLE && it->nav->selected == it->index);
 }
 
-/* True when a strip slot is selected, hovered, or pressed — the states that hide
- * the divider on it and on its left-adjacent neighbour (TabViewItem.cpp
- * HideLeftAdjacentTabSeparator). */
 static bool snapshot_tab_node_hot(FluxStore *store, XentNodeId node) {
 	FluxNodeData const *nd = flux_store_find(store, node);
 	return nd && (nd->state.hovered || nd->state.pressed);
@@ -298,8 +306,6 @@ static bool snapshot_tab_slot_active(FluxTabViewData const *tv, int slot) {
 	    || snapshot_tab_node_hot(tv->store, tv->tabs [slot].close_node);
 }
 
-/* The divider sits at each tab's right edge; WinUI hides it while the tab itself
- * or the tab to its right is selected/hovered/pressed. */
 static bool snapshot_tab_separator(FluxTabViewItem const *it) {
 	FluxTabViewData const *tv  = it->tv;
 	int                    pos = -1;
@@ -311,7 +317,7 @@ static bool snapshot_tab_separator(FluxTabViewItem const *it) {
 		if (tv->tabs [slot].closed || tv->tabs [slot].kind != FLUX_TAB_KIND_TAB) continue;
 		return !snapshot_tab_slot_active(tv, slot);
 	}
-	return true; /* last tab: divider separates it from the (+) button */
+	return true;
 }
 
 static void snapshot_handle_tab_view_item(SnapshotContext const *ctx) {
@@ -353,6 +359,52 @@ static void snapshot_handle_slider(SnapshotContext const *ctx) {
 static void snapshot_handle_textbox(SnapshotContext const *ctx) {
 	tb_sync_content(( FluxTextBoxInputData * ) ctx->data);
 	snapshot_textbox(ctx->snap, ( FluxTextBoxData const * ) ctx->data);
+}
+
+static void snapshot_scroll_bar(FluxRenderSnap *snap, FluxScrollBarData const *sb) {
+	snap->u.scroll_bar.value             = ( float ) sb->value;
+	snap->u.scroll_bar.minimum           = ( float ) sb->minimum;
+	snap->u.scroll_bar.maximum           = ( float ) sb->maximum;
+	snap->u.scroll_bar.viewport          = ( float ) sb->viewport_size;
+	snap->u.scroll_bar.orientation       = ( uint8_t ) sb->orientation;
+	snap->u.scroll_bar.indicator_mode    = ( uint8_t ) sb->indicator_mode;
+	snap->u.scroll_bar.dragging          = sb->dragging ? 1u : 0u;
+	snap->u.scroll_bar.dec_pressed       = sb->dec_pressed;
+	snap->u.scroll_bar.inc_pressed       = sb->inc_pressed;
+	snap->u.scroll_bar.large_dec_pressed = sb->large_dec_pressed;
+	snap->u.scroll_bar.large_inc_pressed = sb->large_inc_pressed;
+}
+
+static void snapshot_handle_scroll_bar(SnapshotContext const *ctx) {
+	snapshot_scroll_bar(ctx->snap, ( FluxScrollBarData const * ) ctx->data);
+}
+
+static void snapshot_handle_looping(SnapshotContext const *ctx) {
+	FluxLoopingData const *ld          = ( FluxLoopingData const * ) ctx->data;
+	bool                   shown       = ld->enabled && ld->pointer_inside && !ld->pointer_touch;
+	ctx->snap->u.looping.buttons_shown = shown ? 1u : 0u;
+	ctx->snap->u.looping.up_pressed    = ld->up_pressed ? 1u : 0u;
+	ctx->snap->u.looping.down_pressed  = ld->down_pressed ? 1u : 0u;
+}
+
+static void snapshot_handle_looping_item(SnapshotContext const *ctx) {
+	FluxLoopingItemData const *cell = ( FluxLoopingItemData const * ) ctx->data;
+	FluxLoopingData const     *ld   = cell->owner;
+	bool                       live = ld && ld->item_count > 0 && cell->visual >= 0;
+	ctx->snap->u.loop_item.label    = live ? ld->items [flux_looping_mod(cell->visual, ld->item_count)] : NULL;
+	ctx->snap->u.loop_item.selected = cell->selected;
+	ctx->snap->u.loop_item.accent   = ld && ld->accent;
+	ctx->snap->u.loop_item.left     = ld && ld->left;
+	ctx->snap->u.loop_item.band_y   = cell->band_y;
+	ctx->snap->u.loop_item.band_h   = ld ? ld->item_height : 0.0f;
+}
+
+static void snapshot_handle_picker(SnapshotContext const *ctx) {
+	flux_picker_snapshot(&ctx->snap->u.picker, ( FluxPickerData const * ) ctx->data);
+}
+
+static void snapshot_handle_picker_card(SnapshotContext const *ctx) {
+	ctx->snap->u.picker_card = *( FluxPickerCardData const * ) ctx->data;
 }
 
 static void snapshot_handle_scroll(SnapshotContext const *ctx) {
@@ -455,9 +507,9 @@ static void snapshot_handle_tree_item(SnapshotContext const *ctx) {
 	                                   ? ( uint8_t ) (d->selected == h ? FLUX_TREE_SEL_SELECTED : FLUX_TREE_SEL_NONE)
 	                                   : n->sel_state;
 	ctx->snap->u.tree_item.flags = ( uint8_t ) ((n->first_child >= 0 ? FLUX_TREE_ROW_HAS_CHILDREN : 0)
-												| (n->expanded ? FLUX_TREE_ROW_EXPANDED : 0)
-												| (d->sel_mode == XTK_TREE_SELECT_MULTIPLE ? FLUX_TREE_ROW_MULTI : 0)
-												| (n->disabled ? FLUX_TREE_ROW_DISABLED : 0));
+	                                            | (n->expanded ? FLUX_TREE_ROW_EXPANDED : 0)
+	                                            | (d->sel_mode == XTK_TREE_SELECT_MULTIPLE ? FLUX_TREE_ROW_MULTI : 0)
+	                                            | (n->disabled ? FLUX_TREE_ROW_DISABLED : 0));
 }
 
 static void snapshot_handle_flip_view(SnapshotContext const *ctx) {
@@ -468,7 +520,7 @@ static void snapshot_handle_flip_view(SnapshotContext const *ctx) {
 	ctx->snap->u.flip.vertical      = fv->vertical;
 	ctx->snap->u.flip.prev_enabled  = fv->selected > 0 && count > 1;
 	ctx->snap->u.flip.next_enabled  = fv->selected < count - 1 && count > 1;
-	ctx->snap->u.flip.buttons_alive = GetTickCount() - fv->pointer_activity < 3000;
+	ctx->snap->u.flip.buttons_alive = flux_anim_now() - fv->pointer_activity < 3000;
 	ctx->snap->u.flip.pressed_btn   = fv->pressed_btn;
 }
 
@@ -488,7 +540,7 @@ static void snapshot_handle_pips_pager(SnapshotContext const *ctx) {
 static void snapshot_handle_refresh(SnapshotContext const *ctx) {
 	FluxRefreshData const *d      = ( FluxRefreshData const * ) ctx->data;
 	FluxRefreshSnapshot   *r      = &ctx->snap->u.refresh;
-	unsigned long          now    = GetTickCount();
+	unsigned long          now    = flux_anim_now();
 	float const            two_pi = 6.28318530718f;
 	float                  thr    = d->threshold_ratio > 0.0f ? d->threshold_ratio : FLUX_REFRESH_EXECUTION_RATIO;
 
@@ -537,6 +589,14 @@ static void snapshot_handle_pager(SnapshotContext const *ctx) {
 	p->pressed_elem               = ( int16_t ) d->pressed_elem;
 	p->prefix                     = d->prefix;
 	p->suffix                     = d->suffix;
+}
+
+static void snapshot_handle_colorpicker(SnapshotContext const *ctx) {
+	flux_colorpicker_snapshot(&ctx->snap->u.color_picker, ctx->data);
+}
+
+static void snapshot_handle_calendar(SnapshotContext const *ctx) {
+	flux_calendar_snapshot(&ctx->snap->u.calendar, ctx->data);
 }
 
 static void snapshot_handle_title_bar(SnapshotContext const *ctx) {
@@ -588,12 +648,20 @@ static SnapshotHandler const SNAPSHOT_HANDLERS [XTK_CTRL_TYPE_COUNT] = {
   [FLUX_CONTROL_SLIDER]              = snapshot_handle_slider,
   [FLUX_CONTROL_TEXT_INPUT]          = snapshot_handle_textbox,
   [FLUX_CONTROL_SCROLL]              = snapshot_handle_scroll,
+  [FLUX_CONTROL_SCROLL_BAR]          = snapshot_handle_scroll_bar,
+  [FLUX_CONTROL_LOOPING_SELECTOR]    = snapshot_handle_looping,
+  [FLUX_CONTROL_LOOPING_ITEM]        = snapshot_handle_looping_item,
+  [FLUX_CONTROL_DATE_PICKER]         = snapshot_handle_picker,
+  [FLUX_CONTROL_TIME_PICKER]         = snapshot_handle_picker,
+  [FLUX_CONTROL_PICKER_FLYOUT]       = snapshot_handle_picker_card,
   [FLUX_CONTROL_PROGRESS]            = snapshot_handle_progress,
   [FLUX_CONTROL_PASSWORD_BOX]        = snapshot_handle_password_box,
   [FLUX_CONTROL_NUMBER_BOX]          = snapshot_handle_number_box,
   [FLUX_CONTROL_HYPERLINK]           = snapshot_handle_hyperlink,
   [FLUX_CONTROL_REPEAT_BUTTON]       = snapshot_handle_repeat_button,
   [FLUX_CONTROL_PROGRESS_RING]       = snapshot_handle_progress_ring,
+  [FLUX_CONTROL_CALENDAR_VIEW]       = snapshot_handle_calendar,
+  [FLUX_CONTROL_COLOR_PICKER]        = snapshot_handle_colorpicker,
   [FLUX_CONTROL_INFO_BADGE]          = snapshot_handle_info_badge,
   [FLUX_CONTROL_INFO_BAR]            = snapshot_handle_info_bar,
   [FLUX_CONTROL_EXPANDER_HEADER]     = snapshot_handle_expander_header,

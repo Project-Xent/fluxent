@@ -1,11 +1,3 @@
-/**
- * @file flux_flip_view.c
- * @brief FlipView: viewport-sized pages on an ABSOLUTE host that slides
- * along the paging axis. Adjacent selection moves animate (WinUI only
- * animates ±1; longer jumps snap — FlipView_Partial::OnSelectedIndexChanged);
- * wheel flips are gated at 200 ms between distinct scrolls; nav buttons
- * fade 3 s after the last pointer activity.
- */
 #include "controls/behavior/flux_flip_internal.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_factory.h"
@@ -20,8 +12,6 @@
 
 #define FLIP_ANIM_MS       350.0f
 #define FLIP_WHEEL_GATE_MS 200
-/* WinUI 3 FlipView_themeresources: nav buttons are 16x38 (38x16 vertical)
- * acrylic chips with 1px margin, rounded ControlCornerRadius. */
 #define FLIP_BTN_W         16.0f
 #define FLIP_BTN_H         38.0f
 #define FLIP_BTN_MARGIN    1.0f
@@ -52,7 +42,7 @@ static bool flip_step(void *ctx, unsigned long now) {
 		fv->anim   = false;
 	}
 	else {
-		float e    = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t); /* cubic ease-out */
+		float e    = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
 		fv->offset = fv->anim_from + (fv->anim_to - fv->anim_from) * e;
 	}
 	flip_repaint(fv);
@@ -89,7 +79,7 @@ static void flip_go(FluxFlipViewData *fv, int index, bool from_user) {
 	if (adjacent && fv->extent > 0.0f) {
 		fv->anim_from  = fv->offset;
 		fv->anim_to    = target;
-		fv->anim_start = GetTickCount();
+		fv->anim_start = flux_anim_now();
 		fv->anim       = true;
 		flux_anim_register(fv, flip_step);
 	}
@@ -101,12 +91,6 @@ static void flip_go(FluxFlipViewData *fv, int index, bool from_user) {
 	if (from_user) flip_report(fv, index);
 }
 
-/* -------------------------------------------------------------------------
- * Input
- * ---------------------------------------------------------------------- */
-
-/* Nav button rects in root-local coordinates (horizontal: flush left/right,
- * vertically centered — 20×36; vertical orientation mirrored). */
 static FluxRect flip_btn_rect(FluxFlipViewData const *fv, XentRect const *root, bool next) {
 	if (!fv->vertical) {
 		float y = (root->h - FLIP_BTN_H) * 0.5f;
@@ -125,7 +109,7 @@ static bool flip_point_in(FluxRect const *r, float x, float y) {
 static int flip_hit_button(FluxFlipViewData const *fv, float x, float y) {
 	XentRect root = {0};
 	if (!xent_layout_rect(fv->ctx, fv->root, &root)) return 0;
-	root.w        = root.w; /* rects are node-local already via hover coords */
+	root.w        = root.w;
 	FluxRect prev = flip_btn_rect(fv, &root, false);
 	FluxRect next = flip_btn_rect(fv, &root, true);
 	if (flip_point_in(&prev, x, y) && fv->selected > 0) return 1;
@@ -137,7 +121,7 @@ static void flip_pointer_move(void *ctx, float x, float y) {
 	( void ) x;
 	( void ) y;
 	FluxFlipViewData *fv = ( FluxFlipViewData * ) ctx;
-	fv->pointer_activity = GetTickCount();
+	fv->pointer_activity = flux_anim_now();
 }
 
 static void flip_pointer_down(void *ctx, float x, float y, int clicks) {
@@ -146,8 +130,6 @@ static void flip_pointer_down(void *ctx, float x, float y, int clicks) {
 	fv->pressed_btn      = ( uint8_t ) flip_hit_button(fv, x, y);
 }
 
-/* Click-on-release: act on the button the press started on, but only if the
- * release still lands on it (standard button semantics). */
 static void flip_click(void *ctx) {
 	FluxFlipViewData *fv      = ( FluxFlipViewData * ) ctx;
 	FluxNodeData     *nd      = flux_store_find(fv->store, fv->root);
@@ -156,7 +138,7 @@ static void flip_click(void *ctx) {
 	int               target  = fv->selected + (hit == 2 ? 1 : -1);
 	fv->pressed_btn           = 0;
 	if (hit && hit == pressed) {
-		fv->pointer_activity = GetTickCount();
+		fv->pointer_activity = flux_anim_now();
 		flip_go(fv, target, true);
 	}
 }
@@ -168,7 +150,7 @@ static bool flip_key(void *ctx, FluxKey key, bool down) {
 	FluxFlipViewData *fv   = ( FluxFlipViewData * ) ctx;
 	FluxKey           prev = fv->vertical ? FLUX_KEY_UP : FLUX_KEY_LEFT;
 	FluxKey           next = fv->vertical ? FLUX_KEY_DOWN : FLUX_KEY_RIGHT;
-	fv->pointer_activity   = GetTickCount(); /* keyboard shows the buttons too */
+	fv->pointer_activity   = flux_anim_now();
 
 	if (key == prev) {
 		flip_go(fv, fv->selected - 1, true);
@@ -193,16 +175,16 @@ bool flux_flip_handle_wheel(FluxStore *store, XentNodeId flip, float wheel_y) {
 	FluxFlipViewData *fv = flip_data(store, flip);
 	if (!fv) return false;
 
-	unsigned long now      = GetTickCount();
+	unsigned long now      = flux_anim_now();
 	int           sign     = wheel_y < 0.0f ? -1 : 1;
 	bool          can_flip = sign != fv->wheel_sign || now - fv->last_wheel >= FLIP_WHEEL_GATE_MS;
 	fv->wheel_sign         = sign;
 	fv->last_wheel         = now;
-	if (!can_flip) return true; /* swallow, per WinUI */
+	if (!can_flip) return true;
 
 	int target = fv->selected + (wheel_y < 0.0f ? 1 : -1);
 	int count  = flip_page_count(fv);
-	if (target < 0 || target > count - 1) return false; /* edge: chain to outer scroll */
+	if (target < 0 || target > count - 1) return false;
 	flip_go(fv, target, true);
 	return true;
 }
@@ -228,10 +210,6 @@ static int flip_layout_pages(FluxFlipViewData *fv, XentRect const *root) {
 	return i;
 }
 
-/* -------------------------------------------------------------------------
- * Engine sync: size pages to the viewport + apply the slide offset
- * ---------------------------------------------------------------------- */
-
 void flux_flip_sync(XentCtx *ctx, XentNodeId flip, struct FluxNodeData *nd) {
 	( void ) flip;
 	FluxFlipViewData *fv   = ( FluxFlipViewData * ) nd->component_data;
@@ -248,10 +226,6 @@ void flux_flip_sync(XentCtx *ctx, XentNodeId flip, struct FluxNodeData *nd) {
 	  ctx, fv->host, fv->vertical ? (XentSize) {root.w, total * extent} : (XentSize) {total * extent, root.h}
 	);
 }
-
-/* -------------------------------------------------------------------------
- * Create / API
- * ---------------------------------------------------------------------- */
 
 XentNodeId flux_flip_init(FluxFlipViewDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
@@ -283,7 +257,7 @@ XentNodeId flux_flip_init(FluxFlipViewDesc const *info) {
 
 	nd->component_data               = fv;
 	nd->destroy_component_data       = free;
-	nd->clips_children               = true; /* only the current page shows */
+	nd->clips_children               = true;
 	nd->behavior.on_pointer_move     = flip_pointer_move;
 	nd->behavior.on_pointer_move_ctx = fv;
 	nd->behavior.on_pointer_down     = flip_pointer_down;

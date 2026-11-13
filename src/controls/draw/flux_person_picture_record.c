@@ -1,7 +1,3 @@
-/**
- * @file flux_avatar_record.c
- * @brief PersonPicture recorder: circular photo / initials / placeholder + badge.
- */
 #include "controls/draw/flux_control_record_internal.h"
 
 #include "controls/data/flux_person_picture_data.h"
@@ -19,7 +15,7 @@ static bool person_rec_photo(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect
 		if (!bmp || nw <= 0.0f || nh <= 0.0f) return false;
 	}
 	XentRect xbox = flux_rec_xrect(box);
-	if (!xent_dl_pushclip_ellipse(b, xbox)) return false;
+	if (!xent_dl_pushclipellipse(b, xbox)) return false;
 	bool ok = xent_dl_drawimg(b, xbox, flux_resource_intern_path(path), XENT_IMAGE_FIT_UNIFORM_TO_FILL);
 	return xent_dl_popclip(b) && ok;
 }

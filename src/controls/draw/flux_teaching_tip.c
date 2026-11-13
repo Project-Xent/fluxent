@@ -7,7 +7,6 @@
 
 #include <string.h>
 
-/* WinUI TeachingTip chrome → XentDl (record/replay). */
 #define TT_CORNER       8.0f
 #define TT_BORDER       1.0f
 #define TT_PAD          12.0f
@@ -192,7 +191,6 @@ static XentDl *tt_record(FluxRenderCtx const *rc, FluxTeachingTipPaintInfo const
 	FluxThemeColors const *t = flux_rec_theme(rc);
 	FluxRect card = {TT_TAIL_BAND, TT_TAIL_BAND, info->tip_w - 2.0f * TT_TAIL_BAND, info->tip_h - 2.0f * TT_TAIL_BAND};
 
-	/* Scale about tail tip: x'=cx+(x-cx)*sx → m00=sx, m02=cx*(1-sx); same for y. */
 	XentAffine2 scale = {
 	  info->scale_x, 0.0f, info->scale_cx * (1.0f - info->scale_x), 0.0f, info->scale_y,
 	  info->scale_cy * (1.0f - info->scale_y)};

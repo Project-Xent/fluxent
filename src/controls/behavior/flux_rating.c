@@ -1,14 +1,3 @@
-/**
- * @file flux_rating.c
- * @brief RatingControl behavior (RatingControl.cpp semantics): pointer scrub +
- * hover preview, click-to-commit with clear-on-reclick, and keyboard stepping.
- * Star geometry (size 16, spacing 8 by default) is kept exact so the pointer
- * percentage → ceil(pct*max) hit-testing matches WinUI. No pointer-over scale
- * "swell": WinUI's per-star scale expression is dead code in current
- * microsoft-ui-xaml — starsScaleFocalPoint is only ever written as the -100
- * rest sentinel (nothing updates it on pointer move), so the expression
- * evaluates to the 0.5 floor and WinUI stars render statically at 16dip too.
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "bridge/flux_internal.h"
@@ -47,14 +36,12 @@ static void rating_notify(FluxRatingData *r) {
 	  (XtkEventPayload) {
 		.kind     = XTK_EVENT_PAYLOAD_RATING,
 		.u.rating = {value, stars},
-    },
+	},
 	  XTK_EVENT_CAUSE_USER
 	);
 	if (notify) notify(notify_ctx, value, stars);
 }
 
-/* CoerceValueBetweenMinAndMax (RatingControl.cpp): negatives collapse to the
- * -1 "unset" sentinel, (0, 1] pins to 1, and values above MaxRating clamp. */
 static double rating_coerce(double v, int max_rating) {
 	if (v < 0.0) return -1.0;
 	if (v <= 1.0) return 1.0;
@@ -62,32 +49,23 @@ static double rating_coerce(double v, int max_rating) {
 	return v;
 }
 
-/* SetRatingTo's commit rules: not-clearable floors at 1; an EXACT reclick of
- * the current rating toggles off (a click on star 4 over a programmatic 3.5
- * sets 4, it does not clear), with originated_from_mouse gating the max-value
- * special-case; anything non-positive clears to the unset sentinel. */
 static double rating_committed_value(FluxRatingData const *r, double v, double old, bool from_mouse) {
 	if (!r->is_clear_enabled && v <= 0) return 1;
 	if (v == old && r->is_clear_enabled && (v != ( double ) r->max_rating || from_mouse)) return -1;
 	return v > 0 ? v : -1;
 }
 
-/* SetRatingTo (RatingControl.cpp): clamp, commit, and notify whenever the
- * guard passes, like the WinUI ValueChanged event. */
 static void rating_set_to(FluxRatingData *r, double v, bool from_mouse) {
 	double old = r->value;
 	if (v > r->max_rating) v = r->max_rating;
 	if (v < 0) v = 0;
 
-	/* "You have no rating and you pressed left": nothing should happen. */
 	if (old <= -1.0 && v == 0.0) return;
 
 	r->value = rating_committed_value(r, v, old, from_mouse);
 	rating_notify(r);
 }
 
-/* ChangeRatingBy (keyboard ±1). From unset, jump to initial_set_value; a
- * programmatic fraction is dropped before stepping (3.5 steps down to 3). */
 static void rating_change_by(FluxRatingData *r, int delta) {
 	if (!delta) return;
 	double next;
@@ -97,10 +75,6 @@ static void rating_change_by(FluxRatingData *r, int delta) {
 	rating_set_to(r, next, false);
 }
 
-/* Pointer X (node-local) → prospective whole-star value ceil(pct*max), 0 when
- * dragged left of the first star. The caption zone right of the strip is a
- * miss for a fresh press (WinUI's caption is outside the hit-test panel), but
- * a captured drag past the right edge still scrubs to max. */
 static double rating_value_at(FluxRatingData const *r, float x) {
 	double w = rating_strip_w(r);
 	if (( double ) x > w && !r->pointer_down) return -1.0;
@@ -138,7 +112,7 @@ static void rating_click(void *ctx) {
 static void rating_hover_changed(void *ctx, bool hovered) {
 	FluxRatingData *r = ( FluxRatingData * ) ctx;
 	if (hovered) return;
-	if (r->pointer_down) return; /* keep scrubbing during a drag */
+	if (r->pointer_down) return;
 	r->pointer_over = false;
 	r->hover_value  = -1;
 }
@@ -155,7 +129,7 @@ static bool rating_key(void *ctx, FluxKey key, bool down) {
 	FluxRatingData *r = ( FluxRatingData * ) ctx;
 	if (r->is_read_only) return false;
 	switch (key) {
-	case FLUX_KEY_LEFT :
+	case FLUX_KEY_LEFT  :
 	case FLUX_KEY_DOWN  : rating_change_by(r, -1); return true;
 	case FLUX_KEY_RIGHT :
 	case FLUX_KEY_UP    : rating_change_by(r, +1); return true;

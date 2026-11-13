@@ -1,7 +1,3 @@
-/**
- * @file flux_resource_intern.c
- * @brief Path → XentResourceId intern for DRAW_IMAGE in display lists.
- */
 #include "render/flux_resource_intern.h"
 #include <fluxent/flux_host.h>
 
@@ -46,4 +42,4 @@ char const *flux_resource_path(XentResourceId id) {
 	return NULL;
 }
 
-XtkResource flux_image_resource_path(char const *path) { return ( XtkResource ) flux_resource_intern_path(path); }
+XtkResource flux_image_respath(char const *path) { return ( XtkResource ) flux_resource_intern_path(path); }

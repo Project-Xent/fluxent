@@ -1,5 +1,6 @@
 #include "flux_host_internal.h"
 #include <fluxent/flux_app.h>
+#include "controls/factory/flux_init_items.h"
 
 static bool types_ensure(FluxHostState *R, uint32_t index) {
 	if (index < R->types_cap) return true;
@@ -217,7 +218,7 @@ uint32_t flux_host_invalidation(XtkHost const *host, XtkCtrl control) {
 	return R->invalidate [index];
 }
 
-uint32_t flux_host_take_invalidations(XtkHost *host) {
+uint32_t flux_host_takeinvalid(XtkHost *host) {
 	FluxHostState *R = flux_host_state(host);
 	if (!R) return XTK_INVALIDATE_NONE;
 	uint32_t mask           = R->pending_invalidation;
@@ -287,7 +288,7 @@ XtkHost *flux_host_adopt(XentCtx *ctx, FluxStore *store, XentNodeId root) {
 	return &R->host;
 }
 
-void flux_host_bind_app(XtkHost *host, FluxApp *app) {
+void flux_host_bindapp(XtkHost *host, FluxApp *app) {
 	FluxHostState *R = flux_host_state(host);
 	if (!R) return;
 	R->env
@@ -296,6 +297,13 @@ void flux_host_bind_app(XtkHost *host, FluxApp *app) {
 			FluxControlEnv
 		  ) {.app = app, .window = flux_app_window(app), .text = flux_app_text(app), .theme = flux_app_theme(app), .input = flux_app_input(app), .overlay = flux_app_overlay(app)}
 	    : (FluxControlEnv) {0};
+}
+
+bool flux_host_virtualize(XtkHost *host, XtkCtrl list, FluxRealizeFn fn, void *ctx) {
+	FluxStore *store = flux_host_store(host);
+	if (!store || !fn || !flux_store_find(store, ( XentNodeId ) list)) return false;
+	flux_list_virtualize(store, ( XentNodeId ) list, fn, ctx);
+	return true;
 }
 
 FluxStore *flux_host_store(XtkHost *host) {
@@ -325,12 +333,12 @@ void flux_host_destroy(XtkHost *host) {
 	xtk_alloc_free(R);
 }
 
-bool flux_host_register_component(XtkHost *host, XtkCompType const *type) {
+bool flux_host_registercomp(XtkHost *host, XtkCompType const *type) {
 	FluxHostState *R = flux_host_state(host);
 	return R && R->comp && xtk_comp_register(R->comp, type);
 }
 
-bool flux_host_set_providers(XtkHost *host, XtkProviderDesc const *providers, uint32_t count) {
+bool flux_host_setproviders(XtkHost *host, XtkProviderDesc const *providers, uint32_t count) {
 	FluxHostState *R = flux_host_state(host);
 	return R && R->comp && xtk_comp_setproviders(R->comp, providers, count);
 }

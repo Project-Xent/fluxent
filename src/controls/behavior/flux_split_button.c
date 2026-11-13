@@ -13,20 +13,16 @@
 #include <stdlib.h>
 #include <windows.h>
 
-/* SplitButton routes a pointer-down by zone: the left primary zone fires the
- * action callback; the right secondary zone (last 36px) toggles the flyout. The
- * binding is allocated at create time so the primary action works before any
- * flyout is attached, and flux_prop_split_flyout_ex fills in the popup. */
 typedef struct FluxSplitButtonBinding {
 	FluxFlyout   *flyout;
-	FluxMenu     *menu; /**< WinUI SplitButton typically hosts a MenuFlyout; if set it wins. */
+	FluxMenu     *menu;
 	FluxPlacement placement;
 	FluxStore    *store;
 	XentNodeId    node;
 	FluxWindow   *window;
 	XentCtx      *ctx;
-	bool          pressed_secondary; /**< Which zone the active press landed in. */
-	bool          toggle;            /**< ToggleSplitButton: primary click flips is_checked. */
+	bool          pressed_secondary;
+	bool          toggle;
 } FluxSplitButtonBinding;
 
 typedef struct FluxSplitButtonState {
@@ -59,9 +55,6 @@ static void split_invoke_primary(FluxSplitButtonBinding const *b) {
 	FluxNodeData   *nd = flux_store_find(b->store, b->node);
 	FluxButtonData *bd = nd ? ( FluxButtonData * ) nd->component_data : NULL;
 	if (!bd) return;
-	/* ToggleSplitButton (ToggleSplitButton.cpp OnClickPrimary): flip IsChecked
-	 * FIRST, then notify — the checked visual is optimistic; the app re-sets the
-	 * same value from on_toggle on the next frame. */
 	if (b->toggle) {
 		bd->is_checked                = !bd->is_checked;
 		bool  checked                 = bd->is_checked;
@@ -79,9 +72,6 @@ static void split_invoke_primary(FluxSplitButtonBinding const *b) {
 	split_route(b, XTK_EVENT_INVOKE, (XtkEventPayload) {0});
 }
 
-/* Open the secondary flyout. A hosted MenuFlyout opens with the right input kind (so a
- * keyboard invoke highlights the first item) and is dismissed via light-dismiss / Esc;
- * a generic flyout toggles. */
 static void split_toggle_flyout(FluxSplitButtonBinding const *b, FluxMenuInputKind kind) {
 	if (b->menu) {
 		if (!flux_menu_visible(b->menu)) {
@@ -99,9 +89,6 @@ static void split_toggle_flyout(FluxSplitButtonBinding const *b, FluxMenuInputKi
 	flux_flyout_show(b->flyout, anchor, b->placement);
 }
 
-/* WinUI SplitButton is two inner Buttons that fire on Click (release). Record which zone
- * the press captured; the action runs on release-within-bounds (split_on_click), giving
- * press-cancel for free. An open flyout is light-dismissed by the outside press first. */
 static void split_on_pointer_down(void *ctx, float local_x, float local_y, int click_count) {
 	( void ) local_y;
 	( void ) click_count;
@@ -116,8 +103,6 @@ static void split_on_click(void *ctx) {
 	else split_invoke_primary(b);
 }
 
-/* Keyboard parity with WinUI SplitButton: Space/Enter invokes the primary action;
- * Alt+Down or F4 opens the flyout; Escape dismisses it. */
 static bool split_on_key(void *ctx, FluxKey key, bool down) {
 	if (!down) return false;
 	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) ctx;
@@ -132,8 +117,6 @@ static bool split_on_key(void *ctx, FluxKey key, bool down) {
 		split_toggle_flyout(b, FLUX_MENU_INPUT_KEYBOARD);
 		return true;
 	}
-	/* A hosted MenuFlyout handles Escape via the active-menu key routing; only the
-	 * generic flyout needs an explicit Escape-to-dismiss here. */
 	if (key == FLUX_KEY_ESCAPE && !b->menu && b->flyout && flux_flyout_visible(b->flyout)) {
 		flux_flyout_dismiss(b->flyout);
 		return true;
@@ -180,7 +163,6 @@ XentNodeId flux_split_init(FluxSplitButtonDesc const *info) {
 	if (info->label) xent_sem_setlabel(info->ctx, node, info->label);
 	xent_set_focusable(info->ctx, node, true);
 
-	/* Right inset reserves the divider + secondary chevron zone after the label. */
 	flux_leaf_default_metrics(&(FluxLeafMetrics) {
 	  info->ctx, node, info->label, {11.0f, 5.0f, 11.0f + FLUX_SPLIT_DIVIDER_W + FLUX_SPLIT_SECONDARY_W, 6.0f},
 	  {0.0f, 32.0f},
@@ -190,10 +172,6 @@ XentNodeId flux_split_init(FluxSplitButtonDesc const *info) {
 	return node;
 }
 
-/* ToggleSplitButton = SplitButton with a checked primary zone. Identical node
- * spine, flyout, keyboard, and draw (the split-button draw is already
- * checked-aware); only the primary-click semantics differ (toggle, see
- * split_invoke_primary) and the initial checked state is seeded here. */
 XentNodeId flux_togglesplit_init(FluxToggleSplitButtonDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
@@ -259,19 +237,6 @@ void flux_split_retarget(FluxStore *store, XentNodeId id) {
 	b->store                  = store;
 	b->node                   = id;
 	b->ctx                    = flux_store_ctx(store);
-}
-
-void flux_prop_split_flyout_ex(FluxFlyoutBindingInfo const *info) {
-	if (!info || !info->store || !info->flyout) return;
-	FluxNodeData *nd = flux_store_find(info->store, info->id);
-	if (!nd || nd->behavior.on_pointer_down != split_on_pointer_down) return;
-
-	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) nd->behavior.on_pointer_down_ctx;
-	if (!b) return;
-	b->flyout    = info->flyout;
-	b->placement = info->placement;
-	b->window    = info->window;
-	if (info->xctx) b->ctx = info->xctx;
 }
 
 void flux_prop_split_menu_ex(FluxContextFlyoutBindingInfo const *info) {

@@ -1,23 +1,3 @@
-/**
- * @file flux_items_view.c
- * @brief ItemsView items-host root: a thin configuration adapter over the
- * virtualized ListView spine (flux_list_view.c).
- *
- * ItemsView reuses the entire items-host machinery — scroll viewport, the
- * ABSOLUTE recycled-cell host, the reconciler window, and the WinUI
- * SelectionModel (None/Single/Multiple/Extended). This file only:
- *   - builds the same root -> SCROLL -> ABSOLUTE host spine, tagged
- *     FLUX_CONTROL_ITEMS_VIEW and stamped with the ItemContainer chrome kind
- *     (XTK_LIST_KIND_ITEMS);
- *   - stores the FluxItemsViewData (a FluxListViewData embedded first, so the
- *     shared list accessors operate on it verbatim);
- *   - forwards its public setters to the flux_list_* API.
- *
- * Selection, keyboard navigation, ItemInvoked firing and cell recycling are
- * all handled by the shared LIST_ITEM behavior — ItemInvoked rides on the
- * FluxListViewData::on_invoke slot the shared release/Enter path fires when
- * SelectionMode == None (WinUI ItemsView.IsItemInvokedEnabled gating).
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/data/flux_items_view_data.h"
@@ -30,7 +10,7 @@
 static void items_view_data_destroy(void *component_data) {
 	FluxItemsViewData *d = ( FluxItemsViewData * ) component_data;
 	if (!d) return;
-	free(d->list.ranges); /* embedded spine owns the Multiple/Extended range set */
+	free(d->list.ranges);
 	free(d);
 }
 
@@ -61,9 +41,6 @@ XentNodeId flux_itemsview_init(FluxItemsViewDesc const *info) {
 		return flux_factory_fail_node(info->ctx, info->store, root);
 	}
 
-	/* Identical layout contract to flux_list_init: the scroll fills the
-	 * root, the host is the ABSOLUTE rebased canvas (logical extent lives on
-	 * the scroll) and must never flex-shrink to the viewport. */
 	xent_setgrow(info->ctx, scroll, 1.0f);
 	xent_setbasis(info->ctx, scroll, 0.0f);
 	xent_setproto(info->ctx, host, XENT_PROTOCOL_ABSOLUTE);
@@ -77,7 +54,7 @@ XentNodeId flux_itemsview_init(FluxItemsViewDesc const *info) {
 	ld->root                   = root;
 	ld->scroll                 = scroll;
 	ld->host                   = host;
-	ld->kind                   = ( XtkListKind ) XTK_LIST_KIND_ITEMS; /* ItemContainer chrome + interactive cells */
+	ld->kind                   = ( XtkListKind ) XTK_LIST_KIND_ITEMS;
 	ld->sel_mode               = info->selection_mode;
 	ld->cols                   = 1;
 	ld->selected               = -1;
@@ -101,13 +78,6 @@ XentNodeId flux_itemsview_init(FluxItemsViewDesc const *info) {
 	return root;
 }
 
-/* -------------------------------------------------------------------------
- * Store-facing setters — thin forwards onto the shared items-host API. The
- * FluxListViewData embedded at offset 0 means these operate on the same
- * retained spine the ListView family uses; the only requirement is that the
- * shared accessors admit FLUX_CONTROL_ITEMS_VIEW (see WIRING: list_data()).
- * ---------------------------------------------------------------------- */
-
 XentNodeId flux_itemsview_content_node(FluxStore *store, XentNodeId view) {
 	return flux_list_content_node(store, view);
 }
@@ -117,17 +87,3 @@ void flux_itemsview_set_extent(
 ) {
 	flux_list_set_extent(store, view, count, item_height, item_width, columns);
 }
-
-void flux_itemsview_setmode(FluxStore *store, XentNodeId view, XtkListSelMode mode) {
-	flux_list_setmode(store, view, mode);
-}
-
-void flux_itemsview_set_selected(FluxStore *store, XentNodeId view, int index) {
-	flux_list_set_selected(store, view, index);
-}
-
-bool flux_itemsview_is_selected(FluxStore *store, XentNodeId view, int index) {
-	return flux_list_is_selected(store, view, index);
-}
-
-int flux_itemsview_selection_count(FluxStore *store, XentNodeId view) { return flux_list_selection_count(store, view); }

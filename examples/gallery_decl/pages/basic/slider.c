@@ -56,6 +56,45 @@ XtkEl *page_slider(XtkUi *ui, Model const *m) {
 			),
 			xtk_fmt(ui, "%.0f", m->slider_tick), NULL
 		  )
+		),
+		example(
+		  ui, "A vertical Slider: arrow keys move it, the minimum sits at the bottom.",
+		  demo_card(
+			ui,
+			xtk_sized(
+			  xtk_slider(
+				ui,
+				(XtkSliderDesc) {
+				  .value          = m->slider_vert,
+				  .vertical       = true,
+				  .tick           = 20,
+				  .tick_placement = XTK_TICK_OUTSIDE,
+				  .change         = xtk_msg(MSG_SLIDER_VERT)}
+			  ),
+			  NAN, 180
+			),
+			xtk_fmt(ui, "%.0f", m->slider_vert), NULL
+		  )
+		),
+		example(
+		  ui, "A range Slider: two thumbs that cannot cross, each reachable with Tab.",
+		  demo_card(
+			ui,
+			xtk_sized(
+			  xtk_slider(
+				ui,
+				(XtkSliderDesc) {
+				  .range          = true,
+				  .range_start    = m->slider_range_lo,
+				  .range_end      = m->slider_range_hi,
+				  .tick           = 10,
+				  .tick_placement = XTK_TICK_OUTSIDE,
+				  .change_range   = xtk_msg(MSG_SLIDER_RANGE)}
+			  ),
+			  300, NAN
+			),
+			xtk_fmt(ui, "%.0f - %.0f", m->slider_range_lo, m->slider_range_hi), NULL
+		  )
 		)
 	  )
 	);

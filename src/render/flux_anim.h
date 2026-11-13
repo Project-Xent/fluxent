@@ -1,16 +1,3 @@
-/**
- * @file flux_anim.h
- * @brief Animation utilities and easing functions for Fluxent.
- *
- * Provides inline helpers for smooth property transitions:
- * - Linear interpolation (mix)
- * - Easing curves (ease-out, ease-in-out, ease-out-cubic, ease-out-quint, ease-in-quart)
- * - Color blending in linear light (gamma-correct sRGB; alpha stays linear)
- * - Progress step functions for state transitions
- *
- * All duration constants follow WinUI 3 timing specifications.
- */
-
 #ifndef FLUX_ANIM_H
 #define FLUX_ANIM_H
 
@@ -23,31 +10,20 @@
 #define FLUX_ANIM_DURATION_NORMAL 0.167
 #define FLUX_ANIM_DURATION_SLOW   0.250
 #define FLUX_ANIM_DURATION_PRESS  0.110
-#define FLUX_ANIM_DURATION_SLIDER 0.083  /**< ~83ms  — slider thumb scale */
 
-#define FLUX_ANIM_EPS             0.001f /**< Convergence threshold for animations */
+#define FLUX_ANIM_EPS             0.001f
 
-/** @brief Decode a single sRGB-encoded channel in [0,1] to linear light. */
 static float inline flux_srgb_to_linear(float c) {
 	if (c <= 0.04045f) return c / 12.92f;
 	return powf((c + 0.055f) / 1.055f, 2.4f);
 }
 
-/** @brief Encode a single linear-light channel in [0,1] to sRGB. */
 static float inline flux_linear_to_srgb(float c) {
 	if (c <= 0.0031308f) return 12.92f * c;
 	return 1.055f * powf(c, 1.0f / 2.4f) - 0.055f;
 }
 
-/** @brief Linear interpolation between two values. */
 static float inline flux_anim_mixf(float a, float b, float t) { return a + (b - a) * t; }
-
-/** @brief Clamped linear interpolation (t clamped to [0,1]). */
-static float inline flux_anim_mixf_clamped(float a, float b, float t) {
-	if (t <= 0.0f) return a;
-	if (t >= 1.0f) return b;
-	return a + (b - a) * t;
-}
 
 static uint8_t inline flux_quantize_byte(float v) {
 	if (v <= 0.0f) return 0;
@@ -55,13 +31,6 @@ static uint8_t inline flux_quantize_byte(float v) {
 	return ( uint8_t ) (v * 255.0f + 0.5f);
 }
 
-/** @brief Gamma-correct, alpha-correct color lerp: blends in premultiplied linear
- * space, then un-premultiplies back to straight RGBA. Premultiplying is what keeps
- * a transition between colors of differing alpha (e.g. dark mode's faint-white
- * `ctrl_fill_default` -> opaque-dark `ctrl_fill_input_active`) from passing through
- * a bright intermediate -- straight-alpha lerp ramps RGB and alpha independently,
- * so mid-transition you briefly get near-white at rising opacity (a white flash).
- * For equal-alpha or opaque endpoints this reduces to a straight lerp. */
 static FluxColor inline flux_anim_lerp_color(FluxColor c0, FluxColor c1, float t) {
 	if (t <= 0.0f) return c0;
 	if (t >= 1.0f) return c1;
@@ -77,65 +46,22 @@ static FluxColor inline flux_anim_lerp_color(FluxColor c0, FluxColor c1, float t
 	float pb
 	  = flux_anim_mixf(flux_srgb_to_linear(flux_color_bf(c0)) * a0, flux_srgb_to_linear(flux_color_bf(c1)) * a1, t);
 
-	float inv = la > 0.0001f ? 1.0f / la : 0.0f; /* un-premultiply to straight RGB */
+	float inv = la > 0.0001f ? 1.0f / la : 0.0f;
 	return flux_color_rgba(
 	  flux_quantize_byte(flux_linear_to_srgb(pr * inv)), flux_quantize_byte(flux_linear_to_srgb(pg * inv)),
 	  flux_quantize_byte(flux_linear_to_srgb(pb * inv)), flux_quantize_byte(la)
 	);
 }
 
-/**
- * @brief Unit cubic-bezier easing (P0=0, P3=1), Newton-solved.
- *
- * Out-of-line (see flux_anim.c) so the iteration loop is emitted once and shared
- * by all callers rather than inlined per translation unit. Pass the two control
- * points (x1,y1,x2,y2) of a CSS-style cubic-bezier timing curve; `x` is the
- * normalized progress in [0,1] and the return is the eased value.
- */
 float flux_cubic_bezier(float x, float x1, float y1, float x2, float y2);
 
-/** @brief Linear easing (identity). */
-static float inline flux_ease_linear(float t) { return t; }
-
-/** @brief Quadratic ease-out: fast start, gentle end. */
 static float inline flux_ease_out_quad(float t) { return t * (2.0f - t); }
 
-/** @brief Cubic ease-out: WinUI Fluent Move/Show curve. */
 static float inline flux_ease_out_cubic(float t) {
 	float u = 1.0f - t;
 	return 1.0f - u * u * u;
 }
 
-/** @brief Cubic ease-in-out: smooth acceleration and deceleration. */
-static float inline flux_ease_cubic(float t) {
-	if (t < 0.5f) return 4.0f * t * t * t;
-	float f = 2.0f * t - 2.0f;
-	return 0.5f * f * f * f + 1.0f;
-}
-
-/** @brief Quintic ease-out: WinUI Fluent entrance curve (strong deceleration). */
-static float inline flux_ease_out_quint(float t) {
-	float u = 1.0f - t;
-	return 1.0f - u * u * u * u * u;
-}
-
-/** @brief Quartic ease-in: WinUI Fluent exit curve (strong acceleration). */
-static float inline flux_ease_in_quart(float t) { return t * t * t * t; }
-
-/**
- * @brief Drive a FluxTween towards a target over a duration.
- *
- * If `tw->easing` is non-NULL, that easing function is applied to the
- * normalized progress before interpolation; otherwise ease-out-quad is
- * used as the default (WinUI-style short transition).
- *
- * @param tw        The tween state to update.
- * @param new_target The target value to animate towards.
- * @param duration  Animation duration in seconds.
- * @param now       Current time in seconds.
- * @param out       Output: the interpolated value.
- * @return true if the tween is still animating (caller needs another frame).
- */
 static bool inline flux_tween_update(FluxTween *tw, float new_target, double duration, double now, float *out) {
 	if (!tw->initialized) {
 		tw->current     = new_target;
@@ -175,19 +101,6 @@ static bool inline flux_tween_update(FluxTween *tw, float new_target, double dur
 	return tw->active;
 }
 
-/**
- * @brief Drive a FluxColorTween towards a target color over a duration.
- *
- * Color interpolation goes through gamma-correct sRGB blending. Easing is
- * applied via `tw->easing` (default ease-out-quad when NULL).
- *
- * @param tw         The color tween state to update.
- * @param new_target The target color to animate towards.
- * @param duration   Animation duration in seconds.
- * @param now        Current time in seconds.
- * @param out        Output: the interpolated color.
- * @return true if the tween is still animating.
- */
 static bool inline flux_color_tween_update(
   FluxColorTween *tw, FluxColor new_target, double duration, double now, FluxColor *out
 ) {
@@ -246,12 +159,6 @@ typedef struct FluxTweenTargets {
 	bool check;
 } FluxTweenTargets;
 
-/**
- * @brief Update the four standard animation channels for a control.
- *
- * Each channel honors its `easing` field; when unset the per-channel
- * default (ease-out-quad) is used by `flux_tween_update`.
- */
 static bool inline flux_tween_update_states(FluxTweenChannels const *channels, FluxTweenTargets targets, double now) {
 	bool  active = false;
 	float v;
@@ -262,4 +169,4 @@ static bool inline flux_tween_update_states(FluxTweenChannels const *channels, F
 	return active;
 }
 
-#endif /* FLUX_ANIM_H */
+#endif

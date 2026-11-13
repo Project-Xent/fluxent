@@ -1,4 +1,5 @@
 #include "flux_host_internal.h"
+#include "flux_limit.h"
 
 #include "controls/factory/flux_control_build.h"
 #include "controls/factory/flux_init_basic.h"
@@ -149,12 +150,12 @@ static XtkPropertyKind value_property_kind(XtkValueKind kind) {
 }
 
 static bool standard_property_ok(XtkCtrlId control, XtkPropPatch const *patch) {
-	XtkPropDesc const *property = xtk_catalog_control_property(control, patch->id);
+	XtkPropDesc const *property = xtk_catalog_ctrlprop(control, patch->id);
 	return property && property->kind == value_property_kind(patch->value.kind);
 }
 
 static bool event_phases_ok(XtkEventId event, uint32_t phases) {
-	if (!xtk_event_phases_valid(phases)) return false;
+	if (!xtk_event_phasesvalid(phases)) return false;
 	XtkEventDesc const *descriptor = xtk_catalog_event(event);
 	if (!descriptor) return true;
 	uint32_t allowed = XTK_EVENT_PHASE_MASK_TARGET;
@@ -210,15 +211,15 @@ static XtkBatchError pf_ref(PreflightCtx *ctx, XtkNodeRef ref, bool allow_none) 
 	if (ref.kind == XTK_REF_NONE) return allow_none ? XTK_BATCH_OK : XTK_BATCH_ERR_INVALID_LOCAL;
 	if (ref.kind == XTK_REF_EXISTING) {
 		if (ref.u.existing == XTK_CTRL_INVALID
-			|| !flux_host_node_live(ctx->R, ref.u.existing)
-			|| pf_destroyed(ctx, ref.u.existing))
+		    || !flux_host_node_live(ctx->R, ref.u.existing)
+		    || pf_destroyed(ctx, ref.u.existing))
 			return XTK_BATCH_ERR_INVALID_HANDLE;
 		return XTK_BATCH_OK;
 	}
 	if (ref.kind != XTK_REF_LOCAL) return XTK_BATCH_ERR_INVALID_LOCAL;
 	if (ref.u.local >= ctx->batch->next_local
-		|| !ctx->local_defined [ref.u.local]
-		|| ctx->local_destroyed [ref.u.local])
+	    || !ctx->local_defined [ref.u.local]
+	    || ctx->local_destroyed [ref.u.local])
 		return XTK_BATCH_ERR_INVALID_LOCAL;
 	return XTK_BATCH_OK;
 }
@@ -239,7 +240,7 @@ static bool prop_id_in_control(XtkCtrlDesc const *desc, XtkPropertyId id) {
 }
 
 static XtkBatchError pf_component_patch(XtkCompType const *type, XtkPropPatch const *patch) {
-	if (!value_ok(&patch->value) || !xtk_change_stamp_valid(patch->change)) return XTK_BATCH_ERR_INVALID_VALUE;
+	if (!value_ok(&patch->value) || !xtk_changestamp_valid(patch->change)) return XTK_BATCH_ERR_INVALID_VALUE;
 	if (patch->id == XTK_PROP_COMPONENT_PROPS) {
 		if (patch->value.kind != XTK_VALUE_BYTES) return XTK_BATCH_ERR_INVALID_VALUE;
 		if (patch->value.u.bytes.len != ( uint32_t ) type->props_size) return XTK_BATCH_ERR_INVALID_VALUE;
@@ -254,15 +255,15 @@ static XtkBatchError pf_component_patch(XtkCompType const *type, XtkPropPatch co
 static XtkBatchError pf_create_type(PreflightCtx *ctx, XtkCtrlId id, XtkCompType const **out) {
 	*out = NULL;
 	if (xtk_catalog_standard(id)) return XTK_BATCH_OK;
-	if (!xtk_ctrl_is_component(id) || !ctx->R->comp) return XTK_BATCH_ERR_VALIDATION;
+	if (!xtk_ctrl_iscomp(id) || !ctx->R->comp) return XTK_BATCH_ERR_VALIDATION;
 	*out = xtk_comp_lookup(ctx->R->comp, id);
 	return *out ? XTK_BATCH_OK : XTK_BATCH_ERR_VALIDATION;
 }
 
 static XtkBatchError pf_create_patch(XtkBatchCreate const *op, XtkCompType const *ctype, XtkPropPatch const *patch) {
 	if (ctype) return pf_component_patch(ctype, patch);
-	if (!xtk_catalog_control_property(op->type, patch->id)) return XTK_BATCH_ERR_INVALID_PROPERTY;
-	if (!value_ok(&patch->value) || !xtk_change_stamp_valid(patch->change)) return XTK_BATCH_ERR_INVALID_VALUE;
+	if (!xtk_catalog_ctrlprop(op->type, patch->id)) return XTK_BATCH_ERR_INVALID_PROPERTY;
+	if (!value_ok(&patch->value) || !xtk_changestamp_valid(patch->change)) return XTK_BATCH_ERR_INVALID_VALUE;
 	if (!standard_property_ok(op->type, patch)) return XTK_BATCH_ERR_INVALID_PROPERTY;
 	return flux_host_can_project(op->type, patch) ? XTK_BATCH_OK : XTK_BATCH_ERR_BACKEND;
 }
@@ -292,7 +293,7 @@ static XtkBatchError pf_create(PreflightCtx *ctx, XtkBatchCreate const *op) {
 }
 
 static XtkBatchError pf_standard_patch(XtkCtrlId type, XtkPropPatch const *patch) {
-	if (!xtk_catalog_control_property(type, patch->id)) return XTK_BATCH_ERR_INVALID_PROPERTY;
+	if (!xtk_catalog_ctrlprop(type, patch->id)) return XTK_BATCH_ERR_INVALID_PROPERTY;
 	if (!xtk_catalog_standard(type)) return XTK_BATCH_OK;
 	if (!standard_property_ok(type, patch)) return XTK_BATCH_ERR_INVALID_PROPERTY;
 	return flux_host_can_project(type, patch) ? XTK_BATCH_OK : XTK_BATCH_ERR_BACKEND;
@@ -301,10 +302,10 @@ static XtkBatchError pf_standard_patch(XtkCtrlId type, XtkPropPatch const *patch
 static XtkBatchError pf_set_prop(PreflightCtx *ctx, XtkBatchSetProp const *op) {
 	XtkBatchError err = pf_ref(ctx, op->target, false);
 	if (err != XTK_BATCH_OK) return err;
-	if (op->patch.id == XTK_PROP_ID_INVALID || !value_ok(&op->patch.value) || !xtk_change_stamp_valid(op->patch.change))
+	if (op->patch.id == XTK_PROP_ID_INVALID || !value_ok(&op->patch.value) || !xtk_changestamp_valid(op->patch.change))
 		return XTK_BATCH_ERR_INVALID_VALUE;
 	XtkCtrlId type = pf_ref_type(ctx, op->target);
-	if (xtk_ctrl_is_component(type)) {
+	if (xtk_ctrl_iscomp(type)) {
 		XtkCompType const *ctype = ctx->R->comp ? xtk_comp_lookup(ctx->R->comp, type) : NULL;
 		if (!ctype) return XTK_BATCH_ERR_VALIDATION;
 		return pf_component_patch(ctype, &op->patch);
@@ -328,7 +329,7 @@ static XtkBatchError pf_subscribe(PreflightCtx *ctx, XtkBatchSubscribe const *op
 	if (!op->fn || !event_phases_ok(op->event, op->phases) || op->token >= ctx->batch->next_sub)
 		return XTK_BATCH_ERR_VALIDATION;
 	XtkCtrlId type = pf_ref_type(ctx, op->target);
-	if (xtk_catalog_standard(type) && !xtk_catalog_control_event(type, op->event)) return XTK_BATCH_ERR_VALIDATION;
+	if (xtk_catalog_standard(type) && !xtk_catalog_ctrlevent(type, op->event)) return XTK_BATCH_ERR_VALIDATION;
 	return XTK_BATCH_OK;
 }
 
@@ -444,7 +445,6 @@ typedef struct ContentRoute {
 	ContentNodeFn node;
 } ContentRoute;
 
-/* Public children attach under backend content hosts, not the control root. */
 static XentNodeId content_parent(FluxHostState *R, XentNodeId parent) {
 	static ContentRoute const routes [] = {
 	  {XTK_CTRL_LIST,      flux_list_content_node   },
@@ -485,9 +485,7 @@ static XtkBatchError place(Prepare *P, XentNodeId parent, XentNodeId child, Xent
 	if (cur == XENT_NODE_INVALID) ok = xent_node_insert(P->R->ctx, parent, child, before);
 	else if (cur == parent) ok = xent_node_move(P->R->ctx, parent, child, before);
 	else ok = xent_node_reparent(P->R->ctx, parent, child, before);
-	/* Tree diverged from what preflight validated (e.g. before left the parent). */
 	if (!ok) return XTK_BATCH_ERR_VALIDATION;
-	/* LIST_ITEM seeds with no parent; bind owner once under the content host. */
 	if (flux_host_types_get(P->R, child) == XTK_CTRL_LISTITEM) fluxlistitem_bind_owner(P->R->store, child);
 	return stage_place_invalidations(P, parent, cur) ? XTK_BATCH_OK : XTK_BATCH_ERR_OOM;
 }
@@ -506,7 +504,7 @@ static XtkBatchError create_node(
 	XentNodeId node = flux_factory_create_node(P->R->ctx, P->R->store, XENT_NODE_INVALID, ( FluxControlType ) type);
 	if (node == XENT_NODE_INVALID) return XTK_BATCH_ERR_OOM;
 	if (!flux_host_types_set(P->R, node, type)
-		|| !flux_host_undo_push(P, (Undo) {.kind = UNDO_CREATE, .u.created = node}))
+	    || !flux_host_undo_push(P, (Undo) {.kind = UNDO_CREATE, .u.created = node}))
 	{
 		flux_factory_fail_node(P->R->ctx, P->R->store, node);
 		return XTK_BATCH_ERR_OOM;
@@ -534,7 +532,7 @@ static XtkBatchError create_child_root(Prepare *P, XentNodeId parent, XentNodeId
 	XentNodeId node = flux_factory_create_node(P->R->ctx, P->R->store, XENT_NODE_INVALID, FLUX_CONTROL_CONTAINER);
 	if (node == XENT_NODE_INVALID) return XTK_BATCH_ERR_OOM;
 	if (!flux_host_types_set(P->R, node, XTK_CTRL_CONTAINER)
-		|| !flux_host_undo_push(P, (Undo) {.kind = UNDO_CREATE, .u.created = node}))
+	    || !flux_host_undo_push(P, (Undo) {.kind = UNDO_CREATE, .u.created = node}))
 	{
 		flux_factory_fail_node(P->R->ctx, P->R->store, node);
 		return XTK_BATCH_ERR_OOM;
@@ -592,7 +590,7 @@ static XtkBatchError apply_create_component(Prepare *P, XtkBatchCreate const *op
 }
 
 static XtkBatchError apply_create(Prepare *P, XtkBatchCreate const *op, XtkLocalId local) {
-	if (xtk_ctrl_is_component(op->type)) return apply_create_component(P, op, local);
+	if (xtk_ctrl_iscomp(op->type)) return apply_create_component(P, op, local);
 	XentNodeId    node;
 	XtkBatchError err = create_node(P, op->type, local, op->props, op->prop_count, &node);
 	if (err != XTK_BATCH_OK) return err;
@@ -628,7 +626,7 @@ static XtkBatchError apply_set_prop(Prepare *P, XtkBatchOp const *op) {
 	XtkCtrl target = XTK_CTRL_INVALID;
 	if (!flux_host_resolve_ref(P, op->u.set_prop.target, &ok, &target) || !ok) return XTK_BATCH_ERR_VALIDATION;
 	XtkCtrlId type = flux_host_types_get(P->R, flux_host_as_node(target));
-	if (op->u.set_prop.patch.id == XTK_PROP_COMPONENT_PROPS && xtk_ctrl_is_component(type)) {
+	if (op->u.set_prop.patch.id == XTK_PROP_COMPONENT_PROPS && xtk_ctrl_iscomp(type)) {
 		XtkValue const *v = &op->u.set_prop.patch.value;
 		return component_error(
 		  xtk_comp_prepupd(P->R->comp, &P->R->host, P->R->ctx, target, v->u.bytes.data, v->u.bytes.len)
@@ -669,6 +667,7 @@ static void note_list_sync(Prepare *P, XentNodeId list, XentNodeId *lists, uint3
 	for (uint32_t i = 0; i < *count; i++)
 		if (lists [i] == list) return;
 	if (*count < cap) lists [(*count)++] = list;
+	else flux_limit_exceeded(FLUX_LIMIT_TXN_LISTS);
 }
 
 static XentNodeId list_root_from_node(Prepare *P, XentNodeId node) {
@@ -851,7 +850,7 @@ static void fill_mappings(Prepare const *P, XtkBatchResult *result) {
 static XtkBatchResult *fill_result(Prepare *P) {
 	uint32_t creates = 0u, subs = 0u;
 	count_result_slots(P->batch, &creates, &subs);
-	XtkBatchResult *result = xtk_batch_result_create(creates, subs);
+	XtkBatchResult *result = xtk_batchresult_create(creates, subs);
 	if (!result) return NULL;
 	fill_mappings(P, result);
 	return result;
@@ -909,7 +908,7 @@ XtkBatchResult *flux_host_commit(XtkHost *host, XtkPrepare *prepare, XtkBatchDia
 	}
 
 	if (!flux_host_prepare_invalidations(P)) {
-		xtk_batch_result_destroy(result);
+		xtk_batchresult_destroy(result);
 		flux_host_rollback(P);
 		diag(diagnostic, XTK_BATCH_ERR_OOM, UINT32_MAX);
 		flux_host_prepare_free(P);
@@ -918,7 +917,7 @@ XtkBatchResult *flux_host_commit(XtkHost *host, XtkPrepare *prepare, XtkBatchDia
 
 	XtkCompErr component_commit = xtk_comp_commit(P->R->comp);
 	if (component_commit != XTK_COMPONENT_OK) {
-		xtk_batch_result_destroy(result);
+		xtk_batchresult_destroy(result);
 		flux_host_rollback(P);
 		diag(diagnostic, component_error(component_commit), UINT32_MAX);
 		flux_host_prepare_free(P);

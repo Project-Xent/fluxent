@@ -1,10 +1,3 @@
-/**
- * @file flux_split_view.c
- * @brief SplitView behavior: an ABSOLUTE root hosting a content wrapper (first)
- * and a pane wrapper (second, drawn on top for overlay modes). A per-frame sync
- * positions the two wrappers per display mode / placement / open state and
- * refreshes the pane wrapper's render data (overlay + divider edge).
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_init_container.h"
@@ -18,7 +11,6 @@ static FluxSplitViewData *split_data(FluxStore *store, XentNodeId id) {
 	return ( FluxSplitViewData * ) nd->component_data;
 }
 
-/* Configure a wrapper as a FLEX column that stretches its single child. */
 static void split_wrap_layout(XentCtx *ctx, XentNodeId n) {
 	xent_setproto(ctx, n, XENT_PROTOCOL_FLEX);
 	xent_setflexdir(ctx, n, XENT_FLEX_COLUMN);
@@ -43,7 +35,7 @@ XentNodeId flux_splitpane_init(XentCtx *ctx, FluxStore *store, XentNodeId parent
 	}
 	nd->component_data         = pd;
 	nd->destroy_component_data = free;
-	nd->clips_children         = true; /* clip a partially-open (compact) pane */
+	nd->clips_children         = true;
 	split_wrap_layout(ctx, n);
 	return n;
 }

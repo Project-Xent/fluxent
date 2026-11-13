@@ -1,7 +1,3 @@
-/**
- * @file flux_display_paint.c
- * @brief Shared classic/compose MAIN/OVERLAY paint: record → replay.
- */
 #include "flux_display_paint.h"
 #include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
@@ -32,10 +28,7 @@ paint_replay_translated(XtkBackend *backend, FluxRenderCtx const *rc, XentDl con
 		flux_xtk_setrc(backend, rc);
 		backend->vt->replay_display_list(backend, list);
 	}
-	else {
-		/* Imperative demos may host without a backend; replay still needs the DC. */
-		( void ) flux_xtk_replay_rc(rc, list);
-	}
+	else { ( void ) flux_xtk_replay_rc(rc, list); }
 
 	ID2D1RenderTarget_SetTransform(FLUX_RT(rc), &saved);
 }

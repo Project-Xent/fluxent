@@ -3,7 +3,7 @@
 #endif
 
 #include "fluxent/flux_flyout.h"
-#include "fluxent/flux_graphics.h"
+#include "fluxent/flux_gfx.h"
 #include "controls/draw/flux_control_record_internal.h"
 #include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
@@ -14,8 +14,8 @@
 #include <windows.h>
 
 typedef struct {
-	FluxThemeColors const *colors;  /* not owned — static fallback */
-	FluxTheme             *manager; /* not owned — preferred, auto-updates */
+	FluxThemeColors const *colors;
+	FluxTheme             *manager;
 	bool                   is_dark;
 } ThemeRef;
 
@@ -23,10 +23,10 @@ struct FluxFlyout {
 	FluxPopup            *popup;
 	FluxWindow           *owner;
 
-	FluxText             *text; /* not owned */
+	FluxText             *text;
 	ThemeRef              theme;
 
-	ID2D1SolidColorBrush *brush; /* owned */
+	ID2D1SolidColorBrush *brush;
 
 	float                 content_w;
 	float                 content_h;
@@ -69,7 +69,6 @@ static void resolve_card_colors(FluxFlyout const *fly, bool is_dark, FluxColor *
 
 	FluxColor bg = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
 
-	/* SurfaceStrokeColorFlyoutBrush (not ControlStrokeColorDefault): dark #33000000 / light #0F000000. */
 	FluxColor border;
 	if (is_dark) border = flux_color_rgba(0, 0, 0, 0x33);
 	else border = flux_color_rgba(0, 0, 0, 0x0f);
@@ -136,7 +135,7 @@ static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
 	FluxRect  bounds = flyout_bounds(fly);
 	FluxColor bg, border;
 	resolve_card_colors(fly, is_dark, &bg, &border);
-	bg                 = flux_popup_acrylic_tint(popup, bg);
+	bg                 = flux_popup_acrylictint(popup, bg);
 	FluxRenderCtx rc   = flyout_render_context(fly, d2d, theme, is_dark);
 
 	XentDl       *list = flyout_record_chrome(&bounds, bg, border);
@@ -144,7 +143,6 @@ static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
 		flux_xtk_replay_rc(&rc, list);
 		xent_dl_free(list);
 	}
-	/* Optional content callback remains host-supplied (may draw into D2D). */
 	flyout_paint_content(fly);
 }
 
@@ -166,7 +164,6 @@ FluxFlyout *flux_flyout_create(FluxWindow *owner) {
 
 	flux_popup_setdismissoutside(fly->popup, true);
 	flux_popup_onpaint(fly->popup, flyout_paint_thunk, fly);
-	/* WinUI PopupThemeTransition: translate + fade, ~167 ms. */
 	flux_popup_setanim(fly->popup, FLUX_POPUP_ANIM_FLYOUT);
 
 	return fly;
@@ -211,7 +208,7 @@ void flux_flyout_setsize(FluxFlyout *fly, float width, float height) {
 
 	float outer_w  = fly->content_w + FLUX_FLYOUT_PAD_LEFT + FLUX_FLYOUT_PAD_RIGHT + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
 	float outer_h  = fly->content_h + FLUX_FLYOUT_PAD_TOP + FLUX_FLYOUT_PAD_BOTTOM + 2.0f * FLUX_FLYOUT_BORDER_WIDTH;
-	flux_popup_set_size(fly->popup, outer_w, outer_h);
+	flux_popup_setsize(fly->popup, outer_w, outer_h);
 }
 
 void flux_flyout_onpaint(FluxFlyout *fly, FluxFlyoutPaintFn cb, void *user_ctx) {

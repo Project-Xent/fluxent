@@ -15,8 +15,6 @@
 
 bool                           nb_is_number_box(FluxTextBoxInputData *tb) { return tb->nb != NULL; }
 
-/* Process-wide locale formatter shared by every number box (single UI thread).
- * Deliberate global: one DecimalFormatter, created on first use, lives until exit. */
 static WGLNU_DecimalFormatter *g_nb_formatter;
 static bool                    g_nb_formatter_ready;
 
@@ -184,16 +182,8 @@ static void nb_notify_value(FluxTextBoxInputData *tb, double value) {
 	if (notify) notify(notify_ctx, value);
 }
 
-void nb_set_value(FluxTextBoxInputData *tb, double new_value) {
-	double applied;
-	if (nb_apply_value(tb, new_value, &applied)) nb_notify_value(tb, applied);
-}
-
 void nb_project_value(FluxTextBoxInputData *tb, double new_value) { ( void ) nb_apply_value(tb, new_value, NULL); }
 
-/* INumberParser.ParseDouble yields a Windows.Foundation.IReference<double>*, which
- * cwinrt surfaces untyped; its Value() accessor is vtable slot 6 (after IInspectable's
- * six entries). Reads the value and releases the reference. */
 static bool nb_unwrap_double(void *ref, double *out) {
 	if (!ref) return false;
 	typedef HRESULT(__stdcall * value_fn)(void *self, double *out);
@@ -243,7 +233,6 @@ void nb_validate_input(FluxTextBoxInputData *tb) {
 	if (nb_apply_input(tb, &applied)) nb_notify_value(tb, applied);
 }
 
-/* Wrap a stepped value around the [min, max] range (WinUI NumberBox wrap behavior). */
 static double nb_wrap(double v, double min, double max) {
 	if (v > max) return min;
 	if (v < min) return max;

@@ -1,6 +1,13 @@
 #include "app.h"
 #include <string.h>
 
+static void        page_checkbox_sync(GalleryApp *g);
+
+static char const *check_state_text(int state) {
+	if (state == XTK_CHECK_CHECKED) return "Checked";
+	return state == XTK_CHECK_INDETERMINATE ? "Indeterminate" : "Unchecked";
+}
+
 bool page_checkbox_build(PageBuild *b) {
 	page_sync(b, page_checkbox_sync);
 	Model const *m      = &b->app->model;
@@ -11,16 +18,39 @@ bool page_checkbox_build(PageBuild *b) {
 		PageDemo   demo = page_demo(b, ex);
 		XtkLocalId cb   = xtk_checkbox_create(
 		  &b->txn, demo.items,
-		  &(XtkToggleProps) {
-			.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK | XTK_TOGGLE_ENABLED_MASK,
+		  &(XtkCheckBoxProps) {
+			.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 			.text    = "Two-state CheckBox",
 			.checked = m->check_a,
 			.enabled = true,
 		  }
 		);
 		xtk_checkbox_onchange(&b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_CHECK_A));
-		XtkNodeRef output = page_output(b, demo.row, m->check_a ? "Checked" : "Unchecked");
-		page_keepout(b, MSG_CHECK_A, output.u.local);
+		XtkLocalId output = page_output(b, demo.row, m->check_a ? "Checked" : "Unchecked");
+		page_keepout(b, MSG_CHECK_A, output);
+	}
+	{
+		XtkNodeRef ex
+		  = page_example(b, parent, "A 3-state CheckBox: a click cycles unchecked, checked, indeterminate.");
+		PageDemo   demo = page_demo(b, ex);
+		XtkLocalId cb   = xtk_checkbox_create(
+		  &b->txn, demo.items,
+		  &(XtkCheckBoxProps) {
+			.set           = XTK_CHECKBOX_TEXT_MASK
+		                   | XTK_CHECKBOX_CHECKED_MASK
+		                   | XTK_CHECKBOX_INDETERMINATE_MASK
+		                   | XTK_CHECKBOX_THREESTATE_MASK
+		                   | XTK_CHECKBOX_ENABLED_MASK,
+			.text          = "Three-state CheckBox",
+			.checked       = m->check_state == XTK_CHECK_CHECKED,
+			.indeterminate = m->check_state == XTK_CHECK_INDETERMINATE,
+			.threestate    = true,
+			.enabled       = true,
+		  }
+		);
+		xtk_checkbox_onstate(&b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_CHECK_TRI));
+		XtkLocalId output = page_output(b, demo.row, check_state_text(m->check_state));
+		page_keepout(b, MSG_CHECK_TRI, output);
 	}
 	{
 		XtkNodeRef ex   = page_example(b, parent, "CheckBoxes can be disabled.");
@@ -43,8 +73,8 @@ bool page_checkbox_build(PageBuild *b) {
 		);
 		XtkLocalId cb = xtk_checkbox_create(
 		  &b->txn, xtk_ref_local(card),
-		  &(XtkToggleProps) {
-			.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK | XTK_TOGGLE_ENABLED_MASK,
+		  &(XtkCheckBoxProps) {
+			.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 			.text    = "Enabled option",
 			.checked = m->check_b,
 			.enabled = true,
@@ -53,8 +83,8 @@ bool page_checkbox_build(PageBuild *b) {
 		xtk_checkbox_onchange(&b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_CHECK_B));
 		xtk_checkbox_create(
 		  &b->txn, xtk_ref_local(card),
-		  &(XtkToggleProps) {
-			.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK | XTK_TOGGLE_ENABLED_MASK,
+		  &(XtkCheckBoxProps) {
+			.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 			.text    = "Disabled option",
 			.checked = false,
 			.enabled = false,
@@ -62,8 +92,8 @@ bool page_checkbox_build(PageBuild *b) {
 		);
 		xtk_checkbox_create(
 		  &b->txn, xtk_ref_local(card),
-		  &(XtkToggleProps) {
-			.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK | XTK_TOGGLE_ENABLED_MASK,
+		  &(XtkCheckBoxProps) {
+			.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 			.text    = "Disabled and checked",
 			.checked = true,
 			.enabled = false,
@@ -73,7 +103,11 @@ bool page_checkbox_build(PageBuild *b) {
 	return true;
 }
 
-void page_checkbox_sync(GalleryApp *g) {
+static void page_checkbox_sync(GalleryApp *g) {
+	char const *tri = check_state_text(g->model.check_state);
+	xtk_text_settext(
+	  &g->scene, ( XtkCtrl ) g->live_output [MSG_CHECK_TRI], tri, ( uint32_t ) strlen(tri), (XtkChangeStamp) {0}
+	);
 	char const *text = g->model.check_a ? "Checked" : "Unchecked";
 	xtk_text_settext(
 	  &g->scene, ( XtkCtrl ) g->live_output [MSG_CHECK_A], text, ( uint32_t ) strlen(text), (XtkChangeStamp) {0}

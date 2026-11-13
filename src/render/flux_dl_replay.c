@@ -1,7 +1,3 @@
-/**
- * @file flux_dl_replay.c
- * @brief XtkBackend: replay immutable XentDl to Direct2D.
- */
 #include "flux_dl_replay.h"
 #include "bridge/flux_internal.h"
 #include "render/flux_fluent.h"
@@ -35,7 +31,7 @@ typedef enum FluxXtkClipKind
 } FluxXtkClipKind;
 
 typedef struct FluxBackendXtkState {
-	FluxBackendCtx      *bctx;
+	FluxBackendCtx       bctx;
 	XtkHost             *host;
 	FluxRenderCtx const *rc;
 	FluxBackendResource  resources [FLUX_XTK_RESOURCE_CAP];
@@ -111,6 +107,8 @@ static void xtk_draw_text(FluxBackendXtkState *S, XentDl const *list, XentDlCmd 
 	style.text_align  = ( FluxTextAlign ) cmd->u.text.h_align;
 	style.vert_align  = ( FluxTextVAlign ) cmd->u.text.v_align;
 	style.word_wrap   = (cmd->u.text.flags & XENT_DL_TEXT_WRAP) != 0u;
+	style.max_lines   = cmd->u.text.max_lines;
+	style.trim        = ( XentTextTrim ) cmd->u.text.trim;
 	style.color       = xtk_color_to_flux(cmd->u.text.color);
 	if (cmd->u.text.font_len > 0u)
 		style.font_family = xent_dl_text(list, cmd->u.text.font_offset, cmd->u.text.font_len);
@@ -149,8 +147,6 @@ static bool xtk_fill_triangle(FluxBackendXtkState *S, XentDlCmd const *cmd) {
 static ID2D1LinearGradientBrush *xtk_make_linear_brush(
   FluxRenderCtx const *rc, float x0, float y0, float x1, float y1, float s0, float s1, XentColor c0, XentColor c1
 ) {
-	/* Axis is object-local (same space as the filled/stroked geometry). D2D brushes
-	 * inherit the current transform, so push_transform moves gradient with content. */
 	D2D1_GRADIENT_STOP stops [2];
 	stops [0].position                      = s0;
 	stops [0].color                         = flux_d2d_color(xtk_color_to_flux(c0));
@@ -180,8 +176,6 @@ static bool xtk_stroke_rounded_linear(FluxBackendXtkState *S, XentDlCmd const *c
 	  cmd->u.linear.c0, cmd->u.linear.c1
 	);
 	if (!grad) return false;
-	/* Stroke centered on rect edge — same as D2D DrawRoundedRectangle / flux_draw_rounded_rect.
-	 * Callers that want an inset path (Fluent button elevation) must inset the rect when recording. */
 	D2D1_ROUNDED_RECT rr;
 	rr.rect.left   = cmd->u.linear.rect.x;
 	rr.rect.top    = cmd->u.linear.rect.y;
@@ -226,7 +220,6 @@ static D2D1_LAYER_PARAMETERS xtk_layer_parameters(void) {
 	return lp;
 }
 
-/* Core: p' = (x*m00+y*m01+m02, x*m10+y*m11+m12). D2D row: _11 _12 / _21 _22 / _31 _32. */
 static D2D1_MATRIX_3X2_F xtk_affine_to_d2d(XentAffine2 const *m) {
 	return (D2D1_MATRIX_3X2_F) {m->m00, m->m10, m->m01, m->m11, m->m02, m->m12};
 }
@@ -315,7 +308,6 @@ static bool xtk_push_transform(FluxBackendXtkState *S, XentAffine2 const *m) {
 	ID2D1RenderTarget_GetTransform(FLUX_RT(S->rc), &S->xform_stack [S->xform_depth++]);
 	D2D1_MATRIX_3X2_F current;
 	ID2D1RenderTarget_GetTransform(FLUX_RT(S->rc), &current);
-	/* Row-vector compose: p' = p * local * parent (matches HEAD engine local*current). */
 	D2D1_MATRIX_3X2_F local    = xtk_affine_to_d2d(m);
 	D2D1_MATRIX_3X2_F combined = xtk_mul_affine(local, current);
 	ID2D1RenderTarget_SetTransform(FLUX_RT(S->rc), &combined);
@@ -352,7 +344,6 @@ static bool xtk_stroke_arc(FluxBackendXtkState *S, XentDlCmd const *cmd) {
 	float         start   = cmd->u.arc.start_deg * (3.14159265f / 180.0f);
 	float         sweep   = cmd->u.arc.sweep_deg * (3.14159265f / 180.0f);
 	float         end     = start + sweep;
-	/* y-down, 0=+X, clockwise positive → x=cosθ, y=sinθ */
 	D2D1_POINT_2F p0      = {cx + rx * cosf(start), cy + ry * sinf(start)};
 	D2D1_POINT_2F p1      = {cx + rx * cosf(end), cy + ry * sinf(end)};
 
@@ -449,7 +440,6 @@ static ID2D1PathGeometry *xtk_tab_selected_path(FluxBackendXtkState *S, XentRect
 }
 
 static bool xtk_fill_shape(FluxBackendXtkState *S, XentDlCmd const *cmd) {
-	/* Unknown shape ids are skipped; do not abort the whole list. */
 	if (cmd->u.shape.shape != FLUX_SHAPE_TAB_SELECTED_FRAME) return true;
 	ID2D1PathGeometry *geo = xtk_tab_selected_path(S, cmd->u.shape.bounds);
 	if (!geo) return false;
@@ -536,7 +526,7 @@ static bool xtk_replay_cmd(FluxBackendXtkState *S, XentDl const *list, XentDlCmd
 	case XENT_DL_FILLTRI          : return xtk_fill_triangle(S, cmd);
 	case XENT_DL_STROKERRECT_GRAD : return xtk_stroke_rounded_linear(S, cmd);
 	case XENT_DL_FILLRECT_GRAD    : return xtk_fill_rect_linear(S, cmd);
-	default                       : return true; /* skip unknown ops; keep later cmds drawable */
+	default                       : return true;
 	}
 }
 
@@ -552,7 +542,6 @@ static bool xtk_replay_state(FluxBackendXtkState *S, XentDl const *list) {
 		if (!cmd) continue;
 		if (!xtk_replay_cmd(S, list, cmd)) ok = false;
 	}
-	/* Unbalanced stack would pollute subsequent sibling paints (P-43). */
 	while (S->clip_depth > 0u) {
 		( void ) xtk_pop_clip(S);
 		ok = false;
@@ -597,11 +586,16 @@ XtkBackend *flux_xtk_backend_create(FluxBackendCtx *bctx, XtkHost *host) {
 	if (!bctx || !host) return NULL;
 	FluxBackendXtkState *S = ( FluxBackendXtkState * ) calloc(1, sizeof(*S));
 	if (!S) return NULL;
-	S->bctx         = bctx;
+	S->bctx         = *bctx;
 	S->host         = host;
 	S->backend.vt   = &flux_xtk_backend_vtable;
 	S->backend.impl = S;
 	return &S->backend;
+}
+
+FluxBackendCtx *flux_xtk_backendctx(XtkBackend *backend) {
+	FluxBackendXtkState *S = xtk_state(backend);
+	return S ? &S->bctx : NULL;
 }
 
 void flux_xtk_backend_destroy(XtkBackend *backend) {
@@ -612,17 +606,4 @@ void flux_xtk_backend_destroy(XtkBackend *backend) {
 void flux_xtk_setrc(XtkBackend *backend, FluxRenderCtx const *rc) {
 	FluxBackendXtkState *S = xtk_state(backend);
 	if (S) S->rc = rc;
-}
-
-void flux_xtk_regimage(XtkBackend *backend, XentResourceId id, char const *path) {
-	FluxBackendXtkState *S = xtk_state(backend);
-	if (!S || id == XENT_RESOURCE_INVALID || !path) return;
-	for (uint32_t i = 0; i < S->resource_count; ++i) {
-		if (S->resources [i].id == id) {
-			S->resources [i].image_path = path;
-			return;
-		}
-	}
-	if (S->resource_count >= FLUX_XTK_RESOURCE_CAP) return;
-	S->resources [S->resource_count++] = (FluxBackendResource) {.id = id, .image_path = path};
 }

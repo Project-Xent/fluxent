@@ -1,5 +1,5 @@
 #include "flux_host_internal.h"
-#include <fluxent/flux_nav_trace.h>
+#include "flux_limit.h"
 
 void flux_host_clear_subs(FluxHostState *R, XtkCtrl control) {
 	for (uint32_t i = 0; i < R->sub_count; i++)
@@ -109,6 +109,7 @@ static uint32_t ancestor_chain(FluxHostState *R, XtkCtrl target, XtkCtrl *out, u
 		out [count++] = cursor;
 		cursor        = flux_host_parent(&R->host, cursor);
 	}
+	if (cursor != XTK_CTRL_INVALID && count == cap) flux_limit_exceeded(FLUX_LIMIT_EVENT_CHAIN);
 	return count;
 }
 
@@ -135,18 +136,8 @@ static uint32_t route_bubble(FluxHostState *R, XtkEvent *event, XtkCtrl const *c
 }
 
 static void route_begin(FluxHostState *R, XtkEvent *event, uint32_t depth) {
-	if (!flux_nav_trace_current())
-		flux_nav_trace_begin(
-		  "host-route-api event=%d target=%llu cause=%d", event->id, ( unsigned long long ) event->target, event->cause
-		);
-	if (!event->trace_id) event->trace_id = flux_nav_trace_current();
 	event->scene_revision = R->revision;
 	if (event->source == XTK_CTRL_INVALID) event->source = event->target;
-	flux_nav_trace_log(
-	  "host.route", "event=%d source=%llu target=%llu cause=%d depth=%u scene_revision=%llu", event->id,
-	  ( unsigned long long ) event->source, ( unsigned long long ) event->target, event->cause, depth,
-	  ( unsigned long long ) event->scene_revision
-	);
 }
 
 static uint32_t route_target(FluxHostState *R, XtkEvent *event) {
@@ -201,7 +192,7 @@ static bool host_subscribe_push(FluxHostState *R, SubEntry entry, XtkSubId *out_
 XtkSubId
 flux_host_subscribe(XtkHost *host, XtkCtrl target, XtkEventId event, uint32_t phases, XtkEventFn fn, void *userdata) {
 	FluxHostState *R = flux_host_state(host);
-	if (!R || !flux_host_node_live(R, target) || !xtk_event_phases_valid(phases)) return XTK_SUBSCRIPTION_INVALID;
+	if (!R || !flux_host_node_live(R, target) || !xtk_event_phasesvalid(phases)) return XTK_SUBSCRIPTION_INVALID;
 	XtkSubId id = XTK_SUBSCRIPTION_INVALID;
 	if (!host_subscribe_push(
 		  R, (SubEntry) {.target = target, .event = event, .phases = phases, .fn = fn, .userdata = userdata}, &id
@@ -220,7 +211,7 @@ void flux_host_unsubscribe(XtkHost *host, XtkSubId id) {
 	}
 }
 
-bool flux_host_set_focus(XtkHost *host, XtkCtrl control) {
+bool flux_host_setfocus(XtkHost *host, XtkCtrl control) {
 	FluxHostState *R = flux_host_state(host);
 	if (!R) return false;
 	if (control != XTK_CTRL_INVALID && !flux_host_is_live(host, control)) return false;

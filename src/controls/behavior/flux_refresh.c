@@ -14,19 +14,6 @@
 #include <stdlib.h>
 #include <windows.h>
 
-/* WinUI RefreshContainer + RefreshVisualizer (PullToRefresh). Two nodes mirror
- * the runtime composition:
- *   root   FLUX_CONTROL_REFRESH  — owns the runtime, clips to bounds, draws the
- *                                  visualizer glyph as an overlay pass.
- *   scroll FLUX_CONTROL_SCROLL   — the scrollable content host (children mount here).
- *
- * WinUI's InteractionTracker feeds the visualizer two signals — interactionRatio
- * (pull / size) and isInteractingForRefresh — which drive a five-state machine
- * (Idle/Peeking/Interacting/Pending/Refreshing). fluxent has no InteractionTracker
- * seam at the scroll edge, so the gesture is reconstructed best-effort from pointer
- * deltas taken while the scroller sits at its pull edge; the reliable path is the
- * programmatic RequestRefresh / set_refreshing API (mirrors the WinRT Deferral). */
-
 #ifndef FLUX_PI
   #define FLUX_PI 3.14159265358979323846f
 #endif
@@ -60,16 +47,11 @@ static void refresh_apply_content_offset(FluxRefreshData *d, float offset) {
 	else nd->render_translate_y = offset;
 }
 
-/* Orientation=Auto starting angle: vertical 0, LeftToRight -pi/2, RightToLeft +pi/2. */
 static float refresh_start_angle(FluxPullDirection dir) {
 	if (dir == FLUX_PULL_LEFT_TO_RIGHT) return -FLUX_PI * 0.5f;
 	if (dir == FLUX_PULL_RIGHT_TO_LEFT) return FLUX_PI * 0.5f;
 	return 0.0f;
 }
-
-/* -------------------------------------------------------------------------
- * Continuous spin (500ms Linear loop) + Pending pop (300ms) driver.
- * ---------------------------------------------------------------------- */
 
 static bool refresh_pop_active(FluxRefreshData const *d, unsigned long now) {
 	if (d->state != FLUX_REFRESH_PENDING || d->pop_start_tick == 0) return false;
@@ -86,8 +68,8 @@ static bool refresh_step(void *ctx, unsigned long now) {
 		d->offset_animating = t < 1.0f;
 		animating           = d->offset_animating;
 	}
-	if (d->state == FLUX_REFRESH_REFRESHING) animating = true; /* perpetual spin */
-	if (refresh_pop_active(d, now)) animating = true;          /* one-shot pop */
+	if (d->state == FLUX_REFRESH_REFRESHING) animating = true;
+	if (refresh_pop_active(d, now)) animating = true;
 	refresh_repaint(d);
 	if (!animating) d->anim_registered = false;
 	return animating;
@@ -101,25 +83,21 @@ static void refresh_anim_start(FluxRefreshData *d) {
 static void refresh_animate_content_offset(FluxRefreshData *d, float target) {
 	d->offset_from       = d->content_offset;
 	d->offset_to         = target;
-	d->offset_start_tick = GetTickCount();
+	d->offset_start_tick = flux_anim_now();
 	d->offset_animating  = d->offset_from != target;
 	if (d->offset_animating) refresh_anim_start(d);
 	else refresh_apply_content_offset(d, target);
 }
 
-/* -------------------------------------------------------------------------
- * State transitions.
- * ---------------------------------------------------------------------- */
-
 static void refresh_enter_state(FluxRefreshData *d, int state) {
 	if (d->state == state) return;
 	d->state = state;
 	if (state == FLUX_REFRESH_PENDING) {
-		d->pop_start_tick = GetTickCount();
+		d->pop_start_tick = flux_anim_now();
 		refresh_anim_start(d);
 	}
 	else if (state == FLUX_REFRESH_REFRESHING) {
-		d->spin_start_tick = GetTickCount();
+		d->spin_start_tick = flux_anim_now();
 		refresh_anim_start(d);
 	}
 	refresh_repaint(d);
@@ -157,7 +135,6 @@ static void refresh_complete(FluxRefreshData *d) {
 	refresh_animate_content_offset(d, 0.0f);
 }
 
-/* The armed pull's state transition for ratio r and the previous zero state. */
 static int refresh_armed_next_state(FluxRefreshData const *d, float r, bool zero) {
 	float thr = d->threshold_ratio;
 	switch (d->state) {
@@ -171,7 +148,7 @@ static int refresh_armed_next_state(FluxRefreshData const *d, float r, bool zero
 	case FLUX_REFRESH_PENDING :
 		if (r <= 0.0f) return FLUX_REFRESH_IDLE;
 		return r <= thr ? FLUX_REFRESH_INTERACTING : d->state;
-	default : return d->state; /* Peeking / Refreshing stay */
+	default : return d->state;
 	}
 }
 
@@ -197,18 +174,10 @@ static void refresh_on_lift(FluxRefreshData *d) {
 	else if (state != FLUX_REFRESH_REFRESHING) refresh_complete(d);
 }
 
-/* -------------------------------------------------------------------------
- * Best-effort over-pull gesture (see file header for the limitation).
- * ---------------------------------------------------------------------- */
-
 static void refresh_destroy(void *component_data) {
 	flux_anim_unregister(component_data);
 	free(component_data);
 }
-
-/* -------------------------------------------------------------------------
- * Construction.
- * ---------------------------------------------------------------------- */
 
 static void refresh_setup_root(XentCtx *ctx, XentNodeId root) {
 	xent_setproto(ctx, root, XENT_PROTOCOL_FLEX);
@@ -242,7 +211,7 @@ static FluxRefreshData *refresh_make_runtime(FluxRefreshContainerDesc const *inf
 
 	root_nd->component_data = d;
 	root_nd->destroy_component_data = refresh_destroy;
-	root_nd->clips_children         = true; /* root inset clip: glyph reveals from behind the edge */
+	root_nd->clips_children         = true;
 	return d;
 }
 
@@ -259,7 +228,6 @@ XentNodeId flux_refresh_init(FluxRefreshContainerDesc const *info) {
 	if (!d) return root;
 
 	refresh_setup_root(info->ctx, root);
-	/* The scroll spine fills the container; the visualizer glyph floats over it. */
 	xent_setgrow(info->ctx, scroll, 1.0f);
 	xent_setbasis(info->ctx, scroll, 0.0f);
 	return root;
@@ -291,8 +259,6 @@ void flux_refresh_set_threshold_ratio(FluxStore *store, XentNodeId id, float rat
 	if (d && ratio > 0.0f) d->threshold_ratio = ratio;
 }
 
-/* Edge-driven completion, mirroring the WinRT Deferral: true keeps the spinner
- * spinning; false ends the refresh and retracts. Does not re-fire on_refresh. */
 void flux_refresh_set_refreshing(FluxStore *store, XentNodeId id, bool refreshing) {
 	FluxRefreshData *d = refresh_data(store, id);
 	if (!d) return;
@@ -301,22 +267,6 @@ void flux_refresh_set_refreshing(FluxStore *store, XentNodeId id, bool refreshin
 	}
 	else if (d->state == FLUX_REFRESH_REFRESHING) { refresh_complete(d); }
 }
-
-/* Programmatic RequestRefresh(): start the spinner and raise on_refresh. */
-void flux_refresh_request_refresh(FluxStore *store, XentNodeId id) {
-	FluxRefreshData *d = refresh_data(store, id);
-	if (d && d->state != FLUX_REFRESH_REFRESHING) refresh_begin_refresh(d, XTK_EVENT_CAUSE_PROGRAM);
-}
-
-/* -------------------------------------------------------------------------
- * Touch over-pull seam (driven by the input layer's touch-pan path).
- *
- * A touch pan clamps the wrapped scroller at its edge; the amount it would have
- * scrolled past that edge is the over-pull that WinUI's InteractionTracker
- * would report as interactionRatio. This reconstructs it from the pre-clamp
- * offsets so real touch pulls drive the same five-state machine as the
- * programmatic path (the mouse path uses the pointer behaviors above).
- * ---------------------------------------------------------------------- */
 
 static float refresh_overpull_px(FluxRefreshData const *d, float new_sx, float new_sy, float max_x, float max_y) {
 	switch (d->direction) {
@@ -334,8 +284,6 @@ bool flux_refresh_touch_pull(FluxStore *store, XentNodeId id, float new_sx, floa
 
 	float overpull = refresh_overpull_px(d, new_sx, new_sy, max_x, max_y);
 	if (overpull > 0.0f) {
-		/* First over-pull arms the gesture: an over-pull only exists at the edge,
-		 * which is exactly WinUI's isInteractingForRefresh condition. */
 		if (!d->pull_tracking) {
 			d->interacting_for_refresh = true;
 			d->was_at_zero             = true;
@@ -344,7 +292,7 @@ bool flux_refresh_touch_pull(FluxStore *store, XentNodeId id, float new_sx, floa
 		refresh_on_ratio(d, overpull / d->visualizer_size);
 		return true;
 	}
-	if (d->pull_tracking) refresh_on_ratio(d, 0.0f); /* back inside the edge: retract */
+	if (d->pull_tracking) refresh_on_ratio(d, 0.0f);
 	return false;
 }
 

@@ -14,7 +14,7 @@ struct FluxSurface {
 	WUC_CompositionDrawingSurface         *surface;
 	FluxICompositionDrawingSurfaceInterop *interop;
 	WUC_CompositionSurfaceBrush           *brush;
-	ID2D1DeviceContext                    *active_dc; /**< Valid between begin/end. */
+	ID2D1DeviceContext                    *active_dc;
 };
 
 static int   clamp_dim(int v) { return v < 1 ? 1 : v; }
@@ -36,7 +36,6 @@ FluxSurface *flux_surface_create(FluxCompositor *c, WUC_CompositionGraphicsDevic
 	hr = cwinrt_query(s->surface, &FluxIID_ICompositionDrawingSurfaceInterop, ( void ** ) &s->interop);
 	if (FAILED(hr)) goto fail;
 
-	/* A SurfaceBrush takes an ICompositionSurface; the drawing surface is one. */
 	WUC_ICompositionSurface *as_surface = NULL;
 	hr = cwinrt_query(s->surface, &CWINRT_IID_WUC_ICompositionSurface, ( void ** ) &as_surface);
 	if (FAILED(hr)) goto fail;

@@ -1,30 +1,29 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
 
-static XentNodeId
-stretch_col(GalleryApp *g, XentNodeId parent, char const *source, XtkImageStretch stretch, char const *label) {
-	XentNodeId col = g_col(g, parent, 6.0f, 0, 0, 0, 0);
-	XentNodeId img = flux_image_init(&(FluxImageDesc) {
-	  .ctx     = gallery_ctx(g),
-	  .store   = gallery_store(g),
-	  .parent  = col,
-	  .source  = source,
-	  .stretch = stretch,
-	});
-	xent_setsize(gallery_ctx(g), img, (XentSize) {180.0f, 110.0f});
-	g_text(g, col, label, 12.0f, FLUX_FONT_REGULAR);
-	return col;
+static void stretch_col(XtkTxn *txn, XtkNodeRef parent, XtkImageStretch stretch, char const *label) {
+	XtkNodeRef col = xtk_ref_local(ui_column(txn, parent, 6.0f, XENT_FLEX_ALIGN_START));
+	xtk_image_create(
+	  txn, col,
+	  &(XtkImageProps) {
+		.set = XTK_IMAGE_W_MASK | XTK_IMAGE_H_MASK | XTK_IMAGE_SRC_MASK | XTK_IMAGE_FIT_MASK,
+		.w   = 180.0f,
+		.h   = 110.0f,
+		.src = flux_image_respath("C:/Windows/Web/Wallpaper/Windows/img0.jpg"),
+		.fit = stretch,
+	  }
+	);
+	ui_text(txn, col, label, 12.0f, FLUX_FONT_REGULAR);
 }
 
-void page_image(GalleryApp *g, XentNodeId parent) {
-	static char const *const kSource = "C:/Windows/Web/Wallpaper/Windows/img0.jpg";
-	g_page_header(g, parent, "Image", "WIC-decoded images with the WinUI stretch modes.");
-	{
-		XentNodeId ex  = g_example(g, parent, "The same source under each Stretch mode.");
-		XentNodeId row = g_wraprow(g, g_card(g, ex), 24.0f);
-		stretch_col(g, row, kSource, XTK_IMAGE_UNIFORM, "Uniform");
-		stretch_col(g, row, kSource, XTK_IMAGE_FILL, "Fill");
-		stretch_col(g, row, kSource, XTK_IMAGE_UNIFORM_TO_FILL, "UniformToFill");
-	}
+bool page_image_build(PageBuild *b) {
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(b, parent, "Image", "WIC-decoded images with the WinUI stretch modes.");
+	XtkNodeRef card = xtk_ref_local(ui_card(
+	  &b->txn, page_example(b, parent, "The same source under each Stretch mode."), 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f
+	));
+	XtkNodeRef row  = xtk_ref_local(ui_row(&b->txn, card, 24.0f, true));
+	stretch_col(&b->txn, row, XTK_IMAGE_UNIFORM, "Uniform");
+	stretch_col(&b->txn, row, XTK_IMAGE_FILL, "Fill");
+	stretch_col(&b->txn, row, XTK_IMAGE_UNIFORM_TO_FILL, "UniformToFill");
+	return true;
 }

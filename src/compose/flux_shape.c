@@ -10,25 +10,15 @@
 #include <stdlib.h>
 
 struct FluxShapeRect {
-	WUC_Comp                                *c;    /**< Compositor (not owned). */
+	WUC_Comp                                *c;
 	WUC_ShapeVisual                         *visual;
-	WUC_Visual                              *base; /**< IVisual facet of visual (size + tree insertion). */
+	WUC_Visual                              *base;
 	WUC_CompositionRoundedRectangleGeometry *geometry;
 	WUC_CompositionSpriteShape              *shape;
 	WUC_CompositionColorBrush               *fill;
-	WUC_CompositionColorBrush               *stroke; /**< Lazily created. */
+	WUC_CompositionColorBrush               *stroke;
 };
 
-static WUI_Color shape_wui_color(FluxColor c) {
-	WUI_Color col;
-	col.A = ( uint8_t ) (flux_color_af(c) * 255.0f + 0.5f);
-	col.R = ( uint8_t ) (flux_color_rf(c) * 255.0f + 0.5f);
-	col.G = ( uint8_t ) (flux_color_gf(c) * 255.0f + 0.5f);
-	col.B = ( uint8_t ) (flux_color_bf(c) * 255.0f + 0.5f);
-	return col;
-}
-
-/* QI a color brush to its CompositionBrush base (caller releases). */
 static WUC_Brush *color_brush_base(WUC_CompositionColorBrush *cb) {
 	WUC_Brush *base = NULL;
 	( void ) cwinrt_query(cb, &CWINRT_IID_WUC_ICompositionBrush, ( void ** ) &base);
@@ -49,7 +39,6 @@ static bool shape_build_geometry(FluxShapeRect *s, WUC_Comp *comp, float w, floa
 	return SUCCEEDED(hr);
 }
 
-/* Attach an opaque-black fill brush to the sprite shape (recolored later via put_color). */
 static void shape_set_fill(FluxShapeRect *s, WUC_Comp *comp) {
 	WUI_Color black = {255, 0, 0, 0};
 	if (FAILED(wuc_comp_create_color_brush_color_p(comp, black, &s->fill))) return;
@@ -119,31 +108,9 @@ void flux_shape_setradius(FluxShapeRect *s, float radius) {
 	( void ) wuc_composition_rounded_rectangle_geometry_put__corner_radius(s->geometry, cr);
 }
 
-void flux_shape_setfill(FluxShapeRect *s, FluxColor fill) {
-	if (!s || !s->fill) return;
-	( void ) wuc_composition_color_brush_put__color(s->fill, shape_wui_color(fill));
-}
-
 void flux_shape_setfillbrush(FluxShapeRect *s, WUC_Brush *brush) {
 	if (!s || !s->shape || !brush) return;
 	( void ) wuc_composition_sprite_shape_put__fill_brush(s->shape, brush);
 }
 
-void flux_shape_setstroke(FluxShapeRect *s, FluxColor stroke, float thickness) {
-	if (!s || !s->shape || !s->c) return;
-
-	if (!s->stroke) {
-		if (FAILED(wuc_comp_create_color_brush_color_p(s->c, shape_wui_color(stroke), &s->stroke))) return;
-		WUC_Brush *stroke_base = color_brush_base(s->stroke);
-		if (stroke_base) {
-			( void ) wuc_composition_sprite_shape_put__stroke_brush(s->shape, stroke_base);
-			(( IUnknown * ) stroke_base)->lpVtbl->Release(( IUnknown * ) stroke_base);
-		}
-	}
-	else { ( void ) wuc_composition_color_brush_put__color(s->stroke, shape_wui_color(stroke)); }
-	( void ) wuc_composition_sprite_shape_put__stroke_thickness(s->shape, thickness);
-}
-
-WUC_Visual                *flux_shape_rect_visual(FluxShapeRect *s) { return s ? s->base : NULL; }
-
-WUC_CompositionColorBrush *flux_shape_fillbrush(FluxShapeRect *s) { return s ? s->fill : NULL; }
+WUC_Visual *flux_shape_rect_visual(FluxShapeRect *s) { return s ? s->base : NULL; }

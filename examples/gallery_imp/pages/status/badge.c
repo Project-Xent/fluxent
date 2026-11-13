@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+static void       page_badge_sync(GalleryApp *g);
+
 static XtkLocalId badge_button(PageBuild *b, XtkNodeRef parent, char const *icon, int delta) {
 	XtkLocalId button = xtk_button_create(
 	  &b->txn, parent,
@@ -50,12 +52,12 @@ bool page_badge_build(PageBuild *b) {
 	badge_button(b, demo.items, "Add", 1);
 	badge_button(b, demo.items, "Minus", -1);
 	page_keep(b, MSG_BADGE_DELTA, numeric);
-	XtkNodeRef output = page_output(b, demo.row, gallery_fmt(b->app, "Badge value: %d", m->badge_value));
-	page_keepout(b, MSG_BADGE_DELTA, output.u.local);
+	XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "Badge value: %d", m->badge_value));
+	page_keepout(b, MSG_BADGE_DELTA, output);
 	return true;
 }
 
-void page_badge_sync(GalleryApp *g) {
+static void page_badge_sync(GalleryApp *g) {
 	xtk_badge_setvalue(
 	  &g->scene, ( XtkCtrl ) g->live_control [MSG_BADGE_DELTA], g->model.badge_value, (XtkChangeStamp) {0}
 	);

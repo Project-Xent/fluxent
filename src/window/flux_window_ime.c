@@ -1,10 +1,3 @@
-/**
- * @file flux_window_ime.c
- * @brief IMM32 input-method protocol for FluxWindow: composition/candidate
- * window placement, result/composition string extraction, and the system
- * caret that anchors the IME UI. Dispatched from the main wndproc via
- * flux_window_ime_message.
- */
 #include "flux_window_internal.h"
 
 #include <stdlib.h>
@@ -145,7 +138,6 @@ bool flux_window_ime_message(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LP
 	}
 	case WM_IME_COMPOSITION : *result = 0; return window_on_ime_composition(win, hwnd, lp);
 	case WM_IME_ENDCOMPOSITION :
-		/* Not consumed: DefWindowProc still needs the end-of-composition. */
 		if (win->on_ime_composition) win->on_ime_composition(win->ime_composition_ctx, NULL, 0);
 		return false;
 	case WM_IME_REQUEST : return window_on_ime_request(win, wp, lp, result);

@@ -1,7 +1,3 @@
-/**
- * @file flux_control_build.c
- * @brief In-place materialization: attach component_data onto a live Host node.
- */
 #include "controls/factory/flux_control_build.h"
 #include "store/flux_node_data.h"
 
@@ -13,6 +9,7 @@
 #include "controls/factory/flux_init_items.h"
 #include "controls/factory/flux_init_media.h"
 #include "controls/factory/flux_init_nav.h"
+#include "controls/factory/flux_init_picker.h"
 #include "controls/factory/flux_init_popup.h"
 #include "controls/factory/flux_init_textbox.h"
 #include "controls/factory/flux_init_value.h"
@@ -21,6 +18,9 @@
 #include "controls/behavior/flux_expander_internal.h"
 #include "controls/behavior/flux_flip_internal.h"
 #include "controls/behavior/flux_refresh_internal.h"
+#include "controls/behavior/flux_slider.h"
+#include "controls/behavior/flux_calendar.h"
+#include "controls/behavior/flux_color_picker.h"
 #include "controls/behavior/flux_tree_internal.h"
 #include "controls/data/flux_combo_box_data.h"
 #include "controls/data/flux_info_bar_data.h"
@@ -101,8 +101,6 @@ static void copy_semantics(XentCtx *ctx, XentNodeId dst, XentNodeId src) {
 	if (label) xent_sem_setlabel(ctx, dst, label);
 	if (xent_sem_value(ctx, src, &v, &lo, &hi)) xent_sem_setvalue(ctx, dst, v, lo, hi);
 	xent_sem_setchecked(ctx, dst, xent_sem_checked(ctx, src));
-	/* Preserve seed focusability: Text stays non-focusable so pointer hits
-	 * resolve to the interactive ancestor (list row / expander / …). */
 	xent_set_focusable(ctx, dst, xent_get_focusable(ctx, src));
 }
 
@@ -113,7 +111,6 @@ static void transfer(XentCtx *ctx, FluxStore *store, XentNodeId dst, XentNodeId 
 		if (src != XENT_NODE_INVALID) flux_tree_drop(store, src);
 		return;
 	}
-	/* Seed root owns factory layout; Host dst must receive it before src dies. */
 	( void ) xent_copystyle(ctx, dst, src);
 	adopt_children(ctx, dst, src);
 	if (d->component_data && d->destroy_component_data) d->destroy_component_data(d->component_data);
@@ -127,8 +124,6 @@ static void transfer(XentCtx *ctx, FluxStore *store, XentNodeId dst, XentNodeId 
 	copy_semantics(ctx, dst, src);
 	flux_tree_drop(store, src);
 }
-
-/* ---- layout-only shells (no seed) ---- */
 
 static void layout_card(XentCtx *ctx, XentNodeId node) {
 	xent_setproto(ctx, node, XENT_PROTOCOL_FLEX);
@@ -150,8 +145,6 @@ static void layout_noop(XentCtx *ctx, XentNodeId node) {
 	( void ) ctx;
 	( void ) node;
 }
-
-/* ---- retarget helpers ---- */
 
 static char const *button_label(FluxNodeData *d) {
 	return d->component_data ? (( FluxButtonData * ) d->component_data)->label : NULL;
@@ -204,23 +197,15 @@ static void retarget_split(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
     });
 }
 
-static void retarget_slider(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
-	typedef struct {
-		FluxSliderData base;
-		XentCtx       *ctx;
-		FluxStore     *store;
-		XentNodeId     node;
-	} Sid;
+static void retarget_slider(XentCtx *ctx, FluxStore *store, XentNodeId dst) { flux_slider_retarget(ctx, store, dst); }
 
-	FluxNodeData *d = flux_store_find(store, dst);
-	if (!d || !d->behavior.on_pointer_move_ctx) return;
-	Sid *sid   = ( Sid * ) d->behavior.on_pointer_move_ctx;
-	sid->node  = dst;
-	sid->ctx   = ctx;
-	sid->store = store;
-	xent_setsize(ctx, dst, (XentSize) {NAN, 32.0f});
-	xent_set_focusable(ctx, dst, true);
+static void retarget_scroll_bar(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
+	flux_scroll_bar_retarget(ctx, store, dst);
 }
+
+static void retarget_picker(XentCtx *ctx, FluxStore *store, XentNodeId dst) { flux_picker_retarget(ctx, store, dst); }
+
+static void retarget_looping(XentCtx *ctx, FluxStore *store, XentNodeId dst) { flux_looping_retarget(ctx, store, dst); }
 
 static void retarget_rating(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	( void ) ctx;
@@ -230,22 +215,14 @@ static void retarget_rating(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 static void retarget_checkbox(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	FluxNodeData *d = flux_store_find(store, dst);
 	if (!d) return;
-	flux_leaf_default_metrics(&(FluxLeafMetrics) {
-	  ctx, dst, toggle_label(d), {32.0f, 6.0f, 0.0f, 6.0f},
-         {0.0f, 32.0f},
-         {20.0f, 32.0f}
-    });
+	flux_toggle_applymetrics(ctx, dst, FLUX_CONTROL_CHECKBOX, toggle_label(d));
 	xent_set_focusable(ctx, dst, true);
 }
 
 static void retarget_radio(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	FluxNodeData *d = flux_store_find(store, dst);
 	if (!d) return;
-	flux_leaf_default_metrics(&(FluxLeafMetrics) {
-	  ctx, dst, toggle_label(d), {28.0f, 6.0f, 0.0f, 6.0f},
-         {0.0f, 32.0f},
-         {20.0f, 32.0f}
-    });
+	flux_toggle_applymetrics(ctx, dst, FLUX_CONTROL_RADIO, toggle_label(d));
 	xent_set_focusable(ctx, dst, true);
 }
 
@@ -350,7 +327,6 @@ static void retarget_expander(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	ex->store            = store;
 }
 
-/* ComboBox stores component_data as &runtime->model (model is the first field). */
 static void retarget_combo(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	typedef struct {
 		FluxComboBoxData model;
@@ -367,7 +343,6 @@ static void retarget_combo(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	h->ctx       = ctx;
 }
 
-/* ContentDialog runtime begins with root / card / content / overlay_parent / … */
 static void retarget_dialog(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	typedef struct {
 		XentNodeId root;
@@ -417,7 +392,6 @@ static void retarget_flip(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	fv->store            = store;
 }
 
-/* Pager/Pips store the live leaf id for hit-test + size; absorb must retarget. */
 static void retarget_pager(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	FluxNodeData *d = flux_store_find(store, dst);
 	if (!d || !d->component_data) return;
@@ -465,7 +439,6 @@ static void retarget_title_bar(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	bar->node             = dst;
 }
 
-/* AutoSuggest runtime begins with store/ctx/root. */
 static void retarget_auto_suggest(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	typedef struct {
 		FluxStore *store;
@@ -484,8 +457,6 @@ static void retarget_auto_suggest(XentCtx *ctx, FluxStore *store, XentNodeId dst
 static void retarget_teaching_tip(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	flux_teachtip_retarget(ctx, store, dst);
 }
-
-/* ---- seed helpers ---- */
 
 #define SEED_NONE XENT_NODE_INVALID
 
@@ -521,6 +492,35 @@ static XentNodeId seed_switch(XentCtx *ctx, FluxStore *store) {
 	return flux_switch_init(&(FluxToggleDesc) {ctx, store, SEED_NONE, NULL, false, NULL, NULL});
 }
 
+static XentNodeId seed_scroll_bar(XentCtx *ctx, FluxStore *store) {
+	return flux_scroll_bar_init(&(FluxScrollBarDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE, .maximum = 1.0});
+}
+
+static XentNodeId seed_date_picker(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+	return flux_datepicker_init(&(FluxDatePickerDesc) {
+	  .ctx     = ctx,
+	  .store   = store,
+	  .parent  = SEED_NONE,
+	  .input   = env->input,
+	  .window  = env->window,
+	  .overlay = env->overlay});
+}
+
+static XentNodeId seed_time_picker(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+	return flux_timepicker_init(&(FluxTimePickerDesc) {
+	  .ctx     = ctx,
+	  .store   = store,
+	  .parent  = SEED_NONE,
+	  .input   = env->input,
+	  .window  = env->window,
+	  .overlay = env->overlay,
+	  .minutes = -1});
+}
+
+static XentNodeId seed_looping(XentCtx *ctx, FluxStore *store) {
+	return flux_looping_init(&(FluxLoopingDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE, .selected = -1});
+}
+
 static XentNodeId seed_slider(XentCtx *ctx, FluxStore *store) {
 	return flux_slider_init(&(FluxSliderDesc) {ctx, store, SEED_NONE, 0.0f, 1.0f, 0.0f, NULL, NULL});
 }
@@ -535,12 +535,12 @@ static XentNodeId seed_scroll(XentCtx *ctx, FluxStore *store) {
 
 static XentNodeId seed_progress(XentCtx *ctx, FluxStore *store) {
 	return flux_progress_init(&(FluxProgressDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .value = 0.0f, .max_value = 1.0f, .min_value = 0.0f});
+	  .ctx = ctx, .store = store, .parent = SEED_NONE, .value = 0.0f, .max_value = 100.0f, .min_value = 0.0f});
 }
 
 static XentNodeId seed_progress_ring(XentCtx *ctx, FluxStore *store) {
 	return flux_progressring_init(&(FluxProgressDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .value = 0.0f, .max_value = 1.0f, .min_value = 0.0f});
+	  .ctx = ctx, .store = store, .parent = SEED_NONE, .value = 0.0f, .max_value = 100.0f, .min_value = 0.0f});
 }
 
 static XentNodeId seed_info_badge(XentCtx *ctx, FluxStore *store) {
@@ -661,7 +661,14 @@ static XentNodeId seed_number(XentCtx *ctx, FluxStore *store, FluxControlEnv con
 
 static XentNodeId seed_combo(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
 	return flux_combo_init(&(FluxComboBoxDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window, .text = env->text, .theme = env->theme});
+	  .ctx    = ctx,
+	  .store  = store,
+	  .parent = SEED_NONE,
+	  .window = env->window,
+	  .text   = env->text,
+	  .theme  = env->theme,
+	  .app    = env->app,
+	  .input  = env->input});
 }
 
 static XentNodeId seed_info_bar(XentCtx *ctx, FluxStore *store) {
@@ -767,6 +774,8 @@ mount_combo(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPa
 	  .window         = env->window,
 	  .text           = env->text,
 	  .theme          = env->theme,
+	  .app            = env->app,
+	  .input          = env->input,
 	  .items          = strings.items,
 	  .item_count     = strings.count,
 	  .selected_index = mount_i32(props, prop_count, XTK_PROP_SELECTED_INDEX, -1),
@@ -832,10 +841,9 @@ static XentNodeId mount_hyperlink(
 
 static XentNodeId
 mount_text(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
-	( void ) env;
 	return flux_text_init(&(FluxTextDesc) {
 	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, ""),
-	  mount_f32(props, prop_count, XTK_PROP_FONT_SIZE, 14.0f)});
+	  mount_f32(props, prop_count, XTK_PROP_FONT_SIZE, 14.0f), env->text});
 }
 
 static XentNodeId mount_toggle(
@@ -878,7 +886,7 @@ static XentNodeId mount_progress(
 	  .store     = store,
 	  .parent    = SEED_NONE,
 	  .value     = mount_f32(props, prop_count, XTK_PROP_VALUE_F32, 0.0f),
-	  .max_value = mount_f32(props, prop_count, XTK_PROP_MAX_F32, 1.0f),
+	  .max_value = mount_f32(props, prop_count, XTK_PROP_MAX_F32, 100.0f),
 	  .min_value = mount_f32(props, prop_count, XTK_PROP_MIN_F32, 0.0f)});
 }
 
@@ -891,7 +899,7 @@ static XentNodeId mount_progress_ring(
 	  .store     = store,
 	  .parent    = SEED_NONE,
 	  .value     = mount_f32(props, prop_count, XTK_PROP_VALUE_F32, 0.0f),
-	  .max_value = mount_f32(props, prop_count, XTK_PROP_MAX_F32, 1.0f),
+	  .max_value = mount_f32(props, prop_count, XTK_PROP_MAX_F32, 100.0f),
 	  .min_value = mount_f32(props, prop_count, XTK_PROP_MIN_F32, 0.0f)});
 }
 
@@ -901,6 +909,42 @@ mount_badge(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPa
 	return flux_badge_init(&(FluxInfoBadgeDesc) {
 	  ctx, store, SEED_NONE, ( FluxInfoBadgeMode ) mount_enum(props, prop_count, XTK_PROP_BADGE_MODE, 0u),
 	  mount_i32(props, prop_count, XTK_PROP_BADGE_VALUE, 0)});
+}
+
+static XentNodeId mount_looping(
+  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
+) {
+	( void ) env;
+	MountStrings strings = {0};
+	if (!mount_strings_open(props, prop_count, XTK_PROP_ITEMS, &strings)) return XENT_NODE_INVALID;
+	XentNodeId node = flux_looping_init(&(FluxLoopingDesc) {
+	  .ctx         = ctx,
+	  .store       = store,
+	  .parent      = SEED_NONE,
+	  .items       = strings.items,
+	  .item_count  = strings.count,
+	  .selected    = mount_i32(props, prop_count, XTK_PROP_SELECTED_INDEX, -1),
+	  .item_height = mount_f32(props, prop_count, XTK_PROP_ITEM_HEIGHT, 0.0f),
+	  .item_width  = mount_f32(props, prop_count, XTK_PROP_ITEM_WIDTH, 0.0f),
+	  .should_loop = mount_bool(props, prop_count, XTK_PROP_SHOULD_LOOP, false)});
+	mount_strings_close(&strings);
+	return node;
+}
+
+static XentNodeId mount_scroll_bar(
+  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
+) {
+	( void ) env;
+	return flux_scroll_bar_init(&(FluxScrollBarDesc) {
+	  .ctx    = ctx,
+	  .store  = store,
+	  .parent = SEED_NONE,
+	  .orientation
+	  = ( FluxScrollBarOrientation ) mount_enum(props, prop_count, XTK_PROP_ORIENTATION, FLUX_SCROLLBAR_VERTICAL),
+	  .minimum       = mount_f64(props, prop_count, XTK_PROP_MIN_F64, 0.0),
+	  .maximum       = mount_f64(props, prop_count, XTK_PROP_MAX_F64, 1.0),
+	  .value         = mount_f64(props, prop_count, XTK_PROP_VALUE_F64, 0.0),
+	  .viewport_size = mount_f64(props, prop_count, XTK_PROP_VIEWPORT_SIZE, 0.0)});
 }
 
 static XentNodeId mount_rating(
@@ -1236,6 +1280,12 @@ static FluxRetargetFn const k_retarget [XTK_CTRL_TYPE_COUNT] = {
   [FLUX_CONTROL_SPLIT_BUTTON]        = retarget_split,
   [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = retarget_split,
   [FLUX_CONTROL_SLIDER]              = retarget_slider,
+  [FLUX_CONTROL_SCROLL_BAR]          = retarget_scroll_bar,
+  [FLUX_CONTROL_LOOPING_SELECTOR]    = retarget_looping,
+  [FLUX_CONTROL_DATE_PICKER]         = retarget_picker,
+  [FLUX_CONTROL_TIME_PICKER]         = retarget_picker,
+  [FLUX_CONTROL_CALENDAR_VIEW]       = flux_calendar_retarget,
+  [FLUX_CONTROL_COLOR_PICKER]        = flux_colorpicker_retarget,
   [FLUX_CONTROL_RATING]              = retarget_rating,
   [FLUX_CONTROL_CHECKBOX]            = retarget_checkbox,
   [FLUX_CONTROL_RADIO]               = retarget_radio,
@@ -1276,12 +1326,6 @@ static void apply_retarget(XentCtx *ctx, FluxStore *store, XentNodeId dst, FluxC
 	if (k_retarget [type]) k_retarget [type](ctx, store, dst);
 }
 
-void flux_control_absorb(XentCtx *ctx, FluxStore *store, XentNodeId dst, XentNodeId src, FluxControlType type) {
-	if (src == XENT_NODE_INVALID) return;
-	transfer(ctx, store, dst, src);
-	apply_retarget(ctx, store, dst, type);
-}
-
 static FluxMountSeedFn const k_mount_seed [XTK_CTRL_TYPE_COUNT] = {
   [FLUX_CONTROL_BUTTON]              = mount_button,
   [FLUX_CONTROL_REPEAT_BUTTON]       = mount_repeat,
@@ -1294,6 +1338,8 @@ static FluxMountSeedFn const k_mount_seed [XTK_CTRL_TYPE_COUNT] = {
   [FLUX_CONTROL_RADIO]               = mount_radio,
   [FLUX_CONTROL_SWITCH]              = mount_switch,
   [FLUX_CONTROL_SLIDER]              = mount_slider,
+  [FLUX_CONTROL_SCROLL_BAR]          = mount_scroll_bar,
+  [FLUX_CONTROL_LOOPING_SELECTOR]    = mount_looping,
   [FLUX_CONTROL_PROGRESS]            = mount_progress,
   [FLUX_CONTROL_PROGRESS_RING]       = mount_progress_ring,
   [FLUX_CONTROL_INFO_BADGE]          = mount_badge,
@@ -1332,11 +1378,14 @@ static FluxSeedFn const k_seed [XTK_CTRL_TYPE_COUNT] = {
   [FLUX_CONTROL_RADIO]               = seed_radio,
   [FLUX_CONTROL_SWITCH]              = seed_switch,
   [FLUX_CONTROL_SLIDER]              = seed_slider,
+  [FLUX_CONTROL_SCROLL_BAR]          = seed_scroll_bar,
+  [FLUX_CONTROL_LOOPING_SELECTOR]    = seed_looping,
   [FLUX_CONTROL_IMAGE]               = seed_image,
   [FLUX_CONTROL_SCROLL]              = seed_scroll,
   [FLUX_CONTROL_PROGRESS]            = seed_progress,
   [FLUX_CONTROL_PROGRESS_RING]       = seed_progress_ring,
   [FLUX_CONTROL_INFO_BADGE]          = seed_info_badge,
+  [FLUX_CONTROL_CALENDAR_VIEW]       = flux_calendar_init,
   [FLUX_CONTROL_SPLIT_BUTTON]        = seed_split,
   [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = seed_toggle_split,
   [FLUX_CONTROL_LIST_ITEM]           = seed_list_item,
@@ -1352,6 +1401,9 @@ static FluxSeedFn const k_seed [XTK_CTRL_TYPE_COUNT] = {
 };
 
 static FluxEnvSeedFn const k_env_seed [XTK_CTRL_TYPE_COUNT] = {
+  [FLUX_CONTROL_DATE_PICKER]    = seed_date_picker,
+  [FLUX_CONTROL_TIME_PICKER]    = seed_time_picker,
+  [FLUX_CONTROL_COLOR_PICKER]   = flux_colorpicker_init,
   [FLUX_CONTROL_COMBO_BOX]      = seed_combo,
   [FLUX_CONTROL_AUTO_SUGGEST]   = seed_auto_suggest,
   [FLUX_CONTROL_BREADCRUMB_BAR] = seed_breadcrumb,
@@ -1376,6 +1428,8 @@ static FluxEnvSeedFn const k_env_seed [XTK_CTRL_TYPE_COUNT] = {
 
 static FluxUnmountFn const k_unmount [XTK_CTRL_TYPE_COUNT] = {
   [FLUX_CONTROL_CONTENT_DIALOG] = flux_dialog_hide,
+  [FLUX_CONTROL_DATE_PICKER]    = flux_picker_close,
+  [FLUX_CONTROL_TIME_PICKER]    = flux_picker_close,
 };
 
 void flux_control_unmount(FluxStore *store, XentNodeId node, FluxControlType type) {

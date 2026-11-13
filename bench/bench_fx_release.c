@@ -4,7 +4,7 @@
 #include <xtk/xtk_catalog.h>
 
 #include "render/flux_engine.h"
-#include "xtk_alloc_internal.h"
+#include <xtk/xtk_alloc.h>
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -97,7 +97,7 @@ static bool fixture_mount(Fixture *fixture) {
 	}
 	fixture->tree = result_control(result, root);
 	bool mapped   = fixture->tree != XTK_CTRL_INVALID && map_text_nodes(fixture, result, locals);
-	xtk_batch_result_destroy(result);
+	xtk_batchresult_destroy(result);
 	xtk_batch_free(batch);
 	return mapped;
 }
@@ -136,7 +136,7 @@ static bool patch_one(Fixture *fixture, uint32_t revision) {
 	XtkBatchResult *result = pushed ? commit_batch(fixture->host, batch) : NULL;
 	xtk_batch_free(batch);
 	if (!result) return false;
-	xtk_batch_result_destroy(result);
+	xtk_batchresult_destroy(result);
 	return true;
 }
 
@@ -149,7 +149,7 @@ static void fixture_dispose(Fixture *fixture) {
 		XtkBatch *batch = xtk_batch_alloc(fixture->host->vt->revision(fixture->host));
 		if (batch && xtk_batch_drop(batch, xtk_ref_existing(fixture->tree))) {
 			XtkBatchResult *result = commit_batch(fixture->host, batch);
-			xtk_batch_result_destroy(result);
+			xtk_batchresult_destroy(result);
 		}
 		xtk_batch_free(batch);
 	}

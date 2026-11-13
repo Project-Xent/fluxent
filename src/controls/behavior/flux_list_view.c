@@ -1,21 +1,3 @@
-/**
- * @file flux_list_view.c
- * @brief Virtualized items-host family (ListView / ListBox / GridView /
- * ItemsRepeater): retained spine, recycled cells, the per-frame staleness
- * watch, and the WinUI ListViewBase selection + keyboard state machine.
- *
- * Cell realization lives in the xtk reconciler (xtk_list_realize); this
- * file owns the retained node structure, scroll integration, and the
- * selection model. Multiple/Extended selection is control-retained as
- * sorted merged ranges (WinUI keeps it in the Selector too — an app model
- * can't hold Ctrl/Shift anchors); Single mode stays app-controlled.
- *
- * Interaction semantics follow ListViewBase_Partial_Interaction.cpp:
- * primary gesture = click/Space/Enter, secondary = Ctrl+that; plain arrows
- * collapse to single selection (unless Ctrl: focus-only move); Shift+arrow
- * extends from the anchor (Ctrl+Shift keeps other ranges in Extended);
- * Ctrl+A toggles select-all in Multiple/Extended; Escape does not clear.
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_init_container.h"
@@ -33,10 +15,10 @@ static FluxListViewData *list_data(FluxStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || !nd->component_data) return NULL;
 	if (nd->component_type != FLUX_CONTROL_LIST
-		&& nd->component_type != FLUX_CONTROL_LIST_BOX
-		&& nd->component_type != FLUX_CONTROL_GRID_VIEW
-		&& nd->component_type != FLUX_CONTROL_ITEMS_REPEATER
-		&& nd->component_type != FLUX_CONTROL_ITEMS_VIEW)
+	    && nd->component_type != FLUX_CONTROL_LIST_BOX
+	    && nd->component_type != FLUX_CONTROL_GRID_VIEW
+	    && nd->component_type != FLUX_CONTROL_ITEMS_REPEATER
+	    && nd->component_type != FLUX_CONTROL_ITEMS_VIEW)
 		return NULL;
 	return ( FluxListViewData * ) nd->component_data;
 }
@@ -55,10 +37,6 @@ static FluxControlType list_type_for_kind(XtkListKind kind) {
 	default                     : return FLUX_CONTROL_LIST;
 	}
 }
-
-/* -------------------------------------------------------------------------
- * Selection ranges (sorted, inclusive, merged)
- * ---------------------------------------------------------------------- */
 
 static void ranges_clear(FluxListViewData *ld) { ld->range_count = 0; }
 
@@ -79,7 +57,6 @@ static bool ranges_contains(FluxListViewData const *ld, int index) {
 	return false;
 }
 
-/* Insert [first,last] and merge overlapping/adjacent runs (list stays sorted). */
 static void ranges_add(FluxListViewData *ld, int first, int last) {
 	if (!ranges_reserve(ld, ld->range_count + 1)) return;
 
@@ -101,7 +78,6 @@ static void ranges_add(FluxListViewData *ld, int first, int last) {
 	ld->range_count  += 1 - span;
 }
 
-/* Split the run at slot i in two around index (which sits strictly inside). */
 static void ranges_split(FluxListViewData *ld, int i, int index) {
 	if (!ranges_reserve(ld, ld->range_count + 1)) return;
 	memmove(&ld->ranges [i + 1], &ld->ranges [i], sizeof(*ld->ranges) * ( size_t ) (ld->range_count - i));
@@ -110,7 +86,6 @@ static void ranges_split(FluxListViewData *ld, int i, int index) {
 	ld->range_count++;
 }
 
-/* Remove index from the set, splitting its run when it sits inside one. */
 static void ranges_remove(FluxListViewData *ld, int index) {
 	int i = 0;
 	while (i < ld->range_count && (index < ld->ranges [i].first || index > ld->ranges [i].last)) i++;
@@ -132,16 +107,6 @@ static void ranges_remove(FluxListViewData *ld, int index) {
 	}
 	ranges_split(ld, i, index);
 }
-
-static int ranges_total(FluxListViewData const *ld) {
-	int n = 0;
-	for (int i = 0; i < ld->range_count; i++) n += ld->ranges [i].last - ld->ranges [i].first + 1;
-	return n;
-}
-
-/* -------------------------------------------------------------------------
- * Selection state machine (ListViewBase_Partial_Selection/Interaction)
- * ---------------------------------------------------------------------- */
 
 static bool multi_mode(FluxListViewData const *ld) {
 	return ld->sel_mode == XTK_LIST_SELECT_MULTIPLE || ld->sel_mode == XTK_LIST_SELECT_EXTENDED;
@@ -186,11 +151,22 @@ static void list_invoke(FluxListViewData *ld, int index) {
 	if (notify) notify(notify_ctx, index);
 }
 
-/* MakeSingleSelection: replace the set with one item; anchor follows in
- * Extended/Multiple only. */
+static void list_select_one(FluxListViewData *ld, int index) {
+	ld->selected = index;
+	int at       = ld->realized_first;
+	for (XentNodeId child = xent_node_first(ld->ctx, ld->host); child != XENT_NODE_INVALID;
+	  child               = xent_node_next(ld->ctx, child))
+	{
+		if (ld->realized_last >= 0 && at > ld->realized_last) break;
+		fluxlistitem_set_state(ld->store, child, at == index, false);
+		at++;
+	}
+	list_report(ld, index);
+}
+
 static void sel_single(FluxListViewData *ld, int index) {
 	if (ld->sel_mode == XTK_LIST_SELECT_SINGLE) {
-		list_report(ld, index); /* app-controlled: report intent only */
+		list_select_one(ld, index);
 		return;
 	}
 	ranges_clear(ld);
@@ -200,11 +176,9 @@ static void sel_single(FluxListViewData *ld, int index) {
 	list_report(ld, index);
 }
 
-/* MakeToggleSelection. */
 static void sel_toggle(FluxListViewData *ld, int index) {
 	if (ld->sel_mode == XTK_LIST_SELECT_SINGLE) {
-		/* WinUI Ctrl+click in Single toggles the one selection. */
-		list_report(ld, ld->selected == index ? -1 : index);
+		list_select_one(ld, ld->selected == index ? -1 : index);
 		return;
 	}
 	if (ranges_contains(ld, index)) ranges_remove(ld, index);
@@ -214,8 +188,6 @@ static void sel_toggle(FluxListViewData *ld, int index) {
 	list_report(ld, index);
 }
 
-/* MakeRangeSelection: anchor..index; clear_old deselects everything else.
- * A missing anchor falls back to the current lead (WinUI: SelectedIndex). */
 static void sel_range(FluxListViewData *ld, int index, bool clear_old) {
 	if (!multi_mode(ld)) {
 		sel_single(ld, index);
@@ -233,7 +205,6 @@ static void sel_range(FluxListViewData *ld, int index, bool clear_old) {
 	list_report(ld, index);
 }
 
-/* Ctrl+A: toggle select-all (Multiple/Extended only). */
 static void sel_all_toggle(FluxListViewData *ld) {
 	if (!multi_mode(ld) || ld->count <= 0) return;
 	bool all = ld->range_count == 1 && ld->ranges [0].first == 0 && ld->ranges [0].last == ld->count - 1;
@@ -244,18 +215,16 @@ static void sel_all_toggle(FluxListViewData *ld) {
 
 static bool key_down(FluxKey key) { return flux_key_held(key); }
 
-/* Primary gesture (click / Space / Enter) — Interaction.cpp OnSelectItemPrimary. */
 static void list_gesture_primary(FluxListViewData *ld, int index) {
 	bool shift = key_down(FLUX_KEY_SHIFT);
 	switch (ld->sel_mode) {
-	case XTK_LIST_SELECT_NONE     : list_report(ld, index); break; /* ItemClick-style */
+	case XTK_LIST_SELECT_NONE     : list_report(ld, index); break;
 	case XTK_LIST_SELECT_SINGLE   : sel_single(ld, index); break;
 	case XTK_LIST_SELECT_MULTIPLE : shift ? sel_range(ld, index, false) : sel_toggle(ld, index); break;
 	case XTK_LIST_SELECT_EXTENDED : shift ? sel_range(ld, index, true) : sel_single(ld, index); break;
 	}
 }
 
-/* Secondary gesture (Ctrl+click / Ctrl+Space) — OnSelectItemSecondary. */
 static void list_gesture_secondary(FluxListViewData *ld, int index) {
 	bool shift = key_down(FLUX_KEY_SHIFT);
 	switch (ld->sel_mode) {
@@ -266,10 +235,6 @@ static void list_gesture_secondary(FluxListViewData *ld, int index) {
 	}
 }
 
-/* -------------------------------------------------------------------------
- * Keyboard navigation + scroll-into-view
- * ---------------------------------------------------------------------- */
-
 static bool list_viewport_metrics(FluxListViewData const *ld, float *offset, float *extent) {
 	FluxNodeData *snd  = flux_store_find(ld->store, ld->scroll);
 	XentRect      rect = {0};
@@ -279,8 +244,6 @@ static bool list_viewport_metrics(FluxListViewData const *ld, float *offset, flo
 	return true;
 }
 
-/* Minimal-edge alignment (ScrollIntoViewAlignment_Default): scroll just far
- * enough that the cell's row is fully inside the viewport. */
 void flux_list_scrollto(FluxStore *store, XentNodeId list, int index) {
 	FluxListViewData *ld = list_data(store, list);
 	if (!ld || index < 0 || index >= ld->count) return;
@@ -306,9 +269,6 @@ static XentNodeId list_find_item_node(FluxListViewData const *ld, int index) {
 	return XENT_NODE_INVALID;
 }
 
-/* Move keyboard focus to an item index: scroll it into view first; if its
- * node isn't realized yet, park it in pending_focus — the placement setter
- * completes the move once the reconciler realizes the window. */
 static void list_focus_index(FluxListViewData *ld, int index) {
 	if (index < 0) index = 0;
 	if (index > ld->count - 1) index = ld->count - 1;
@@ -319,13 +279,12 @@ static void list_focus_index(FluxListViewData *ld, int index) {
 
 	XentNodeId node = list_find_item_node(ld, index);
 	if (node != XENT_NODE_INVALID) {
-		if (ld->input) flux_input_setfocus(ld->input, node);
+		if (ld->input) flux_input_setfocus(ld->input, node, false);
 		ld->pending_focus = -1;
 	}
 	else ld->pending_focus = index;
 }
 
-/* Arrow/Home/End/Page target — GridView 2D nav: Left/Right ±1, Up/Down ±cols. */
 static int list_nav_target(FluxListViewData const *ld, int from, FluxKey key) {
 	int   cols   = ld->cols > 0 ? ld->cols : 1;
 	float extent = 0.0f, offset = 0.0f;
@@ -347,7 +306,6 @@ static int list_nav_target(FluxListViewData const *ld, int from, FluxKey key) {
 	}
 }
 
-/* Selection-follows-focus rules — Interaction.cpp OnKeyboardNavigation. */
 static void list_nav_select(FluxListViewData *ld, int index) {
 	bool ctrl  = key_down(FLUX_KEY_CONTROL);
 	bool shift = key_down(FLUX_KEY_SHIFT);
@@ -357,18 +315,16 @@ static void list_nav_select(FluxListViewData *ld, int index) {
 		return;
 	}
 	if (ld->sel_mode == XTK_LIST_SELECT_MULTIPLE) {
-		ld->anchor     = index; /* Multiple: anchor always follows focus */
+		ld->anchor     = index;
 		ld->anchor_set = true;
 		if (shift) sel_range(ld, index, false);
 		return;
 	}
-	if (ctrl) return; /* focus-only move */
+	if (ctrl) return;
 	if (ld->sel_mode == XTK_LIST_SELECT_SINGLE && ld->single_follows_focus) sel_single(ld, index);
 	if (ld->sel_mode == XTK_LIST_SELECT_EXTENDED) sel_single(ld, index);
 }
 
-/* Arrow/Home/End/Page: clamp the target, move selection per mode, focus it.
- * A no-op move still swallows the key (except Home/End, which always land). */
 static bool list_key_navigate(FluxListViewData *ld, FluxListItemData const *it, FluxKey key) {
 	int target = list_nav_target(ld, it->index, key);
 	if (target < 0) target = 0;
@@ -410,23 +366,21 @@ static bool list_item_on_key(void *ctx, FluxKey key, bool down) {
 	if (!ld || ld->kind == XTK_LIST_KIND_REPEATER || ld->count <= 0) return false;
 
 	switch (key) {
-	case FLUX_KEY_UP :
-	case FLUX_KEY_DOWN :
-	case FLUX_KEY_LEFT :
-	case FLUX_KEY_RIGHT :
-	case FLUX_KEY_HOME :
-	case FLUX_KEY_END :
-	case FLUX_KEY_PAGE_UP :
+	case FLUX_KEY_UP        :
+	case FLUX_KEY_DOWN      :
+	case FLUX_KEY_LEFT      :
+	case FLUX_KEY_RIGHT     :
+	case FLUX_KEY_HOME      :
+	case FLUX_KEY_END       :
+	case FLUX_KEY_PAGE_UP   :
 	case FLUX_KEY_PAGE_DOWN : return list_key_navigate(ld, it, key);
 	case FLUX_KEY_SPACE     : return list_item_activate(ld, it, key_down(FLUX_KEY_CONTROL));
 	case FLUX_KEY_ENTER     : return list_item_activate(ld, it, false);
-	case 'A'                : return list_item_select_all(ld);
+	case FLUX_KEY_A         : return list_item_select_all(ld);
 	default                 : return false;
 	}
 }
 
-/* Click (fires on release) routes through the same gesture machinery so
- * Ctrl/Shift+click follow WinUI exactly. */
 static void list_item_on_click(void *ctx) {
 	FluxListItemData *it = ( FluxListItemData * ) ctx;
 	FluxListViewData *ld = it->owner;
@@ -439,10 +393,6 @@ static void list_item_on_click(void *ctx) {
 	else list_gesture_primary(ld, index);
 	list_invoke_if_live(store, root, index);
 }
-
-/* -------------------------------------------------------------------------
- * Create / destroy
- * ---------------------------------------------------------------------- */
 
 static void list_view_data_destroy(void *component_data) {
 	FluxListViewData *ld = ( FluxListViewData * ) component_data;
@@ -484,10 +434,6 @@ XentNodeId flux_list_init(FluxListViewDesc const *info) {
 		return flux_factory_fail_node(info->ctx, info->store, root);
 	}
 
-	/* The scroll viewport fills the list; the host is the scrolled content:
-	 * absolutely-positioned recycled cells over a small rebased canvas. The
-	 * logical extent is pushed manually onto the scroll (list_apply_host_extent);
-	 * the host must never flex-shrink to the viewport. */
 	xent_setgrow(info->ctx, scroll, 1.0f);
 	xent_setbasis(info->ctx, scroll, 0.0f);
 	xent_setproto(info->ctx, host, XENT_PROTOCOL_ABSOLUTE);
@@ -575,10 +521,6 @@ XentNodeId flux_listitem_init(FluxListItemDesc const *info) {
 	return node;
 }
 
-/* -------------------------------------------------------------------------
- * Store-facing setters / accessors
- * ---------------------------------------------------------------------- */
-
 XentNodeId flux_list_content_node(FluxStore *store, XentNodeId list) {
 	FluxListViewData *ld = list_data(store, list);
 	return ld ? ld->host : XENT_NODE_INVALID;
@@ -589,10 +531,6 @@ static FluxScrollData *list_scroll_data(FluxListViewData const *ld) {
 	return snd ? ( FluxScrollData * ) snd->component_data : NULL;
 }
 
-/* Virtual extent: the rows × item_height content exists only as the scroll's
- * manual logical extent (scrollbar + clamping). The host stays a small
- * physical canvas spanning just the realized window (set_realized), so the
- * compositor / hit paths never see deep-scroll coordinates. */
 static void list_apply_host_extent(FluxListViewData *ld) {
 	int             cols = ld->cols > 0 ? ld->cols : 1;
 	int             rows = cols > 0 ? (ld->count + cols - 1) / cols : ld->count;
@@ -640,13 +578,6 @@ bool flux_list_is_selected(FluxStore *store, XentNodeId list, int index) {
 	return ranges_contains(ld, index);
 }
 
-int flux_list_selection_count(FluxStore *store, XentNodeId list) {
-	FluxListViewData *ld = list_data(store, list);
-	if (!ld) return 0;
-	if (ld->sel_mode == XTK_LIST_SELECT_SINGLE) return ld->selected >= 0 ? 1 : 0;
-	return ranges_total(ld);
-}
-
 static float list_cell_width(FluxListViewData const *ld) {
 	if (ld->item_width > 0.0f) return ld->item_width;
 	return 0.0f;
@@ -682,10 +613,6 @@ void flux_list_set_realized(FluxStore *store, XentNodeId list, int first, int la
 		list_apply_host_extent(ld);
 	}
 
-	/* Rebase the physical window: origin = first realized row's logical y, host
-	 * spans just the realized rows. Retained cells that kept their logical slot
-	 * are re-anchored (the reconciler only re-places changed ones), so physical
-	 * coordinates never grow with scroll depth. */
 	int   c         = ld->cols > 0 ? ld->cols : 1;
 	int   row_first = first / c;
 	float span      = last >= first ? ( float ) (last / c - row_first + 1) * ld->item_height : 0.0f;
@@ -769,7 +696,7 @@ bool flux_list_window_stale(XentCtx *ctx, struct FluxNodeData *nd) {
 	if (!snd || !snd->component_data || !xent_layout_rect(ctx, ld->scroll, &rect) || rect.h <= 0.0f) return false;
 	float offset     = (( FluxScrollData * ) snd->component_data)->scroll_y;
 
-	int   cols       = xtk_list_auto_columns(rect.w, ld->item_width, ld->columns);
+	int   cols       = xtk_list_autocolumns(rect.w, ld->item_width, ld->columns);
 	int   total_rows = (ld->count + cols - 1) / cols;
 	int   row_first  = ( int ) floorf(offset / ld->item_height);
 	int   row_last   = ( int ) ceilf((offset + rect.h) / ld->item_height) - 1;
@@ -781,6 +708,41 @@ bool flux_list_window_stale(XentCtx *ctx, struct FluxNodeData *nd) {
 	if (visible_last > ld->count - 1) visible_last = ld->count - 1;
 
 	return cols != ld->cols || visible_first < ld->realized_first || visible_last > ld->realized_last;
+}
+
+static void list_window(FluxListViewData const *ld, int *first, int *last, int *cols) {
+	float offset = 0.0f, extent = 0.0f, cross = 0.0f;
+	if (!flux_list_viewport(ld->store, ld->root, &offset, &extent, &cross) || extent <= 0.0f) {
+		offset = 0.0f;
+		extent = 600.0f;
+	}
+	*cols         = xtk_list_autocolumns(cross, ld->item_width, ld->columns);
+	int rows      = (ld->count + *cols - 1) / *cols;
+	int row_first = ( int ) floorf(offset / ld->item_height) - 4;
+	int row_last  = ( int ) ceilf((offset + extent) / ld->item_height) + 3;
+	if (row_first < 0) row_first = 0;
+	if (row_last > rows - 1) row_last = rows - 1;
+	*first = row_first * *cols;
+	*last  = (row_last + 1) * *cols - 1;
+	if (*last > ld->count - 1) *last = ld->count - 1;
+}
+
+static void list_realize_window(void *ctx) {
+	FluxListViewData *ld = ( FluxListViewData * ) ctx;
+	if (ld->count <= 0 || ld->item_height <= 0.0f) return;
+	int first, last, cols;
+	list_window(ld, &first, &last, &cols);
+	ld->realize(ld->realize_ctx, ( XtkCtrl ) ld->root, first, last);
+	flux_list_set_realized(ld->store, ld->root, first, last, cols);
+}
+
+void flux_list_virtualize(FluxStore *store, XentNodeId list, void (*fn)(void *, XtkCtrl, int, int), void *ctx) {
+	FluxListViewData *ld = list_data(store, list);
+	if (!ld) return;
+	ld->realize     = fn;
+	ld->realize_ctx = ctx;
+	flux_list_onstale(store, list, list_realize_window, ld);
+	list_realize_window(ld);
 }
 
 void flux_list_notify_stale(FluxStore *store, XentNodeId list) {
@@ -809,7 +771,7 @@ static void list_item_complete_focus(FluxListItemData *it, XentNodeId item) {
 	FluxListViewData *owner = it->owner;
 	if (!owner || owner->pending_focus != it->index) return;
 	owner->pending_focus = -1;
-	if (owner->input) flux_input_setfocus(owner->input, item);
+	if (owner->input) flux_input_setfocus(owner->input, item, false);
 }
 
 void fluxlistitem_set_place(FluxStore *store, XentNodeId item, int index, float x, float y) {
@@ -833,8 +795,6 @@ void fluxlistitem_set_state(FluxStore *store, XentNodeId item, bool selected, bo
 	it->selected = selected;
 	if (it->multi != multi) {
 		it->multi = multi;
-		/* Multiple mode reserves the 20px checkbox + margins on the leading
-		 * edge (rounded content offset 28). Lists only — grid overlays. */
 		if (it->owner && it->owner->kind == XTK_LIST_KIND_LIST) {
 			XentInsets pad
 			  = multi ? (XentInsets) {16.0f + 28.0f, 0.0f, 12.0f, 0.0f} : (XentInsets) {16.0f, 0.0f, 12.0f, 0.0f};

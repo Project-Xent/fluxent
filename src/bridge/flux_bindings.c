@@ -1,10 +1,3 @@
-/**
- * @file flux_bindings.c
- * @brief Host event routing for pointer/keyboard activation (no XtkEl path).
- *
- * Declarative subscriptions are kit-owned (SUBSCRIBE + trampoline). This file
- * only turns control activation into standard Host events.
- */
 #include "flux_internal.h"
 
 #include <controls/data/flux_checkbox_data.h>
@@ -12,7 +5,6 @@
 #include <fluxent/flux_host.h>
 #include <fluxent/flux_node_store.h>
 #include "store/flux_node_data.h"
-#include <fluxent/flux_nav_trace.h>
 #include <xtk/xtk_catalog.h>
 
 static bool check_control(FluxControlType type) {
@@ -37,7 +29,6 @@ void flux_input_route_event(
 	  .current_target = ( XtkCtrl ) node,
 	  .phase          = XTK_EVENT_PHASE_TARGET,
 	  .cause          = cause,
-	  .trace_id       = flux_nav_trace_current(),
 	  .payload        = payload,
 	};
 	flux_host_route(host, &event);
@@ -45,18 +36,21 @@ void flux_input_route_event(
 
 static void route_check_activation(XtkHost *host, XentNodeId node, FluxNodeData *data, XtkEventCause cause) {
 	FluxCheckboxData *check = data ? ( FluxCheckboxData * ) data->component_data : NULL;
-	bool checked = check ? check->state == FLUX_CHECK_CHECKED : xent_sem_checked(flux_host_context(host), node) != 0;
+	bool checked = check ? check->state == FLUX_CHECK_CHECKED : xent_sem_checked(flux_host_context(host), node) == 1;
 	if (check) {
-		xent_sem_setchecked(flux_host_context(host), node, checked ? 1 : 0);
+		xent_sem_setchecked(flux_host_context(host), node, check->state == FLUX_CHECK_INDETERMINATE ? 2 : checked);
 		if (check->on_change) check->on_change(check->on_change_ctx, check->state);
 	}
 	flux_input_route_event(
 	  host, node, XTK_EVENT_CHANGE_BOOL, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_BOOL, .u.b = checked}, cause
 	);
+	if (!check || data->component_type != FLUX_CONTROL_CHECKBOX) return;
+	flux_input_route_event(
+	  host, node, XTK_EVENT_CHANGE_I32, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = check->state}, cause
+	);
 }
 
 void flux_input_route_invoke(XtkHost *host, XentNodeId node, XtkEventCause cause) {
-	flux_nav_trace_log("host.event", "invoke node=%llu cause=%d", ( unsigned long long ) node, cause);
 	flux_input_route_event(host, node, XTK_EVENT_INVOKE, (XtkEventPayload) {0}, cause);
 }
 
@@ -68,13 +62,8 @@ static void route_nav_select(XtkHost *host, XentNodeId root, XentNodeId item, in
 	  .current_target = ( XtkCtrl ) root,
 	  .phase          = XTK_EVENT_PHASE_TARGET,
 	  .cause          = cause,
-	  .trace_id       = flux_nav_trace_current(),
 	  .payload        = {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = index},
 	};
-	flux_nav_trace_log(
-	  "host.event", "nav select root=%llu item=%llu index=%d cause=%d", ( unsigned long long ) root,
-	  ( unsigned long long ) item, index, cause
-	);
 	flux_host_route(host, &event);
 }
 
@@ -97,29 +86,19 @@ static bool
 activation_route_nav(XtkHost *host, FluxNodeData *data, ActivationState const *before, XtkEventCause cause) {
 	FluxNavViewItem *item = activation_nav_item(data);
 	if (!item
-		|| !item->nav
-		|| item->nav->root != before->nav_root
-		|| item->index != before->nav_index
-		|| item->nav->selection_revision == before->nav_revision)
+	    || !item->nav
+	    || item->nav->root != before->nav_root
+	    || item->index != before->nav_index
+	    || item->nav->selection_revision == before->nav_revision)
 		return false;
 	route_nav_select(host, before->nav_root, item->node, before->nav_index, cause);
 	return true;
 }
 
-static void activation_trace(XentNodeId node, FluxNodeData *data, ActivationState const *state) {
-	flux_nav_trace_log(
-	  "activation", "node=%llu type=%d handled=%d nav_index=%d nav_revision=%llu", ( unsigned long long ) node,
-	  data ? data->component_type : -1, state->handled, state->nav_index, ( unsigned long long ) state->nav_revision
-	);
-}
-
 void flux_input_route_activation(XtkHost *host, FluxStore *store, XentNodeId node, XtkEventCause cause) {
 	if (!host || !store || node == XENT_NODE_INVALID) return;
-	if (!flux_nav_trace_current())
-		flux_nav_trace_begin("activation-api node=%llu cause=%d", ( unsigned long long ) node, cause);
 	FluxNodeData   *data   = flux_store_find(store, node);
 	ActivationState before = activation_state(data);
-	activation_trace(node, data, &before);
 	if (before.handled) data->behavior.on_click(data->behavior.on_click_ctx);
 	data = flux_store_find(store, node);
 	if (activation_route_nav(host, data, &before, cause)) return;

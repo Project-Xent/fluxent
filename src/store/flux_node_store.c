@@ -20,9 +20,9 @@ struct FluxStore {
 	uint32_t          capacity;
 	uint32_t          count;
 	uint32_t          tombstones;
-	XentCtx          *ctx;        /**< Context the nodes live in; bound at scene creation. */
+	XentCtx          *ctx;
 	XentObsId         observer;
-	FluxNodeRemovedFn removed_fn; /**< Notified before a destroyed node's data is freed. */
+	FluxNodeRemovedFn removed_fn;
 	void             *removed_userdata;
 	XtkHost          *host;
 };
@@ -184,7 +184,6 @@ FluxNodeData *flux_store_find(FluxStore *store, XentNodeId id) {
 
 FluxNodeData *flux_store_ensure(FluxStore *store, XentNodeId id) {
 	if (!store || id == XENT_NODE_INVALID) return NULL;
-	/* Creation requires a live Core handle; destroy-path remove stays stale-safe. */
 	if (!store->ctx || !xent_node_valid(store->ctx, id)) return NULL;
 
 	FluxNodeSlot *existing = ns_find(store, id);
@@ -208,11 +207,6 @@ void flux_store_del(FluxStore *store, XentNodeId id) {
 
 uint32_t    flux_store_n(FluxStore const *store) { return store ? store->count : 0; }
 
-/* xent invokes this for every node freed by xent_node_destroy, including each
- * node of a destroyed subtree. The node is already dead in xent at this point,
- * so consumers must read control identity from the store data, not the layout
- * tree. Listener runs first: it may still need the component data (e.g. the
- * input boundary releasing a scroll node's DirectManipulation viewport). */
 static void ns_on_node_lifecycle(XentCtx *ctx, XentNodeEvent const *lifecycle, void *userdata) {
 	( void ) ctx;
 	if (lifecycle->event != XENT_NODE_EVENT_DESTROY) return;

@@ -22,14 +22,10 @@ static const GUID Flux_IID_IUnknown = {
 static const GUID Flux_IID_IInspectable = {
   0xaf86e2e0, 0xb12d, 0x4c6a, {0x9c, 0x5a, 0xd7, 0xaa, 0x65, 0x10, 0x1e, 0x90}
 };
-/* D2D1 Gaussian Blur effect CLSID; property 0 is the standard deviation. */
 static const GUID Flux_CLSID_D2D1GaussianBlur = {
   0x1feb6d69, 0x2fe6, 0x4ac9, {0x8c, 0x58, 0x1d, 0x7f, 0x93, 0xe7, 0xa6, 0xa5}
 };
 
-/* Primary (IInspectable-family) vtable ABI: IInspectable + IGraphicsEffect's
- * get/put_Name. The same pointer serves IUnknown/IInspectable/IGraphicsEffect/
- * IGraphicsEffectSource (the last adds no methods over IInspectable). */
 typedef struct FluxEffect FluxEffect;
 
 typedef struct FluxEffectVtbl {
@@ -49,7 +45,7 @@ struct FluxEffect {
 	LONG                                      ref;
 	float                                     blur_amount;
 	cwinrt_hstring                            name;
-	WUC_CompositionEffectSourceParameter     *source; /**< Implements IGraphicsEffectSource. */
+	WUC_CompositionEffectSourceParameter     *source;
 };
 
 static FluxEffect *effect_from_interop(FluxIGraphicsEffectD2D1Interop *p) {
@@ -59,9 +55,9 @@ static FluxEffect *effect_from_interop(FluxIGraphicsEffectD2D1Interop *p) {
 static HRESULT STDMETHODCALLTYPE eff_qi(FluxEffect *self, REFIID riid, void **ppv) {
 	if (!ppv) return E_POINTER;
 	if (IsEqualGUID(riid, &Flux_IID_IUnknown)
-		|| IsEqualGUID(riid, &Flux_IID_IInspectable)
-		|| IsEqualGUID(riid, &CWINRT_IID_WGREF_IGraphicsEffect)
-		|| IsEqualGUID(riid, &CWINRT_IID_WGREF_IGraphicsEffectSource))
+	    || IsEqualGUID(riid, &Flux_IID_IInspectable)
+	    || IsEqualGUID(riid, &CWINRT_IID_WGREF_IGraphicsEffect)
+	    || IsEqualGUID(riid, &CWINRT_IID_WGREF_IGraphicsEffectSource))
 	{
 		*ppv = self;
 		InterlockedIncrement(&self->ref);
@@ -256,18 +252,14 @@ static FluxEffect *effect_create(float blur, wchar_t const *source_name) {
 	return e;
 }
 
-/* Intermediate COM objects of a backdrop-blur brush, owned by the caller for cleanup. */
 typedef struct BlurParts {
 	WUC_CompositionEffectFactory *factory;
 	WUC_CompositionEffectBrush   *brush;
 	WUC_BackdropBrush            *backdrop;
 	cwinrt_hstring                hsrc;
-	WUC_Brush                    *out; /**< The finished ICompositionBrush, or NULL. */
+	WUC_Brush                    *out;
 } BlurParts;
 
-/* Assemble a blur effect brush over a backdrop source. `host` selects whether
- * the backdrop samples the window's own content (in-app acrylic, for inline
- * controls) or the desktop behind the window (host acrylic, for popup windows). */
 static HRESULT blur_build(WUC_Comp *comp, FluxEffect *eff, bool host, BlurParts *p) {
 	if (FAILED(wuc_comp_create_effect_factory(comp, ( WGREF_IGraphicsEffect * ) eff, &p->factory))) return E_FAIL;
 	if (FAILED(wuc_composition_effect_factory_create_brush(p->factory, &p->brush))) return E_FAIL;

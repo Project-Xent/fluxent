@@ -1,16 +1,3 @@
-/**
- * @file flux_flip_internal.h
- * @brief Private retained state for FluxFlipView and FluxPipsPager.
- *
- * FlipView spine: root (clips children) → ABSOLUTE pages host. The xtk
- * children mount into the host; the engine sync pass sizes each page to
- * the viewport and lays them along the paging axis, and the host slides
- * to -selected × extent (animated for adjacent moves, snapped for jumps —
- * FlipView_Partial OnSelectedIndexChanged).
- *
- * PipsPager is a single leaf node: pips + nav carets are all drawn by the
- * renderer from this data; hits resolve against the same geometry.
- */
 #ifndef FLUX_FLIP_INTERNAL_H
 #define FLUX_FLIP_INTERNAL_H
 
@@ -18,58 +5,54 @@
 #include <stdint.h>
 #include <xent/xent.h>
 
-
 typedef struct FluxStore  FluxStore;
 typedef struct FluxWindow FluxWindow;
 
-/** @brief Retained state for a FLUX_CONTROL_FLIP_VIEW root. */
 typedef struct FluxFlipViewData {
 	XentCtx      *ctx;
 	FluxStore    *store;
-	FluxWindow   *window; /**< Repaint target for slide-animation frames. */
+	FluxWindow   *window;
 	XentNodeId    root;
-	XentNodeId    host;   /**< ABSOLUTE pages host (xtk children = pages). */
+	XentNodeId    host;
 
 	int           selected;
 	bool          vertical;
 
-	float         offset;    /**< Current slide offset along the axis (px). */
-	float         anim_from; /**< Slide tween start offset. */
-	float         anim_to;   /**< Slide tween target offset. */
+	float         offset;
+	float         anim_from;
+	float         anim_to;
 	unsigned long anim_start;
 	bool          anim;
 
-	float         extent;           /**< Viewport length along the paging axis (last layout). */
-	float         cross;            /**< Viewport length across it. */
+	float         extent;
+	float         cross;
 
-	unsigned long pointer_activity; /**< Tick of the last pointer move (3 s button fade). */
-	unsigned long last_wheel;       /**< Tick of the last wheel flip (200 ms gate). */
-	int           wheel_sign;       /**< Direction of the last wheel delta. */
-	uint8_t       pressed_btn;      /**< 0 none, 1 previous, 2 next (visual). */
+	unsigned long pointer_activity;
+	unsigned long last_wheel;
+	int           wheel_sign;
+	uint8_t       pressed_btn;
 
 	void          (*on_select)(void *ctx, int index);
 	void         *on_select_ctx;
 } FluxFlipViewData;
 
-/** @brief Retained state for a FLUX_CONTROL_PIPS_PAGER leaf. */
 typedef struct FluxPipsPagerData {
 	XentCtx   *ctx;
 	FluxStore *store;
 	XentNodeId node;
 
-	int        count;        /**< NumberOfPages. */
-	int        selected;     /**< SelectedPageIndex. */
-	int        max_visible;  /**< Visible pips cap (default 5). */
+	int        count;
+	int        selected;
+	int        max_visible;
 	bool       vertical;
-	uint8_t    nav_vis;      /**< XtkPipsNavVis. */
+	uint8_t    nav_vis;
 
-	int        window_start; /**< First visible pip (selected kept centered). */
-	int        pressed_pip;  /**< Pip index under an active press, or -1. */
-	uint8_t    pressed_nav;  /**< 0 none, 1 previous, 2 next. */
+	int        window_start;
+	int        pressed_pip;
+	uint8_t    pressed_nav;
 
 	void       (*on_select)(void *ctx, int index);
 	void      *on_select_ctx;
 } FluxPipsPagerData;
-
 
 #endif

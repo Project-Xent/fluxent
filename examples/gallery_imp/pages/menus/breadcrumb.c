@@ -1,48 +1,23 @@
 #include "app.h"
-#include <math.h>
-#include <stdio.h>
-#include "render/flux_icon.h"
-#include "controls/behavior/flux_flyout_binding.h"
 
-static void on_select_i(void *ud, int idx) {
-	GalleryBind *b = ud;
-	gallery_dispatch(b->app, (XtkMsg) {.tag = b->tag, .i = idx});
+static char const *const kCrumbs [] = {"Home", "Documents", "Projects", "FluXent"};
+
+static char const       *crumb_text(GalleryApp *g) {
+	int click = g->model.breadcrumb_click;
+	return click >= 0 && click < 4 ? gallery_fmt(g, "Clicked: %s", kCrumbs [click]) : "Click a crumb to navigate.";
 }
 
-void page_breadcrumb(GalleryApp *g, XentNodeId parent) {
-	gallery_page_sync(g, page_breadcrumb_sync);
-	static char const *const kCrumbs [] = {"Home", "Documents", "Projects", "FluXent"};
-	Model const             *m          = &g->model;
-	char                     status [128];
-	if (m->breadcrumb_click >= 0 && m->breadcrumb_click < 4)
-		snprintf(status, sizeof(status), "Clicked: %s", kCrumbs [m->breadcrumb_click]);
-	else snprintf(status, sizeof(status), "Click a crumb to navigate.");
-	g_page_header(g, parent, "BreadcrumbBar", "Shows the path to the current location. Every crumb posts ItemClicked.");
-	{
-		XentNodeId  ex   = g_example(g, parent, "A four-segment breadcrumb.");
-		GalleryDemo demo = g_demo_card(g, ex);
-		XentNodeId  row  = demo.items;
-		flux_breadcrumb_init(&(FluxBreadcrumbBarDesc) {
-		  .ctx             = gallery_ctx(g),
-		  .store           = gallery_store(g),
-		  .parent          = row,
-		  .window          = flux_app_window(g->flux),
-		  .text            = flux_app_text(g->flux),
-		  .theme           = flux_app_theme(g->flux),
-		  .input           = flux_app_input(g->flux),
-		  .items           = kCrumbs,
-		  .item_count      = 4,
-		  .on_item_clicked = on_select_i,
-		  .userdata        = gallery_bind(g, MSG_BREADCRUMB),
-		});
-		g->live_output [MSG_BREADCRUMB] = g_output(g, demo.row, status);
-	}
-}
+static void breadcrumb_sync(GalleryApp *g) { gallery_settext(g, g->live_output [MSG_BREADCRUMB], crumb_text(g)); }
 
-void page_breadcrumb_sync(GalleryApp *g) {
-	static char const *const crumbs [] = {"Home", "Documents", "Projects", "FluXent"};
-	int                      clicked   = g->model.breadcrumb_click;
-	char const              *status
-	  = clicked >= 0 && clicked < 4 ? gallery_fmt(g, "Clicked: %s", crumbs [clicked]) : "Click a crumb to navigate.";
-	xent_settext(gallery_ctx(g), g->live_output [MSG_BREADCRUMB], status);
+bool        page_breadcrumb_build(PageBuild *b) {
+	page_sync(b, breadcrumb_sync);
+	XtkNodeRef parent = xtk_ref_local(b->content);
+	page_header(b, parent, "BreadcrumbBar", "Shows the path to the current location. Every crumb posts ItemClicked.");
+	PageDemo   demo = page_demo(b, page_example(b, parent, "A four-segment breadcrumb."));
+	XtkLocalId crumb
+	  = xtk_breadcrumb_create(&b->txn, demo.items, &(XtkSelectionProps) {.set = XTK_SELECTION_NITEM_MASK, .nitem = 4});
+	xtk_txn_setitems(&b->txn, xtk_ref_local(crumb), kCrumbs, 4);
+	xtk_breadcrumb_onselect(&b->txn, xtk_ref_local(crumb), page_post, page_bind(b, MSG_BREADCRUMB));
+	page_keepout(b, MSG_BREADCRUMB, page_output(b, demo.row, crumb_text(b->app)));
+	return true;
 }

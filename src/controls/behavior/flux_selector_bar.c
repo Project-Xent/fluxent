@@ -1,11 +1,3 @@
-/**
- * @file flux_selector_bar.c
- * @brief SelectorBar behavior (SelectorBar.cpp): a horizontal single-select
- * strip of self-drawing items. Selecting an item grows its accent underline
- * pill (4→16 DIP, fade in over 167 ms, cubic-bezier(0,0,0,1)); the previous
- * item's pill snaps hidden. Arrows move focus only; Enter/Space or click
- * select. One tab stop; GotFocus with no selection picks item 0.
- */
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_container.h"
 #include "store/flux_node_data.h"
@@ -58,13 +50,13 @@ static void sb_select(FluxSelectorBarData *b, int idx, bool notify) {
 	for (int i = 0; i < b->count; i++) {
 		bool sel                   = (i == idx);
 		b->item_data [i]->selected = sel;
-		if (!sel) b->item_data [i]->pill_t = 0.0f; /* deselect snaps hidden */
+		if (!sel) b->item_data [i]->pill_t = 0.0f;
 	}
 	b->selected = idx;
 	if (idx >= 0) {
 		b->item_data [idx]->pill_t = 0.0f;
 		b->anim_item               = idx;
-		b->anim_start              = GetTickCount();
+		b->anim_start              = flux_anim_now();
 		flux_anim_register(b, sb_anim_step);
 	}
 	if (!notify || idx < 0) return;
@@ -94,8 +86,8 @@ static void sb_reveal(FluxSelectorBarData *b, int index) {
 	XentRect        viewport = {0};
 	XentRect        item     = {0};
 	if (!scroll
-		|| !xent_layout_rect(b->ctx, b->viewport, &viewport)
-		|| !xent_layout_rect(b->ctx, b->items [index], &item))
+	    || !xent_layout_rect(b->ctx, b->viewport, &viewport)
+	    || !xent_layout_rect(b->ctx, b->items [index], &item))
 		return;
 	float left  = item.x - viewport.x;
 	float right = left + item.w;
@@ -108,7 +100,7 @@ static void sb_reveal(FluxSelectorBarData *b, int index) {
 static void sb_focus(FluxSelectorBarData *b, int index) {
 	if (index < 0 || index >= b->count) return;
 	sb_reveal(b, index);
-	if (b->input) flux_input_setfocus(b->input, b->items [index]);
+	if (b->input) flux_input_setfocus(b->input, b->items [index], false);
 }
 
 static bool sb_item_key(void *ctx, FluxKey key, bool down) {

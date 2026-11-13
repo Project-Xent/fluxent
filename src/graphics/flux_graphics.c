@@ -3,7 +3,8 @@
   #define COBJMACROS
 #endif
 
-#include "fluxent/flux_graphics.h"
+#include "runtime/flux_anim_driver.h"
+#include "fluxent/flux_gfx.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,15 +38,17 @@ struct FluxGfx {
 
 	IDWriteFactory                *dwrite_factory;
 
-	FluxCompositor                *compositor;    /**< Thread-shared WUC compositor. */
-	FluxWindowTarget              *window_target; /**< Per-HWND WUC target + root visual. */
-	WUC_CompositionGraphicsDevice *gdevice;       /**< Lazily created for per-node surfaces. */
+	FluxCompositor                *compositor;
+	FluxWindowTarget              *window_target;
+	WUC_CompositionGraphicsDevice *gdevice;
 
 	bool                           tearing_supported;
+	bool                           software;
 	bool                           hwnd_mode;
-	bool                           composition_mode; /**< Retained-tree path (FLUX_USE_COMPOSITION). */
-	bool                           popup_presented;  /**< Swap chain hosted in a content child (popup windows). */
-	bool                           window_acrylic;   /**< Host-backdrop acrylic backplate active (popup windows). */
+	bool                           composition_mode;
+	bool                           popup_presented;
+	bool                           window_acrylic;
+	float                          plate [5];
 	HRESULT                        last_hr;
 
 	FluxRedrawFn                   redraw_cb;
@@ -64,9 +67,52 @@ static HRESULT create_device_independent(FluxGfx *gfx) {
 	return hr;
 }
 
-static HRESULT create_device_resources(FluxGfx *gfx) {
-	UINT              flags     = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+static void graphics_log_failure(char const *stage, HRESULT hr) {
+	wchar_t msg [128];
+	_snwprintf(msg, 128, L"[fluxent] graphics init failed at %S: 0x%08lX\n", stage, ( unsigned long ) hr);
+	OutputDebugStringW(msg);
+}
 
+static HRESULT graphics_create_hardware_device(FluxGfx *gfx, UINT flags, D3D_FEATURE_LEVEL const *levels) {
+	IDXGIFactory2 *probe   = NULL;
+	IDXGIAdapter  *adapter = NULL;
+
+	HRESULT        hr      = CreateDXGIFactory2(0, &IID_IDXGIFactory2, ( void ** ) &probe);
+	if (SUCCEEDED(hr)) hr = IDXGIFactory2_EnumAdapters(probe, 0, &adapter);
+	if (SUCCEEDED(hr)) {
+		hr = D3D11CreateDevice(
+		  adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, flags, levels, 4, D3D11_SDK_VERSION, &gfx->d3d_device, NULL,
+		  &gfx->d3d_context
+		);
+	}
+	FLUX_RELEASE(adapter);
+	FLUX_RELEASE(probe);
+	return hr;
+}
+
+static HRESULT graphics_create_warp_device(FluxGfx *gfx, UINT flags, D3D_FEATURE_LEVEL const *levels) {
+	return D3D11CreateDevice(
+	  NULL, D3D_DRIVER_TYPE_WARP, NULL, flags, levels, 4, D3D11_SDK_VERSION, &gfx->d3d_device, NULL, &gfx->d3d_context
+	);
+}
+
+static HRESULT graphics_bind_dxgi(FluxGfx *gfx) {
+	IDXGIAdapter *adapter = NULL;
+	HRESULT       hr = ID3D11Device_QueryInterface(gfx->d3d_device, &IID_IDXGIDevice, ( void ** ) &gfx->dxgi_device);
+	if (SUCCEEDED(hr)) hr = IDXGIDevice_GetAdapter(gfx->dxgi_device, &adapter);
+	if (SUCCEEDED(hr)) hr = IDXGIAdapter_GetParent(adapter, &IID_IDXGIFactory2, ( void ** ) &gfx->dxgi_factory);
+	FLUX_RELEASE(adapter);
+	IDXGIDevice1 *dev1 = NULL;
+	if (SUCCEEDED(hr) && SUCCEEDED(IDXGIDevice_QueryInterface(gfx->dxgi_device, &IID_IDXGIDevice1, ( void ** ) &dev1)))
+	{
+		IDXGIDevice1_SetMaximumFrameLatency(dev1, 1);
+		FLUX_RELEASE(dev1);
+	}
+	return hr;
+}
+
+static HRESULT graphics_pick_device(FluxGfx *gfx) {
+	UINT              flags     = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 	D3D_FEATURE_LEVEL levels [] = {
 	  D3D_FEATURE_LEVEL_11_1,
 	  D3D_FEATURE_LEVEL_11_0,
@@ -74,27 +120,33 @@ static HRESULT create_device_resources(FluxGfx *gfx) {
 	  D3D_FEATURE_LEVEL_10_0,
 	};
 
-	HRESULT hr = CreateDXGIFactory2(0, &IID_IDXGIFactory2, ( void ** ) &gfx->dxgi_factory);
+	HRESULT hr = E_FAIL;
+	if (!gfx->software) {
+		hr = graphics_create_hardware_device(gfx, flags, levels);
+		if (FAILED(hr)) graphics_log_failure("d3d11 hardware device", hr);
+	}
+	if (SUCCEEDED(hr)) return hr;
+
+	hr = graphics_create_warp_device(gfx, flags, levels);
+	if (FAILED(hr)) graphics_log_failure("d3d11 warp device", hr);
+	else gfx->software = true;
+	return hr;
+}
+
+static HRESULT create_device_resources(FluxGfx *gfx) {
+	HRESULT hr = graphics_pick_device(gfx);
 	if (FAILED(hr)) return hr;
 
-	IDXGIAdapter *adapter = NULL;
-	hr                    = IDXGIFactory2_EnumAdapters(gfx->dxgi_factory, 0, &adapter);
-	if (FAILED(hr)) return hr;
-
-	hr = D3D11CreateDevice(
-	  ( IDXGIAdapter * ) adapter, D3D_DRIVER_TYPE_UNKNOWN, NULL, flags, levels, 4, D3D11_SDK_VERSION, &gfx->d3d_device,
-	  NULL, &gfx->d3d_context
-	);
-	FLUX_RELEASE(adapter);
-	if (FAILED(hr)) return hr;
-
-	hr = ID3D11Device_QueryInterface(gfx->d3d_device, &IID_IDXGIDevice, ( void ** ) &gfx->dxgi_device);
-	if (FAILED(hr)) return hr;
+	hr = graphics_bind_dxgi(gfx);
+	if (FAILED(hr)) {
+		graphics_log_failure("dxgi factory", hr);
+		return hr;
+	}
 
 	hr = ID2D1Factory1_CreateDevice(gfx->d2d_factory, gfx->dxgi_device, &gfx->d2d_device);
-	if (FAILED(hr)) return hr;
-
-	hr = ID2D1Device_CreateDeviceContext(gfx->d2d_device, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &gfx->d2d_context);
+	if (SUCCEEDED(hr))
+		hr = ID2D1Device_CreateDeviceContext(gfx->d2d_device, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &gfx->d2d_context);
+	if (FAILED(hr)) graphics_log_failure("d2d device", hr);
 	return hr;
 }
 
@@ -102,7 +154,7 @@ static void release_window_resources(FluxGfx *gfx) {
 	if (gfx->d2d_context) ID2D1DeviceContext_SetTarget(gfx->d2d_context, NULL);
 	flux_window_target_destroy(gfx->window_target);
 	gfx->window_target   = NULL;
-	gfx->popup_presented = false; /* target gone; re-establish on next enable call */
+	gfx->popup_presented = false;
 	gfx->window_acrylic  = false;
 	FLUX_RELEASE(gfx->d2d_target);
 	FLUX_RELEASE(gfx->swap_chain);
@@ -169,16 +221,11 @@ static HRESULT graphics_create_composition_target(FluxGfx *gfx) {
 	gfx->window_target = flux_window_target_create(gfx->compositor, gfx->hwnd);
 	if (!gfx->window_target) return E_FAIL;
 
-	/* In composition mode the root visual hosts the reconciled visual tree, so
-	 * its content is the per-node surfaces — not the swap chain. Otherwise the
-	 * root sprite shows the swap chain that the classic D2D renderer draws into. */
 	if (!gfx->composition_mode) {
 		HRESULT hr = flux_wintarget_setswapchain(gfx->window_target, ( IUnknown * ) gfx->swap_chain);
 		if (FAILED(hr)) return hr;
 	}
 
-	/* DesktopWindowTarget composition space is physical pixels, 1:1 with the swap
-	 * chain buffer; D2D handles DPI when rendering into that buffer. */
 	UINT w, h;
 	graphics_client_size(gfx, &w, &h);
 	flux_wintarget_setsize(gfx->window_target, ( float ) w, ( float ) h);
@@ -202,27 +249,29 @@ static HRESULT create_window_resources(FluxGfx *gfx) {
 	return graphics_create_composition_target(gfx);
 }
 
-FluxGfx *flux_gfx_create(void) {
+FluxGfx *flux_gfx_create(HRESULT *out_hr) {
+	HRESULT  hr  = E_OUTOFMEMORY;
 	FluxGfx *gfx = ( FluxGfx * ) calloc(1, sizeof(*gfx));
-	if (!gfx) return NULL;
+	if (!gfx) goto done;
 
 	gfx->dpi.dpi_x = FLUX_DPI_BASE;
 	gfx->dpi.dpi_y = FLUX_DPI_BASE;
 
-	HRESULT hr     = create_device_independent(gfx);
+	char env [4]   = {0};
+	gfx->software  = GetEnvironmentVariableA("FLUXENT_FORCE_WARP", env, sizeof(env)) > 0 && env [0] == '1';
+
+	hr             = create_device_independent(gfx);
+	if (SUCCEEDED(hr)) hr = create_device_resources(gfx);
 	if (FAILED(hr)) {
 		flux_gfx_destroy(gfx);
-		return NULL;
+		gfx = NULL;
 	}
-
-	hr = create_device_resources(gfx);
-	if (FAILED(hr)) {
-		flux_gfx_destroy(gfx);
-		return NULL;
-	}
-
+done:
+	if (out_hr) *out_hr = hr;
 	return gfx;
 }
+
+bool flux_gfx_software(FluxGfx const *gfx) { return gfx && gfx->software; }
 
 void flux_gfx_destroy(FluxGfx *gfx) {
 	if (!gfx) return;
@@ -261,7 +310,9 @@ HRESULT flux_gfx_attach(FluxGfx *gfx, HWND hwnd) {
 		gfx->compositor = flux_compositor_acquire();
 		if (!gfx->compositor) return E_FAIL;
 	}
-	return create_window_resources(gfx);
+	HRESULT hr = create_window_resources(gfx);
+	if (FAILED(hr)) graphics_log_failure("swap chain/composition", hr);
+	return hr;
 }
 
 static HRESULT create_hwnd_window_resources(FluxGfx *gfx) {
@@ -307,8 +358,6 @@ HRESULT flux_gfx_resize(FluxGfx *gfx, int width, int height) {
 	hr = graphics_create_d2d_target(gfx);
 	if (FAILED(hr)) return hr;
 
-	/* The swap chain object persists across ResizeBuffers, so its composition
-	 * surface stays bound; only the root visual extent needs updating. */
 	if (gfx->window_target) flux_wintarget_setsize(gfx->window_target, ( float ) width, ( float ) height);
 	return S_OK;
 }
@@ -337,8 +386,8 @@ void flux_gfx_end(FluxGfx *gfx) {
 
 void flux_gfx_present(FluxGfx *gfx, bool vsync) {
 	if (!gfx || !gfx->swap_chain) return;
-	/* SyncInterval 1 blocks for vblank (vsync on); 0 presents immediately. */
 	HRESULT hr = IDXGISwapChain_Present(( IDXGISwapChain * ) gfx->swap_chain, vsync ? 1u : 0u, 0);
+	if (vsync) flux_anim_presented();
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) ( void ) flux_gfx_devicechange(gfx);
 	else if (FAILED(hr)) gfx->last_hr = hr;
 }
@@ -353,12 +402,7 @@ void flux_gfx_clear(FluxGfx *gfx, FluxColor color) {
 	ID2D1RenderTarget_Clear(( ID2D1RenderTarget * ) gfx->d2d_context, &c);
 }
 
-void flux_gfx_commit(FluxGfx *gfx) {
-	/* The WUC compositor commits its batch automatically when the thread's
-	 * DispatcherQueue ticks during the message pump; no explicit commit needed.
-	 * Swap chain content is presented separately via flux_gfx_present(). */
-	( void ) gfx;
-}
+void     flux_gfx_commit(FluxGfx *gfx) { ( void ) gfx; }
 
 FluxSize flux_gfx_size(FluxGfx const *gfx) {
 	if (!gfx || !gfx->d2d_context) return (FluxSize) {0, 0};
@@ -391,17 +435,16 @@ bool flux_gfx_enable_acrylic(FluxGfx *gfx, float blur) {
 	if (!gfx || !gfx->composition_mode || !gfx->window_target || !gfx->swap_chain) return false;
 	if (gfx->popup_presented) return gfx->window_acrylic;
 
-	/* The swap chain (the popup's drawn chrome + content) composes on top in a
-	 * content child; presenting it is what makes the popup visible at all in
-	 * composition mode, so it must not depend on the acrylic step succeeding. */
 	if (FAILED(flux_wintarget_presentchild(gfx->window_target, ( IUnknown * ) gfx->swap_chain))) return false;
 	gfx->popup_presented = true;
 
-	/* Optional: a desktop-sampling acrylic backplate behind the content child.
-	 * If unavailable, the popup still renders (opaque) over an empty root. */
 	WUC_Brush *backdrop  = flux_effect_host_blur(gfx->compositor, blur);
 	if (backdrop) {
 		flux_wintarget_setbackdrop(gfx->window_target, backdrop);
+		if (gfx->plate [2] > 0.0f)
+			flux_wintarget_setplate(
+			  gfx->window_target, gfx->plate [0], gfx->plate [1], gfx->plate [2], gfx->plate [3], gfx->plate [4]
+			);
 		(( IUnknown * ) backdrop)->lpVtbl->Release(( IUnknown * ) backdrop);
 		gfx->window_acrylic = true;
 	}
@@ -451,4 +494,15 @@ HRESULT flux_gfx_devicechange(FluxGfx *gfx) {
 	if (gfx->hwnd) hr = gfx->hwnd_mode ? create_hwnd_window_resources(gfx) : create_window_resources(gfx);
 
 	return hr;
+}
+
+void flux_gfx_setopacity(FluxGfx *gfx, float opacity) {
+	if (gfx) flux_wintarget_setopacity(gfx->window_target, opacity);
+}
+
+void flux_gfx_setplate(FluxGfx *gfx, float x, float y, float w, float h, float radius) {
+	if (!gfx) return;
+	float p [5] = {x, y, w, h, radius};
+	memcpy(gfx->plate, p, sizeof(p));
+	if (gfx->window_acrylic && w > 0.0f) flux_wintarget_setplate(gfx->window_target, x, y, w, h, radius);
 }

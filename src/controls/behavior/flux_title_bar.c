@@ -1,12 +1,3 @@
-/**
- * @file flux_title_bar.c
- * @brief TitleBar behavior: a leaf band with an optional back button,
- * pane-toggle button, icon, and a title/subtitle. Back and pane-toggle are
- * region hit-tested (shared with the renderer via flux_titlebar_layout). When
- * window integration is enabled, a per-frame sync reports the drag rect and the
- * interactive button rects to the window so the band moves the window while the
- * buttons remain clickable.
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "render/flux_icon.h"
@@ -72,8 +63,6 @@ static int titlebar_hit(FluxTitleBarData const *d, float x, float y) {
 	return FLUX_TB_REGION_NONE;
 }
 
-/* Per-region tooltip text for the caption buttons (the custom frame removes the OS
- * ones). NULL elsewhere so the drag band shows no tooltip. */
 static char const *titlebar_tooltip_at(void *ctx, float x, float y) {
 	FluxTitleBarData *d = ( FluxTitleBarData * ) ctx;
 	switch (titlebar_hit(d, x, y)) {
@@ -104,7 +93,6 @@ static void titlebar_route(FluxTitleBarData *d, XtkEventId id) {
 	flux_host_route(host, &event);
 }
 
-/* Run the action bound to a region: back/pane callbacks, or the window command. */
 static void titlebar_invoke(FluxTitleBarData *d, int region) {
 	HWND hwnd = d->window ? flux_window_hwnd(d->window) : NULL;
 	switch (region) {
@@ -135,7 +123,6 @@ static void titlebar_click(void *ctx) {
 	int               hit = nd ? titlebar_hit(d, nd->hover_local_x, nd->hover_local_y) : FLUX_TB_REGION_NONE;
 	int               was = d->pressed;
 	d->pressed            = FLUX_TB_REGION_NONE;
-	/* Press and release must land on the same region for the action to fire. */
 	if (hit == was && hit != FLUX_TB_REGION_NONE) titlebar_invoke(d, hit);
 }
 
@@ -195,14 +182,10 @@ XentNodeId flux_titlebar_init(FluxTitleBarDesc const *info) {
 	nd->behavior.on_cancel_ctx       = d;
 
 	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_CONTAINER);
-	/* Fixed compact height; stretch across the container's width (a definite
-	 * width would suppress the cross-axis stretch and collapse the band). */
 	xent_seth(info->ctx, node, FLUX_TB_HEIGHT);
 	xent_setself(info->ctx, node, XENT_FLEX_ALIGN_STRETCH);
 	xent_setgrow(info->ctx, node, 0.0f);
 
-	/* Window-integrated title bars remove the OS caption (and draw their own
-	 * caption buttons); a normal in-content band leaves the window frame alone. */
 	if (d->integrate_window && d->window) flux_window_extendtitlebar(d->window, true);
 	return node;
 }

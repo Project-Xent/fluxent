@@ -60,6 +60,26 @@ XtkEl *page_combo(XtkUi *ui, Model const *m) {
 			),
 			m->combo_font >= 0 ? xtk_fmt(ui, "Selected: %s", kFonts [m->combo_font]) : "Nothing selected yet", NULL
 		  )
+		),
+		example(
+		  ui, "An editable ComboBox: type to highlight a match, press Enter to submit any text.",
+		  demo_card(
+			ui,
+			xtk_combo(
+			  ui, "Type or pick a color",
+			  (XtkComboDesc) {
+				.items    = kColors,
+				.nitem    = count,
+				.sel      = m->combo_edit_sel,
+				.editable = true,
+				.select   = xtk_msg(MSG_COMBO_EDIT),
+				.submit   = xtk_msg(MSG_COMBO_SUBMIT)}
+			),
+			m->combo_edit_sel >= 0 ? xtk_fmt(ui, "Selected: %s", kColors [m->combo_edit_sel])
+			: m->combo_submit      ? xtk_fmt(ui, "Submitted: %s", m->combo_submit)
+			                       : "Nothing submitted yet",
+			NULL
+		  )
 		)
 	  )
 	);

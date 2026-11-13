@@ -3,6 +3,7 @@
 
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
+#include "render/flux_scroll_geom.h"
 #include "render/flux_shape_resource.h"
 
 #include <xent/xent_display.h>
@@ -45,7 +46,7 @@ typedef struct FluxRecButtonColors {
 bool flux_rec_elevation_border(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *bounds, float radius, bool is_accent
 );
-bool flux_rec_focus_rect(XentDlBuilder *b, FluxRect const *bounds, float radius);
+bool flux_rec_focus_rect(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *bounds, float radius);
 bool flux_rec_fillgrad(
   XentDlBuilder *b, FluxRect const *r, float x0, float y0, float x1, float y1, float s0, float s1, FluxColor c0,
   FluxColor c1
@@ -58,12 +59,18 @@ typedef struct FluxRecStateAnim {
 	float check;
 } FluxRecStateAnim;
 
-void             flux_rec_note_animating(FluxRenderCtx const *rc, bool active);
+void flux_rec_note_animating(FluxRenderCtx const *rc, bool active);
+bool flux_rec_scrollbar_mouse(
+  XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *bar, FluxScrollBarModel const *model, float hover_x,
+  float hover_y, float expanded
+);
+
+FluxVisualState *flux_rec_vstate(FluxRenderCtx const *rc, FluxRenderSnap const *snap, uint32_t state);
+
 FluxRecStateAnim flux_rec_animstate(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state, bool check_target
 );
 FluxColor flux_rec_tweenfill(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxColor target);
-float     flux_rec_tweenscale(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state);
 bool      flux_rec_fillsink(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *r, float radius, FluxColor fill);
 
 FluxRecButtonColors flux_rec_button_colors(
@@ -77,6 +84,10 @@ bool flux_rec_button_label(XentDlBuilder *b, FluxRenderSnap const *snap, FluxRec
 bool flux_rec_build_button(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state, bool force_accent
+);
+bool flux_rec_checkbox_box(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *box,
+  FluxControlState const *state, FluxCheckState cs
 );
 bool flux_rec_build_checkbox(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,

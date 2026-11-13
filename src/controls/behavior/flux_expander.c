@@ -15,17 +15,6 @@
 #include <stdlib.h>
 #include <windows.h>
 
-/* WinUI Expander (Expander.xaml). Three nodes mirror the XAML tree:
- *   root    FLUX_CONTROL_EXPANDER          — layout-only 2-row grid, owns runtime
- *   header  FLUX_CONTROL_EXPANDER_HEADER   — ToggleButton, hosts arbitrary content
- *   content FLUX_CONTROL_EXPANDER_CONTENT  — sliding content panel (caller fills)
- *
- * Toggling flips `expanded` immediately (header chevron/corner follow) and starts
- * a TranslateY slide on the content. A Down expander pairs ExpandDown with
- * CollapseUp (see Expander.cpp UpdateExpandState): expand slides the panel down
- * into place (-ContentHeight -> 0) over 333ms; collapse retracts it back up behind
- * the header (0 -> -ContentHeight) over 167ms before the panel is detached. The
- * slide uses the node render-transform (render_translate_y + render_clip_subtree). */
 #define EXP_MIN_WIDTH   96.0f
 #define EXP_EXPAND_MS   333.0f
 #define EXP_COLLAPSE_MS 167.0f
@@ -69,10 +58,8 @@ static bool expander_step(void *ctx, unsigned long now) {
 	float             duration = d->anim_expanding ? EXP_EXPAND_MS : EXP_COLLAPSE_MS;
 	float             elapsed  = ( float ) (( unsigned long ) now - d->anim_start);
 	float             t        = expander_clamp01(elapsed / duration);
-	float             eased    = 1.0f - powf(1.0f - t, 3.0f); /* approx KeySpline 0,0,0,1 / 1,1,0,1 */
+	float             eased    = 1.0f - powf(1.0f - t, 3.0f);
 	float             h        = expander_content_extent(d);
-	/* Expand: -h -> 0 (slide down into place). Collapse (CollapseUp): 0 -> -h
-	 * (retract up behind the header). Both end clipped/hidden above row top. */
 	expander_set_translate(d, d->anim_expanding ? -(1.0f - eased) * h : -eased * h);
 	expander_repaint(d);
 	if (elapsed >= duration) {
@@ -86,7 +73,7 @@ static void expander_anim_start(FluxExpanderData *d, bool expanding) {
 	if (expanding) xent_node_append(d->ctx, d->root, d->content);
 	d->anim_active    = true;
 	d->anim_expanding = expanding;
-	d->anim_start     = GetTickCount();
+	d->anim_start     = flux_anim_now();
 	expander_set_translate(d, expanding ? -expander_content_extent(d) : 0.0f);
 	expander_repaint(d);
 	flux_anim_register(d, expander_step);
@@ -127,10 +114,6 @@ static void expander_destroy(void *component_data) {
 	free(component_data);
 }
 
-/* A vertical flex stack (header over content) rather than a Grid: we don't
- * implement ExpandDirection.Up, so the row-swap a Grid would buy us is unused,
- * and a flex column resolves its intrinsic width cleanly when the expander is
- * measured inside another flex container (a Grid star column cannot). */
 static void expander_setup_root(FluxExpanderData *d) {
 	xent_setproto(d->ctx, d->root, XENT_PROTOCOL_FLEX);
 	xent_setflexdir(d->ctx, d->root, XENT_FLEX_COLUMN);
@@ -165,8 +148,6 @@ static void expander_setup_content(FluxExpanderData *d) {
 	);
 }
 
-/* Allocate the shared runtime and wire it onto the root (owner) and header (borrower:
- * its toggle behavior and expanded-state snapshot read the same pointer). NULL on OOM. */
 static FluxExpanderData *
 expander_make_runtime(FluxExpanderDesc const *info, XentNodeId root, XentNodeId header, XentNodeId content) {
 	FluxNodeData     *root_nd = flux_store_find(info->store, root);
@@ -201,7 +182,6 @@ static void expander_finalize(FluxExpanderData *d, FluxExpanderDesc const *info)
 	if (content_nd) content_nd->render_clip_subtree = true;
 
 	if (info->header) {
-		/* Default body font size (BodyTextBlockStyle, 14). */
 		FluxTextDesc ti = {info->ctx, info->store, d->header, info->header, 14.0f};
 		d->header_text  = flux_text_init(&ti);
 		xent_sem_setlabel(info->ctx, d->header, info->header);
@@ -235,11 +215,6 @@ XentNodeId flux_expander_init(FluxExpanderDesc const *info) {
 XentNodeId flux_expbody_node(FluxStore *store, XentNodeId id) {
 	FluxExpanderData *d = expander_data(store, id);
 	return d ? d->content : XENT_NODE_INVALID;
-}
-
-XentNodeId flux_exphead_node(FluxStore *store, XentNodeId id) {
-	FluxExpanderData *d = expander_data(store, id);
-	return d ? d->header : XENT_NODE_INVALID;
 }
 
 void flux_prop_expander_expanded(FluxStore *store, XentNodeId id, XentCtx *ctx, bool expanded) {

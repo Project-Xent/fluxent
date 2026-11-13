@@ -1,11 +1,3 @@
-/**
- * @file flux_internal.h
- * @brief Fluxent bridge internals: runtime config glue and Host event routing.
- *
- * Reconciler/runtime live in xent-kit. Built-in controls still paint through the
- * private draw table in controls/factory/flux_control_registry.h; Components and
- * HtmlView attach XentDl values replayed by XtkBackend.
- */
 #ifndef FLUX_INTERNAL_H
 #define FLUX_INTERNAL_H
 

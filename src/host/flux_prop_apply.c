@@ -2,7 +2,9 @@
 #include <math.h>
 #include "host/flux_prop_apply.h"
 #include "store/flux_node_data.h"
+#include "controls/behavior/flux_text_select.h"
 #include "controls/textbox/tb_internal.h"
+#include "controls/factory/flux_factory.h"
 #include "render/flux_fluent.h"
 #include "runtime/flux_str.h"
 
@@ -13,7 +15,6 @@
 	((nd)->component_type == FLUX_CONTROL_CHECKBOX    \
 	  || (nd)->component_type == FLUX_CONTROL_RADIO   \
 	  || (nd)->component_type == FLUX_CONTROL_SWITCH)
-/* Button, DropDownButton and SplitButton all carry FluxButtonData. */
 #define FLUX_EXPECT_BUTTON_FAMILY(nd)                              \
 	((nd)->component_type == FLUX_CONTROL_BUTTON                   \
 	  || (nd)->component_type == FLUX_CONTROL_DROPDOWN_BUTTON      \
@@ -35,7 +36,6 @@ static FluxNodeData *component_node(FluxStore *store, XentNodeId id) {
 		d->field    = value;                                                            \
 	}
 
-/* String fields are owned by the control data: setters swap in a fresh copy. */
 #define FLUX_PROP_STR(ctrl, DataType, field, expect)                                      \
 	void flux_prop_##ctrl##_##field(FluxStore *store, XentNodeId id, char const *value) { \
 		FluxNodeData *nd = component_node(store, id);                                     \
@@ -44,16 +44,12 @@ static FluxNodeData *component_node(FluxStore *store, XentNodeId id) {
 		flux_str_replace(&d->field, value);                                               \
 	}
 
-/* Label-driven controls mirror the label into xent's text (intrinsic sizing
- * re-measures it) and the semantic label (UIA name). */
 static void label_sync(FluxStore *store, XentNodeId id, char const *value) {
 	XentCtx *ctx = flux_store_ctx(store);
 	xent_settext(ctx, id, value ? value : "");
 	xent_sem_setlabel(ctx, id, value ? value : "");
 }
 
-/* Enabled is a single source of truth: xent's semantic enabled. Rendering, focus,
- * input gating and UIA all read it; this setter is the only writer. */
 #define FLUX_PROP_ENABLED(ctrl, expect)                                              \
 	void flux_prop_##ctrl##_enabled(FluxStore *store, XentNodeId id, bool enabled) { \
 		FluxNodeData *nd = component_node(store, id);                                \
@@ -70,13 +66,6 @@ static void label_sync(FluxStore *store, XentNodeId id, char const *value) {
 		d->f2       = v2;                                                           \
 	}
 
-/* The node is text-measured from the label alone, but the draw places an icon
- * glyph + content gap before the label; reserve that in the left padding so
- * layout width matches what gets drawn. The right inset is the control's own
- * (plain buttons 11; dropdown buttons add the trailing chevron box + gap).
- * An icon-only plain button has no text to measure at all — its factory
- * fallback width of 0 reads as auto and inflates to the parent's free space —
- * so give it the WinUI icon-button footprint (callers may still override). */
 static void button_reserve_icon_pad(
   FluxStore *store, XentNodeId id, FluxNodeData const *nd, char const *label, float font_size, char const *icon_name
 ) {
@@ -88,9 +77,6 @@ static void button_reserve_icon_pad(
 	bool  iconed  = icon_name && icon_name [0];
 	float fs      = font_size > 0.0f ? font_size : 14.0f;
 	float reserve = (iconed && labeled) ? fs * FLUX_BTN_ICON_SIZE_MUL + FLUX_BTN_CONTENT_GAP : 0.0f;
-	/* Right inset is the control's trailing chrome that the label must clear:
-	 * dropdown chevron box+gap (11+12+8), split divider+secondary zone (11+1+35),
-	 * plain button just its own 11 padding. */
 	float pad_r   = dropdown ? 31.0f : split ? 47.0f : 11.0f;
 	xent_setp(ctx, id, (XentInsets) {11.0f + reserve, 5.0f, pad_r, 6.0f});
 	if (iconed && !labeled && !dropdown && !split) xent_setsize(ctx, id, (XentSize) {40.0f, 32.0f});
@@ -103,8 +89,6 @@ void flux_prop_button_label(FluxStore *store, XentNodeId id, char const *label) 
 	flux_str_replace(&bd->label, label);
 	label_sync(store, id, label);
 
-	/* Host seeds buttons with a null label, so factory metrics never ran.
-	 * Apply chrome here once the real label arrives (and refresh icon pad). */
 	XentCtx *ctx = flux_store_ctx(store);
 	xent_setlinebreak(ctx, id, XENT_LINEBREAK_NOWRAP);
 	xent_setfontsize(ctx, id, bd->font_size > 0.0f ? bd->font_size : 14.0f);
@@ -131,19 +115,16 @@ void flux_prop_checkbox_label(FluxStore *store, XentNodeId id, char const *label
 	flux_str_replace(&(( FluxCheckboxData * ) nd->component_data)->label, label);
 	label_sync(store, id, label);
 
-	/* Same seed-null-label hole as buttons: apply draw insets when the label arrives. */
 	if (nd->component_type == FLUX_CONTROL_SWITCH) return;
-	XentCtx   *ctx = flux_store_ctx(store);
-	XentInsets pad = nd->component_type == FLUX_CONTROL_RADIO ? (XentInsets) {28.0f, 6.0f, 0.0f, 6.0f}
-	                                                          : (XentInsets) {32.0f, 6.0f, 0.0f, 6.0f};
-	xent_setlinebreak(ctx, id, XENT_LINEBREAK_NOWRAP);
-	xent_setfontsize(ctx, id, 14.0f);
-	xent_setp(ctx, id, pad);
+	XentCtx *ctx = flux_store_ctx(store);
 	xent_setsize(ctx, id, (XentSize) {NAN, NAN});
-	xent_setminsize(ctx, id, (XentSize) {20.0f, 32.0f});
+	flux_toggle_applymetrics(ctx, id, nd->component_type, label);
 }
 
-FLUX_PROP(checkbox, FluxCheckboxData, state, FluxCheckState, FLUX_EXPECT_TOGGLE(nd))
+void flux_prop_checkbox_state(FluxStore *store, XentNodeId id, FluxCheckState state) {
+	FluxNodeData *nd = component_node(store, id);
+	if (nd && FLUX_EXPECT_TOGGLE(nd)) flux_checkbox_setstate(( FluxCheckboxData * ) nd->component_data, state);
+}
 FLUX_PROP_ENABLED(checkbox, FLUX_EXPECT_TOGGLE(nd))
 
 FLUX_PROP(slider, FluxSliderData, step_frequency, float, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER))
@@ -161,8 +142,6 @@ void flux_prop_slider_step(FluxStore *store, XentNodeId id, float step) {
 	flux_prop_slider_step_frequency(store, id, step);
 }
 
-/* WinUI Slider::OnValueChanged mirrors Value into IntermediateValue unless the
- * change came from input — the thumb is drawn from intermediate while held. */
 void flux_prop_slider_value(FluxStore *store, XentNodeId id, float value) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_SLIDER)) return;
@@ -171,8 +150,6 @@ void flux_prop_slider_value(FluxStore *store, XentNodeId id, float value) {
 	if (!nd->state.pressed) sd->intermediate_value = value;
 }
 
-/* Text nodes mirror content into xent for measurement (the factory seeds it
- * with xent_settext), so a content change must re-mirror it. */
 void flux_prop_text_content(FluxStore *store, XentNodeId id, char const *content) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT)) return;
@@ -180,7 +157,6 @@ void flux_prop_text_content(FluxStore *store, XentNodeId id, char const *content
 	xent_settext(flux_store_ctx(store), id, content ? content : "");
 }
 
-/* Font size also feeds xent's text measurement, so re-mirror it. */
 void flux_prop_text_fontsize(FluxStore *store, XentNodeId id, float size) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT)) return;
@@ -188,12 +164,11 @@ void flux_prop_text_fontsize(FluxStore *store, XentNodeId id, float size) {
 	xent_setfontsize(flux_store_ctx(store), id, size);
 }
 
-/* Font weight also feeds xent's text measurement, so re-mirror it. */
 void flux_prop_text_font_weight(FluxStore *store, XentNodeId id, FluxFontWeight weight) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT)) return;
 	(( FluxTextData * ) nd->component_data)->font_weight = weight;
-	xent_setfontweight(flux_store_ctx(store), id, flux_font_weight_numeric(weight));
+	xent_setfontweight(flux_store_ctx(store), id, flux_font_weightnum(weight));
 }
 
 FLUX_PROP(text, FluxTextData, text_color, FluxColor, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT))
@@ -207,6 +182,41 @@ void flux_prop_text_weight(FluxStore *store, XentNodeId id, FluxFontWeight weigh
 	flux_prop_text_font_weight(store, id, weight);
 }
 
+static FluxTextData *text_data(FluxStore *store, XentNodeId id) {
+	FluxNodeData *nd = component_node(store, id);
+	return nd && FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT) ? ( FluxTextData * ) nd->component_data : NULL;
+}
+
+void flux_prop_text_maxlines(FluxStore *store, XentNodeId id, uint32_t max_lines) {
+	FluxTextData *td = text_data(store, id);
+	if (!td) return;
+	td->max_lines = ( uint8_t ) (max_lines > 255u ? 255u : max_lines);
+	xent_setmaxlines(flux_store_ctx(store), id, td->max_lines);
+}
+
+void flux_prop_text_trim(FluxStore *store, XentNodeId id, XentTextTrim trim) {
+	FluxTextData *td = text_data(store, id);
+	if (!td) return;
+	td->trim = trim;
+	xent_settexttrim(flux_store_ctx(store), id, trim);
+}
+
+void flux_prop_text_wrap(FluxStore *store, XentNodeId id, bool wrap) {
+	FluxTextData *td = text_data(store, id);
+	if (!td) return;
+	td->wrap = wrap;
+	xent_setlinebreak(flux_store_ctx(store), id, wrap ? XENT_LINEBREAK_WORDWRAP : XENT_LINEBREAK_NOWRAP);
+}
+
+void flux_prop_text_selectable(FluxStore *store, XentNodeId id, bool selectable) {
+	FluxTextData *td = text_data(store, id);
+	if (!td) return;
+	td->selectable = selectable;
+	if (!selectable) td->selection_start = td->selection_end = 0u;
+	flux_text_select_wire(component_node(store, id), td, selectable);
+	xent_set_focusable(flux_store_ctx(store), id, selectable);
+}
+
 static FluxTextBoxInputData *text_input_data(FluxStore *store, XentNodeId id, FluxControlType type) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || nd->component_type != type) return NULL;
@@ -217,9 +227,6 @@ static void prop_text_input_enabled(FluxStore *store, XentNodeId id, FluxControl
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || nd->component_type != type) return;
 	xent_sem_setenabled(flux_store_ctx(store), id, enabled);
-	/* Text editing has key/IME/selection gates that fire on the focused node outside the
-	 * pointer path, so the box keeps a local flag to also reject input if disabled while
-	 * focused. Kept in sync with the canonical semantic enabled here. */
 	(( FluxTextBoxData * ) nd->component_data)->enabled = enabled;
 }
 
@@ -235,6 +242,19 @@ void flux_prop_textbox_placeholder(FluxStore *store, XentNodeId id, char const *
 
 void flux_prop_textbox_enabled(FluxStore *store, XentNodeId id, bool enabled) {
 	prop_text_input_enabled(store, id, FLUX_CONTROL_TEXT_INPUT, enabled);
+}
+
+void flux_prop_textbox_multiline(FluxStore *store, XentNodeId id, bool multiline) {
+	FluxTextBoxInputData *tb = text_input_data(store, id, FLUX_CONTROL_TEXT_INPUT);
+	if (!tb || tb->base.multiline == multiline) return;
+	tb->base.multiline       = multiline;
+	tb->base.scroll_offset_x = 0.0f;
+	tb->base.scroll_offset_y = 0.0f;
+}
+
+void flux_prop_textbox_readonly(FluxStore *store, XentNodeId id, bool readonly) {
+	FluxTextBoxInputData *tb = text_input_data(store, id, FLUX_CONTROL_TEXT_INPUT);
+	if (tb) tb->base.readonly = readonly;
 }
 
 FLUX_PROP(progress, FluxProgressData, indeterminate, bool, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS))
@@ -254,13 +274,6 @@ void flux_prop_progress_range(FluxStore *store, XentNodeId id, float min_val, fl
 	data->min_value        = min_val;
 	data->max_value        = max_val;
 	xent_sem_setvalue(flux_store_ctx(store), id, data->value, min_val, max_val);
-}
-
-void flux_prop_progress_max(FluxStore *store, XentNodeId id, float max_val) {
-	FluxNodeData *nd = component_node(store, id);
-	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS)) return;
-	FluxProgressData *data = ( FluxProgressData * ) nd->component_data;
-	flux_prop_progress_range(store, id, data->min_value, max_val);
 }
 
 void flux_prop_scroll_offset(FluxStore *store, XentNodeId id, float x, float y) {
@@ -298,12 +311,6 @@ void flux_prop_radius(FluxStore *store, XentNodeId id, float radius) {
 	nd->visuals.corner_radius = radius;
 }
 
-void flux_prop_node_opacity(FluxStore *store, XentNodeId id, float opacity) {
-	FluxNodeData *nd = node_for_visual_setter(store, id);
-	if (!nd) return;
-	nd->visuals.opacity = opacity;
-}
-
 void flux_prop_node_tooltip(FluxStore *store, XentNodeId id, char const *text) {
 	FluxNodeData *nd = node_for_visual_setter(store, id);
 	if (!nd) return;
@@ -320,17 +327,8 @@ void flux_prop_password_placeholder(FluxStore *store, XentNodeId id, char const 
 	if (tb) flux_str_replace(&tb->base.placeholder, placeholder);
 }
 
-void flux_prop_password_show_plain(FluxStore *store, XentNodeId id, bool show_plain) {
-	FluxTextBoxInputData *tb = text_input_data(store, id, FLUX_CONTROL_PASSWORD_BOX);
-	if (tb) tb->password_show_plain = show_plain;
-}
-
 void flux_prop_password_enabled(FluxStore *store, XentNodeId id, bool enabled) {
 	prop_text_input_enabled(store, id, FLUX_CONTROL_PASSWORD_BOX, enabled);
-}
-
-void flux_prop_password_reveal(FluxStore *store, XentNodeId id, bool show_plain) {
-	flux_prop_password_show_plain(store, id, show_plain);
 }
 
 static FluxTextBoxInputData *numberbox_data(FluxStore *store, XentNodeId id) {
@@ -400,7 +398,6 @@ void flux_prop_repeat_label(FluxStore *store, XentNodeId id, char const *label) 
 	flux_str_replace(&bd->label, label);
 	label_sync(store, id, label);
 
-	/* Same host seed-null-label hole as Button: factory metrics never ran. */
 	XentCtx *ctx = flux_store_ctx(store);
 	xent_setlinebreak(ctx, id, XENT_LINEBREAK_NOWRAP);
 	xent_setfontsize(ctx, id, bd->font_size > 0.0f ? bd->font_size : 14.0f);
@@ -444,17 +441,6 @@ void flux_prop_progressring_range(FluxStore *store, XentNodeId id, float min_val
 	xent_sem_setvalue(flux_store_ctx(store), id, data->value, min_val, max_val);
 }
 
-void flux_prop_progressring_max(FluxStore *store, XentNodeId id, float max_val) {
-	FluxNodeData *nd = component_node(store, id);
-	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_PROGRESS_RING)) return;
-	FluxProgressRingData *data = ( FluxProgressRingData * ) nd->component_data;
-	flux_prop_progressring_range(store, id, data->min_value, max_val);
-}
-
 FLUX_PROP(badge, FluxInfoBadgeData, mode, FluxInfoBadgeMode, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_INFO_BADGE))
 FLUX_PROP(badge, FluxInfoBadgeData, value, int32_t, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_INFO_BADGE))
 FLUX_PROP_STR(badge, FluxInfoBadgeData, icon_name, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_INFO_BADGE))
-
-void flux_prop_badge_icon(FluxStore *store, XentNodeId id, char const *icon_name) {
-	flux_prop_badge_icon_name(store, id, icon_name);
-}

@@ -1,24 +1,3 @@
-/**
- * @file flux_tree_view.c
- * @brief WinUI 3 TreeView: retained tree model, the flattened visible-node
- * list (ViewModel), tri-state cascade selection, keyboard state machine, and
- * control-owned row virtualization on top of the ListView spine.
- *
- * Architecture (see flux_tree_internal.h): the root owns the node pool and
- * the flat array; an inner FLUX_CONTROL_LIST spine supplies the scroll
- * viewport, the host extent, and the per-frame staleness watch. Rows are
- * recycled FLUX_CONTROL_TREE_ITEM leaves positioned absolutely at
- * flat_index × pitch — the row window shifts by rebinding flat indices, not
- * by node churn.
- *
- * Interaction semantics follow TreeViewItem.cpp: the 40px-wide padded
- * chevron zone toggles is_expanded on pointer *down* (handled — it never
- * selects/invokes); row content fires ItemInvoked on release and selects in
- * Single mode; the Multiple-mode checkbox toggles the tri-state cascade on
- * release / Space only (row clicks never toggle it). Left/Right collapse or
- * expand-or-hop per OnKeyDown; plain arrows only (Ctrl moves focus without
- * selecting; Shift+Alt reorder is not implemented).
- */
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "render/flux_anim.h"
@@ -39,8 +18,8 @@
 #include <string.h>
 #include <windows.h>
 
-#define TREE_OVERSCAN      4  /* extra rows realized beyond the viewport (xtk list default) */
-#define TREE_FALLBACK_ROWS 32 /* first window before layout has produced a viewport */
+#define TREE_OVERSCAN      4
+#define TREE_FALLBACK_ROWS 32
 
 static FluxTreeViewData *tree_data(FluxStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_store_find(store, id);
@@ -52,7 +31,6 @@ static bool  tree_valid(FluxTreeViewData const *d, int h) { return h >= 0 && h <
 
 static bool  tree_multi(FluxTreeViewData const *d) { return d->sel_mode == XTK_TREE_SELECT_MULTIPLE; }
 
-/* Row pitch: 28-tall pill + 2+2 vertical margins = 32 (TreeViewItemPresenterMargin). */
 static float tree_pitch(FluxTreeViewData const *d) { return d->row_height + 2.0f * FLUX_TREE_ROW_MARGIN_V; }
 
 static bool  key_down(FluxKey key) { return flux_key_held(key); }
@@ -62,11 +40,6 @@ static void  tree_repaint(FluxTreeViewData *d) {
 	if (h) InvalidateRect(h, NULL, FALSE);
 }
 
-/* -------------------------------------------------------------------------
- * Node pool (handles are pool indices; free slots chain through next_sibling)
- * ---------------------------------------------------------------------- */
-
-/* Grow the pool when full; false = allocation failure. */
 static bool tree_pool_reserve(FluxTreeViewData *d) {
 	if (d->node_count < d->node_cap) return true;
 	int           cap = d->node_cap ? d->node_cap * 2 : 32;
@@ -91,11 +64,6 @@ static int tree_node_alloc(FluxTreeViewData *d) {
 	d->nodes [h].in_use       = true;
 	return h;
 }
-
-/* -------------------------------------------------------------------------
- * Flatten (ViewModel.cpp): a node is visible iff every ancestor is expanded;
- * the flat list is the pre-order DFS of the expanded tree.
- * ---------------------------------------------------------------------- */
 
 static bool tree_flat_push(FluxTreeViewData *d, int h) {
 	if (d->flat_count == d->flat_cap) {
@@ -128,7 +96,6 @@ static int tree_flat_of(FluxTreeViewData const *d, int h) {
 	return -1;
 }
 
-/* Rows currently visible under flat_index (depth > node.depth run). */
 static int tree_visible_descendants(FluxTreeViewData const *d, int flat_index) {
 	int16_t depth = d->nodes [d->flat [flat_index]].depth;
 	int     n     = 0;
@@ -136,17 +103,11 @@ static int tree_visible_descendants(FluxTreeViewData const *d, int flat_index) {
 	return n;
 }
 
-/* -------------------------------------------------------------------------
- * Tri-state cascade selection (ViewModel.cpp UpdateSelection)
- * ---------------------------------------------------------------------- */
-
 static void tree_cascade_down(FluxTreeViewData *d, int h, uint8_t state) {
 	d->nodes [h].sel_state = state;
 	for (int c = d->nodes [h].first_child; c >= 0; c = d->nodes [c].next_sibling) tree_cascade_down(d, c, state);
 }
 
-/* Any Partial child, or a mix of Selected + UnSelected → Partial; else
- * Selected when at least one child is selected; else UnSelected. */
 static uint8_t tree_derive_state(FluxTreeViewData const *d, int h) {
 	bool any_sel = false, any_unsel = false;
 	for (int c = d->nodes [h].first_child; c >= 0; c = d->nodes [c].next_sibling) {
@@ -159,7 +120,6 @@ static uint8_t tree_derive_state(FluxTreeViewData const *d, int h) {
 	return any_sel ? FLUX_TREE_SEL_SELECTED : FLUX_TREE_SEL_NONE;
 }
 
-/* Re-derive ancestors bottom-up, stopping at the first unchanged state. */
 static void tree_update_ancestors(FluxTreeViewData *d, int h) {
 	for (int p = d->nodes [h].parent; p >= 0; p = d->nodes [p].parent) {
 		uint8_t s = tree_derive_state(d, p);
@@ -172,10 +132,6 @@ static void tree_set_selected_multi(FluxTreeViewData *d, int h, bool selected) {
 	tree_cascade_down(d, h, selected ? FLUX_TREE_SEL_SELECTED : FLUX_TREE_SEL_NONE);
 	tree_update_ancestors(d, h);
 }
-
-/* -------------------------------------------------------------------------
- * Row realization (control-owned recycling over the LIST spine)
- * ---------------------------------------------------------------------- */
 
 static void       tree_item_click(void *ctx);
 static void       tree_item_down(void *ctx, float x, float y, int clicks);
@@ -210,8 +166,6 @@ static XentNodeId tree_make_row(FluxTreeViewData *d) {
 	return node;
 }
 
-/* Realized flat window: viewport rows + overscan (a plausible first window
- * before layout has produced a viewport; the stale watch corrects it). */
 static void tree_window_range(FluxTreeViewData *d, int *first, int *last) {
 	float offset = 0.0f, extent = 0.0f, cross = 0.0f;
 	float pitch = tree_pitch(d);
@@ -282,19 +236,12 @@ static XentNodeId tree_row_for_flat(FluxTreeViewData const *d, int flat) {
 	return d->rows [flat - d->win_first];
 }
 
-/* Model changed: rebuild the flat list, resize the host extent, re-realize. */
 static void tree_sync_flat(FluxTreeViewData *d) {
 	tree_rebuild_flat(d);
 	flux_list_set_extent(d->store, d->list, d->flat_count, tree_pitch(d), 0.0f, 1);
 	tree_realize(d);
 }
 
-/* -------------------------------------------------------------------------
- * Expand entrance animation + deferred re-realize (shared anim step)
- * ---------------------------------------------------------------------- */
-
-/* New rows fade in and slide up (EntranceThemeTransition, staggering off);
- * everything already on screen snaps — collapse is instant removal. */
 static void tree_apply_entrance_row(FluxTreeViewData *d, int i, float p) {
 	FluxNodeData *nd = flux_store_find(d->store, d->rows [i]);
 	if (!nd) return;
@@ -327,21 +274,15 @@ static bool tree_step(void *ctx, unsigned long now) {
 	return active || d->realize_pending;
 }
 
-/* Stale watch (engine collect pass): scrolling left the realized window.
- * Node creation mid-traversal is unsafe, so realize on the next anim tick. */
 static void tree_on_stale(void *ctx) {
 	FluxTreeViewData *d = ( FluxTreeViewData * ) ctx;
-	if (!d->window) { /* headless: no paint loop to defer around */
+	if (!d->window) {
 		tree_realize(d);
 		return;
 	}
 	d->realize_pending = true;
 	flux_anim_register(d, tree_step);
 }
-
-/* -------------------------------------------------------------------------
- * Interaction (TreeViewItem.cpp / TreeViewList keyboard)
- * ---------------------------------------------------------------------- */
 
 static void tree_route(FluxTreeViewData *d, XtkEventId id, XtkEventPayload payload) {
 	XtkHost *host = flux_store_host(d->store);
@@ -376,10 +317,10 @@ static void tree_toggle_expand(FluxTreeViewData *d, int flat) {
 	if (n->expanded && d->window) {
 		d->anim_first = flat + 1;
 		d->anim_count = tree_visible_descendants(d, flat);
-		d->anim_start = GetTickCount();
+		d->anim_start = flux_anim_now();
 		if (d->anim_count > 0) {
 			flux_anim_register(d, tree_step);
-			tree_tick_entrance(d, d->anim_start); /* first painted frame starts faded */
+			tree_tick_entrance(d, d->anim_start);
 		}
 	}
 	tree_repaint(d);
@@ -397,8 +338,6 @@ static void tree_select_single(FluxTreeViewData *d, int flat) {
 	if (d->on_select) d->on_select(d->select_ctx, flat, true);
 }
 
-/* Multiple: checkbox / Space toggles the node and cascades (a Partial parent
- * toggles to Selected, like a WinUI indeterminate CheckBox click). */
 static void tree_toggle_check(FluxTreeViewData *d, int flat) {
 	int  h   = d->flat [flat];
 	bool now = d->nodes [h].sel_state != FLUX_TREE_SEL_SELECTED;
@@ -408,8 +347,6 @@ static void tree_toggle_check(FluxTreeViewData *d, int flat) {
 	if (d->on_select) d->on_select(d->select_ctx, flat, now);
 }
 
-/* Move keyboard focus to a flat row: scroll it into view, realize the new
- * window synchronously (input time — safe), then focus the row node. */
 static void tree_focus_flat(FluxTreeViewData *d, int flat) {
 	if (flat < 0) flat = 0;
 	if (flat > d->flat_count - 1) flat = d->flat_count - 1;
@@ -421,7 +358,7 @@ static void tree_focus_flat(FluxTreeViewData *d, int flat) {
 
 	XentNodeId row = tree_row_for_flat(d, flat);
 	tree_repaint(d);
-	if (row != XENT_NODE_INVALID && d->input) flux_input_setfocus(d->input, row);
+	if (row != XENT_NODE_INVALID && d->input) flux_input_setfocus(d->input, row, false);
 }
 
 static int tree_page_rows(FluxTreeViewData *d) {
@@ -433,8 +370,6 @@ static int tree_page_rows(FluxTreeViewData *d) {
 	return 8;
 }
 
-/* Up/Down/Home/End/Page: flat moves; selection follows focus in Single mode
- * unless Ctrl is held (focus-only move, ListView behavior). */
 static int tree_nav_delta(FluxTreeViewData *d, int flat, FluxKey key) {
 	switch (key) {
 	case FLUX_KEY_UP        : return flat - 1;
@@ -460,7 +395,6 @@ static bool tree_key_nav(FluxTreeViewData *d, int flat, FluxKey key) {
 	return true;
 }
 
-/* LTR Right: expand a collapsed parent, else hop to the first child. */
 static bool tree_key_right(FluxTreeViewData *d, FluxTreeNode const *n, int flat) {
 	if (n->first_child < 0) return false;
 	if (!n->expanded) {
@@ -475,7 +409,6 @@ static bool tree_key_right(FluxTreeViewData *d, FluxTreeNode const *n, int flat)
 	return true;
 }
 
-/* LTR Left: collapse an expanded parent, else hop to the parent row. */
 static bool tree_key_left(FluxTreeViewData *d, FluxTreeNode const *n, int flat) {
 	if (n->expanded && n->first_child >= 0) {
 		tree_toggle_expand(d, flat);
@@ -541,9 +474,6 @@ static bool tree_item_key(void *ctx, FluxKey key, bool down) {
 	return false;
 }
 
-/* Chevron toggles on pointer *down* (OnExpandCollapseChevronPointerPressed,
- * handled so the row never selects/invokes); the checkbox arms here and
- * commits on release. Coordinates are node-local. */
 static void tree_item_down(void *ctx, float x, float y, int clicks) {
 	( void ) y;
 	( void ) clicks;
@@ -568,14 +498,12 @@ static void tree_item_down(void *ctx, float x, float y, int clicks) {
 	}
 	else chevron = x >= ix && x < ix + FLUX_TREE_CHEVRON_ZONE;
 
-	if (chevron && n->first_child >= 0) { /* leaf zone presses fall through to the row */
+	if (chevron && n->first_child >= 0) {
 		it->press_on_chevron = true;
 		tree_toggle_expand(d, flat);
 	}
 }
 
-/* Row click (fires on release): invoke + select in Single; the checkbox zone
- * toggles the cascade; a chevron press was consumed on the way down. */
 static void tree_item_click(void *ctx) {
 	FluxTreeItemData *it       = ( FluxTreeItemData * ) ctx;
 	FluxTreeViewData *d        = it->owner;
@@ -602,10 +530,6 @@ static void tree_item_click(void *ctx) {
 	if (d->on_invoke) d->on_invoke(d->invoke_ctx, flat);
 }
 
-/* -------------------------------------------------------------------------
- * Create / destroy
- * ---------------------------------------------------------------------- */
-
 static void tree_destroy(void *component_data) {
 	FluxTreeViewData *d = ( FluxTreeViewData * ) component_data;
 	if (!d) return;
@@ -615,7 +539,6 @@ static void tree_destroy(void *component_data) {
 		flux_str_free(d->nodes [i].text);
 		flux_str_free(d->nodes [i].icon_name);
 	}
-	/* Row nodes are subtree children — the store tears them down. */
 	free(d->nodes);
 	free(d->flat);
 	free(d->rows);
@@ -639,8 +562,6 @@ XentNodeId flux_tree_init(FluxTreeViewDesc const *info) {
 	xent_setflexdir(info->ctx, root, XENT_FLEX_COLUMN);
 	xent_setitems(info->ctx, root, XENT_FLEX_ALIGN_STRETCH);
 
-	/* The inner LIST spine supplies viewport + extent + the stale watch; the
-	 * TreeView owns the rows, so the list gets no input/selection wiring. */
 	XentNodeId list = flux_list_init(&(FluxListViewDesc) {
 	  .ctx = info->ctx, .store = info->store, .parent = root, .kind = XTK_LIST_KIND_LIST});
 	if (list == XENT_NODE_INVALID) {
@@ -678,10 +599,6 @@ XentNodeId flux_tree_init(FluxTreeViewDesc const *info) {
 	return root;
 }
 
-/* -------------------------------------------------------------------------
- * Store-facing model mutators (programmatic — no callbacks fire)
- * ---------------------------------------------------------------------- */
-
 static int tree_add_node(FluxTreeViewData *d, int parent, char const *text, char const *icon) {
 	if (parent >= 0 && !tree_valid(d, parent)) return -1;
 	int h = tree_node_alloc(d);
@@ -694,7 +611,6 @@ static int tree_add_node(FluxTreeViewData *d, int parent, char const *text, char
 	wchar_t const *g = flux_icon_lookup(icon);
 	n->glyph         = g && g [0] ? ( uint32_t ) g [0] : 0;
 	n->depth         = parent >= 0 ? ( int16_t ) (d->nodes [parent].depth + 1) : 0;
-	/* A new child of a selected parent inherits its state (ViewModel). */
 	if (tree_multi(d) && parent >= 0 && d->nodes [parent].sel_state == FLUX_TREE_SEL_SELECTED)
 		n->sel_state = FLUX_TREE_SEL_SELECTED;
 
@@ -728,41 +644,6 @@ static void tree_free_subtree(FluxTreeViewData *d, int h) {
 	d->free_head              = h;
 }
 
-static void tree_unlink(FluxTreeViewData *d, int h) {
-	int  parent = d->nodes [h].parent;
-	int *link   = parent >= 0 ? &d->nodes [parent].first_child : &d->first_root;
-	while (*link >= 0 && *link != h) link = &d->nodes [*link].next_sibling;
-	if (*link == h) *link = d->nodes [h].next_sibling;
-}
-
-void flux_tree_remove_node(FluxStore *store, XentNodeId tree, int node) {
-	FluxTreeViewData *d = tree_data(store, tree);
-	if (!d || !tree_valid(d, node)) return;
-	int parent = d->nodes [node].parent;
-	tree_unlink(d, node);
-	tree_free_subtree(d, node);
-	/* Removal can flip an ancestor between Partial/Selected/UnSelected. */
-	if (tree_multi(d) && parent >= 0 && d->nodes [parent].first_child >= 0) {
-		d->nodes [parent].sel_state = tree_derive_state(d, parent);
-		tree_update_ancestors(d, parent);
-	}
-	tree_sync_flat(d);
-	tree_repaint(d);
-}
-
-void flux_tree_clear(FluxStore *store, XentNodeId tree) {
-	FluxTreeViewData *d = tree_data(store, tree);
-	if (!d) return;
-	while (d->first_root >= 0) {
-		int r         = d->first_root;
-		d->first_root = d->nodes [r].next_sibling;
-		tree_free_subtree(d, r);
-	}
-	d->selected = -1;
-	tree_sync_flat(d);
-	tree_repaint(d);
-}
-
 static void tree_model_dispose(FluxTreeViewData *d) {
 	while (d->first_root >= 0) {
 		int root      = d->first_root;
@@ -776,13 +657,19 @@ static void tree_model_dispose(FluxTreeViewData *d) {
 static bool tree_model_build(FluxTreeViewData *next, XtkTreeModelView const *model, int *handles) {
 	for (uint32_t i = 0; i < model->count; i++) {
 		XtkTreeModelItemView item;
-		if (!xtk_tree_model_item(model, i, &item)) return false;
+		if (!xtk_treemodel_item(model, i, &item)) return false;
 		int parent = item.parent < 0 ? -1 : handles [item.parent];
 		int handle = tree_add_node(next, parent, item.text, item.icon);
 		if (handle < 0) return false;
 		next->nodes [handle].expanded = (item.flags & XTK_TREE_MODEL_EXPANDED) != 0u;
 		next->nodes [handle].disabled = (item.flags & XTK_TREE_MODEL_DISABLED) != 0u;
-		handles [i]                   = handle;
+		next->nodes [handle].sel_state
+		  = (item.flags & XTK_TREE_MODEL_CHECKED) ? FLUX_TREE_SEL_SELECTED : FLUX_TREE_SEL_NONE;
+		handles [i] = handle;
+	}
+	for (uint32_t i = model->count; i > 0u; i--) {
+		int h = handles [i - 1u];
+		if (next->nodes [h].first_child >= 0) next->nodes [h].sel_state = tree_derive_state(next, h);
 	}
 	return true;
 }
@@ -824,19 +711,11 @@ void flux_tree_set_expanded(FluxStore *store, XentNodeId tree, int node, bool ex
 	tree_repaint(d);
 }
 
-void flux_tree_setdisabled(FluxStore *store, XentNodeId tree, int node, bool disabled) {
-	FluxTreeViewData *d = tree_data(store, tree);
-	if (!d || !tree_valid(d, node)) return;
-	d->nodes [node].disabled = disabled;
-	tree_realize(d); /* refresh row semantics */
-	tree_repaint(d);
-}
-
 void flux_tree_setmode(FluxStore *store, XentNodeId tree, XtkTreeSelMode mode) {
 	FluxTreeViewData *d = tree_data(store, tree);
 	if (!d || d->sel_mode == mode) return;
 	d->sel_mode = mode;
-	d->selected = -1; /* switching modes clears the selection (WinUI) */
+	d->selected = -1;
 	for (int i = 0; i < d->node_count; i++)
 		if (d->nodes [i].in_use) d->nodes [i].sel_state = FLUX_TREE_SEL_NONE;
 	tree_repaint(d);
@@ -854,34 +733,6 @@ void flux_tree_set_selected(FluxStore *store, XentNodeId tree, int node, bool se
 	if (d->sel_mode == XTK_TREE_SELECT_SINGLE) d->selected = selected ? node : (d->selected == node ? -1 : d->selected);
 	else if (tree_multi(d)) tree_set_selected_multi(d, node, selected);
 	tree_repaint(d);
-}
-
-void flux_tree_select_all(FluxStore *store, XentNodeId tree) {
-	FluxTreeViewData *d = tree_data(store, tree);
-	if (!d || !tree_multi(d)) return; /* Multiple mode only (WinUI SelectAll) */
-	for (int r = d->first_root; r >= 0; r = d->nodes [r].next_sibling) tree_cascade_down(d, r, FLUX_TREE_SEL_SELECTED);
-	tree_repaint(d);
-}
-
-/* -------------------------------------------------------------------------
- * Queries (gallery / tests)
- * ---------------------------------------------------------------------- */
-
-bool flux_tree_is_expanded(FluxStore *store, XentNodeId tree, int node) {
-	FluxTreeViewData *d = tree_data(store, tree);
-	return d && tree_valid(d, node) && d->nodes [node].expanded;
-}
-
-bool flux_tree_is_selected(FluxStore *store, XentNodeId tree, int node) {
-	FluxTreeViewData *d = tree_data(store, tree);
-	if (!d || !tree_valid(d, node)) return false;
-	if (d->sel_mode == XTK_TREE_SELECT_SINGLE) return d->selected == node;
-	return d->nodes [node].sel_state == FLUX_TREE_SEL_SELECTED;
-}
-
-int flux_tree_flat_count(FluxStore *store, XentNodeId tree) {
-	FluxTreeViewData *d = tree_data(store, tree);
-	return d ? d->flat_count : 0;
 }
 
 int flux_tree_flat_node(FluxStore *store, XentNodeId tree, int flat_index) {

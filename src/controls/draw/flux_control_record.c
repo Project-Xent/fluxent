@@ -1,13 +1,10 @@
-/**
- * @file flux_control_record.c
- * @brief Built-in MAIN paint → XentDl recorders (node-local coords).
- */
 #include "controls/draw/flux_control_draw.h"
 #include "controls/draw/flux_control_record_internal.h"
 #include "fluxent/flux_text.h"
 #include "render/flux_anim.h"
 #include "render/flux_fluent.h"
 #include "render/flux_resource_intern.h"
+#include "text/flux_utf.h"
 
 #include <string.h>
 
@@ -27,29 +24,78 @@ XentDl *flux_container_record(
 	FLUX_REC_END(ok);
 }
 
+static FluxTextStyle text_hit_style(FluxRenderSnap const *snap) {
+	FluxTextStyle ts;
+	memset(&ts, 0, sizeof(ts));
+	ts.font_family = snap->u.text.font_family;
+	ts.font_size   = snap->font_size > 0.0f ? snap->font_size : 14.0f;
+	ts.font_weight = snap->u.text.font_weight > 0 ? snap->u.text.font_weight : FLUX_FONT_REGULAR;
+	ts.text_align  = snap->u.text.text_alignment;
+	ts.vert_align  = snap->u.text.text_vert_alignment;
+	ts.word_wrap   = snap->u.text.word_wrap;
+	ts.trim        = snap->u.text.trim;
+	ts.max_lines   = snap->u.text.max_lines;
+	return ts;
+}
+
+static bool text_draw_selection(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, char const *content
+) {
+	if (!snap->u.text.selectable || !rc || !rc->text) return true;
+	if (snap->u.text.selection_start == snap->u.text.selection_end) return true;
+
+	uint32_t               a   = snap->u.text.selection_start;
+	uint32_t               e   = snap->u.text.selection_end;
+	uint32_t               lo  = a < e ? a : e;
+	uint32_t               hi  = a > e ? a : e;
+	uint32_t               len = ( uint32_t ) strlen(content);
+
+	FluxTextStyle          ts  = text_hit_style(snap);
+	FluxRect               rects [16];
+	FluxTextSelectionQuery q = {
+	  {rc->text, content, &ts, bounds->w},
+      ( int ) flux_utf8_to_utf16_offset(content, len, lo),
+	  ( int ) flux_utf8_to_utf16_offset(content, len, hi), rects, 16
+    };
+	uint32_t  n   = flux_text_selection(&q);
+	FluxColor sel = flux_rec_theme(rc)->accent_default;
+	sel.rgba      = (sel.rgba & 0xffffff00u) | 0x66u;
+	for (uint32_t i = 0; i < n; i++) {
+		FluxRect sr = {bounds->x + rects [i].x, bounds->y + rects [i].y, rects [i].w, rects [i].h};
+		if (!flux_rec_fill_rect(b, &sr, sel)) return false;
+	}
+	return true;
+}
+
+static FluxColor text_record_color(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state) {
+	FluxThemeColors const *t = flux_rec_theme(rc);
+	if (state && !state->enabled) return t->text_disabled;
+	return flux_color_af(snap->u.text.text_color) > 0.0f ? snap->u.text.text_color : t->text_primary;
+}
+
+static XentTextStyle text_record_style(FluxRenderSnap const *snap) {
+	return (XentTextStyle) {
+	  .font_size   = snap->font_size > 0.0f ? snap->font_size : 14.0f,
+	  .font_weight = snap->u.text.font_weight > 0 ? ( uint16_t ) snap->u.text.font_weight : 400u,
+	  .h_align     = ( uint8_t ) snap->u.text.text_alignment,
+	  .v_align     = ( uint8_t ) snap->u.text.text_vert_alignment,
+	  .flags       = snap->u.text.word_wrap ? XENT_DL_TEXT_WRAP : 0u,
+	  .max_lines   = snap->u.text.max_lines,
+	  .trim        = snap->u.text.trim,
+	  .font_family = snap->u.text.font_family,
+	};
+}
+
 XentDl *flux_text_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	FLUX_REC_BEGIN();
-	FluxThemeColors const *t       = flux_rec_theme(rc);
-	bool                   ok      = flux_rec_fill_bg(b, snap, bounds) && flux_rec_stroke_border(b, snap, bounds);
-	char const            *content = snap->u.text.text_content;
+	bool        ok      = flux_rec_fill_bg(b, snap, bounds) && flux_rec_stroke_border(b, snap, bounds);
+	char const *content = snap->u.text.text_content;
 	if (ok && content && content [0]) {
-		FluxColor text_color;
-		if (flux_color_af(snap->u.text.text_color) > 0.0f) text_color = snap->u.text.text_color;
-		else text_color = t->text_primary;
-		if (state && !state->enabled) text_color = t->text_disabled;
-		float         font_size = snap->font_size > 0.0f ? snap->font_size : 14.0f;
-		uint16_t      weight    = snap->u.text.font_weight > 0 ? ( uint16_t ) snap->u.text.font_weight : 400u;
-		XentTextStyle style     = {
-		  .font_size   = font_size,
-		  .font_weight = weight,
-		  .h_align     = ( uint8_t ) snap->u.text.text_alignment,
-		  .v_align     = ( uint8_t ) snap->u.text.text_vert_alignment,
-		  .flags       = snap->u.text.word_wrap ? XENT_DL_TEXT_WRAP : 0u,
-		  .font_family = snap->u.text.font_family,
-		};
-		ok = flux_rec_text_ex(b, bounds, content, &style, text_color);
+		XentTextStyle style = text_record_style(snap);
+		ok                  = text_draw_selection(b, rc, snap, bounds, content);
+		if (ok) ok = flux_rec_text_ex(b, bounds, content, &style, text_record_color(rc, snap, state));
 	}
 	FLUX_REC_END(ok);
 }
@@ -125,18 +171,13 @@ XentDl *flux_link_record(
 	FluxRecStateAnim       anim       = flux_rec_animstate(rc, snap, state, false);
 	FluxColor              text_color = hyperlink_text_color(t, snap, state, anim);
 	bool                   ok         = hyperlink_hover_bg(b, &sb, radius, state, t, anim);
-	if (ok && state && state->focused && state->enabled) ok = flux_rec_focus_rect(b, &sb, radius);
+	if (ok && state && state->focused && state->enabled) ok = flux_rec_focus_rect(b, flux_rec_theme(rc), &sb, radius);
 
 	FluxRect text_bounds = {
 	  sb.x + FLUX_BTN_PAD_LEFT, sb.y + FLUX_BTN_PAD_TOP, flux_maxf(0.0f, sb.w - FLUX_BTN_PAD_LEFT - FLUX_BTN_PAD_RIGHT),
 	  flux_maxf(0.0f, sb.h - FLUX_BTN_PAD_TOP - FLUX_BTN_PAD_BOTTOM)};
-	XentTextStyle style = {
-	  .font_size   = font_size,
-	  .font_weight = 400u,
-	  .h_align     = 1u,
-	  .v_align     = 1u,
-	  /* Hyperlink has no custom family today; keep style shared so measure==draw. */
-	  .font_family = NULL};
+	XentTextStyle style
+	  = {.font_size = font_size, .font_weight = 400u, .h_align = 1u, .v_align = 1u, .font_family = NULL};
 	if (ok) ok = flux_rec_text_ex(b, &text_bounds, label, &style, text_color);
 	if (ok && state && state->enabled && rc && rc->text) {
 		FluxTextStyle ms;
@@ -379,7 +420,7 @@ static bool image_content_record(XentDlBuilder *b, FluxRenderSnap const *snap, F
 	char const *path = snap->u.image.text_content;
 	if (!path || !path [0]) return true;
 	XentResourceId id = flux_resource_intern_path(path);
-	bool           ok = xent_dl_pushclip_rect(b, flux_rec_xrect(bounds));
+	bool           ok = xent_dl_pushcliprect(b, flux_rec_xrect(bounds));
 	if (ok) ok = xent_dl_drawimg(b, flux_rec_xrect(bounds), id, image_fit(snap->u.image.stretch));
 	return xent_dl_popclip(b) && ok;
 }

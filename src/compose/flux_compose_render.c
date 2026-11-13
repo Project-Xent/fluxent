@@ -28,30 +28,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* In-content acrylic tuning. Standard deviation of the backdrop Gaussian, and
- * the fraction of the control's own fill alpha kept as the tint over it. WinUI
- * acrylic is a translucent tint above a blurred sample of the content behind. */
 #define FLUX_ACRYLIC_BLUR_RADIUS    30.0f
 #define FLUX_ACRYLIC_TINT_OPACITY   0.72f
 
-/* Inline (in-window) acrylic for cards: a blurred backdrop behind the content.
- * Disabled: the backdrop-blur brush samples nothing usable in this windowed
- * composition target, so it renders opaque black over the card's fill. Cards
- * fall back to the solid fill_sink path, which matches the classic D2D look. */
 #define FLUX_COMPOSE_INLINE_ACRYLIC 0
 
 typedef struct ContentNode {
-	XentNodeId                 owner;   /**< Full generation-checked identity for this dense slot. */
+	XentNodeId                 owner;
 	WUC_Sprite                *sprite;
-	WUC_Visual                *visual;  /**< IVisual facet of sprite (sizing + tree insertion). */
+	WUC_Visual                *visual;
 	FluxSurface               *surface;
-	FluxShapeRect             *acrylic; /**< Backdrop-blur material beneath content; NULL unless the node is acrylic. */
-	FluxShapeRect             *fill;    /**< Rounded solid fill beneath content; its color animates off-thread. */
+	FluxShapeRect             *acrylic;
+	FluxShapeRect             *fill;
 	WUC_CompositionColorBrush *fill_brush;
-	FluxColor                  fill_color;   /**< Last fill target handed to the compositor (animation de-dup). */
+	FluxColor                  fill_color;
 	bool                       fill_set;
-	FluxInteraction           *tracker;      /**< Scroll node: InteractionTracker driving the content holder. */
-	bool                       scroll_bound; /**< Holder Offset is bound to the tracker. */
+	FluxInteraction           *tracker;
+	bool                       scroll_bound;
 	int                        w;
 	int                        h;
 	uint32_t                   seen;
@@ -62,11 +55,11 @@ struct FluxComposeRender {
 	FluxCompositor                *c;
 	WUC_Comp                      *comp;
 	WUC_CompositionGraphicsDevice *gdev;
-	FluxControlRegistry const     *registry; /**< Private record/draw table for per-node paint. */
-	XtkBackend                    *backend;  /**< Replays owned/borrowed display lists. */
+	FluxControlRegistry const     *registry;
+	XtkBackend                    *backend;
 	FluxVisualTree                *vt;
-	FluxAnimKit                   *anim;     /**< Off-thread keyframe/easing animations for control fills. */
-	ContentNode                   *nodes;    /**< Dense by slot index; ownership checked via owner. */
+	FluxAnimKit                   *anim;
+	ContentNode                   *nodes;
 	uint32_t                       cap;
 	uint32_t                       generation;
 };
@@ -88,7 +81,7 @@ FluxComposeRender *flux_compose_render_create(
 		free(r);
 		return NULL;
 	}
-	r->anim = flux_anim_kit_create(c); /* NULL-tolerant: fills then snap instead of animating. */
+	r->anim = flux_anim_kit_create(c);
 	return r;
 }
 
@@ -139,7 +132,6 @@ static bool render_reserve(FluxComposeRender *r, XentNodeId node) {
 	return true;
 }
 
-/* Dense slot for `node`, releasing any prior generation that reused the index. */
 static ContentNode *content_slot(FluxComposeRender *r, XentNodeId node) {
 	uint32_t idx = xent_node_index(node);
 	if (!r || node == XENT_NODE_INVALID || idx == 0u) return NULL;
@@ -156,8 +148,6 @@ static ContentNode *content_owned(FluxComposeRender *r, XentNodeId node) {
 	return (cn->in_use && cn->owner == node) ? cn : NULL;
 }
 
-/* Place the content sprite at the bottom of the container so child node
- * containers (added by the reconciler) compose above it. */
 static void content_attach(WUC_Container *container, WUC_Visual *sprite_visual) {
 	WUC_VisualCollection *children = NULL;
 	if (FAILED(wuc_container_get__children(container, &children))) return;
@@ -208,29 +198,22 @@ static bool content_ensure(FluxComposeRender *r, XentNodeId node, WUC_Container 
 	return true;
 }
 
-/* Controls whose background is a material, not a flat fill: cards and the popup
- * surfaces (flyout/menu/tooltip) when their content is composed inline. For
- * these the solid fill is replaced by a blurred backdrop + translucent tint. */
 static bool node_is_acrylic(FluxStore *store, XentNodeId node) {
 	switch (flux_node_type(store, node)) {
-	case FLUX_CONTROL_CARD :
-	case FLUX_CONTROL_FLYOUT :
+	case FLUX_CONTROL_CARD        :
+	case FLUX_CONTROL_FLYOUT      :
 	case FLUX_CONTROL_MENU_FLYOUT :
 	case FLUX_CONTROL_TOOLTIP     : return true;
 	default                       : return false;
 	}
 }
 
-/* Scale a fill down to a tint to layer over the blurred backdrop. */
 static FluxColor acrylic_tint(FluxColor fill) {
 	uint32_t  a = ( uint32_t ) ((fill.rgba & 0xffu) * FLUX_ACRYLIC_TINT_OPACITY + 0.5f);
 	FluxColor t = {(fill.rgba & 0xffffff00u) | (a & 0xffu)};
 	return t;
 }
 
-/* Build (or update) the rounded acrylic material layer beneath the content
- * sprite. Sized to the node and clipped to its corner radius; the content
- * sprite painted on top contributes the tint + border + text. */
 static void
 acrylic_ensure(FluxComposeRender *r, XentNodeId node, WUC_Container *container, int w, int h, float radius) {
 	ContentNode *cn = content_owned(r, node);
@@ -250,7 +233,6 @@ acrylic_ensure(FluxComposeRender *r, XentNodeId node, WUC_Container *container, 
 		(( IUnknown * ) blur)->lpVtbl->Release(( IUnknown * ) blur);
 	}
 
-	/* Below the content sprite (itself at the bottom), above nothing. */
 	WUC_VisualCollection *children = NULL;
 	if (SUCCEEDED(wuc_container_get__children(container, &children))) {
 		( void ) wuc_visual_collection_insert_at_bottom(children, flux_shape_rect_visual(cn->acrylic));
@@ -258,7 +240,6 @@ acrylic_ensure(FluxComposeRender *r, XentNodeId node, WUC_Container *container, 
 	}
 }
 
-/* Drop the material layer if a node stopped being acrylic (e.g. type changed). */
 static void acrylic_release(FluxComposeRender *r, XentNodeId node) {
 	ContentNode *cn = content_owned(r, node);
 	if (!cn || !cn->acrylic) return;
@@ -287,8 +268,6 @@ static void content_paint(
 	ID2D1DeviceContext *dc = flux_surface_begin(cn->surface, &offset);
 	if (!dc) return;
 
-	/* The surface is sized in physical pixels; drive the dc at the real DPI so the
-	 * renderers (which emit DIPs) rasterize crisply, matching the classic path. */
 	float dpi_x = rc_tmpl->dpi.dpi_x > 0.0f ? rc_tmpl->dpi.dpi_x : FLUX_DPI_BASE;
 	float dpi_y = rc_tmpl->dpi.dpi_y > 0.0f ? rc_tmpl->dpi.dpi_y : FLUX_DPI_BASE;
 	float scale = dpi_x / FLUX_DPI_BASE;
@@ -298,20 +277,17 @@ static void content_paint(
 	D2D1_COLOR_F          black = {0, 0, 0, 1};
 	ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) dc, &black, NULL, &brush);
 
-	ID2D1RenderTarget_Clear(( ID2D1RenderTarget * ) dc, NULL); /* transparent */
+	ID2D1RenderTarget_Clear(( ID2D1RenderTarget * ) dc, NULL);
 
 	FluxRenderCtx rc        = *rc_tmpl;
 	rc.d2d                  = dc;
 	rc.brush                = brush;
 	rc.fill_sink            = out_sink;
 
-	/* BeginDraw's offset is physical; the dc now works in DIPs, so convert. */
 	FluxControlState state  = content_state(flux_store_ctx(store), node, nd);
 	FluxRect         bounds = {offset.x / scale, offset.y / scale, rect->w, rect->h};
 
 	flux_display_paint_main(store, r->backend, r->registry, &rc, snap, &bounds, &state);
-	/* Scrollbar chrome (and any other overlays) live on record_overlay; classic
-	 * engine emits a separate OVERLAY phase, but composition paints one surface. */
 	flux_display_paint_overlay(r->backend, r->registry, &rc, snap, &bounds, &state);
 
 	if (brush) ID2D1SolidColorBrush_Release(brush);
@@ -343,10 +319,6 @@ content_fill_ensure(FluxComposeRender *r, ContentNode *cn, WUC_Container *contai
 	}
 }
 
-/* Drive the node's solid fill on the compositor: a rounded CompositionShape whose
- * CompositionColorBrush Color animates off-thread to the control's resolved fill,
- * so hover/press color transitions run on the compositor instead of re-rasterizing
- * the D2D surface each frame. */
 static void content_fill_apply(
   FluxComposeRender *r, XentNodeId node, WUC_Container *container, int w, int h, FluxFillSink const *sink
 ) {
@@ -368,8 +340,6 @@ static void content_fill_apply(
 	( void ) wuc_composition_color_brush_put__color(cn->fill_brush, content_wui_color(sink->color));
 }
 
-/* Create the InteractionTracker on first sight: bind it to the viewport container and
- * expression-bind its offset to the holder so motion runs on the compositor. */
 static void content_bind_scroll_tracker(FluxComposeRender *r, XentNodeId node, WUC_Visual *holder) {
 	ContentNode *cn = content_owned(r, node);
 	if (!cn || cn->tracker) return;
@@ -386,10 +356,6 @@ static void content_bind_scroll_tracker(FluxComposeRender *r, XentNodeId node, W
 	}
 }
 
-/* Drive a scroll node's content holder from an InteractionTracker: set the scrollable
- * extent, then reconcile position with FluxScrollData -- poll tracker-driven motion
- * (touch / inertia) back out, and push externally-changed offsets (wheel) into the
- * tracker. Falls back to the reconciler's static offset if the tracker is absent. */
 static bool
 content_scroll_poll(ContentNode *cn, FluxScrollData *sd, float scale, bool *anim_active, float *out_px, float *out_py) {
 	*out_px = 0.0f;
@@ -438,8 +404,6 @@ static void content_sweep(FluxComposeRender *r) {
 		if (r->nodes [i].in_use && r->nodes [i].seen != r->generation) content_release(&r->nodes [i]);
 }
 
-/* Paint one node's content surface and (for scroll nodes) sync its tracker. The visual
- * tree was already reconciled, so this only fills the node's own surface. */
 static void compose_render_node(
   FluxComposeRender *r, XentCtx *ctx, FluxStore *store, XentNodeId node, float scale, FluxRenderCtx const *rc_tmpl
 ) {
@@ -463,7 +427,7 @@ static void compose_render_node(
 
 	FluxFillSink sink = {0};
 	content_paint(r, store, node, &rect, rc_tmpl, nd, &snap, &sink);
-	sink.corner_radius *= scale; /* control wrote radius in DIPs; shape space is physical */
+	sink.corner_radius *= scale;
 	content_fill_apply(r, node, container, w, h, &sink);
 	if (flux_node_type(store, node) == FLUX_CONTROL_SCROLL)
 		content_scroll_sync(r, store, node, &rect, scale, rc_tmpl->animations_active);
@@ -471,7 +435,6 @@ static void compose_render_node(
 	if (cn) cn->seen = r->generation;
 }
 
-/* Push a node onto the traversal stack, growing it on demand. False on OOM. */
 static bool compose_stack_push(XentNodeId **stack, uint32_t *top, uint32_t *cap, XentNodeId node) {
 	if (*top == *cap) {
 		uint32_t    ncap = *cap * 2;
@@ -484,7 +447,6 @@ static bool compose_stack_push(XentNodeId **stack, uint32_t *top, uint32_t *cap,
 	return true;
 }
 
-/* Push every child of `parent` onto the traversal stack. False on OOM. */
 static bool compose_push_children(XentNodeId **stack, uint32_t *top, uint32_t *cap, XentCtx *ctx, XentNodeId parent) {
 	for (XentNodeId child = xent_node_first(ctx, parent); child != XENT_NODE_INVALID;
 	  child               = xent_node_next(ctx, child))
@@ -497,9 +459,6 @@ void flux_compose_render_frame(
 ) {
 	if (!r || !ctx || root == XENT_NODE_INVALID) return;
 
-	/* Layout is in DIPs; the compositor is physical-pixel. Scale visual sizes,
-	 * surfaces and shapes by dpi/96 so the tree matches the display (the classic
-	 * path gets this for free from the D2D device-context DPI). */
 	float scale = rc_tmpl && rc_tmpl->dpi.dpi_x > 0.0f ? rc_tmpl->dpi.dpi_x / FLUX_DPI_BASE : 1.0f;
 
 	flux_visual_tree_reconcile(r->vt, ctx, store, root, scale);

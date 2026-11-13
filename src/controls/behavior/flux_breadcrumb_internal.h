@@ -1,14 +1,9 @@
-/**
- * @file flux_breadcrumb_internal.h
- * @brief Private shared runtime for the FluxBreadcrumbBar control (WinUI 3 BreadcrumbBar).
- */
 #ifndef FLUX_BREADCRUMB_INTERNAL_H
 #define FLUX_BREADCRUMB_INTERNAL_H
 
 #include <stdbool.h>
 #include <xent/xent.h>
 #include "store/flux_node_data.h"
-
 
 typedef struct FluxStore             FluxStore;
 typedef struct FluxWindow            FluxWindow;
@@ -18,10 +13,6 @@ typedef struct FluxInput             FluxInput;
 typedef struct FluxMenu              FluxMenu;
 typedef struct FluxBreadcrumbBarData FluxBreadcrumbBarData;
 
-/* BreadcrumbBar metrics (BreadcrumbBar_themeresources.xaml / generic.xaml).
- * Crumb button padding 1,3 around a 20px line at 14px text -> 26px items;
- * separator chevron E974 (E973 in RTL) at 12px in a 2,0,2,0 cell; ellipsis
- * glyph E712 at 14px with 3px padding all sides. */
 #define FLUX_BREADCRUMB_ITEM_H        26.0f
 #define FLUX_BREADCRUMB_FONT          14.0f
 #define FLUX_BREADCRUMB_PAD_H         1.0f
@@ -29,69 +20,51 @@ typedef struct FluxBreadcrumbBarData FluxBreadcrumbBarData;
 #define FLUX_BREADCRUMB_CHEVRON_PAD   2.0f
 #define FLUX_BREADCRUMB_ELLIPSIS_PAD  3.0f
 #define FLUX_BREADCRUMB_ELLIPSIS_FONT 14.0f
-#define FLUX_BREADCRUMB_CHEVRON_LTR   L"\xE974" /* ChevronRightMed */
-#define FLUX_BREADCRUMB_CHEVRON_RTL   L"\xE973" /* ChevronLeftMed  */
-#define FLUX_BREADCRUMB_ELLIPSIS      L"\xE712" /* More            */
+#define FLUX_BREADCRUMB_CHEVRON_LTR   L"\xE974"
+#define FLUX_BREADCRUMB_CHEVRON_RTL   L"\xE973"
+#define FLUX_BREADCRUMB_ELLIPSIS      L"\xE712"
 
-/**
- * @brief One rendered element of the bar: the synthetic ellipsis (elem 0) or a
- * crumb (elem i = data index i-1). Owned by its FLUX_CONTROL_BREADCRUMB_ITEM
- * node's component_data; points back at the bar for labels, collapse state,
- * and input routing (WinUI BreadcrumbIterator prepends one null element, so
- * element index 0 is ALWAYS the ellipsis).
- */
 typedef struct FluxBreadcrumbItem {
 	FluxBreadcrumbBarData *bar;
-	XentNodeId             node; /**< FLUX_CONTROL_BREADCRUMB_ITEM node. */
-	int                    elem; /**< Element index: 0 = ellipsis, i = crumb i-1. */
+	XentNodeId             node;
+	int                    elem;
 } FluxBreadcrumbItem;
 
-/** @brief Stable per-row context for the ellipsis flyout (rebuilt each open). */
 typedef struct FluxBreadcrumbFlyoutSlot {
 	FluxBreadcrumbBarData *bar;
-	int                    index; /**< Hidden crumb's data index. */
+	int                    index;
 } FluxBreadcrumbFlyoutSlot;
 
-/**
- * @brief BreadcrumbBar runtime, owned by the root FLUX_CONTROL_BREADCRUMB_BAR node.
- *
- * The bar is an ABSOLUTE row of count+1 item nodes placed by the
- * BreadcrumbLayout collapse algorithm, re-run from the engine's collect pass
- * whenever the assigned width or the labels change. The last crumb is the
- * current location; overflowing leading crumbs collapse into
- * the ellipsis, whose flyout lists them reversed (closest-to-visible first).
- */
 struct FluxBreadcrumbBarData {
 	XentCtx                  *ctx;
 	FluxStore                *store;
-	FluxWindow               *window; /**< Ellipsis flyout + repaint. */
-	FluxText                 *text;   /**< Measures crumb labels for the collapse. */
-	FluxTheme                *theme;  /**< Flyout palette. */
-	FluxInput                *input;  /**< Arrow-key focus moves between crumbs. */
+	FluxWindow               *window;
+	FluxText                 *text;
+	FluxTheme                *theme;
+	FluxInput                *input;
 	XentNodeId                root;
 
-	char const              **labels; /**< Owned deep copies, count entries. */
+	char const              **labels;
 	int                       count;
 
-	XentNodeId               *nodes;             /**< count+1 element nodes ([0] = ellipsis). */
-	float                    *widths;            /**< count+1 measured element widths. */
-	FluxBreadcrumbFlyoutSlot *fly_slots;         /**< count flyout-row contexts. */
+	XentNodeId               *nodes;
+	float                    *widths;
+	FluxBreadcrumbFlyoutSlot *fly_slots;
 
-	float                     chevron_cell_w;    /**< 2 + E974 advance @12 + 2. */
-	float                     natural_w;         /**< Sum of crumb widths (ellipsis excluded). */
-	float                     last_avail;        /**< Width the collapse last ran against. */
-	bool                      widths_dirty;      /**< Labels changed: re-measure. */
-	bool                      arrange_dirty;     /**< Re-run the collapse even at the same width. */
+	float                     chevron_cell_w;
+	float                     natural_w;
+	float                     last_avail;
+	bool                      widths_dirty;
+	bool                      arrange_dirty;
 
-	bool                      ellipsis_rendered; /**< Overflow: element 0 is visible. */
-	int                       first_rendered;    /**< First rendered element index after the ellipsis. */
+	bool                      ellipsis_rendered;
+	int                       first_rendered;
 	bool                      disabled;
 
-	FluxMenu                 *flyout; /**< Owned; rebuilt from the hidden list on every open. */
+	FluxMenu                 *flyout;
 
-	void                      (*on_item_clicked)(void *ctx, int index); /**< Data index (0-based). */
+	void                      (*on_item_clicked)(void *ctx, int index);
 	void                     *on_item_clicked_ctx;
 };
-
 
 #endif

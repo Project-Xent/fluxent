@@ -1,6 +1,8 @@
 #ifndef FLUX_MENU_FLYOUT_H
 #define FLUX_MENU_FLYOUT_H
 
+#include <assert.h>
+
 #include "flux_types.h"
 #include "flux_popup.h"
 #include "flux_text.h"
@@ -119,5 +121,8 @@ FluxMenu *flux_menu_parent(FluxMenu *menu);
 int       flux_menu_parentidx(FluxMenu *menu);
 
 FluxMenu *flux_menu_active(FluxWindow *owner);
+
+static_assert(sizeof(FluxMenuItemType) == 4, "FluxMenuItemType crosses the ABI as int32");
+static_assert(sizeof(FluxMenuInputKind) == 4, "FluxMenuInputKind crosses the ABI as int32");
 
 #endif

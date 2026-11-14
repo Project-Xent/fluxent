@@ -40,6 +40,7 @@ typedef enum WizardMsg
 	MSG_CACHE,
 	MSG_TICK,
 	MSG_DONE,
+	MSG_LOG_SCROLL,
 } WizardMsg;
 
 typedef struct WizardComp {
@@ -90,6 +91,8 @@ typedef struct Model {
 	char        *log;
 	size_t       log_len;
 	size_t       log_cap;
+	bool         log_follow;
+	float        log_y;
 	bool         installing;
 	bool         finished;
 	bool         cancelled;

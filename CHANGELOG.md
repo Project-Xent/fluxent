@@ -2,6 +2,47 @@
 
 Entries start at 0.3.1; earlier releases are described by their tags.
 
+## 0.3.2
+
+- replaced `FluxAppCfg.dark_mode` with `FluxAppCfg.theme` (`FluxThemeMode`).
+  `FLUX_THEME_SYSTEM` is now 0, so a zero-initialised config follows the
+  system. The mode drives both the DWM frame and the control palette, and only
+  the system mode tracks a system theme change; previously the controls were
+  always forced to follow the system while the frame used `dark_mode`;
+- emitted `XTK_EVENT_REALIZE` from List, ListBox, GridView, ItemsRepeater and
+  ItemsView when the visible window leaves the realized range, and honoured
+  `XTK_PROP_REALIZED_FIRST`;
+- implemented the change-stamp echo contract on the host: user events are
+  stamped, mirrored properties record the revision, and stale stamped sets are
+  dropped;
+- implemented controlled scrolling on ScrollViewer. User scrolling is detected
+  only from input sources (wheel, keyboard, scroll bar, touchpad) and from the
+  InteractionTracker's Interacting/Inertia states, through an
+  `IInteractionTrackerOwner` written in C; a set equal to the last reported
+  position is accepted without moving, so inertia is never interrupted by the
+  echo;
+- added `flux_app_invoke` for posting work to the UI thread from any thread;
+- gave publicly created Containers a vertical flex layout by default instead of
+  absolute positioning;
+- added the `xmake dist` task: per-architecture
+  `xent-<ver>-<arch>-windows-gnu.zip` bundles with the public headers, one
+  merged `libxent.a`, the import libraries common toolchains lack, and
+  `xent.pc`;
+- built release libraries without hidden visibility on mingw, so archives carry
+  no `.drectve -exclude-symbols` directives that older linkers reject;
+- added the CalendarView and ColorPicker pages to `gallery_decl`;
+- **Fixed:** the installer log stopped following its end partway through, and
+  stuttered when following resumed.
+
+### Breaking changes
+
+| Change | Migration |
+|---|---|
+| `FluxAppCfg.dark_mode` | remove it to follow the system, or set `.theme = FLUX_THEME_DARK` / `FLUX_THEME_LIGHT` |
+| `FluxThemeMode` values reordered (`SYSTEM` = 0) | use the names, not the numbers |
+| `flux_host_virtualize` and `FluxRealizeFn` removed | handle `XTK_EVENT_REALIZE` |
+| public Containers default to flex column | set an absolute layout explicitly where positions were relied on |
+
 ## 0.3.1
 
 - applied xent-core style runs to DirectWrite layouts by range, covering family,

@@ -1,7 +1,10 @@
 set_project("fluxent")
-set_version(os.getenv("XENT_VERSION") or "0.3.1")
+set_version(os.getenv("XENT_VERSION") or "0.3.2")
 set_languages("c23")
 add_rules("mode.debug", "mode.release")
+if is_plat("mingw") and is_mode("release") then
+    set_symbols("none")
+end
 set_warnings("all")
 set_runtimes("MT")
 
@@ -123,3 +126,17 @@ target("test_fx_txn_errors")
     add_deps("fluxent")
     add_files("examples/tests/test_fx_txn_errors.c")
 target_end()
+
+task("dist")
+    set_menu {
+        usage = "xmake dist [arch ...]",
+        description = "Build the release bundles (headers, merged libxent.a, import libraries, xent.pc).",
+        options = {{nil, "archs", "vs", nil, "Architectures to build: x86_64, arm64 (default: both)."}},
+    }
+    on_run(function ()
+        import("core.base.option")
+        local argv = {"lua", path.join(os.scriptdir(), "tools", "dist.lua")}
+        for _, arch in ipairs(option.get("archs") or {}) do table.insert(argv, arch) end
+        os.execv("xmake", argv)
+    end)
+task_end()

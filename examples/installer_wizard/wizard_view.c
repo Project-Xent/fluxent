@@ -232,10 +232,12 @@ static XtkEl *page_progress(XtkUi *ui, Model const *m) {
 			ui, (XtkStackDesc) {.padding = {4, 4, 4, 4}, .align = XENT_FLEX_ALIGN_STRETCH, .fill = true},
 			xtk_kids(xtk_grow(
 			  xtk_scroll(
-				ui, xtk_kids(xtk_column(
-					  ui, (XtkStackDesc) {.padding = {8, 6, 8, 6}, .align = XENT_FLEX_ALIGN_STRETCH},
-					  xtk_kids(xtk_text(ui, m->log ? m->log : "", (XtkTextDesc) {.size = 12, .selectable = true}))
-					))
+				ui,
+				(XtkScrollDesc) {.x = NAN, .y = m->log_follow ? INFINITY : m->log_y, .scroll = xtk_msg(MSG_LOG_SCROLL)},
+				xtk_kids(xtk_column(
+				  ui, (XtkStackDesc) {.padding = {8, 6, 8, 6}, .align = XENT_FLEX_ALIGN_STRETCH},
+				  xtk_kids(xtk_text(ui, m->log ? m->log : "", (XtkTextDesc) {.size = 12, .selectable = true}))
+				))
 			  ),
 			  1.0f
 			))

@@ -141,11 +141,6 @@ static void layout_flex_column(XentCtx *ctx, XentNodeId node) {
 	xent_setitems(ctx, node, XENT_FLEX_ALIGN_STRETCH);
 }
 
-static void layout_noop(XentCtx *ctx, XentNodeId node) {
-	( void ) ctx;
-	( void ) node;
-}
-
 static char const *button_label(FluxNodeData *d) {
 	return d->component_data ? (( FluxButtonData * ) d->component_data)->label : NULL;
 }
@@ -530,7 +525,10 @@ static XentNodeId seed_image(XentCtx *ctx, FluxStore *store) {
 }
 
 static XentNodeId seed_scroll(XentCtx *ctx, FluxStore *store) {
-	return flux_scroll_init(&(FluxContainerDesc) {ctx, store, SEED_NONE});
+	XentNodeId    node = flux_scroll_init(&(FluxContainerDesc) {ctx, store, SEED_NONE});
+	FluxNodeData *nd   = node != XENT_NODE_INVALID ? flux_store_find(store, node) : NULL;
+	if (nd) (( FluxScrollData * ) nd->component_data)->reports = 1;
+	return node;
 }
 
 static XentNodeId seed_progress(XentCtx *ctx, FluxStore *store) {
@@ -556,22 +554,38 @@ static XentNodeId seed_toggle_split(XentCtx *ctx, FluxStore *store) {
 }
 
 static XentNodeId seed_list(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_list_init(&(FluxListViewDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE, .input = env->input});
+	return flux_list_init(&(FluxListViewDesc) {
+	  .ctx = ctx, .store = store, .parent = SEED_NONE, .input = env->input, .realize_events = true});
 }
 
 static XentNodeId seed_list_box(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
 	return flux_list_init(&(FluxListViewDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .kind = XTK_LIST_KIND_LIST_BOX, .input = env->input});
+	  .ctx            = ctx,
+	  .store          = store,
+	  .parent         = SEED_NONE,
+	  .kind           = XTK_LIST_KIND_LIST_BOX,
+	  .input          = env->input,
+	  .realize_events = true});
 }
 
 static XentNodeId seed_grid(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
 	return flux_list_init(&(FluxListViewDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .kind = XTK_LIST_KIND_GRID, .input = env->input});
+	  .ctx            = ctx,
+	  .store          = store,
+	  .parent         = SEED_NONE,
+	  .kind           = XTK_LIST_KIND_GRID,
+	  .input          = env->input,
+	  .realize_events = true});
 }
 
 static XentNodeId seed_repeater(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
 	return flux_list_init(&(FluxListViewDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .kind = XTK_LIST_KIND_REPEATER, .input = env->input});
+	  .ctx            = ctx,
+	  .store          = store,
+	  .parent         = SEED_NONE,
+	  .kind           = XTK_LIST_KIND_REPEATER,
+	  .input          = env->input,
+	  .realize_events = true});
 }
 
 static XentNodeId seed_list_item(XentCtx *ctx, FluxStore *store) {
@@ -1361,7 +1375,7 @@ static FluxMountSeedFn const k_mount_seed [XTK_CTRL_TYPE_COUNT] = {
 };
 
 static FluxLayoutFn const k_layout [XTK_CTRL_TYPE_COUNT] = {
-  [FLUX_CONTROL_CONTAINER]          = layout_noop,
+  [FLUX_CONTROL_CONTAINER]          = layout_flex_column,
   [FLUX_CONTROL_CARD]               = layout_card,
   [FLUX_CONTROL_DIVIDER]            = layout_divider,
   [FLUX_CONTROL_SPLIT_VIEW_CONTENT] = layout_flex_column,

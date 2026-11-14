@@ -61,21 +61,13 @@ void page_on(PageBuild *b, XtkLocalId local, XtkEventId event, int tag, int i) {
 	xtk_txn_on(&b->txn, xtk_ref_local(local), event, XTK_EVENT_PHASE_MASK_TARGET, page_post, page_bind_i(b, tag, i));
 }
 
-void page_sync(PageBuild *b, PageSyncFn sync) { b->sync = sync; }
+void          page_sync(PageBuild *b, PageSyncFn sync) { b->sync = sync; }
 
-void page_keep(PageBuild *b, int tag, XtkLocalId local) { b->controls [tag] = local; }
+void          page_keep(PageBuild *b, int tag, XtkLocalId local) { b->controls [tag] = local; }
 
-void page_keepout(PageBuild *b, int tag, XtkLocalId local) { b->outputs [tag] = local; }
+void          page_keepout(PageBuild *b, int tag, XtkLocalId local) { b->outputs [tag] = local; }
 
-void page_keepx(PageBuild *b, int slot, XtkLocalId local) { b->extra [slot] = local; }
-
-void page_list(PageBuild *b, XtkLocalId list, PageFillFn fill) {
-	if (b->nlist == PAGE_LISTS) return;
-	GalleryList *l = ( GalleryList * ) page_alloc(b, sizeof(*l));
-	if (!l) return;
-	*l                    = (GalleryList) {.app = b->app, .local = list, .fill = fill};
-	b->lists [b->nlist++] = l;
-}
+void          page_keepx(PageBuild *b, int slot, XtkLocalId local) { b->extra [slot] = local; }
 
 static XtkMsg event_pair_msg(XtkMsg msg, XtkEventPayload const *p) {
 	switch (p->kind) {
@@ -155,24 +147,74 @@ static XtkCtrl result_ctrl(XtkBatchResult const *result, XtkLocalId local) {
 	return XTK_CTRL_INVALID;
 }
 
-static void list_realize(void *ctx, XtkCtrl list, int first, int last) {
-	GalleryList *l = ( GalleryList * ) ctx;
-	GalleryApp  *g = l->app;
-	int          n = last >= first ? last - first + 1 : 0;
-	XtkLocalId   ids [GALLERY_LIST_WINDOW];
-	XtkTxn       txn;
-	if (n > GALLERY_LIST_WINDOW) n = GALLERY_LIST_WINDOW;
-	if (!xtk_txn_begin(&g->scene, &txn)) return;
-	for (int i = 0; i < l->count; i++) xtk_txn_drop(&txn, xtk_ref_existing(l->items [i]));
-	l->count = 0;
-	for (int i = 0; i < n; i++) {
-		ids [i] = xtk_listitem_create(&txn, xtk_ref_existing(list), NULL);
-		l->fill(g, &txn, xtk_ref_local(ids [i]), first + i);
+typedef struct ListWindow {
+	int first;
+	int count;
+	int keep_lo;
+	int keep_hi;
+} ListWindow;
+
+static ListWindow list_window(GalleryList const *l, XtkEvent const *event) {
+	ListWindow w = {.first = event->payload.u.window.first};
+	w.count      = event->payload.u.window.last - w.first + 1;
+	if (w.count < 0) w.count = 0;
+	if (w.count > GALLERY_LIST_WINDOW) w.count = GALLERY_LIST_WINDOW;
+	w.keep_lo = l->first > w.first ? l->first : w.first;
+	w.keep_hi = l->first + l->count < w.first + w.count ? l->first + l->count : w.first + w.count;
+	if (w.keep_hi < w.keep_lo) w.keep_hi = w.keep_lo;
+	return w;
+}
+
+static void list_drop_outside(GalleryList const *l, XtkTxn *txn, ListWindow const *w) {
+	for (int i = 0; i < l->count; i++) {
+		int index = l->first + i;
+		if (index < w->keep_lo || index >= w->keep_hi) xtk_txn_drop(txn, xtk_ref_existing(l->items [i]));
 	}
+}
+
+static XtkNodeRef list_slot(GalleryList *l, XtkTxn *txn, XtkNodeRef list, XtkNodeRef before, int index) {
+	XtkLocalId id = xtk_txn_create(txn, XTK_CTRL_LISTITEM, list, before, NULL, 0);
+	l->fill(l->app, txn, xtk_ref_local(id), index);
+	return xtk_ref_local(id);
+}
+
+static XtkNodeRef list_ref(GalleryList *l, XtkTxn *txn, XtkNodeRef list, ListWindow const *w, int index) {
+	if (index >= w->keep_lo && index < w->keep_hi) return xtk_ref_existing(l->items [index - l->first]);
+	XtkNodeRef anchor = w->keep_hi > w->keep_lo ? xtk_ref_existing(l->items [w->keep_lo - l->first]) : xtk_ref_none();
+	return list_slot(l, txn, list, index < w->keep_lo ? anchor : xtk_ref_none(), index);
+}
+
+static void list_adopt(GalleryList *l, ListWindow const *w, XtkNodeRef const *refs, XtkBatchResult *result) {
+	for (int i = 0; i < w->count; i++)
+		l->items [i] = refs [i].kind == XTK_REF_LOCAL ? result_ctrl(result, refs [i].u.local) : refs [i].u.existing;
+	l->first = w->first;
+	l->count = w->count;
+}
+
+static uint32_t list_realize(void *arg, XtkEvent const *event) {
+	GalleryList *l    = ( GalleryList * ) arg;
+	ListWindow   w    = list_window(l, event);
+	XtkNodeRef   list = xtk_ref_existing(event->target);
+	XtkNodeRef   refs [GALLERY_LIST_WINDOW];
+	XtkTxn       txn;
+	if (!xtk_txn_begin(&l->app->scene, &txn)) return XTK_EVENT_HANDLED;
+	list_drop_outside(l, &txn, &w);
+	for (int i = 0; i < w.count; i++) refs [i] = list_ref(l, &txn, list, &w, w.first + i);
+	xtk_txn_set(
+	  &txn, list, XTK_PROP_REALIZED_FIRST, (XtkValue) {.kind = XTK_VALUE_I32, .u.i32 = w.first}, (XtkChangeStamp) {0}
+	);
 	XtkBatchResult *result = xtk_txn_commit(&txn, NULL);
-	if (!result) return;
-	for (int i = 0; i < n; i++) l->items [l->count++] = result_ctrl(result, ids [i]);
+	if (!result) return XTK_EVENT_HANDLED;
+	list_adopt(l, &w, refs, result);
 	xtk_batchresult_destroy(result);
+	return XTK_EVENT_HANDLED;
+}
+
+void page_list(PageBuild *b, XtkLocalId list, PageFillFn fill) {
+	GalleryList *l = ( GalleryList * ) page_alloc(b, sizeof(*l));
+	if (!l) return;
+	*l = (GalleryList) {.app = b->app, .fill = fill};
+	xtk_txn_on(&b->txn, xtk_ref_local(list), XTK_EVENT_REALIZE, XTK_EVENT_PHASE_MASK_TARGET, list_realize, l);
 }
 
 static void page_reset(PageBuild *b) {
@@ -184,7 +226,7 @@ static void page_reset(PageBuild *b) {
 
 static XtkLocalId page_scroll(PageBuild *b, XtkCtrl parent) {
 	b->root = xtk_scroll_create(
-	  &b->txn, xtk_ref_existing(parent), &(XtkContainerProps) {.set = XTK_CONTAINER_GROW_MASK, .grow = 1.0f}
+	  &b->txn, xtk_ref_existing(parent), &(XtkScrollProps) {.set = XTK_SCROLL_GROW_MASK, .grow = 1.0f}
 	);
 	return xtk_container_create(
 	  &b->txn, xtk_ref_local(b->root),
@@ -250,8 +292,6 @@ static bool page_commit(PageBuild *b) {
 	}
 	GalleryApp *g = b->app;
 	page_adopt(g, b, result);
-	for (int i = 0; i < b->nlist; i++)
-		flux_host_virtualize(g->host, result_ctrl(result, b->lists [i]->local), list_realize, b->lists [i]);
 	xtk_batchresult_destroy(result);
 	return true;
 }
@@ -376,11 +416,10 @@ bool gallery_app_create(GalleryApp *g) {
 	memset(g, 0, sizeof(*g));
 	gallery_model_init(&g->model);
 	g->flux = flux_app_create(&(FluxAppCfg) {
-	  .title     = L"FluXent Gallery (Imperative)",
-	  .width     = 1100,
-	  .height    = 760,
-	  .dark_mode = flux_theme_systemdark(),
-	  .backdrop  = FLUX_BACKDROP_MICA,
+	  .title    = L"FluXent Gallery (Imperative)",
+	  .width    = 1100,
+	  .height   = 760,
+	  .backdrop = FLUX_BACKDROP_MICA,
 	});
 	if (!g->flux) return false;
 	g->host = flux_app_attachhost(g->flux);

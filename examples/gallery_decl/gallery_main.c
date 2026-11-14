@@ -69,6 +69,8 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_LOOPING]         = page_looping,
   [PAGE_DATE_PICKER]     = page_date_picker,
   [PAGE_TIME_PICKER]     = page_time_picker,
+  [PAGE_CALENDAR]        = page_calendar,
+  [PAGE_COLOR_PICKER]    = page_color_picker,
   [PAGE_TOGGLE]          = page_toggle,
   [PAGE_RADIO_BUTTONS]   = page_radio_buttons,
   [PAGE_RATING]          = page_rating,
@@ -115,14 +117,14 @@ XtkEl *gallery_decl_page_view(XtkUi *ui, void *model) {
 	  xtk_keyed(
 		ui, xtk_fmt(ui, "page-%d", m->page),
 		xtk_scroll(
-		  ui, xtk_kids(xtk_column(
-				ui,
-				(XtkStackDesc) {
-				  .padding = {36, 28, 36, 28},
-                    .align = XENT_FLEX_ALIGN_STRETCH, .fill = true
+		  ui,
+		  (XtkScrollDesc) {
+			0
     },
-				xtk_kids(page_view(ui, m))
-			  ))
+		  xtk_kids(xtk_column(
+			ui, (XtkStackDesc) {.padding = {36, 28, 36, 28}, .align = XENT_FLEX_ALIGN_STRETCH, .fill = true},
+			xtk_kids(page_view(ui, m))
+		  ))
 		)
 	  ),
 	  1.0f
@@ -158,11 +160,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	gallery_model_init(&model);
 
 	FluxAppCfg cfg = {
-	  .title     = L"FluXent Gallery (Declarative)",
-	  .width     = 1100,
-	  .height    = 760,
-	  .dark_mode = flux_theme_systemdark(),
-	  .backdrop  = FLUX_BACKDROP_MICA,
+	  .title    = L"FluXent Gallery (Declarative)",
+	  .width    = 1100,
+	  .height   = 760,
+	  .backdrop = FLUX_BACKDROP_MICA,
 	};
 	return flux_run(&cfg, &model, gallery_decl_update, gallery_decl_view);
 }

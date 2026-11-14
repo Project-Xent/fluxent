@@ -24,6 +24,8 @@ XtkEl *page_scroll_bar(XtkUi *ui, Model const *m);
 XtkEl *page_looping(XtkUi *ui, Model const *m);
 XtkEl *page_date_picker(XtkUi *ui, Model const *m);
 XtkEl *page_time_picker(XtkUi *ui, Model const *m);
+XtkEl *page_calendar(XtkUi *ui, Model const *m);
+XtkEl *page_color_picker(XtkUi *ui, Model const *m);
 XtkEl *page_toggle(XtkUi *ui, Model const *m);
 XtkEl *page_radio_buttons(XtkUi *ui, Model const *m);
 XtkEl *page_rating(XtkUi *ui, Model const *m);

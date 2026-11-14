@@ -11,14 +11,104 @@
 #include <cwinrt/Windows.UI.Composition.Interactions.h>
 #include <cwinrt/Windows.UI.Input.h>
 
+#include <inspectable.h>
 #include <stdlib.h>
+
+typedef struct TrackerOwner TrackerOwner;
 
 struct FluxInteraction {
 	WUC_Comp                        *comp;
 	WUICOIN_InteractionTracker      *tracker;
 	WUICOIN_VisualInteractionSource *source;
+	TrackerOwner                    *owner;
 	float                            last_x;
 	float                            last_y;
+	bool                             user;
+};
+
+struct TrackerOwner {
+	void *const     *vtbl;
+	LONG             refs;
+	FluxInteraction *it;
+};
+
+static HRESULT STDMETHODCALLTYPE owner_query(TrackerOwner *self, REFIID iid, void **out) {
+	if (!IsEqualIID(iid, &IID_IUnknown)
+	    && !IsEqualIID(iid, &IID_IInspectable)
+	    && !IsEqualIID(iid, &CWINRT_IID_WUICOIN_IInteractionTrackerOwner))
+	{
+		*out = NULL;
+		return E_NOINTERFACE;
+	}
+	InterlockedIncrement(&self->refs);
+	*out = self;
+	return S_OK;
+}
+
+static ULONG STDMETHODCALLTYPE owner_addref(TrackerOwner *self) { return ( ULONG ) InterlockedIncrement(&self->refs); }
+
+static ULONG STDMETHODCALLTYPE owner_release(TrackerOwner *self) {
+	LONG refs = InterlockedDecrement(&self->refs);
+	if (refs == 0) free(self);
+	return ( ULONG ) refs;
+}
+
+static HRESULT STDMETHODCALLTYPE owner_iids(TrackerOwner *self, ULONG *count, IID **iids) {
+	( void ) self;
+	*count = 0;
+	*iids  = NULL;
+	return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE owner_name(TrackerOwner *self, HSTRING *name) {
+	( void ) self;
+	*name = NULL;
+	return E_NOTIMPL;
+}
+
+static HRESULT STDMETHODCALLTYPE owner_trust(TrackerOwner *self, TrustLevel *level) {
+	( void ) self;
+	*level = BaseTrust;
+	return S_OK;
+}
+
+static HRESULT owner_state(TrackerOwner *self, bool user) {
+	if (self->it) self->it->user = user;
+	return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE owner_program(TrackerOwner *self, void *sender, void *args) {
+	( void ) sender;
+	( void ) args;
+	return owner_state(self, false);
+}
+
+static HRESULT STDMETHODCALLTYPE owner_user(TrackerOwner *self, void *sender, void *args) {
+	( void ) sender;
+	( void ) args;
+	return owner_state(self, true);
+}
+
+static HRESULT STDMETHODCALLTYPE owner_ignore(TrackerOwner *self, void *sender, void *args) {
+	( void ) self;
+	( void ) sender;
+	( void ) args;
+	return S_OK;
+}
+
+static void *const owner_vtbl [] = {
+  ( void * ) owner_query,
+  ( void * ) owner_addref,
+  ( void * ) owner_release,
+  ( void * ) owner_iids,
+  ( void * ) owner_name,
+  ( void * ) owner_trust,
+  ( void * ) owner_program,
+  ( void * ) owner_program,
+  ( void * ) owner_user,
+  ( void * ) owner_user,
+  ( void * ) owner_ignore,
+  ( void * ) owner_ignore,
 };
 
 static bool interaction_attach_source(FluxInteraction *it, WUC_Visual *scroll_visual) {
@@ -53,9 +143,16 @@ FluxInteraction *flux_interaction_create(FluxCompositor *c, WUC_Visual *scroll_v
 
 	FluxInteraction *it = ( FluxInteraction * ) calloc(1, sizeof(*it));
 	if (!it) return NULL;
-	it->comp = comp;
-	if (FAILED(wuicoin_interaction_tracker_create(comp, &it->tracker)) || !it->tracker) {
+	it->comp  = comp;
+	it->owner = ( TrackerOwner * ) malloc(sizeof(*it->owner));
+	if (!it->owner) {
 		free(it);
+		return NULL;
+	}
+	*it->owner                              = (TrackerOwner) {owner_vtbl, 1, it};
+	WUICOIN_IInteractionTrackerOwner *owner = ( WUICOIN_IInteractionTrackerOwner * ) it->owner;
+	if (FAILED(wuicoin_interaction_tracker_create_with_owner(comp, owner, &it->tracker)) || !it->tracker) {
+		flux_interaction_destroy(it);
 		return NULL;
 	}
 	if (!interaction_attach_source(it, scroll_visual)) {
@@ -69,6 +166,10 @@ void flux_interaction_destroy(FluxInteraction *it) {
 	if (!it) return;
 	if (it->source) (( IUnknown * ) it->source)->lpVtbl->Release(( IUnknown * ) it->source);
 	if (it->tracker) (( IUnknown * ) it->tracker)->lpVtbl->Release(( IUnknown * ) it->tracker);
+	if (it->owner) {
+		it->owner->it = NULL;
+		owner_release(it->owner);
+	}
 	free(it);
 }
 
@@ -170,5 +271,5 @@ bool flux_interaction_poll(FluxInteraction *it, float *out_x, float *out_y) {
 	it->last_y = pos.Y;
 	if (out_x) *out_x = pos.X;
 	if (out_y) *out_y = pos.Y;
-	return moved;
+	return moved && it->user;
 }

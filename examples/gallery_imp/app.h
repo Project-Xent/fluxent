@@ -11,7 +11,6 @@
 #include <stddef.h>
 
 #define PAGE_EXTRA          4
-#define PAGE_LISTS          4
 #define GALLERY_LIST_WINDOW 256
 
 typedef struct GalleryApp GalleryApp;
@@ -44,9 +43,9 @@ typedef void (*PageFillFn)(GalleryApp *g, XtkTxn *txn, XtkNodeRef item, int inde
 
 typedef struct GalleryList {
 	GalleryApp *app;
-	XtkLocalId  local;
 	PageFillFn  fill;
 	XtkCtrl     items [GALLERY_LIST_WINDOW];
+	int         first;
 	int         count;
 } GalleryList;
 
@@ -64,8 +63,6 @@ typedef struct PageBuild {
 	XtkLocalId        controls [MSG_COUNT];
 	XtkLocalId        outputs [MSG_COUNT];
 	XtkLocalId        extra [PAGE_EXTRA];
-	GalleryList      *lists [PAGE_LISTS];
-	int               nlist;
 	bool              active;
 } PageBuild;
 

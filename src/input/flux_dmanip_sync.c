@@ -25,7 +25,9 @@ static void dmanip_on_update(void *ctx, float sx, float sy) {
 	bool changed = sd->scroll_x != sx || sd->scroll_y != sy;
 	sd->scroll_x = sx;
 	sd->scroll_y = sy;
-	if (changed) flux_scroll_offset_changed(sd);
+	if (!changed) return;
+	sd->user_moved = 1;
+	flux_scroll_offset_changed(sd);
 }
 
 static FluxDManipViewport *ensure_scroll_viewport(FluxDManip *dmanip, FluxScrollData *sd) {

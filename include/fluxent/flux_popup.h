@@ -1,6 +1,8 @@
 #ifndef FLUX_POPUP_H
 #define FLUX_POPUP_H
 
+#include <assert.h>
+
 #include "flux_types.h"
 #include "flux_window.h"
 #include <stdbool.h>
@@ -101,5 +103,9 @@ void         flux_popup_setsplit(FluxPopup *popup, float closed_length, float of
 void         flux_popup_dismissowner(HWND owner_hwnd);
 
 bool         flux_popup_lightdismissvisible(HWND owner_hwnd);
+
+static_assert(sizeof(FluxPlacement) == 4, "FluxPlacement crosses the ABI as int32");
+static_assert(sizeof(FluxPopupAnimStyle) == 4, "FluxPopupAnimStyle crosses the ABI as int32");
+static_assert(sizeof(FluxPopupMouseEvent) == 4, "FluxPopupMouseEvent crosses the ABI as int32");
 
 #endif

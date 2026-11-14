@@ -224,7 +224,7 @@ FluxTheme *flux_theme_create(void) {
 	FluxTheme *tm = calloc(1, sizeof(FluxTheme));
 	if (!tm) return NULL;
 
-	tm->mode    = FLUX_THEME_LIGHT;
+	tm->mode    = FLUX_THEME_SYSTEM;
 	tm->version = 1;
 
 	if (SUCCEEDED(wuivi_u_i_settings_new(&tm->settings)) && tm->settings)

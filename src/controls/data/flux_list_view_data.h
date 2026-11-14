@@ -36,11 +36,7 @@ typedef struct FluxListViewData {
 	int               realized_first;
 	int               realized_last;
 	bool              stale_fired;
-
-	bool              realize_pending;
-	int               pending_first;
-	int               pending_last;
-	int               pending_cols;
+	bool              realize_events;
 
 	int               focused;
 	int               pending_focus;
@@ -61,9 +57,6 @@ typedef struct FluxListViewData {
 
 	void              (*on_stale)(void *ctx);
 	void             *on_stale_ctx;
-
-	void              (*realize)(void *ctx, XtkCtrl list, int first, int last);
-	void             *realize_ctx;
 } FluxListViewData;
 
 typedef struct FluxListItemData {

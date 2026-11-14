@@ -68,11 +68,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 
 	static DemoModel model = {0};
 	FluxAppCfg       cfg   = {
-	  .title     = L"Fluxent TitleBar Demo",
-	  .width     = 900,
-	  .height    = 600,
-	  .dark_mode = flux_theme_systemdark(),
-	  .backdrop  = FLUX_BACKDROP_MICA,
+	  .title    = L"Fluxent TitleBar Demo",
+	  .width    = 900,
+	  .height   = 600,
+	  .backdrop = FLUX_BACKDROP_MICA,
 	};
 	return flux_run(&cfg, &model, update, view);
 }

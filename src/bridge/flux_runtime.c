@@ -9,38 +9,10 @@ static void be_request_frame(void *ctx) {
 	if (rt->app) flux_app_redraw(rt->app);
 }
 
-static void list_stale(void *ctx) {
-	FluxBackendCtx *rt = ( FluxBackendCtx * ) ctx;
-	if (rt->runtime) xtk_rt_invalidate(rt->runtime);
-}
-
-static void ensure_list_stale(FluxBackendCtx *rt, XentNodeId id) { flux_list_onstale(rt->store, id, list_stale, rt); }
-
-static bool be_viewport(void *ctx, XentNodeId id, XtkViewport *out) {
-	FluxBackendCtx *rt = ( FluxBackendCtx * ) ctx;
-	ensure_list_stale(rt, id);
-	flux_list_apply_pending(rt->store, id);
-	return flux_list_viewport(rt->store, id, &out->offset, &out->extent, &out->cross);
-}
-
-static void be_virtual_range(void *ctx, XentNodeId id, XtkVirtualRange const *range) {
-	FluxBackendCtx *rt = ( FluxBackendCtx * ) ctx;
-	if (id == XENT_NODE_INVALID) return;
-	ensure_list_stale(rt, id);
-	flux_list_stage_realized(rt->store, id, range->first, range->last, range->lanes);
-	XentNodeId host = flux_list_content_node(rt->store, id);
-	if (host == XENT_NODE_INVALID) return;
-	int n      = xent_node_nchild(flux_store_ctx(rt->store), host);
-	int window = range->last >= range->first ? range->last - range->first + 1 : 0;
-	if (n >= window) flux_list_apply_pending(rt->store, id);
-}
-
 XtkRtCfg flux_xtk_runtime_config(FluxBackendCtx *bctx) {
 	return (XtkRtCfg) {
 	  .ctx           = bctx,
 	  .request_frame = be_request_frame,
-	  .viewport      = be_viewport,
-	  .virtual_range = be_virtual_range,
 	};
 }
 

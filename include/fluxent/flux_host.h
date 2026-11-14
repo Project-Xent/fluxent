@@ -28,18 +28,15 @@ XtkCtrl                  flux_host_focus(XtkHost const *host);
 uint32_t                 flux_host_route(XtkHost *host, XtkEvent *event);
 XtkSubId
 flux_host_subscribe(XtkHost *host, XtkCtrl target, XtkEventId event, uint32_t phases, XtkEventFn fn, void *userdata);
-void         flux_host_unsubscribe(XtkHost *host, XtkSubId id);
+void        flux_host_unsubscribe(XtkHost *host, XtkSubId id);
 
-void         flux_app_sethost(FluxApp *app, XtkHost *host, XtkBackend *backend);
-XtkHost     *flux_app_attachhost(FluxApp *app);
-XtkHost     *flux_app_host(FluxApp *app);
-XtkBackend  *flux_app_backend(FluxApp *app);
+void        flux_app_sethost(FluxApp *app, XtkHost *host, XtkBackend *backend);
+XtkHost    *flux_app_attachhost(FluxApp *app);
+XtkHost    *flux_app_host(FluxApp *app);
+XtkBackend *flux_app_backend(FluxApp *app);
 
-bool         flux_host_registercomp(XtkHost *host, XtkCompType const *type);
-bool         flux_host_setproviders(XtkHost *host, XtkProviderDesc const *providers, uint32_t count);
-XtkResource  flux_image_respath(char const *path);
-
-typedef void (*FluxRealizeFn)(void *ctx, XtkCtrl list, int first, int last);
-bool         flux_host_virtualize(XtkHost *host, XtkCtrl list, FluxRealizeFn fn, void *ctx);
+bool        flux_host_registercomp(XtkHost *host, XtkCompType const *type);
+bool        flux_host_setproviders(XtkHost *host, XtkProviderDesc const *providers, uint32_t count);
+XtkResource flux_image_respath(char const *path);
 
 #endif

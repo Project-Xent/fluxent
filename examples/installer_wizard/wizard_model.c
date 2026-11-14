@@ -21,6 +21,7 @@ void wizard_init(Model *m) {
 	m->channel     = dup_str(kChannels [0]);
 	m->update_date = xtk_date(2026, 12, 1);
 	m->cache_mb    = 512.0f;
+	m->log_follow  = true;
 	for (int i = 0; i < COMP_COUNT; i++) {
 		m->checked [i]  = kComps [i].parent >= 0 && i != 5;
 		m->expanded [i] = kComps [i].parent < 0 && i != 6;
@@ -248,9 +249,14 @@ static void msg_channel_submit(Model *m, XtkMsg msg) {
 		if (strcmp(m->channel, kChannels [i]) == 0) m->channel_sel = i;
 }
 
-static void              msg_update_date(Model *m, XtkMsg msg) { m->update_date = msg.i; }
+static void msg_update_date(Model *m, XtkMsg msg) { m->update_date = msg.i; }
 
-static void              msg_cache(Model *m, XtkMsg msg) { m->cache_mb = msg.f; }
+static void msg_cache(Model *m, XtkMsg msg) { m->cache_mb = msg.f; }
+
+static void msg_log_scroll(Model *m, XtkMsg msg) {
+	m->log_follow = msg.b;
+	m->log_y      = msg.f;
+}
 
 typedef void             (*WizardMsgFn)(Model *m, XtkMsg msg);
 
@@ -272,6 +278,7 @@ static WizardMsgFn const kMsgFn [] = {
   [MSG_CACHE]          = msg_cache,
   [MSG_TICK]           = msg_tick,
   [MSG_DONE]           = msg_done,
+  [MSG_LOG_SCROLL]     = msg_log_scroll,
 };
 
 void wizard_update(void *model, XtkMsg msg) {

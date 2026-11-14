@@ -1137,6 +1137,25 @@ static void apply_radio_columns(FluxHostState *R, XentNodeId node, int columns) 
 	if (g) g->columns = columns > 0 ? columns : 1;
 }
 
+static bool apply_scroll_x(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type == XTK_CTRL_SCROLL) flux_scroll_request(R->store, node, v->u.f32, NAN);
+	return true;
+}
+
+static bool apply_scroll_y(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (type == XTK_CTRL_SCROLL) flux_scroll_request(R->store, node, NAN, v->u.f32);
+	return true;
+}
+
+static bool
+apply_realized_first(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
+	( void ) control;
+	if (list_type(type)) flux_list_stage_first(R->store, node, v->u.i32);
+	return true;
+}
+
 static bool apply_column_count(FluxHostState *R, XtkCtrl control, XentNodeId node, XtkCtrlId type, XtkValue const *v) {
 	( void ) control;
 	if (list_type(type)) apply_list_columns(R, node, v->u.i32);
@@ -1442,6 +1461,9 @@ static FluxNativePropEntry const native_props [] = {
   {XTK_PROP_ITEM_HEIGHT,           XTK_VALUE_F32,      apply_item_height               },
   {XTK_PROP_ITEM_WIDTH,            XTK_VALUE_F32,      apply_item_width                },
   {XTK_PROP_COLUMN_COUNT,          XTK_VALUE_I32,      apply_column_count              },
+  {XTK_PROP_REALIZED_FIRST,        XTK_VALUE_I32,      apply_realized_first            },
+  {XTK_PROP_SCROLL_X,              XTK_VALUE_F32,      apply_scroll_x                  },
+  {XTK_PROP_SCROLL_Y,              XTK_VALUE_F32,      apply_scroll_y                  },
   {XTK_PROP_SELECTED_INDEX,        XTK_VALUE_I32,      apply_selected_index            },
   {XTK_PROP_SELECTED,              XTK_VALUE_BOOL,     apply_selected                  },
   {XTK_PROP_OPEN,                  XTK_VALUE_BOOL,     apply_open                      },

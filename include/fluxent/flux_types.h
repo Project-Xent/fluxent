@@ -1,6 +1,8 @@
 #ifndef FLUX_TYPES_H
 #define FLUX_TYPES_H
 
+#include <assert.h>
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <xtk/xtk_types.h>
@@ -161,5 +163,10 @@ static inline D2D1_COLOR_F flux_color_tod2d(FluxColor c) {
 		if (FAILED(_hr)) return _hr; \
 	}                                \
 	while (0)
+
+static_assert(sizeof(FluxKey) == 4, "FluxKey crosses the ABI as int32");
+static_assert(sizeof(FluxPointerType) == 4, "FluxPointerType crosses the ABI as int32");
+static_assert(sizeof(FluxPointerEventKind) == 4, "FluxPointerEventKind crosses the ABI as int32");
+static_assert(sizeof(FluxPointerButton) == 4, "FluxPointerButton crosses the ABI as int32");
 
 #endif

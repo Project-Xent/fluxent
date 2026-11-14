@@ -17,6 +17,7 @@ typedef struct FluxListViewDesc {
 	FluxInput  *input;
 	void        (*on_select)(void *ctx, int index);
 	void       *userdata;
+	bool        realize_events;
 } FluxListViewDesc;
 
 typedef struct FluxListItemDesc {
@@ -43,14 +44,16 @@ bool flux_list_is_selected(FluxStore *store, XentNodeId list, int index);
 
 void flux_list_set_realized(FluxStore *store, XentNodeId list, int first, int last, int cols);
 
-void flux_list_stage_realized(FluxStore *store, XentNodeId list, int first, int last, int cols);
+void flux_list_stage_first(FluxStore *store, XentNodeId list, int first);
+
+void flux_list_emitrealize(struct FluxListViewData *ld);
+
+void flux_list_onstale(FluxStore *store, XentNodeId list, void (*on_stale)(void *), void *ctx);
 
 void flux_list_apply_pending(FluxStore *store, XentNodeId list);
 
 bool flux_list_viewport(FluxStore *store, XentNodeId list, float *offset, float *extent, float *cross);
 
-void flux_list_onstale(FluxStore *store, XentNodeId list, void (*on_stale)(void *), void *ctx);
-void flux_list_virtualize(FluxStore *store, XentNodeId list, void (*fn)(void *, XtkCtrl, int, int), void *ctx);
 
 bool flux_list_window_stale(XentCtx *ctx, struct FluxNodeData *nd);
 

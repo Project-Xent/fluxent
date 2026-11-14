@@ -20,6 +20,7 @@ typedef struct PropEntry {
 	XtkPropertyId  id;
 	XtkValue       value;
 	XtkChangeStamp change;
+	uint64_t       user_revision;
 	bool           live;
 } PropEntry;
 
@@ -40,6 +41,7 @@ typedef struct FluxHostState {
 	XentNodeId     root;
 	bool           owns_tree;
 	uint64_t       revision;
+	uint64_t       user_revision;
 	XtkCtrlId     *types;
 	uint32_t       types_cap;
 	uint32_t      *invalidate;
@@ -149,6 +151,8 @@ void             flux_host_value_clear(XtkValue *v);
 bool             flux_host_value_clone(XtkValue *dst, XtkValue const *src);
 PropEntry       *flux_host_prop_find(FluxHostState *R, XtkCtrl control, XtkPropertyId id);
 PropEntry const *flux_host_prop_findc(FluxHostState const *R, XtkCtrl control, XtkPropertyId id);
+bool             flux_host_stale_echo(FluxHostState const *R, XtkCtrl control, XtkPropPatch const *patch);
+void             flux_host_mark_user(FluxHostState *R, XtkEvent *event);
 PropEntry       *flux_host_prop_add(FluxHostState *R);
 void             flux_host_clear_props(FluxHostState *R, XtkCtrl control);
 XtkBatchError    flux_host_apply_prop(Prepare *P, XtkCtrl control, XtkPropPatch const *patch);

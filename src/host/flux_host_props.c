@@ -88,6 +88,30 @@ void flux_host_rollback_prop(FluxHostState *R, UndoProp *prop) {
 	prop->old_value.kind = XTK_VALUE_NONE;
 }
 
+bool flux_host_stale_echo(FluxHostState const *R, XtkCtrl control, XtkPropPatch const *patch) {
+	if (patch->change.source != ( XtkSourceId ) control) return false;
+	PropEntry const *e = flux_host_prop_findc(R, control, patch->id);
+	return e && e->user_revision > patch->change.revision;
+}
+
+static PropEntry *prop_entry(FluxHostState *R, XtkCtrl control, XtkPropertyId id) {
+	PropEntry *e = flux_host_prop_find(R, control, id);
+	if (e || !(e = flux_host_prop_add(R))) return e;
+	*e = (PropEntry) {.control = control, .id = id, .live = true};
+	return e;
+}
+
+void flux_host_mark_user(FluxHostState *R, XtkEvent *event) {
+	if (event->cause != XTK_EVENT_CAUSE_USER || event->change.source != XTK_SOURCE_INVALID) return;
+	event->change = (XtkChangeStamp) {.source = ( XtkSourceId ) event->target, .revision = ++R->user_revision};
+	XtkPropertyId ids [XTK_MIRROR_MAX];
+	uint32_t      n = xtk_catalog_mirrors(flux_host_types_get(R, flux_host_as_node(event->target)), event->id, ids);
+	for (uint32_t i = 0; i < n; i++) {
+		PropEntry *e = prop_entry(R, event->target, ids [i]);
+		if (e) e->user_revision = event->change.revision;
+	}
+}
+
 XtkBatchError flux_host_apply_prop(Prepare *P, XtkCtrl control, XtkPropPatch const *patch) {
 	FluxHostState *R   = P->R;
 	PropEntry     *old = flux_host_prop_find(R, control, patch->id);

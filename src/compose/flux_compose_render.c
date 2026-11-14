@@ -361,8 +361,9 @@ content_scroll_poll(ContentNode *cn, FluxScrollData *sd, float scale, bool *anim
 	*out_px = 0.0f;
 	*out_py = 0.0f;
 	if (!flux_interaction_poll(cn->tracker, out_px, out_py)) return false;
-	sd->scroll_x = *out_px / scale;
-	sd->scroll_y = *out_py / scale;
+	sd->scroll_x   = *out_px / scale;
+	sd->scroll_y   = *out_py / scale;
+	sd->user_moved = 1;
 	if (anim_active) *anim_active = true;
 	return true;
 }

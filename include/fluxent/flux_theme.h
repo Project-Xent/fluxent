@@ -1,14 +1,16 @@
 #ifndef FLUX_THEME_H
 #define FLUX_THEME_H
 
+#include <assert.h>
+
 #include "flux_types.h"
 #include <stdbool.h>
 
 typedef enum FluxThemeMode
 {
+	FLUX_THEME_SYSTEM = 0,
 	FLUX_THEME_LIGHT,
 	FLUX_THEME_DARK,
-	FLUX_THEME_SYSTEM,
 } FluxThemeMode;
 
 typedef struct FluxThemeColors {
@@ -98,5 +100,7 @@ FluxThemeColors const    *flux_theme_defaults(void);
 uint32_t                  flux_theme_ver(FluxTheme const *tm);
 
 bool                      flux_theme_systemdark(void);
+
+static_assert(sizeof(FluxThemeMode) == 4, "FluxThemeMode crosses the ABI as int32");
 
 #endif

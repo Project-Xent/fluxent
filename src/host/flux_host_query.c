@@ -299,13 +299,6 @@ void flux_host_bindapp(XtkHost *host, FluxApp *app) {
 	    : (FluxControlEnv) {0};
 }
 
-bool flux_host_virtualize(XtkHost *host, XtkCtrl list, FluxRealizeFn fn, void *ctx) {
-	FluxStore *store = flux_host_store(host);
-	if (!store || !fn || !flux_store_find(store, ( XentNodeId ) list)) return false;
-	flux_list_virtualize(store, ( XentNodeId ) list, fn, ctx);
-	return true;
-}
-
 FluxStore *flux_host_store(XtkHost *host) {
 	FluxHostState *R = flux_host_state(host);
 	return R ? R->store : NULL;

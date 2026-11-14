@@ -28,9 +28,9 @@ typedef XtkTeachingTipCloseReason FluxTeachingTipCloseReason;
 #define FLUX_TIP_CLOSE_LIGHT_DISMISS XTK_TIP_CLOSE_LIGHT_DISMISS
 #define FLUX_TIP_CLOSE_PROGRAMMATIC  XTK_TIP_CLOSE_PROGRAMMATIC
 
-#define FLUX_TIP_TAIL_AUTO           0
-#define FLUX_TIP_TAIL_VISIBLE        1
-#define FLUX_TIP_TAIL_COLLAPSED      2
+#define FLUX_TIP_TAIL_AUTO           XTK_TIP_TAIL_AUTO
+#define FLUX_TIP_TAIL_VISIBLE        XTK_TIP_TAIL_VISIBLE
+#define FLUX_TIP_TAIL_COLLAPSED      XTK_TIP_TAIL_COLLAPSED
 
 typedef struct FluxTeachingTipData {
 	char const              *title;

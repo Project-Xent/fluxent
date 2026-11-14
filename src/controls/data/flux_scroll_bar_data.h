@@ -2,6 +2,7 @@
 #define FLUX_SCROLL_BAR_DATA_H
 
 #include <stdbool.h>
+#include <xtk/xtk_types.h>
 #include <stdint.h>
 
 typedef enum FluxScrollBarOrientation
@@ -10,12 +11,11 @@ typedef enum FluxScrollBarOrientation
 	FLUX_SCROLLBAR_HORIZONTAL = 1,
 } FluxScrollBarOrientation;
 
-typedef enum FluxScrollBarIndicator
-{
-	FLUX_SCROLLBAR_INDICATOR_NONE = 0,
-	FLUX_SCROLLBAR_INDICATOR_TOUCH,
-	FLUX_SCROLLBAR_INDICATOR_MOUSE,
-} FluxScrollBarIndicator;
+typedef XtkScrollBarIndicator FluxScrollBarIndicator;
+
+#define FLUX_SCROLLBAR_INDICATOR_NONE  XTK_SCROLLBAR_INDICATOR_NONE
+#define FLUX_SCROLLBAR_INDICATOR_TOUCH XTK_SCROLLBAR_INDICATOR_TOUCH
+#define FLUX_SCROLLBAR_INDICATOR_MOUSE XTK_SCROLLBAR_INDICATOR_MOUSE
 
 typedef enum FluxScrollEventType
 {

@@ -1,6 +1,10 @@
 #ifndef FLUXENT_FLUX_APP_H
 #define FLUXENT_FLUX_APP_H
 
+#include <assert.h>
+
+#include "flux_theme.h"
+
 #include <xtk/xtk.h>
 #include <xtk/xtk_reconcile.h>
 
@@ -36,7 +40,7 @@ typedef struct FluxAppCfg {
 	wchar_t const   *title;
 	int              width;
 	int              height;
-	bool             dark_mode;
+	FluxThemeMode    theme;
 	FluxBackdropType backdrop;
 	void             (*on_start)(FluxApp *app, void *user);
 	void             (*on_stop)(FluxApp *app, void *user);
@@ -69,11 +73,14 @@ FluxMenu               *flux_app_menu(FluxApp *app);
 
 HWND                    flux_app_hwnd(FluxApp *app);
 
+bool                    flux_app_invoke(FluxApp *app, void (*fn)(void *ctx), void *ctx);
 XtkPostStatus           flux_app_post(FluxApp *app, XtkMsg msg);
 XtkPostStatus           flux_app_poststring(FluxApp *app, XtkMsg msg, char const *data, uint32_t len);
 
 XtkRt                  *flux_app_createruntime(FluxApp *app, void *model, XtkUpdateFn update, XtkViewFn view);
 
 int                     flux_run(FluxAppCfg const *cfg, void *model, XtkUpdateFn update, XtkViewFn view);
+
+static_assert(sizeof(FluxBackdropType) == 4, "FluxBackdropType crosses the ABI as int32");
 
 #endif

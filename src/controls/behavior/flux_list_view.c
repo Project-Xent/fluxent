@@ -459,6 +459,7 @@ XentNodeId flux_list_init(FluxListViewDesc const *info) {
 
 	nd->component_data         = ld;
 	nd->destroy_component_data = list_view_data_destroy;
+	if (info->realize_events) flux_list_emitrealize(ld);
 
 	xent_sem_setrole(info->ctx, root, XENT_SEM_ROLE_CONTAINER);
 	return root;
@@ -529,6 +530,19 @@ XentNodeId flux_list_content_node(FluxStore *store, XentNodeId list) {
 static FluxScrollData *list_scroll_data(FluxListViewData const *ld) {
 	FluxNodeData *snd = flux_store_find(ld->store, ld->scroll);
 	return snd ? ( FluxScrollData * ) snd->component_data : NULL;
+}
+
+static int list_autocolumns(float cross, float itemw, int explicit_columns) {
+	if (explicit_columns > 0) return explicit_columns;
+	if (itemw <= 0.0f || cross <= 0.0f) return 1;
+	int cols = ( int ) floorf(cross / itemw);
+	return cols > 0 ? cols : 1;
+}
+
+static int list_columns(FluxListViewData const *ld) {
+	XentRect rect = {0};
+	float    w    = xent_layout_rect(ld->ctx, ld->scroll, &rect) ? rect.w : 0.0f;
+	return list_autocolumns(w, ld->item_width, ld->columns);
 }
 
 static void list_apply_host_extent(FluxListViewData *ld) {
@@ -633,49 +647,42 @@ void flux_list_set_realized(FluxStore *store, XentNodeId list, int first, int la
 	}
 }
 
-void flux_list_stage_realized(FluxStore *store, XentNodeId list, int first, int last, int cols) {
+void flux_list_stage_first(FluxStore *store, XentNodeId list, int first) {
 	FluxListViewData *ld = list_data(store, list);
-	if (!ld) return;
-	ld->pending_first   = first;
-	ld->pending_last    = last;
-	ld->pending_cols    = cols > 0 ? cols : 1;
-	ld->realize_pending = true;
+	if (ld) ld->realized_first = first > 0 ? first : 0;
 }
 
 void flux_list_apply_pending(FluxStore *store, XentNodeId list) {
 	FluxListViewData *ld = list_data(store, list);
 	if (!ld || ld->host == XENT_NODE_INVALID) return;
-	if (ld->realize_pending) {
-		flux_list_set_realized(store, list, ld->pending_first, ld->pending_last, ld->pending_cols);
-		ld->realize_pending = false;
-		return;
-	}
-	if (ld->realized_last < 0) {
-		int n = xent_node_nchild(ld->ctx, ld->host);
-		if (n <= 0) return;
-		if (ld->item_height <= 0.0f) ld->item_height = 40.0f;
-		flux_list_set_realized(store, list, 0, n - 1, ld->cols > 0 ? ld->cols : 1);
-		return;
-	}
-	list_place_children(ld);
+	int n = xent_node_nchild(ld->ctx, ld->host);
+	flux_list_set_realized(store, list, ld->realized_first, ld->realized_first + n - 1, list_columns(ld));
 }
 
 static void list_scroll_changed(void *ctx) {
 	FluxListViewData *ld = ( FluxListViewData * ) ctx;
-	if (!ld) return;
-	FluxNodeData *nd = flux_store_find(ld->store, ld->root);
+	FluxNodeData     *nd = flux_store_find(ld->store, ld->root);
 	if (nd && flux_list_window_stale(ld->ctx, nd)) flux_list_notify_stale(ld->store, ld->root);
+}
+
+static void list_watch_scroll(FluxListViewData *ld) {
+	FluxScrollData *sd = list_scroll_data(ld);
+	if (!sd) return;
+	sd->on_offset_changed     = list_scroll_changed;
+	sd->on_offset_changed_ctx = ld;
+}
+
+void flux_list_emitrealize(FluxListViewData *ld) {
+	ld->realize_events = true;
+	list_watch_scroll(ld);
 }
 
 void flux_list_onstale(FluxStore *store, XentNodeId list, void (*on_stale)(void *), void *ctx) {
 	FluxListViewData *ld = list_data(store, list);
 	if (!ld) return;
-	ld->on_stale       = on_stale;
-	ld->on_stale_ctx   = ctx;
-	FluxScrollData *sd = list_scroll_data(ld);
-	if (!sd) return;
-	sd->on_offset_changed     = list_scroll_changed;
-	sd->on_offset_changed_ctx = ld;
+	ld->on_stale     = on_stale;
+	ld->on_stale_ctx = ctx;
+	list_watch_scroll(ld);
 }
 
 bool flux_list_viewport(FluxStore *store, XentNodeId list, float *offset, float *extent, float *cross) {
@@ -689,14 +696,15 @@ bool flux_list_viewport(FluxStore *store, XentNodeId list, float *offset, float 
 
 bool flux_list_window_stale(XentCtx *ctx, struct FluxNodeData *nd) {
 	FluxListViewData *ld = ( FluxListViewData * ) nd->component_data;
-	if (!ld || !ld->on_stale || ld->stale_fired || ld->count <= 0 || ld->item_height <= 0.0f) return false;
+	if (!ld || !(ld->realize_events || ld->on_stale) || ld->stale_fired || ld->count <= 0 || ld->item_height <= 0.0f)
+		return false;
 
 	FluxNodeData *snd  = flux_store_find(ld->store, ld->scroll);
 	XentRect      rect = {0};
 	if (!snd || !snd->component_data || !xent_layout_rect(ctx, ld->scroll, &rect) || rect.h <= 0.0f) return false;
 	float offset     = (( FluxScrollData * ) snd->component_data)->scroll_y;
 
-	int   cols       = xtk_list_autocolumns(rect.w, ld->item_width, ld->columns);
+	int   cols       = list_autocolumns(rect.w, ld->item_width, ld->columns);
 	int   total_rows = (ld->count + cols - 1) / cols;
 	int   row_first  = ( int ) floorf(offset / ld->item_height);
 	int   row_last   = ( int ) ceilf((offset + rect.h) / ld->item_height) - 1;
@@ -710,46 +718,46 @@ bool flux_list_window_stale(XentCtx *ctx, struct FluxNodeData *nd) {
 	return cols != ld->cols || visible_first < ld->realized_first || visible_last > ld->realized_last;
 }
 
-static void list_window(FluxListViewData const *ld, int *first, int *last, int *cols) {
+static XtkEventPayload list_window(FluxListViewData const *ld) {
 	float offset = 0.0f, extent = 0.0f, cross = 0.0f;
 	if (!flux_list_viewport(ld->store, ld->root, &offset, &extent, &cross) || extent <= 0.0f) {
 		offset = 0.0f;
 		extent = 600.0f;
 	}
-	*cols         = xtk_list_autocolumns(cross, ld->item_width, ld->columns);
-	int rows      = (ld->count + *cols - 1) / *cols;
+	int cols      = list_autocolumns(cross, ld->item_width, ld->columns);
+	int rows      = (ld->count + cols - 1) / cols;
 	int row_first = ( int ) floorf(offset / ld->item_height) - 4;
 	int row_last  = ( int ) ceilf((offset + extent) / ld->item_height) + 3;
 	if (row_first < 0) row_first = 0;
 	if (row_last > rows - 1) row_last = rows - 1;
-	*first = row_first * *cols;
-	*last  = (row_last + 1) * *cols - 1;
-	if (*last > ld->count - 1) *last = ld->count - 1;
-}
-
-static void list_realize_window(void *ctx) {
-	FluxListViewData *ld = ( FluxListViewData * ) ctx;
-	if (ld->count <= 0 || ld->item_height <= 0.0f) return;
-	int first, last, cols;
-	list_window(ld, &first, &last, &cols);
-	ld->realize(ld->realize_ctx, ( XtkCtrl ) ld->root, first, last);
-	flux_list_set_realized(ld->store, ld->root, first, last, cols);
-}
-
-void flux_list_virtualize(FluxStore *store, XentNodeId list, void (*fn)(void *, XtkCtrl, int, int), void *ctx) {
-	FluxListViewData *ld = list_data(store, list);
-	if (!ld) return;
-	ld->realize     = fn;
-	ld->realize_ctx = ctx;
-	flux_list_onstale(store, list, list_realize_window, ld);
-	list_realize_window(ld);
+	int last = (row_last + 1) * cols - 1;
+	return (XtkEventPayload) {
+	  .kind     = XTK_EVENT_PAYLOAD_WINDOW,
+	  .u.window = {row_first * cols, last < ld->count - 1 ? last : ld->count - 1, cols},
+	};
 }
 
 void flux_list_notify_stale(FluxStore *store, XentNodeId list) {
-	FluxListViewData *ld = list_data(store, list);
-	if (!ld || !ld->on_stale || ld->stale_fired) return;
+	FluxListViewData *ld   = list_data(store, list);
+	XtkHost          *host = flux_store_host(store);
+	if (!ld || ld->stale_fired) return;
+	if (ld->on_stale) {
+		ld->stale_fired = true;
+		ld->on_stale(ld->on_stale_ctx);
+		return;
+	}
+	if (!host || !ld->realize_events) return;
 	ld->stale_fired = true;
-	ld->on_stale(ld->on_stale_ctx);
+	XtkEvent event  = {
+	  .id             = XTK_EVENT_REALIZE,
+	  .target         = ( XtkCtrl ) list,
+	  .source         = ( XtkCtrl ) list,
+	  .current_target = ( XtkCtrl ) list,
+	  .phase          = XTK_EVENT_PHASE_TARGET,
+	  .cause          = XTK_EVENT_CAUSE_PROGRAM,
+	  .payload        = list_window(ld),
+	};
+	flux_host_route(host, &event);
 }
 
 void fluxlistitem_bind_owner(FluxStore *store, XentNodeId item) {

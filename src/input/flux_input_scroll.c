@@ -62,7 +62,9 @@ static FluxScrollData *input_scroll_data(FluxInput const *input, XentNodeId node
 }
 
 static void input_scroll_changed(FluxScrollData *sd, float old_x, float old_y) {
-	if (sd->scroll_x != old_x || sd->scroll_y != old_y) flux_scroll_offset_changed(sd);
+	if (sd->scroll_x == old_x && sd->scroll_y == old_y) return;
+	sd->user_moved = 1;
+	flux_scroll_offset_changed(sd);
 }
 
 static XentNodeId input_nearest_scroll_node(FluxInput *input, XentNodeId node) {

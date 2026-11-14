@@ -1,6 +1,8 @@
 #ifndef FLUX_TEXT_H
 #define FLUX_TEXT_H
 
+#include <assert.h>
+
 #include "flux_types.h"
 #include <xent/xent.h>
 
@@ -104,5 +106,7 @@ uint32_t flux_text_selection(FluxTextSelectionQuery const *query);
 uint32_t flux_text_next(FluxTextClusterQuery const *query);
 
 uint32_t flux_text_prev(FluxTextClusterQuery const *query);
+
+static_assert(sizeof(FluxTextVAlign) == 4, "FluxTextVAlign crosses the ABI as int32");
 
 #endif

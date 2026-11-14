@@ -67,12 +67,13 @@ struct FluxApp {
 	XtkHost                 *host;
 	XtkBackend              *xtk_backend;
 	FluxPostSink            *post_sink;
+	XtkRt                   *post_rt;
 
 	void                     (*frame_cb)(void *ctx);
 	void                    *frame_cb_ctx;
-	XentNodeId              *stale_lists;
-	uint32_t                 stale_count;
-	uint32_t                 stale_capacity;
+	XentNodeId              *deferred;
+	uint32_t                 deferred_count;
+	uint32_t                 deferred_cap;
 };
 
 static XentCtx   *app_ctx(FluxApp const *app) { return app ? flux_scene_context(app->scene) : NULL; }
@@ -139,23 +140,22 @@ static FluxSize app_client_dips(FluxApp const *app, FluxDpi dpi) {
 	return (FluxSize) {px.w / scale, px.h / scale};
 }
 
-static bool app_theme_is_dark(FluxTheme *theme) {
-	if (!theme) return false;
-
-	FluxThemeMode mode = flux_theme_mode(theme);
-	return (mode == FLUX_THEME_DARK) || (mode == FLUX_THEME_SYSTEM && flux_theme_systemdark());
+static bool app_mode_dark(FluxThemeMode mode) {
+	return mode == FLUX_THEME_DARK || (mode == FLUX_THEME_SYSTEM && flux_theme_systemdark());
 }
 
-static bool app_queue_stale_list(FluxApp *app, XentNodeId node) {
-	if (app->stale_count == app->stale_capacity) {
-		if (app->stale_capacity > UINT32_MAX / 2u) return false;
-		uint32_t    next_cap = app->stale_capacity ? app->stale_capacity * 2u : 16u;
-		XentNodeId *next     = ( XentNodeId * ) realloc(app->stale_lists, sizeof(*next) * next_cap);
+static bool app_theme_is_dark(FluxTheme *theme) { return theme && app_mode_dark(flux_theme_mode(theme)); }
+
+static bool app_defer(FluxApp *app, XentNodeId node) {
+	if (app->deferred_count == app->deferred_cap) {
+		if (app->deferred_cap > UINT32_MAX / 2u) return false;
+		uint32_t    next_cap = app->deferred_cap ? app->deferred_cap * 2u : 16u;
+		XentNodeId *next     = ( XentNodeId * ) realloc(app->deferred, sizeof(*next) * next_cap);
 		if (!next) return false;
-		app->stale_lists    = next;
-		app->stale_capacity = next_cap;
+		app->deferred     = next;
+		app->deferred_cap = next_cap;
 	}
-	app->stale_lists [app->stale_count++] = node;
+	app->deferred [app->deferred_count++] = node;
 	return true;
 }
 
@@ -174,7 +174,8 @@ static void app_sync_picker_control(FluxApp *app, XentNodeId node, FluxNodeData 
 static void app_sync_layout_control(FluxApp *app, XentCtx *ctx, XentNodeId node, FluxNodeData *nd) {
 	if (!nd || !nd->component_data) return;
 	if (xtk_ctrl_islist(( XtkCtrlType ) nd->component_type) && flux_list_window_stale(ctx, nd))
-		( void ) app_queue_stale_list(app, node);
+		( void ) app_defer(app, node);
+	if (nd->component_type == FLUX_CONTROL_SCROLL && flux_scroll_sync(ctx, node, nd)) ( void ) app_defer(app, node);
 	switch (nd->component_type) {
 	case FLUX_CONTROL_FLIP_VIEW      : flux_flip_sync(ctx, node, nd); break;
 	case FLUX_CONTROL_SPLIT_VIEW     : flux_splitview_sync(ctx, node, nd); break;
@@ -376,8 +377,11 @@ static void app_render(void *ctx) {
 
 	if (!app->backend) app->backend = app_select_backend(gfx);
 	app->backend->render_frame(app, gfx, dpi);
-	for (uint32_t i = 0; i < app->stale_count; i++) flux_list_notify_stale(app_store(app), app->stale_lists [i]);
-	app->stale_count = 0;
+	for (uint32_t i = 0; i < app->deferred_count; i++) {
+		flux_list_notify_stale(app_store(app), app->deferred [i]);
+		flux_scroll_report(app_store(app), app->deferred [i]);
+	}
+	app->deferred_count = 0;
 }
 
 static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool is_touch) {
@@ -466,7 +470,7 @@ static void app_pointer(void *ctx, FluxPointerEvent const *ev) {
 static void app_setting_changed(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app) return;
-	if (app->theme) {
+	if (app->theme && flux_theme_mode(app->theme) == FLUX_THEME_SYSTEM) {
 		flux_theme_setmode(app->theme, FLUX_THEME_SYSTEM);
 		flux_window_setdark(app->window, flux_theme_systemdark());
 	}
@@ -593,7 +597,7 @@ static FluxWindowCfg app_window_config(FluxAppCfg const *cfg) {
 	wcfg.title     = cfg ? cfg->title : L"Fluxent";
 	wcfg.width     = cfg ? cfg->width : FLUX_APP_DEFAULT_WIDTH;
 	wcfg.height    = cfg ? cfg->height : FLUX_APP_DEFAULT_HEIGHT;
-	wcfg.dark_mode = cfg ? cfg->dark_mode : false;
+	wcfg.dark_mode = app_mode_dark(cfg ? cfg->theme : FLUX_THEME_SYSTEM);
 	wcfg.backdrop  = cfg ? ( int ) cfg->backdrop : 0;
 	wcfg.resizable = true;
 	return wcfg;
@@ -624,12 +628,12 @@ static void app_bind_window_callbacks(FluxApp *app) {
 	flux_gfx_onredraw(flux_window_gfx(app->window), app_request_render, app);
 }
 
-static void app_create_runtime_services(FluxApp *app) {
+static void app_create_runtime_services(FluxApp *app, FluxThemeMode mode) {
 	app->registry = flux_control_registry_create();
 	if (app->registry) flux_register_builtins(app->registry);
 	app->cache = flux_render_cache_create(FLUX_APP_RENDER_CACHE_CAPACITY);
 	app->theme = flux_theme_create();
-	if (app->theme) flux_theme_setmode(app->theme, FLUX_THEME_SYSTEM);
+	if (app->theme) flux_theme_setmode(app->theme, mode);
 	app->tooltip = flux_tooltip_create(app->window);
 	app_init_dmanip(app);
 }
@@ -649,8 +653,9 @@ FluxApp *flux_app_create(FluxAppCfg const *cfg) {
 	}
 
 	app_bind_window_callbacks(app);
-	app_create_runtime_services(app);
-	if (!app_create_scene(app)) {
+	app_create_runtime_services(app, cfg ? cfg->theme : FLUX_THEME_SYSTEM);
+	app->post_sink = flux_postsink_create();
+	if (!app->post_sink || !app_create_scene(app)) {
 		flux_app_destroy(app);
 		return NULL;
 	}
@@ -699,7 +704,7 @@ void flux_app_destroy(FluxApp *app) {
 	app_destroy_render_state(app);
 	flux_scene_destroy(app->scene);
 	if (app->window) flux_window_destroy(app->window);
-	free(app->stale_lists);
+	free(app->deferred);
 	free(app);
 }
 
@@ -768,15 +773,19 @@ XtkHost    *flux_app_host(FluxApp *app) { return app ? app->host : NULL; }
 XtkBackend *flux_app_backend(FluxApp *app) { return app ? app->xtk_backend : NULL; }
 
 bool        flux_app_bindruntime(FluxApp *app, XtkRt *rt) {
-	if (!app || app->post_sink) return false;
-	app->post_sink = flux_postsink_create(rt);
-	return app->post_sink != NULL;
+	if (!app || app->post_rt) return false;
+	app->post_rt = rt;
+	return true;
+}
+
+bool flux_app_invoke(FluxApp *app, void (*fn)(void *ctx), void *ctx) {
+	return app && flux_postsink_invoke(app->post_sink, fn, ctx);
 }
 
 XtkPostStatus flux_app_post(FluxApp *app, XtkMsg msg) {
-	return flux_postsink_send(app ? app->post_sink : NULL, msg, NULL, 0u, false);
+	return app ? flux_postsink_send(app->post_sink, app->post_rt, msg, NULL, 0u, false) : XTK_POST_INVALID_MESSAGE;
 }
 
 XtkPostStatus flux_app_poststring(FluxApp *app, XtkMsg msg, char const *data, uint32_t len) {
-	return flux_postsink_send(app ? app->post_sink : NULL, msg, data, len, true);
+	return app ? flux_postsink_send(app->post_sink, app->post_rt, msg, data, len, true) : XTK_POST_INVALID_MESSAGE;
 }

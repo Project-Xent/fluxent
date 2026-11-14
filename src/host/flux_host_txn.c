@@ -632,6 +632,7 @@ static XtkBatchError apply_set_prop(Prepare *P, XtkBatchOp const *op) {
 		  xtk_comp_prepupd(P->R->comp, &P->R->host, P->R->ctx, target, v->u.bytes.data, v->u.bytes.len)
 		);
 	}
+	if (flux_host_stale_echo(P->R, target, &op->u.set_prop.patch)) return XTK_BATCH_OK;
 	return flux_host_apply_prop(P, target, &op->u.set_prop.patch);
 }
 
@@ -874,6 +875,7 @@ static void project_set_prop(Prepare *P, XtkBatchSetProp const *set) {
 	bool    ok      = false;
 	XtkCtrl control = XTK_CTRL_INVALID;
 	if (!flux_host_resolve_ref(P, set->target, &ok, &control) || !ok) return;
+	if (flux_host_stale_echo(P->R, control, &set->patch)) return;
 	project_patch(P, control, &set->patch);
 }
 

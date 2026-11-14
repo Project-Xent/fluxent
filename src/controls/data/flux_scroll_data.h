@@ -28,6 +28,14 @@ typedef struct FluxScrollData {
 
 	float            snap_y;
 
+	uint8_t          reports;
+	uint8_t          pin_end;
+	uint8_t          user_moved;
+	float            reported_x;
+	float            reported_y;
+	float            max_x;
+	float            max_y;
+
 	uint8_t          mouse_over;
 	float            mouse_local_x;
 	float            mouse_local_y;

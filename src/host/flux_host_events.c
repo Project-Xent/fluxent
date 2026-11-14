@@ -138,6 +138,7 @@ static uint32_t route_bubble(FluxHostState *R, XtkEvent *event, XtkCtrl const *c
 static void route_begin(FluxHostState *R, XtkEvent *event, uint32_t depth) {
 	event->scene_revision = R->revision;
 	if (event->source == XTK_CTRL_INVALID) event->source = event->target;
+	flux_host_mark_user(R, event);
 }
 
 static uint32_t route_target(FluxHostState *R, XtkEvent *event) {

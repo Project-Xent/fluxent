@@ -247,7 +247,11 @@ static bool tb_caret_visible(FluxRenderCtx const *rc, FluxRenderSnap const *snap
 	}
 	double elapsed = rc->now - ce->caret_blink_epoch;
 	int    phase   = ( int ) (elapsed / 0.5);
-	if (rc->animations_active) *rc->animations_active = true;
+	if (rc->next_redraw) {
+		double delay = (phase + 1) * 0.5 - elapsed;
+		if (*rc->next_redraw <= 0.0 || delay < *rc->next_redraw) *rc->next_redraw = delay;
+	}
+	else if (rc->animations_active) *rc->animations_active = true;
 	return (phase % 2) == 0;
 }
 
@@ -304,7 +308,6 @@ static bool tb_draw_caret(
 	float caret_x = tb_clamp_caret_x(text_area, text_area->x + caret_x_local - snap->u.textbox.edit.scroll_offset_x);
 	FluxThemeColors const *t       = flux_rec_theme(rc);
 	FluxRect               caret_r = {caret_x, caret_y, 1.0f, caret_h};
-	if (rc->animations_active) *rc->animations_active = true;
 	return flux_rec_fill_rect(b, &caret_r, t->text_primary);
 }
 

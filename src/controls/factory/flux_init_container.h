@@ -16,6 +16,9 @@ typedef struct FluxContainerDesc {
 } FluxContainerDesc;
 
 XentNodeId flux_scroll_init(FluxContainerDesc const *info);
+void       flux_scroll_measure(XentCtx const *ctx, XentNodeId node, FluxScrollData *sd);
+void       flux_scroll_data_destroy(void *data);
+void       flux_scroll_wheel_animate(FluxScrollData *sd, FluxWindow *window, float x, float y);
 void       flux_scroll_request(FluxStore *store, XentNodeId node, float x, float y);
 bool       flux_scroll_sync(XentCtx *ctx, XentNodeId node, FluxNodeData *nd);
 void       flux_scroll_report(FluxStore *store, XentNodeId node);

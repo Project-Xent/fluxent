@@ -12,6 +12,7 @@
 #include "compose/flux_interaction.h"
 
 #include "controls/data/flux_scroll_data.h"
+#include "controls/factory/flux_init_container.h"
 #include "fluxent/flux_control_type.h"
 #include "render/flux_engine.h"
 #include "fluxent/flux_node_store.h"
@@ -55,7 +56,6 @@ struct FluxComposeRender {
 	FluxCompositor                *c;
 	WUC_Comp                      *comp;
 	WUC_CompositionGraphicsDevice *gdev;
-	FluxControlRegistry const     *registry;
 	XtkBackend                    *backend;
 	FluxVisualTree                *vt;
 	FluxAnimKit                   *anim;
@@ -65,18 +65,16 @@ struct FluxComposeRender {
 };
 
 FluxComposeRender *flux_compose_render_create(
-  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, FluxControlRegistry const *registry,
-  XtkBackend *backend
+  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, XtkBackend *backend
 ) {
 	if (!c || !gdev || !root) return NULL;
 	FluxComposeRender *r = ( FluxComposeRender * ) calloc(1, sizeof(*r));
 	if (!r) return NULL;
-	r->c        = c;
-	r->comp     = flux_compositor_comp(c);
-	r->gdev     = gdev;
-	r->registry = registry;
-	r->backend  = backend;
-	r->vt       = flux_visual_tree_create(c, root);
+	r->c       = c;
+	r->comp    = flux_compositor_comp(c);
+	r->gdev    = gdev;
+	r->backend = backend;
+	r->vt      = flux_visual_tree_create(c, root);
 	if (!r->vt) {
 		free(r);
 		return NULL;
@@ -287,8 +285,8 @@ static void content_paint(
 	FluxControlState state  = content_state(flux_store_ctx(store), node, nd);
 	FluxRect         bounds = {offset.x / scale, offset.y / scale, rect->w, rect->h};
 
-	flux_display_paint_main(store, r->backend, r->registry, &rc, snap, &bounds, &state);
-	flux_display_paint_overlay(r->backend, r->registry, &rc, snap, &bounds, &state);
+	flux_display_paint_main(store, r->backend, &rc, snap, &bounds, &state);
+	flux_display_paint_overlay(r->backend, &rc, snap, &bounds, &state);
 
 	if (brush) ID2D1SolidColorBrush_Release(brush);
 	flux_surface_end(cn->surface);
@@ -340,32 +338,37 @@ static void content_fill_apply(
 	( void ) wuc_composition_color_brush_put__color(cn->fill_brush, content_wui_color(sink->color));
 }
 
-static void content_bind_scroll_tracker(FluxComposeRender *r, XentNodeId node, WUC_Visual *holder) {
-	ContentNode *cn = content_owned(r, node);
-	if (!cn || cn->tracker) return;
-
+static void content_create_tracker(FluxComposeRender *r, ContentNode *cn, XentNodeId node) {
 	WUC_Container *container = flux_vtree_visual(r->vt, node);
 	WUC_Visual    *cv        = container ? flux_compose_as_visual(container) : NULL;
-	if (cv) {
-		cn->tracker = flux_interaction_create(r->c, cv);
-		(( IUnknown * ) cv)->lpVtbl->Release(( IUnknown * ) cv);
-	}
-	if (cn->tracker && SUCCEEDED(flux_interaction_bind_offset(cn->tracker, holder))) {
-		cn->scroll_bound = true;
-		flux_vtree_bindtracker(r->vt, node, true);
-	}
+	if (!cv) return;
+	cn->tracker = flux_interaction_create(r->c, cv);
+	(( IUnknown * ) cv)->lpVtbl->Release(( IUnknown * ) cv);
+}
+
+static void content_bind_scroll_tracker(FluxComposeRender *r, XentNodeId node, WUC_Visual *holder) {
+	ContentNode *cn = content_owned(r, node);
+	if (!cn) return;
+	if (!cn->tracker) content_create_tracker(r, cn, node);
+	if (!cn->tracker || flux_vtree_trackerbound(r->vt, node)) return;
+	HRESULT hr       = flux_interaction_bind_offset(cn->tracker, holder);
+	cn->scroll_bound = SUCCEEDED(hr);
+	flux_vtree_bindtracker(r->vt, node, cn->scroll_bound);
 }
 
 static bool
 content_scroll_poll(ContentNode *cn, FluxScrollData *sd, float scale, bool *anim_active, float *out_px, float *out_py) {
-	*out_px = 0.0f;
-	*out_py = 0.0f;
-	if (!flux_interaction_poll(cn->tracker, out_px, out_py)) return false;
-	sd->scroll_x   = *out_px / scale;
-	sd->scroll_y   = *out_py / scale;
-	sd->user_moved = 1;
-	if (anim_active) *anim_active = true;
-	return true;
+	*out_px     = 0.0f;
+	*out_py     = 0.0f;
+	bool moved  = flux_interaction_poll(cn->tracker, out_px, out_py);
+	bool active = flux_interaction_active(cn->tracker);
+	if (active && anim_active) *anim_active = true;
+	if (moved) {
+		sd->scroll_x   = *out_px / scale;
+		sd->scroll_y   = *out_py / scale;
+		sd->user_moved = 1;
+	}
+	return active;
 }
 
 static void content_scroll_push(ContentNode *cn, FluxScrollData const *sd, float scale, float px, float py) {
@@ -390,8 +393,9 @@ static void content_scroll_sync(
 
 	flux_interaction_set_extent(cn->tracker, (sd->content_w - rect->w) * scale, (sd->content_h - rect->h) * scale);
 	float px = 0.0f, py = 0.0f;
-	if (content_scroll_poll(cn, sd, scale, anim_active, &px, &py)) return;
-	content_scroll_push(cn, sd, scale, px, py);
+	bool  active = content_scroll_poll(cn, sd, scale, anim_active, &px, &py);
+	flux_interaction_set_manual(cn->tracker, !active, sd->scroll_x * scale, sd->scroll_y * scale);
+	if (!active) content_scroll_push(cn, sd, scale, px, py);
 }
 
 bool flux_compose_redirect_scroll(FluxComposeRender *r, XentNodeId node, uint32_t pointer_id) {
@@ -405,11 +409,17 @@ static void content_sweep(FluxComposeRender *r) {
 		if (r->nodes [i].in_use && r->nodes [i].seen != r->generation) content_release(&r->nodes [i]);
 }
 
+static void compose_measure_scroll(XentCtx const *ctx, FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (nd && nd->component_type == FLUX_CONTROL_SCROLL) flux_scroll_measure(ctx, node, nd->component_data);
+}
+
 static void compose_render_node(
   FluxComposeRender *r, XentCtx *ctx, FluxStore *store, XentNodeId node, float scale, FluxRenderCtx const *rc_tmpl
 ) {
 	XentRect rect = {0};
 	xent_layout_rect(ctx, node, &rect);
+	compose_measure_scroll(ctx, store, node);
 	int            w         = ( int ) ceilf(rect.w * scale);
 	int            h         = ( int ) ceilf(rect.h * scale);
 	WUC_Container *container = flux_vtree_visual(r->vt, node);

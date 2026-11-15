@@ -97,6 +97,7 @@ static char const *cp_text(ColorPickerData *d, int index) {
 static float cp_alpha(ColorPickerData const *d) { return flux_color_af(d->visual.color); }
 
 static void  cp_write(ColorPickerData *d, int index, char const *text) {
+	if (strcmp(cp_text(d, index), text) == 0) return;
 	d->updating = true;
 	flux_prop_textbox_content(d->store, d->field [index], text);
 	d->updating = false;

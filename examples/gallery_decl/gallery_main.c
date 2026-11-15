@@ -88,6 +88,7 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_SPLIT_VIEW]      = page_split_view,
   [PAGE_TITLE_BAR]       = page_title_bar,
   [PAGE_MENUS]           = page_menus,
+  [PAGE_COMMANDBAR]      = page_commandbar,
   [PAGE_TABVIEW]         = page_tabview,
   [PAGE_EXPANDER]        = page_expander,
   [PAGE_BREADCRUMB]      = page_breadcrumb,
@@ -95,6 +96,7 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_LISTVIEW]        = page_listview,
   [PAGE_GRIDVIEW]        = page_gridview,
   [PAGE_LISTBOX]         = page_listbox,
+  [PAGE_DETAILS]         = page_details,
   [PAGE_TREE_VIEW]       = page_tree_view,
   [PAGE_ITEMS_VIEW]      = page_items_view,
   [PAGE_PULL_REFRESH]    = page_pull_refresh,
@@ -156,6 +158,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	( void ) cmdLine;
 	( void ) showCmd;
 
+	flux_controls_all();
 	Model model;
 	gallery_model_init(&model);
 

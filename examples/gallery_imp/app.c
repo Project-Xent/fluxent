@@ -133,6 +133,8 @@ static void dispatch(GalleryApp *g, XtkMsg msg) {
 	flux_app_redraw(g->flux);
 }
 
+void     gallery_post(GalleryApp *g, XtkMsg msg) { dispatch(g, msg); }
+
 uint32_t page_post(void *arg, XtkEvent const *event) {
 	GalleryBind *bind = ( GalleryBind * ) arg;
 	if (!bind || !event) return XTK_EVENT_CONTINUE;
@@ -337,6 +339,7 @@ static PageBuildFn const k_pages [PAGE_COUNT] = {
   [PAGE_FLIPVIEW]        = page_flipview_build,
   [PAGE_PAGER]           = page_pager_build,
   [PAGE_MENUS]           = page_menus_build,
+  [PAGE_COMMANDBAR]      = page_commandbar_build,
   [PAGE_TABVIEW]         = page_tabview_build,
   [PAGE_EXPANDER]        = page_expander_build,
   [PAGE_BREADCRUMB]      = page_breadcrumb_build,
@@ -344,6 +347,7 @@ static PageBuildFn const k_pages [PAGE_COUNT] = {
   [PAGE_LISTVIEW]        = page_listview_build,
   [PAGE_GRIDVIEW]        = page_gridview_build,
   [PAGE_LISTBOX]         = page_listbox_build,
+  [PAGE_DETAILS]         = page_details_build,
   [PAGE_TREE_VIEW]       = page_tree_view_build,
   [PAGE_ITEMS_VIEW]      = page_items_view_build,
   [PAGE_PULL_REFRESH]    = page_pull_refresh_build,

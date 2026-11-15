@@ -390,6 +390,7 @@ input_release_pressed_node(FluxInput *input, XentNodeId node, FluxNodeData *nd, 
 	nd->state.pressed = 0;
 	if (flux_node_type(input->store, node) == FLUX_CONTROL_PASSWORD_BOX) xent_sem_setchecked(input->ctx, node, 0);
 
+	if (nd->behavior.on_release && nd->behavior.on_release(nd->behavior.on_release_ctx)) return;
 	FluxHitResult hit    = input_hit_test_root(input, root, px, py);
 	FluxHitResult target = input_resolve_interactive(input, &hit);
 	if (input_within(input->ctx, target.node, node)) {
@@ -477,8 +478,7 @@ static void fi_cancel(FluxInput *input) {
 
 	input_finish_scroll_drag(input);
 	input_cancel_refresh_pull(input);
-	input->touch.active = false;
-	input->touch.target = XENT_NODE_INVALID;
+	flux_input_clearpan(input);
 	input_cancel_pressed(input);
 }
 
@@ -522,6 +522,7 @@ void flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent con
 	case FLUX_POINTER_HOLD         : fi_touch_hold(input, root, ev->x, ev->y); break;
 	case FLUX_POINTER_CONTEXT_MENU : fi_context_menu(input, root, ev->x, ev->y); break;
 	case FLUX_POINTER_CANCEL       : fi_cancel(input); break;
+	case FLUX_POINTER_HITTEST      : break;
 	}
 }
 
@@ -607,12 +608,19 @@ XentNodeId flux_input_hover(FluxInput const *input) { return input ? input->hove
 
 XentNodeId flux_input_pressed(FluxInput const *input) { return input ? input->pressed : XENT_NODE_INVALID; }
 
+XentNodeId flux_input_scrollat(FluxInput *input, XentNodeId root, float x, float y) {
+	if (!input || root == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+	FluxHitResult hit = input_hit_test_root(input, root, x, y);
+	return input_scrollable_ancestor(input, hit.node);
+}
+
 XentNodeId flux_input_pantarget(FluxInput const *input) { return input ? input->touch.target : XENT_NODE_INVALID; }
 
 void       flux_input_clearpan(FluxInput *input) {
 	if (!input) return;
-	input->touch.target = XENT_NODE_INVALID;
-	input->touch.active = false;
+	input->touch.target        = XENT_NODE_INVALID;
+	input->touch.active        = false;
+	input->touch.just_promoted = false;
 }
 
 bool flux_input_takepan(FluxInput *input) {
@@ -685,6 +693,10 @@ static void fi_touch_hold(FluxInput *input, XentNodeId root, float px, float py)
 	fi_context_menu(input, root, px, py);
 }
 
+void flux_input_setwindow(FluxInput *input, struct FluxWindow *window) {
+	if (input) input->window = window;
+}
+
 static void fi_scroll(InputScrollEvent const *event) {
 	if (!event || !event->input || event->root == XENT_NODE_INVALID) return;
 
@@ -692,17 +704,15 @@ static void fi_scroll(InputScrollEvent const *event) {
 	FluxHitResult hit   = input_hit_test_root(input, event->root, event->point.x, event->point.y);
 	if (hit.node == XENT_NODE_INVALID) return;
 
+	bool       smooth      = event->wheel.x == truncf(event->wheel.x) && event->wheel.y == truncf(event->wheel.y);
 	float      remaining_x = event->wheel.x * FLUX_SCROLLBAR_SMALL_CHANGE;
 	float      remaining_y = -event->wheel.y * FLUX_SCROLLBAR_SMALL_CHANGE;
 	XentNodeId node        = hit.node;
 
 	while (node != XENT_NODE_INVALID) {
 		if (input_handle_number_box_wheel(input, node, event->wheel.y)) return;
-		if (input_handle_combo_wheel(input, node, event->wheel.y)) return;
-		if (input_handle_flip_view_wheel(input, node, event->wheel.y)) return;
-		if (input_handle_calendar_wheel(input, node, event->wheel.y)) return;
-		if (input_handle_textbox_wheel(input, node, &remaining_y)) return;
-		if (input_route_scroll_node(input, node, &remaining_x, &remaining_y)) return;
+		if (input_handle_module_wheel(input, node, event->wheel.y, &remaining_y)) return;
+		if (input_route_scroll_node(input, node, &remaining_x, &remaining_y, smooth)) return;
 		node = xent_node_parent(input->ctx, node);
 	}
 }

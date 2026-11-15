@@ -5,9 +5,13 @@
 
 #define FLUX_WINDOW_MAX_RESIZE_OBSERVERS 8
 
+#define FLUX_WINDOW_REDRAW_TIMER         0xf2
+
 #define FLUX_WM_APPLY_FRAME              (WM_APP + 0x51)
 
 bool flux_window_ime_message(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT *result);
+void flux_window_setmaxbutton(FluxWindow *win, FluxRect bounds);
+void flux_window_redraw_after(FluxWindow *win, double seconds);
 void flux_window_applyframe(FluxWindow *win, bool deferred);
 
 struct FluxWindow {
@@ -16,12 +20,14 @@ struct FluxWindow {
 	FluxWindowCfg        config;
 	FluxGfx             *gfx;
 	bool                 render_requested;
+	ULONGLONG            redraw_due;
 	bool                 shown;
 	bool                 com_initialized;
 	int                  cursor_type;
 	HCURSOR              cursor_arrow;
 	HCURSOR              cursor_ibeam;
 	HCURSOR              cursor_hand;
+	HCURSOR              cursor_sizewe;
 	FluxMenu            *active_menu;
 
 	uint32_t             primary_touch_pid;
@@ -60,6 +66,8 @@ struct FluxWindow {
 	bool                 title_bar_active;
 	bool                 title_bar_extended;
 	FluxRect             title_bar_drag;
+	FluxRect             title_bar_max;
+	bool                 title_bar_max_pressed;
 	FluxRect             title_bar_pass [FLUX_WINDOW_MAX_TITLE_BAR_PASS];
 	int                  title_bar_pass_count;
 };

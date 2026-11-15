@@ -66,6 +66,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	( void ) cmdLine;
 	( void ) showCmd;
 
+	flux_controls_use(&flux_ctrl_titlebar);
+	flux_controls_use(&flux_ctrl_text);
 	static DemoModel model = {0};
 	FluxAppCfg       cfg   = {
 	  .title    = L"Fluxent TitleBar Demo",

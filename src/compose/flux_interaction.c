@@ -14,6 +14,8 @@
 #include <inspectable.h>
 #include <stdlib.h>
 
+#define INTERACTION_PUSH_FRAMES 4
+
 typedef struct TrackerOwner TrackerOwner;
 
 struct FluxInteraction {
@@ -23,7 +25,12 @@ struct FluxInteraction {
 	TrackerOwner                    *owner;
 	float                            last_x;
 	float                            last_y;
+	WUC_CompositionPropertySet      *props;
+	int                              pending;
 	bool                             user;
+	bool                             manual;
+	float                            manual_x;
+	float                            manual_y;
 };
 
 struct TrackerOwner {
@@ -89,6 +96,13 @@ static HRESULT STDMETHODCALLTYPE owner_user(TrackerOwner *self, void *sender, vo
 	return owner_state(self, true);
 }
 
+static HRESULT STDMETHODCALLTYPE owner_refused(TrackerOwner *self, void *sender, void *args) {
+	( void ) sender;
+	( void ) args;
+	if (self->it) self->it->pending = 0;
+	return S_OK;
+}
+
 static HRESULT STDMETHODCALLTYPE owner_ignore(TrackerOwner *self, void *sender, void *args) {
 	( void ) self;
 	( void ) sender;
@@ -107,7 +121,7 @@ static void *const owner_vtbl [] = {
   ( void * ) owner_program,
   ( void * ) owner_user,
   ( void * ) owner_user,
-  ( void * ) owner_ignore,
+  ( void * ) owner_refused,
   ( void * ) owner_ignore,
 };
 
@@ -166,6 +180,7 @@ void flux_interaction_destroy(FluxInteraction *it) {
 	if (!it) return;
 	if (it->source) (( IUnknown * ) it->source)->lpVtbl->Release(( IUnknown * ) it->source);
 	if (it->tracker) (( IUnknown * ) it->tracker)->lpVtbl->Release(( IUnknown * ) it->tracker);
+	if (it->props) (( IUnknown * ) it->props)->lpVtbl->Release(( IUnknown * ) it->props);
 	if (it->owner) {
 		it->owner->it = NULL;
 		owner_release(it->owner);
@@ -175,11 +190,46 @@ void flux_interaction_destroy(FluxInteraction *it) {
 
 static WUC_ExpressionAnimation *interaction_make_offset_expr(FluxInteraction *it) {
 	cwinrt_hstring expr_str = NULL;
-	if (FAILED(cwinrt_hstring_from(L"-tracker.Position", &expr_str))) return NULL;
+	if (FAILED(cwinrt_hstring_from(L"props.Manual > 0.5 ? -props.Offset : -tracker.Position", &expr_str))) return NULL;
 	WUC_ExpressionAnimation *expr = NULL;
 	HRESULT                  hr   = wuc_comp_create_expression_animation_str_p(it->comp, expr_str, &expr);
 	cwinrt_hstring_free(expr_str);
 	return SUCCEEDED(hr) ? expr : NULL;
+}
+
+static HRESULT interaction_put_manual(FluxInteraction *it) {
+	cwinrt_hstring name = NULL;
+	HRESULT        hr   = cwinrt_hstring_from(L"Manual", &name);
+	if (SUCCEEDED(hr)) hr = wuc_composition_property_set_insert_scalar(it->props, name, it->manual ? 1.0f : 0.0f);
+	cwinrt_hstring_free(name);
+	name = NULL;
+	if (SUCCEEDED(hr)) hr = cwinrt_hstring_from(L"Offset", &name);
+	WFN_Vector_3 offset = {it->manual_x, it->manual_y, 0.0f};
+	if (SUCCEEDED(hr)) hr = wuc_composition_property_set_insert_vector3(it->props, name, offset);
+	cwinrt_hstring_free(name);
+	return hr;
+}
+
+static HRESULT interaction_reference_props(FluxInteraction *it, WUC_CompositionAnimation *anim) {
+	if (!it->props && FAILED(wuc_comp_create_property_set(it->comp, &it->props))) return E_FAIL;
+	it->manual                 = true;
+	HRESULT                hr  = interaction_put_manual(it);
+	WUC_CompositionObject *obj = NULL;
+	cwinrt_hstring         key = NULL;
+	if (SUCCEEDED(hr)) hr = cwinrt_query(it->props, &CWINRT_IID_WUC_ICompositionObject, ( void ** ) &obj);
+	if (SUCCEEDED(hr)) hr = cwinrt_hstring_from(L"props", &key);
+	if (SUCCEEDED(hr)) ( void ) wuc_composition_animation_set_reference_parameter(anim, key, obj);
+	cwinrt_hstring_free(key);
+	if (obj) (( IUnknown * ) obj)->lpVtbl->Release(( IUnknown * ) obj);
+	return hr;
+}
+
+void flux_interaction_set_manual(FluxInteraction *it, bool manual, float x, float y) {
+	if (!it || !it->props || (it->manual == manual && it->manual_x == x && it->manual_y == y)) return;
+	it->manual   = manual;
+	it->manual_x = x;
+	it->manual_y = y;
+	( void ) interaction_put_manual(it);
 }
 
 static HRESULT
@@ -195,8 +245,9 @@ interaction_start_offset_expr(FluxInteraction *it, WUC_ExpressionAnimation *expr
 	if (SUCCEEDED(hr)) {
 		( void ) wuc_composition_animation_set_reference_parameter(anim, key, tracker);
 		cwinrt_hstring_free(key);
-		hr = cwinrt_query(target_visual, &CWINRT_IID_WUC_ICompositionObject, ( void ** ) &target);
+		hr = interaction_reference_props(it, anim);
 	}
+	if (SUCCEEDED(hr)) hr = cwinrt_query(target_visual, &CWINRT_IID_WUC_ICompositionObject, ( void ** ) &target);
 	if (SUCCEEDED(hr)) hr = cwinrt_hstring_from(L"Offset", &prop);
 	if (SUCCEEDED(hr)) {
 		( void ) wuc_composition_object_start_animation(target, prop, anim);
@@ -250,6 +301,7 @@ HRESULT flux_interaction_redirectpid(FluxInteraction *it, uint32_t pointer_id) {
 	if (FAILED(hr) || !pp) return FAILED(hr) ? hr : E_FAIL;
 
 	hr = flux_interaction_redirect(it, pp);
+	if (SUCCEEDED(hr)) it->user = true;
 	(( IUnknown * ) pp)->lpVtbl->Release(( IUnknown * ) pp);
 	return hr;
 }
@@ -258,8 +310,11 @@ void flux_interaction_scroll_to(FluxInteraction *it, float x, float y) {
 	if (!it || !it->tracker) return;
 	WFN_Vector_3 pos = {x, y, 0.0f};
 	int32_t      req = 0;
-	( void ) wuicoin_interaction_tracker_try_update_position(it->tracker, pos, &req);
+	if (SUCCEEDED(wuicoin_interaction_tracker_try_update_position(it->tracker, pos, &req)))
+		it->pending = INTERACTION_PUSH_FRAMES;
 }
+
+bool flux_interaction_active(FluxInteraction const *it) { return it && it->user; }
 
 bool flux_interaction_poll(FluxInteraction *it, float *out_x, float *out_y) {
 	if (!it || !it->tracker) return false;
@@ -271,5 +326,7 @@ bool flux_interaction_poll(FluxInteraction *it, float *out_x, float *out_y) {
 	it->last_y = pos.Y;
 	if (out_x) *out_x = pos.X;
 	if (out_y) *out_y = pos.Y;
-	return moved && it->user;
+	if (it->user || !it->pending) return moved;
+	it->pending = moved ? 0 : it->pending - 1;
+	return false;
 }

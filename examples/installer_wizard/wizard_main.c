@@ -8,6 +8,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	( void ) cmdLine;
 	( void ) showCmd;
 
+	flux_controls_all();
 	Model model;
 	wizard_init(&model);
 

@@ -44,6 +44,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_PAGER]           = {XTK_NAV_CHILD,     NULL,              "PagerControl"     },
   [PAGE_CAT_MENUS]       = {XTK_NAV_ITEM,      "More",            "Menus & layout"   },
   [PAGE_MENUS]           = {XTK_NAV_CHILD,     NULL,              "Menus & links"    },
+  [PAGE_COMMANDBAR]      = {XTK_NAV_CHILD,     NULL,              "CommandBar"       },
   [PAGE_TABVIEW]         = {XTK_NAV_CHILD,     NULL,              "TabView"          },
   [PAGE_EXPANDER]        = {XTK_NAV_CHILD,     NULL,              "Expander"         },
   [PAGE_BREADCRUMB]      = {XTK_NAV_CHILD,     NULL,              "BreadcrumbBar"    },
@@ -52,6 +53,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_LISTVIEW]        = {XTK_NAV_CHILD,     NULL,              "ListView"         },
   [PAGE_GRIDVIEW]        = {XTK_NAV_CHILD,     NULL,              "GridView"         },
   [PAGE_LISTBOX]         = {XTK_NAV_CHILD,     NULL,              "ListBox"          },
+  [PAGE_DETAILS]         = {XTK_NAV_CHILD,     NULL,              "Details header"   },
   [PAGE_TREE_VIEW]       = {XTK_NAV_CHILD,     NULL,              "TreeView"         },
   [PAGE_ITEMS_VIEW]      = {XTK_NAV_CHILD,     NULL,              "ItemsView"        },
   [PAGE_PULL_REFRESH]    = {XTK_NAV_CHILD,     NULL,              "PullToRefresh"    },
@@ -107,9 +109,15 @@ void gallery_model_init(Model *m) {
 	m->tip_close_reason                                                   = -1;
 	m->check_state                                                        = XTK_CHECK_INDETERMINATE;
 	m->slider_vert                                                        = 40.0f;
-	m->slider_range_lo                                                    = 30.0f;
-	m->slider_range_hi                                                    = 70.0f;
-	m->combo_edit_sel                                                     = -1;
+	for (int i = 0; i < DET_COLS; i++) m->det_order [i] = i;
+	m->cb_last         = -1;
+	m->det_width [0]   = 260.0f;
+	m->det_width [1]   = 200.0f;
+	m->det_width [2]   = 160.0f;
+	m->det_width [3]   = 120.0f;
+	m->slider_range_lo = 30.0f;
+	m->slider_range_hi = 70.0f;
+	m->combo_edit_sel  = -1;
 }
 
 static int tab_selection_after_close(Model const *m, int index) {
@@ -262,11 +270,89 @@ static void msg_dialog_result(Model *m, XtkMsg msg) {
 	m->dialog_result = msg.i;
 }
 
-static void msg_list_select(Model *m, XtkMsg msg) { m->list_sel = msg.i; }
+static void       msg_list_select(Model *m, XtkMsg msg) { m->list_sel = msg.i; }
 
-static void msg_multi_select(Model *m, XtkMsg msg) { m->multi_lead = msg.i; }
+static void       msg_multi_select(Model *m, XtkMsg msg) { m->multi_lead = msg.i; }
 
-static void msg_grid_select(Model *m, XtkMsg msg) { m->grid_sel = msg.i; }
+static void       msg_grid_select(Model *m, XtkMsg msg) { m->grid_sel = msg.i; }
+
+char const *const kCbCommands [CB_COUNT]
+  = {"Add", "Edit", "Share", "Save", "Delete", "Copy", "Cut", "Paste", "Settings", "Print"};
+char const *const        kDetHeaders [DET_COLS]         = {"Name", "Date modified", "Type", "Size"};
+
+static char const *const kDetCells [DET_ROWS][DET_COLS] = {
+  {"Assets",           "2026/10/02 14:21", "File folder",        ""        },
+  {"Builds",           "2026/11/12 09:03", "File folder",        ""        },
+  {"design-notes.md",  "2026/11/14 22:47", "Markdown Source",    "18 KB"   },
+  {"gallery.png",      "2026/09/30 11:15", "PNG File",           "412 KB"  },
+  {"installer.exe",    "2026/11/15 08:30", "Application",        "818 KB"  },
+  {"LICENSE",          "2026/08/14 10:00", "File",               "1 KB"    },
+  {"notes.txt",        "2026/07/21 16:42", "Text Document",      "3 KB"    },
+  {"palette.json",     "2026/10/18 13:05", "JSON Source File",   "6 KB"    },
+  {"release.zip",      "2026/11/14 23:59", "Compressed Folder",  "1,154 KB"},
+  {"roadmap.docx",     "2026/06/02 09:12", "Microsoft Word Doc", "54 KB"   },
+  {"screenshot-2.png", "2026/11/01 20:40", "PNG File",           "980 KB"  },
+  {"theme.xaml",       "2026/05/11 18:27", "XAML File",          "22 KB"   },
+};
+
+static long const kDetSizes [DET_ROWS] = {-1, -1, 18, 412, 818, 1, 3, 6, 1154, 54, 980, 22};
+
+char const       *gallery_det_cell(int row, int col) { return kDetCells [row][col]; }
+
+static int        det_compare(int col, int a, int b) {
+	if (col == 3) return (kDetSizes [a] > kDetSizes [b]) - (kDetSizes [a] < kDetSizes [b]);
+	return strcmp(kDetCells [a][col], kDetCells [b][col]);
+}
+
+void gallery_det_rows(Model const *m, int out [DET_ROWS]) {
+	for (int i = 0; i < DET_ROWS; i++) out [i] = i;
+	for (int i = 1; i < DET_ROWS; i++) {
+		int v = out [i], j = i;
+		for (; j > 0; j--) {
+			int c = det_compare(m->det_sort, out [j - 1], v);
+			if (m->det_desc ? c >= 0 : c <= 0) break;
+			out [j] = out [j - 1];
+		}
+		out [j] = v;
+	}
+}
+
+float gallery_det_fit(int col) {
+	size_t longest = strlen(kDetHeaders [col]);
+	for (int r = 0; r < DET_ROWS; r++) {
+		size_t n = strlen(kDetCells [r][col]);
+		if (n > longest) longest = n;
+	}
+	return ( float ) longest * 7.0f + 36.0f + 12.0f;
+}
+
+static void msg_det_sort(Model *m, XtkMsg msg) {
+	m->det_desc = m->det_sort == msg.i ? !m->det_desc : false;
+	m->det_sort = msg.i;
+}
+
+static void msg_det_resize(Model *m, XtkMsg msg) { m->det_width [msg.i] = msg.f; }
+
+static void msg_det_fit(Model *m, XtkMsg msg) { m->det_width [msg.i] = gallery_det_fit(msg.i); }
+
+static void msg_det_reorder(Model *m, XtkMsg msg) {
+	int col = ( int ) msg.d, from = 0;
+	while (from < DET_COLS && m->det_order [from] != col) from++;
+	if (from == DET_COLS || msg.i < 0 || msg.i >= DET_COLS) return;
+	int step = msg.i > from ? 1 : -1;
+	for (int i = from; i != msg.i; i += step) m->det_order [i] = m->det_order [i + step];
+	m->det_order [msg.i] = col;
+}
+
+static void msg_cb_action(Model *m, XtkMsg msg) {
+	if (msg.i >= 0 && msg.i < CB_COUNT) m->cb_last = msg.i;
+}
+
+static void msg_cb_open(Model *m, XtkMsg msg) { m->cb_open = msg.b; }
+
+static void msg_cb_fav(Model *m, XtkMsg msg) { m->cb_fav = msg.b; }
+
+static void msg_cb_bold(Model *m, XtkMsg msg) { m->cb_bold = msg.b; }
 
 static void msg_listbox_select(Model *m, XtkMsg msg) { m->listbox_sel = msg.i; }
 
@@ -436,6 +522,14 @@ static GalleryMsgFn const k_msg_fn [] = {
   [MSG_MULTI_SELECT]       = msg_multi_select,
   [MSG_GRID_SELECT]        = msg_grid_select,
   [MSG_LISTBOX_SELECT]     = msg_listbox_select,
+  [MSG_DET_SORT]           = msg_det_sort,
+  [MSG_DET_RESIZE]         = msg_det_resize,
+  [MSG_DET_FIT]            = msg_det_fit,
+  [MSG_DET_REORDER]        = msg_det_reorder,
+  [MSG_CB_ACTION]          = msg_cb_action,
+  [MSG_CB_OPEN]            = msg_cb_open,
+  [MSG_CB_FAV]             = msg_cb_fav,
+  [MSG_CB_BOLD]            = msg_cb_bold,
   [MSG_FLIP_SELECT]        = msg_flip_select,
   [MSG_ASB_TEXT]           = msg_asb_text,
   [MSG_ASB_QUERY]          = msg_asb_query,

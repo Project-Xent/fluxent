@@ -1,4 +1,11 @@
 #include "controls/factory/flux_control_build.h"
+#include "controls/flux_module.h"
+#include "controls/flux_module_props.h"
+#include "controls/behavior/flux_colheader.h"
+#include "controls/behavior/flux_cmdbar.h"
+#include "render/flux_render_snapshot.h"
+#include "host/flux_prop_apply.h"
+#include "controls/factory/flux_init_textbox.h"
 #include "store/flux_node_data.h"
 
 #include "controls/behavior/flux_flyout_binding.h"
@@ -39,48 +46,39 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef XentNodeId (*FluxSeedFn)(XentCtx *ctx, FluxStore *store);
-typedef XentNodeId (*FluxEnvSeedFn)(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env);
-typedef XentNodeId (*FluxMountSeedFn)(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-);
-typedef void           (*FluxRetargetFn)(XentCtx *ctx, FluxStore *store, XentNodeId dst);
-typedef void           (*FluxLayoutFn)(XentCtx *ctx, XentNodeId node);
-typedef void           (*FluxUnmountFn)(FluxStore *store, XentNodeId node);
-
-static XtkValue const *mount_value(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, XtkValueKind kind) {
-	for (uint32_t i = 0; i < count; i++)
-		if (props [i].id == id && props [i].value.kind == kind) return &props [i].value;
+static XtkValue const *mount_value(FluxControlMount const *m, XtkPropertyId id, XtkValueKind kind) {
+	for (uint32_t i = 0; i < m->prop_count; i++)
+		if (m->props [i].id == id && m->props [i].value.kind == kind) return &m->props [i].value;
 	return NULL;
 }
 
-static bool mount_bool(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, bool fallback) {
-	XtkValue const *v = mount_value(props, count, id, XTK_VALUE_BOOL);
+static bool mount_bool(FluxControlMount const *m, XtkPropertyId id, bool fallback) {
+	XtkValue const *v = mount_value(m, id, XTK_VALUE_BOOL);
 	return v ? v->u.b : fallback;
 }
 
-static int mount_i32(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, int fallback) {
-	XtkValue const *v = mount_value(props, count, id, XTK_VALUE_I32);
+static int mount_i32(FluxControlMount const *m, XtkPropertyId id, int fallback) {
+	XtkValue const *v = mount_value(m, id, XTK_VALUE_I32);
 	return v ? v->u.i32 : fallback;
 }
 
-static float mount_f32(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, float fallback) {
-	XtkValue const *v = mount_value(props, count, id, XTK_VALUE_F32);
+static float mount_f32(FluxControlMount const *m, XtkPropertyId id, float fallback) {
+	XtkValue const *v = mount_value(m, id, XTK_VALUE_F32);
 	return v ? v->u.f32 : fallback;
 }
 
-static double mount_f64(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, double fallback) {
-	XtkValue const *v = mount_value(props, count, id, XTK_VALUE_F64);
+static double mount_f64(FluxControlMount const *m, XtkPropertyId id, double fallback) {
+	XtkValue const *v = mount_value(m, id, XTK_VALUE_F64);
 	return v ? v->u.f64 : fallback;
 }
 
-static uint32_t mount_enum(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, uint32_t fallback) {
-	XtkValue const *v = mount_value(props, count, id, XTK_VALUE_ENUM);
+static uint32_t mount_enum(FluxControlMount const *m, XtkPropertyId id, uint32_t fallback) {
+	XtkValue const *v = mount_value(m, id, XTK_VALUE_ENUM);
 	return v ? v->u.u32 : fallback;
 }
 
-static char const *mount_string(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, char const *fallback) {
-	XtkValue const *v = mount_value(props, count, id, XTK_VALUE_STRING);
+static char const *mount_string(FluxControlMount const *m, XtkPropertyId id, char const *fallback) {
+	XtkValue const *v = mount_value(m, id, XTK_VALUE_STRING);
 	return v ? v->u.string.data : fallback;
 }
 
@@ -455,294 +453,151 @@ static void retarget_teaching_tip(XentCtx *ctx, FluxStore *store, XentNodeId dst
 
 #define SEED_NONE XENT_NODE_INVALID
 
-static XentNodeId seed_button(XentCtx *ctx, FluxStore *store) {
-	return flux_button_init(&(FluxButtonDesc) {ctx, store, SEED_NONE, NULL, NULL, NULL});
-}
-
-static XentNodeId seed_dropdown(XentCtx *ctx, FluxStore *store) {
-	return flux_dropdown_init(&(FluxDropDownButtonDesc) {ctx, store, SEED_NONE, NULL, NULL});
-}
-
-static XentNodeId seed_repeat(XentCtx *ctx, FluxStore *store) {
-	return flux_repeat_init(&(FluxButtonDesc) {ctx, store, SEED_NONE, NULL, NULL, NULL});
-}
-
-static XentNodeId seed_hyperlink(XentCtx *ctx, FluxStore *store) {
-	return flux_link_init(&(FluxHyperlinkDesc) {ctx, store, SEED_NONE, NULL, NULL, NULL, NULL});
-}
-
-static XentNodeId seed_text(XentCtx *ctx, FluxStore *store) {
-	return flux_text_init(&(FluxTextDesc) {ctx, store, SEED_NONE, "", 14.0f});
-}
-
-static XentNodeId seed_checkbox(XentCtx *ctx, FluxStore *store) {
-	return flux_checkbox_init(&(FluxToggleDesc) {ctx, store, SEED_NONE, NULL, false, NULL, NULL});
-}
-
-static XentNodeId seed_radio(XentCtx *ctx, FluxStore *store) {
-	return flux_radio_init(&(FluxToggleDesc) {ctx, store, SEED_NONE, NULL, false, NULL, NULL});
-}
-
-static XentNodeId seed_switch(XentCtx *ctx, FluxStore *store) {
-	return flux_switch_init(&(FluxToggleDesc) {ctx, store, SEED_NONE, NULL, false, NULL, NULL});
-}
-
-static XentNodeId seed_scroll_bar(XentCtx *ctx, FluxStore *store) {
-	return flux_scroll_bar_init(&(FluxScrollBarDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE, .maximum = 1.0});
-}
-
-static XentNodeId seed_date_picker(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_date_picker(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_datepicker_init(&(FluxDatePickerDesc) {
 	  .ctx     = ctx,
 	  .store   = store,
 	  .parent  = SEED_NONE,
-	  .input   = env->input,
-	  .window  = env->window,
-	  .overlay = env->overlay});
+	  .input   = m->env->input,
+	  .window  = m->env->window,
+	  .overlay = m->env->overlay});
 }
 
-static XentNodeId seed_time_picker(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_time_picker(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_timepicker_init(&(FluxTimePickerDesc) {
 	  .ctx     = ctx,
 	  .store   = store,
 	  .parent  = SEED_NONE,
-	  .input   = env->input,
-	  .window  = env->window,
-	  .overlay = env->overlay,
+	  .input   = m->env->input,
+	  .window  = m->env->window,
+	  .overlay = m->env->overlay,
 	  .minutes = -1});
 }
 
-static XentNodeId seed_looping(XentCtx *ctx, FluxStore *store) {
-	return flux_looping_init(&(FluxLoopingDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE, .selected = -1});
-}
-
-static XentNodeId seed_slider(XentCtx *ctx, FluxStore *store) {
-	return flux_slider_init(&(FluxSliderDesc) {ctx, store, SEED_NONE, 0.0f, 1.0f, 0.0f, NULL, NULL});
-}
-
-static XentNodeId seed_image(XentCtx *ctx, FluxStore *store) {
+static XentNodeId seed_image(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
 	return flux_image_init(&(FluxImageDesc) {ctx, store, SEED_NONE, NULL, FLUX_IMAGE_UNIFORM});
 }
 
-static XentNodeId seed_scroll(XentCtx *ctx, FluxStore *store) {
+static XentNodeId seed_scroll(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
 	XentNodeId    node = flux_scroll_init(&(FluxContainerDesc) {ctx, store, SEED_NONE});
 	FluxNodeData *nd   = node != XENT_NODE_INVALID ? flux_store_find(store, node) : NULL;
 	if (nd) (( FluxScrollData * ) nd->component_data)->reports = 1;
 	return node;
 }
 
-static XentNodeId seed_progress(XentCtx *ctx, FluxStore *store) {
-	return flux_progress_init(&(FluxProgressDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .value = 0.0f, .max_value = 100.0f, .min_value = 0.0f});
-}
-
-static XentNodeId seed_progress_ring(XentCtx *ctx, FluxStore *store) {
-	return flux_progressring_init(&(FluxProgressDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .value = 0.0f, .max_value = 100.0f, .min_value = 0.0f});
-}
-
-static XentNodeId seed_info_badge(XentCtx *ctx, FluxStore *store) {
-	return flux_badge_init(&(FluxInfoBadgeDesc) {ctx, store, SEED_NONE, FLUX_BADGE_NUMBER, 0});
-}
-
-static XentNodeId seed_split(XentCtx *ctx, FluxStore *store) {
-	return flux_split_init(&(FluxSplitButtonDesc) {ctx, store, SEED_NONE, NULL, NULL, NULL, NULL});
-}
-
-static XentNodeId seed_toggle_split(XentCtx *ctx, FluxStore *store) {
-	return flux_togglesplit_init(&(FluxToggleSplitButtonDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
-}
-
-static XentNodeId seed_list(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_list(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_list_init(&(FluxListViewDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .input = env->input, .realize_events = true});
+	  .ctx = ctx, .store = store, .parent = SEED_NONE, .input = m->env->input, .realize_events = true});
 }
 
-static XentNodeId seed_list_box(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_list_box(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_list_init(&(FluxListViewDesc) {
 	  .ctx            = ctx,
 	  .store          = store,
 	  .parent         = SEED_NONE,
 	  .kind           = XTK_LIST_KIND_LIST_BOX,
-	  .input          = env->input,
+	  .input          = m->env->input,
 	  .realize_events = true});
 }
 
-static XentNodeId seed_grid(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_grid(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_list_init(&(FluxListViewDesc) {
 	  .ctx            = ctx,
 	  .store          = store,
 	  .parent         = SEED_NONE,
 	  .kind           = XTK_LIST_KIND_GRID,
-	  .input          = env->input,
+	  .input          = m->env->input,
 	  .realize_events = true});
 }
 
-static XentNodeId seed_repeater(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_repeater(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_list_init(&(FluxListViewDesc) {
 	  .ctx            = ctx,
 	  .store          = store,
 	  .parent         = SEED_NONE,
 	  .kind           = XTK_LIST_KIND_REPEATER,
-	  .input          = env->input,
+	  .input          = m->env->input,
 	  .realize_events = true});
 }
 
-static XentNodeId seed_list_item(XentCtx *ctx, FluxStore *store) {
+static XentNodeId seed_list_item(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
 	return flux_listitem_init(&(FluxListItemDesc) {ctx, store, SEED_NONE});
 }
 
-static XentNodeId seed_items_view(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_items_view(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_itemsview_init(&(FluxItemsViewDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .input = env->input});
+	  .ctx = ctx, .store = store, .parent = SEED_NONE, .input = m->env->input});
 }
 
-static XentNodeId seed_tree(XentCtx *ctx, FluxStore *store) {
+static XentNodeId seed_tree(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
 	return flux_tree_init(&(FluxTreeViewDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
 }
 
-static XentNodeId seed_radio_buttons(XentCtx *ctx, FluxStore *store) {
+static XentNodeId seed_radio_buttons(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
 	return flux_radiogroup_init(&(FluxRadioButtonsDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
 }
 
-static XentNodeId seed_rating(XentCtx *ctx, FluxStore *store) {
-	return flux_rating_init(&(FluxRatingDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
-}
-
-static XentNodeId seed_selector(XentCtx *ctx, FluxStore *store) {
+static XentNodeId seed_selector(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
 	return flux_selector_init(&(FluxSelectorBarDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
 }
 
-static XentNodeId seed_breadcrumb(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_breadcrumb(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_breadcrumb_init(&(FluxBreadcrumbBarDesc) {
 	  .ctx    = ctx,
 	  .store  = store,
 	  .parent = SEED_NONE,
-	  .window = env->window,
-	  .text   = env->text,
-	  .theme  = env->theme,
-	  .input  = env->input});
+	  .window = m->env->window,
+	  .text   = m->env->text,
+	  .theme  = m->env->theme,
+	  .input  = m->env->input});
 }
 
-static XentNodeId seed_teaching_tip(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_teaching_tip(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_teachtip_init(&(FluxTeachingTipDesc) {
 	  .ctx    = ctx,
 	  .store  = store,
 	  .parent = SEED_NONE,
-	  .window = env->window,
-	  .text   = env->text,
-	  .theme  = env->theme,
-	  .input  = env->input});
+	  .window = m->env->window,
+	  .text   = m->env->text,
+	  .theme  = m->env->theme,
+	  .input  = m->env->input});
 }
 
-static XentNodeId seed_refresh(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_refresh_init(&(FluxRefreshContainerDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window});
-}
-
-static XentNodeId seed_pager(XentCtx *ctx, FluxStore *store) {
-	return flux_pager_init(&(FluxPagerDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
-}
-
-static XentNodeId seed_person(XentCtx *ctx, FluxStore *store) {
+static XentNodeId seed_person(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
 	return flux_avatar_init(&(FluxPersonPictureDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
 }
 
-static XentNodeId seed_split_view(XentCtx *ctx, FluxStore *store) {
-	return flux_splitview_init(&(FluxSplitViewDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
-}
-
-static XentNodeId seed_title_bar(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_titlebar_init(&(FluxTitleBarDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window});
-}
-
-static XentNodeId seed_textbox(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	if (env && env->app) return flux_app_create_textbox(&(FluxAppTextBoxDesc) {env->app, SEED_NONE, NULL, NULL, NULL});
-	return flux_textbox_init(&(FluxTextBoxDesc) {ctx, store, SEED_NONE, NULL, NULL, NULL});
-}
-
-static XentNodeId seed_password(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	if (env && env->app) return flux_app_create_password(&(FluxAppTextBoxDesc) {env->app, SEED_NONE, NULL, NULL, NULL});
-	return flux_password_init(&(FluxTextBoxDesc) {ctx, store, SEED_NONE, NULL, NULL, NULL});
-}
-
-static XentNodeId seed_number(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	if (env && env->app)
-		return flux_app_create_number(&(FluxAppNumberBoxDesc) {env->app, SEED_NONE, 0.0, 100.0, 1.0, NULL, NULL});
-	return flux_number_init(&(FluxNumberBoxDesc) {ctx, store, SEED_NONE, 0.0, 100.0, 1.0, NULL, NULL});
-}
-
-static XentNodeId seed_combo(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_combo_init(&(FluxComboBoxDesc) {
+static XentNodeId seed_menu_bar(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_menubar_init(&(FluxMenuBarDesc) {
 	  .ctx    = ctx,
 	  .store  = store,
 	  .parent = SEED_NONE,
-	  .window = env->window,
-	  .text   = env->text,
-	  .theme  = env->theme,
-	  .app    = env->app,
-	  .input  = env->input});
+	  .window = m->env->window,
+	  .text   = m->env->text,
+	  .theme  = m->env->theme});
 }
 
-static XentNodeId seed_info_bar(XentCtx *ctx, FluxStore *store) {
-	return flux_infobar_init(&(FluxInfoBarDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
+static XentNodeId seed_flip(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_flip_init(&(FluxFlipViewDesc) {
+	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = m->env->window});
 }
 
-static XentNodeId seed_expander(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_expander_init(&(FluxExpanderDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window});
-}
-
-static XentNodeId seed_dialog(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_dialog_init(&(FluxContentDialogDesc) {
-	  .ctx            = ctx,
-	  .store          = store,
-	  .overlay_parent = env->overlay,
-	  .input          = env->input,
-	  .window         = env->window,
-	  .theme          = env->theme});
-}
-
-static XentNodeId seed_menu_bar(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_menubar_init(&(FluxMenuBarDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window, .text = env->text, .theme = env->theme});
-}
-
-static XentNodeId seed_nav(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	if (!env || !env->window) return XENT_NODE_INVALID;
-	return flux_nav_init(&(FluxNavViewDesc) {
-	  .ctx      = ctx,
-	  .store    = store,
-	  .parent   = SEED_NONE,
-	  .window   = env->window,
-	  .text     = env->text,
-	  .theme    = env->theme,
-	  .adaptive = true});
-}
-
-static XentNodeId seed_tab(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_tabs_init(&(FluxTabViewDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window, .text = env->text, .input = env->input});
-}
-
-static XentNodeId seed_flip(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
-	return flux_flip_init(&(FluxFlipViewDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window});
-}
-
-static XentNodeId seed_pips(XentCtx *ctx, FluxStore *store) {
-	return flux_pips_init(&(FluxPipsPagerDesc) {.ctx = ctx, .store = store, .parent = SEED_NONE});
-}
-
-static XentNodeId seed_auto_suggest(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env) {
+static XentNodeId seed_auto_suggest(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_suggest_init(&(FluxAutoSuggestDesc) {
 	  .ctx    = ctx,
 	  .store  = store,
 	  .parent = SEED_NONE,
-	  .app    = env->app,
-	  .window = env->window,
-	  .text   = env->text,
-	  .theme  = env->theme});
+	  .app    = m->env->app,
+	  .window = m->env->window,
+	  .text   = m->env->text,
+	  .theme  = m->env->theme});
 }
 
 typedef struct MountStrings {
@@ -750,8 +605,8 @@ typedef struct MountStrings {
 	int          count;
 } MountStrings;
 
-static bool mount_strings_open(XtkPropPatch const *props, uint32_t count, XtkPropertyId id, MountStrings *out) {
-	XtkValue const *v = mount_value(props, count, id, XTK_VALUE_BYTES);
+static bool mount_strings_open(FluxControlMount const *m, XtkPropertyId id, MountStrings *out) {
+	XtkValue const *v = mount_value(m, id, XTK_VALUE_BYTES);
 	if (!v) return true;
 	uint32_t at = 0u;
 	int      n  = 0;
@@ -777,380 +632,301 @@ static void mount_strings_close(MountStrings *strings) {
 	*strings = (MountStrings) {0};
 }
 
-static XentNodeId
-mount_combo(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
+static XentNodeId mount_combo(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	MountStrings strings = {0};
-	if (!mount_strings_open(props, prop_count, XTK_PROP_ITEMS, &strings)) return XENT_NODE_INVALID;
+	if (!mount_strings_open(m, XTK_PROP_ITEMS, &strings)) return XENT_NODE_INVALID;
 	XentNodeId node = flux_combo_init(&(FluxComboBoxDesc) {
 	  .ctx            = ctx,
 	  .store          = store,
 	  .parent         = SEED_NONE,
-	  .window         = env->window,
-	  .text           = env->text,
-	  .theme          = env->theme,
-	  .app            = env->app,
-	  .input          = env->input,
+	  .window         = m->env->window,
+	  .text           = m->env->text,
+	  .theme          = m->env->theme,
+	  .app            = m->env->app,
+	  .input          = m->env->input,
 	  .items          = strings.items,
 	  .item_count     = strings.count,
-	  .selected_index = mount_i32(props, prop_count, XTK_PROP_SELECTED_INDEX, -1),
-	  .placeholder    = mount_string(props, prop_count, XTK_PROP_PLACEHOLDER, NULL)});
+	  .selected_index = mount_i32(m, XTK_PROP_SELECTED_INDEX, -1),
+	  .placeholder    = mount_string(m, XTK_PROP_PLACEHOLDER, NULL)});
 	mount_strings_close(&strings);
 	return node;
 }
 
-static XentNodeId mount_button(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_button(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_button_init(&(FluxButtonDesc) {
-	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, NULL), NULL, NULL});
+	  ctx, store, SEED_NONE, mount_string(m, XTK_PROP_TEXT, NULL), NULL, NULL});
 }
 
-static XentNodeId mount_repeat(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_repeat(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_repeat_init(&(FluxButtonDesc) {
-	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, NULL), NULL, NULL});
+	  ctx, store, SEED_NONE, mount_string(m, XTK_PROP_TEXT, NULL), NULL, NULL});
 }
 
-static XentNodeId mount_dropdown(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_dropdown(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_dropdown_init(&(FluxDropDownButtonDesc) {
-	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  mount_string(props, prop_count, XTK_PROP_ICON, NULL)});
+	  ctx, store, SEED_NONE, mount_string(m, XTK_PROP_TEXT, NULL), mount_string(m, XTK_PROP_ICON, NULL)});
 }
 
-static XentNodeId
-mount_split(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
-	( void ) env;
+static XentNodeId mount_split(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_split_init(&(FluxSplitButtonDesc) {
-	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  mount_string(props, prop_count, XTK_PROP_ICON, NULL), NULL, NULL});
+	  ctx, store, SEED_NONE, mount_string(m, XTK_PROP_TEXT, NULL), mount_string(m, XTK_PROP_ICON, NULL), NULL, NULL});
 }
 
-static XentNodeId mount_toggle_split(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_toggle_split(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_togglesplit_init(&(FluxToggleSplitButtonDesc) {
 	  .ctx       = ctx,
 	  .store     = store,
 	  .parent    = SEED_NONE,
-	  .label     = mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  .icon_name = mount_string(props, prop_count, XTK_PROP_ICON, NULL),
-	  .checked   = mount_bool(props, prop_count, XTK_PROP_CHECKED, false)});
+	  .label     = mount_string(m, XTK_PROP_TEXT, NULL),
+	  .icon_name = mount_string(m, XTK_PROP_ICON, NULL),
+	  .checked   = mount_bool(m, XTK_PROP_CHECKED, false)});
 }
 
-static XentNodeId mount_hyperlink(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_hyperlink(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_link_init(&(FluxHyperlinkDesc) {
-	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  mount_string(props, prop_count, XTK_PROP_URL, NULL), NULL, NULL});
+	  ctx, store, SEED_NONE, mount_string(m, XTK_PROP_TEXT, NULL), mount_string(m, XTK_PROP_URL, NULL), NULL, NULL});
+}
+
+static XentNodeId mount_text(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_text_init(&(FluxTextDesc) {
+	  ctx, store, SEED_NONE, mount_string(m, XTK_PROP_TEXT, ""), mount_f32(m, XTK_PROP_FONT_SIZE, 14.0f),
+	  m->env->text});
 }
 
 static XentNodeId
-mount_text(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
-	return flux_text_init(&(FluxTextDesc) {
-	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, ""),
-	  mount_f32(props, prop_count, XTK_PROP_FONT_SIZE, 14.0f), env->text});
-}
-
-static XentNodeId mount_toggle(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count,
-  XentNodeId (*init)(FluxToggleDesc const *)
-) {
-	( void ) env;
+mount_toggle(XentCtx *ctx, FluxStore *store, FluxControlMount const *m, XentNodeId (*init)(FluxToggleDesc const *)) {
 	return init(&(FluxToggleDesc) {
-	  ctx, store, SEED_NONE, mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  mount_bool(props, prop_count, XTK_PROP_CHECKED, false), NULL, NULL});
+	  ctx, store, SEED_NONE, mount_string(m, XTK_PROP_TEXT, NULL), mount_bool(m, XTK_PROP_CHECKED, false), NULL, NULL});
 }
 
-#define MOUNT_TOGGLE(name, init)                                                                                \
-	static XentNodeId name(                                                                                     \
-	  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count \
-	) {                                                                                                         \
-		return mount_toggle(ctx, store, env, props, prop_count, init);                                          \
+#define MOUNT_TOGGLE(name, init)                                                        \
+	static XentNodeId name(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) { \
+		return mount_toggle(ctx, store, m, init);                                       \
 	}
 
 MOUNT_TOGGLE(mount_checkbox, flux_checkbox_init)
 MOUNT_TOGGLE(mount_radio, flux_radio_init)
 MOUNT_TOGGLE(mount_switch, flux_switch_init)
 
-static XentNodeId mount_slider(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_slider(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_slider_init(&(FluxSliderDesc) {
-	  ctx, store, SEED_NONE, mount_f32(props, prop_count, XTK_PROP_MIN_F32, 0.0f),
-	  mount_f32(props, prop_count, XTK_PROP_MAX_F32, 1.0f), mount_f32(props, prop_count, XTK_PROP_VALUE_F32, 0.0f),
-	  NULL, NULL});
+	  ctx, store, SEED_NONE, mount_f32(m, XTK_PROP_MIN_F32, 0.0f), mount_f32(m, XTK_PROP_MAX_F32, 1.0f),
+	  mount_f32(m, XTK_PROP_VALUE_F32, 0.0f), NULL, NULL});
 }
 
-static XentNodeId mount_progress(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_progress(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_progress_init(&(FluxProgressDesc) {
 	  .ctx       = ctx,
 	  .store     = store,
 	  .parent    = SEED_NONE,
-	  .value     = mount_f32(props, prop_count, XTK_PROP_VALUE_F32, 0.0f),
-	  .max_value = mount_f32(props, prop_count, XTK_PROP_MAX_F32, 100.0f),
-	  .min_value = mount_f32(props, prop_count, XTK_PROP_MIN_F32, 0.0f)});
+	  .value     = mount_f32(m, XTK_PROP_VALUE_F32, 0.0f),
+	  .max_value = mount_f32(m, XTK_PROP_MAX_F32, 100.0f),
+	  .min_value = mount_f32(m, XTK_PROP_MIN_F32, 0.0f)});
 }
 
-static XentNodeId mount_progress_ring(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_progress_ring(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_progressring_init(&(FluxProgressDesc) {
 	  .ctx       = ctx,
 	  .store     = store,
 	  .parent    = SEED_NONE,
-	  .value     = mount_f32(props, prop_count, XTK_PROP_VALUE_F32, 0.0f),
-	  .max_value = mount_f32(props, prop_count, XTK_PROP_MAX_F32, 100.0f),
-	  .min_value = mount_f32(props, prop_count, XTK_PROP_MIN_F32, 0.0f)});
+	  .value     = mount_f32(m, XTK_PROP_VALUE_F32, 0.0f),
+	  .max_value = mount_f32(m, XTK_PROP_MAX_F32, 100.0f),
+	  .min_value = mount_f32(m, XTK_PROP_MIN_F32, 0.0f)});
 }
 
-static XentNodeId
-mount_badge(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
-	( void ) env;
+static XentNodeId mount_badge(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_badge_init(&(FluxInfoBadgeDesc) {
-	  ctx, store, SEED_NONE, ( FluxInfoBadgeMode ) mount_enum(props, prop_count, XTK_PROP_BADGE_MODE, 0u),
-	  mount_i32(props, prop_count, XTK_PROP_BADGE_VALUE, 0)});
+	  ctx, store, SEED_NONE, ( FluxInfoBadgeMode ) mount_enum(m, XTK_PROP_BADGE_MODE, 0u),
+	  mount_i32(m, XTK_PROP_BADGE_VALUE, 0)});
 }
 
-static XentNodeId mount_looping(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_looping(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	MountStrings strings = {0};
-	if (!mount_strings_open(props, prop_count, XTK_PROP_ITEMS, &strings)) return XENT_NODE_INVALID;
+	if (!mount_strings_open(m, XTK_PROP_ITEMS, &strings)) return XENT_NODE_INVALID;
 	XentNodeId node = flux_looping_init(&(FluxLoopingDesc) {
 	  .ctx         = ctx,
 	  .store       = store,
 	  .parent      = SEED_NONE,
 	  .items       = strings.items,
 	  .item_count  = strings.count,
-	  .selected    = mount_i32(props, prop_count, XTK_PROP_SELECTED_INDEX, -1),
-	  .item_height = mount_f32(props, prop_count, XTK_PROP_ITEM_HEIGHT, 0.0f),
-	  .item_width  = mount_f32(props, prop_count, XTK_PROP_ITEM_WIDTH, 0.0f),
-	  .should_loop = mount_bool(props, prop_count, XTK_PROP_SHOULD_LOOP, false)});
+	  .selected    = mount_i32(m, XTK_PROP_SELECTED_INDEX, -1),
+	  .item_height = mount_f32(m, XTK_PROP_ITEM_HEIGHT, 0.0f),
+	  .item_width  = mount_f32(m, XTK_PROP_ITEM_WIDTH, 0.0f),
+	  .should_loop = mount_bool(m, XTK_PROP_SHOULD_LOOP, false)});
 	mount_strings_close(&strings);
 	return node;
 }
 
-static XentNodeId mount_scroll_bar(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_scroll_bar(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_scroll_bar_init(&(FluxScrollBarDesc) {
-	  .ctx    = ctx,
-	  .store  = store,
-	  .parent = SEED_NONE,
-	  .orientation
-	  = ( FluxScrollBarOrientation ) mount_enum(props, prop_count, XTK_PROP_ORIENTATION, FLUX_SCROLLBAR_VERTICAL),
-	  .minimum       = mount_f64(props, prop_count, XTK_PROP_MIN_F64, 0.0),
-	  .maximum       = mount_f64(props, prop_count, XTK_PROP_MAX_F64, 1.0),
-	  .value         = mount_f64(props, prop_count, XTK_PROP_VALUE_F64, 0.0),
-	  .viewport_size = mount_f64(props, prop_count, XTK_PROP_VIEWPORT_SIZE, 0.0)});
+	  .ctx           = ctx,
+	  .store         = store,
+	  .parent        = SEED_NONE,
+	  .orientation   = ( FluxScrollBarOrientation ) mount_enum(m, XTK_PROP_ORIENTATION, FLUX_SCROLLBAR_VERTICAL),
+	  .minimum       = mount_f64(m, XTK_PROP_MIN_F64, 0.0),
+	  .maximum       = mount_f64(m, XTK_PROP_MAX_F64, 1.0),
+	  .value         = mount_f64(m, XTK_PROP_VALUE_F64, 0.0),
+	  .viewport_size = mount_f64(m, XTK_PROP_VIEWPORT_SIZE, 0.0)});
 }
 
-static XentNodeId mount_rating(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_rating(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_rating_init(&(FluxRatingDesc) {
 	  .ctx               = ctx,
 	  .store             = store,
 	  .parent            = SEED_NONE,
-	  .value             = mount_f64(props, prop_count, XTK_PROP_VALUE_F64, -1.0),
-	  .max_rating        = ( int ) mount_f64(props, prop_count, XTK_PROP_MAX_F64, 5.0),
-	  .placeholder_value = mount_f64(props, prop_count, XTK_PROP_PLACEHOLDER_F64, -1.0),
-	  .initial_set_value = mount_i32(props, prop_count, XTK_PROP_INITIAL_VALUE, 1),
-	  .is_clear_enabled  = mount_bool(props, prop_count, XTK_PROP_CLEAR_ENABLED, false),
-	  .is_read_only      = mount_bool(props, prop_count, XTK_PROP_READ_ONLY, false),
-	  .caption           = mount_string(props, prop_count, XTK_PROP_TEXT, NULL)});
+	  .value             = mount_f64(m, XTK_PROP_VALUE_F64, -1.0),
+	  .max_rating        = ( int ) mount_f64(m, XTK_PROP_MAX_F64, 5.0),
+	  .placeholder_value = mount_f64(m, XTK_PROP_PLACEHOLDER_F64, -1.0),
+	  .initial_set_value = mount_i32(m, XTK_PROP_INITIAL_VALUE, 1),
+	  .is_clear_enabled  = mount_bool(m, XTK_PROP_CLEAR_ENABLED, false),
+	  .is_read_only      = mount_bool(m, XTK_PROP_READ_ONLY, false),
+	  .caption           = mount_string(m, XTK_PROP_TEXT, NULL)});
 }
 
-static XentNodeId mount_expander(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
+static XentNodeId mount_expander(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_expander_init(&(FluxExpanderDesc) {
 	  .ctx            = ctx,
 	  .store          = store,
 	  .parent         = SEED_NONE,
-	  .window         = env->window,
-	  .header         = mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  .expanded       = mount_bool(props, prop_count, XTK_PROP_EXPANDED, false),
-	  .width          = mount_f32(props, prop_count, XTK_PROP_WIDTH, 0.0f),
-	  .content_height = mount_f32(props, prop_count, XTK_PROP_CONTENT_HEIGHT, 0.0f)});
+	  .window         = m->env->window,
+	  .header         = mount_string(m, XTK_PROP_TEXT, NULL),
+	  .expanded       = mount_bool(m, XTK_PROP_EXPANDED, false),
+	  .width          = mount_f32(m, XTK_PROP_WIDTH, 0.0f),
+	  .content_height = mount_f32(m, XTK_PROP_CONTENT_HEIGHT, 0.0f)});
 }
 
-static XentNodeId mount_refresh(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
+static XentNodeId mount_refresh(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_refresh_init(&(FluxRefreshContainerDesc) {
 	  .ctx             = ctx,
 	  .store           = store,
 	  .parent          = SEED_NONE,
-	  .window          = env->window,
-	  .direction       = ( FluxPullDirection ) mount_enum(props, prop_count, XTK_PROP_PULL_DIRECTION, 0u),
-	  .visualizer_size = mount_f32(props, prop_count, XTK_PROP_VISUALIZER_SIZE, 100.0f),
-	  .threshold_ratio = mount_f32(props, prop_count, XTK_PROP_THRESHOLD_RATIO, 0.8f)});
+	  .window          = m->env->window,
+	  .direction       = ( FluxPullDirection ) mount_enum(m, XTK_PROP_PULL_DIRECTION, 0u),
+	  .visualizer_size = mount_f32(m, XTK_PROP_VISUALIZER_SIZE, 100.0f),
+	  .threshold_ratio = mount_f32(m, XTK_PROP_THRESHOLD_RATIO, 0.8f)});
 }
 
-static XentNodeId mount_info_bar(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_info_bar(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_infobar_init(&(FluxInfoBarDesc) {
 	  .ctx         = ctx,
 	  .store       = store,
 	  .parent      = SEED_NONE,
-	  .severity    = ( FluxInfoBarSeverity ) mount_enum(props, prop_count, XTK_PROP_SEVERITY, 0u),
-	  .title       = mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  .message     = mount_string(props, prop_count, XTK_PROP_MESSAGE, NULL),
-	  .is_closable = mount_bool(props, prop_count, XTK_PROP_CLOSABLE, false)});
+	  .severity    = ( FluxInfoBarSeverity ) mount_enum(m, XTK_PROP_SEVERITY, 0u),
+	  .title       = mount_string(m, XTK_PROP_TEXT, NULL),
+	  .message     = mount_string(m, XTK_PROP_MESSAGE, NULL),
+	  .is_closable = mount_bool(m, XTK_PROP_CLOSABLE, false)});
 }
 
-static XentNodeId mount_dialog(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
+static XentNodeId mount_dialog(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_dialog_init(&(FluxContentDialogDesc) {
 	  .ctx            = ctx,
 	  .store          = store,
-	  .overlay_parent = env->overlay,
-	  .input          = env->input,
-	  .window         = env->window,
-	  .theme          = env->theme,
-	  .title          = mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  .primary_text   = mount_string(props, prop_count, XTK_PROP_PRIMARY_TEXT, NULL),
-	  .secondary_text = mount_string(props, prop_count, XTK_PROP_SECONDARY_TEXT, NULL),
-	  .close_text     = mount_string(props, prop_count, XTK_PROP_CLOSE_TEXT, NULL),
-	  .width          = mount_f32(props, prop_count, XTK_PROP_WIDTH, 400.0f),
-	  .content_height = mount_f32(props, prop_count, XTK_PROP_CONTENT_HEIGHT, 120.0f)});
+	  .overlay_parent = m->env->overlay,
+	  .input          = m->env->input,
+	  .window         = m->env->window,
+	  .theme          = m->env->theme,
+	  .title          = mount_string(m, XTK_PROP_TEXT, NULL),
+	  .primary_text   = mount_string(m, XTK_PROP_PRIMARY_TEXT, NULL),
+	  .secondary_text = mount_string(m, XTK_PROP_SECONDARY_TEXT, NULL),
+	  .close_text     = mount_string(m, XTK_PROP_CLOSE_TEXT, NULL),
+	  .width          = mount_f32(m, XTK_PROP_WIDTH, 400.0f),
+	  .content_height = mount_f32(m, XTK_PROP_CONTENT_HEIGHT, 120.0f)});
 }
 
-static XentNodeId
-mount_nav(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
-	if (!env || !env->window) return XENT_NODE_INVALID;
+static XentNodeId mount_nav(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	if (!m->env->window) return XENT_NODE_INVALID;
 	return flux_nav_init(&(FluxNavViewDesc) {
 	  .ctx      = ctx,
 	  .store    = store,
 	  .parent   = SEED_NONE,
-	  .window   = env->window,
-	  .text     = env->text,
-	  .theme    = env->theme,
-	  .width    = mount_f32(props, prop_count, XTK_PROP_WIDTH, 0.0f),
-	  .height   = mount_f32(props, prop_count, XTK_PROP_HEIGHT, 0.0f),
+	  .window   = m->env->window,
+	  .text     = m->env->text,
+	  .theme    = m->env->theme,
+	  .width    = mount_f32(m, XTK_PROP_WIDTH, 0.0f),
+	  .height   = mount_f32(m, XTK_PROP_HEIGHT, 0.0f),
 	  .adaptive = true});
 }
 
-static XentNodeId mount_textbox(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	char const *placeholder = mount_string(props, prop_count, XTK_PROP_PLACEHOLDER, NULL);
-	if (env && env->app)
-		return flux_app_create_textbox(&(FluxAppTextBoxDesc) {env->app, SEED_NONE, placeholder, NULL, NULL});
+static XentNodeId mount_textbox(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	char const *placeholder = mount_string(m, XTK_PROP_PLACEHOLDER, NULL);
+	if (m->env->app)
+		return flux_app_create_textbox(&(FluxAppTextBoxDesc) {m->env->app, SEED_NONE, placeholder, NULL, NULL});
 	return flux_textbox_init(&(FluxTextBoxDesc) {ctx, store, SEED_NONE, placeholder, NULL, NULL});
 }
 
-static XentNodeId mount_password(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	char const *placeholder = mount_string(props, prop_count, XTK_PROP_PLACEHOLDER, NULL);
-	if (env && env->app)
-		return flux_app_create_password(&(FluxAppTextBoxDesc) {env->app, SEED_NONE, placeholder, NULL, NULL});
+static XentNodeId mount_password(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	char const *placeholder = mount_string(m, XTK_PROP_PLACEHOLDER, NULL);
+	if (m->env->app)
+		return flux_app_create_password(&(FluxAppTextBoxDesc) {m->env->app, SEED_NONE, placeholder, NULL, NULL});
 	return flux_password_init(&(FluxTextBoxDesc) {ctx, store, SEED_NONE, placeholder, NULL, NULL});
 }
 
-static XentNodeId mount_number(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	double min  = mount_f64(props, prop_count, XTK_PROP_MIN_F64, 0.0);
-	double max  = mount_f64(props, prop_count, XTK_PROP_MAX_F64, 100.0);
-	double step = mount_f64(props, prop_count, XTK_PROP_STEP_F64, 1.0);
-	if (env && env->app)
-		return flux_app_create_number(&(FluxAppNumberBoxDesc) {env->app, SEED_NONE, min, max, step, NULL, NULL});
+static XentNodeId mount_number(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	double min  = mount_f64(m, XTK_PROP_MIN_F64, 0.0);
+	double max  = mount_f64(m, XTK_PROP_MAX_F64, 100.0);
+	double step = mount_f64(m, XTK_PROP_STEP_F64, 1.0);
+	if (m->env->app)
+		return flux_app_create_number(&(FluxAppNumberBoxDesc) {m->env->app, SEED_NONE, min, max, step, NULL, NULL});
 	return flux_number_init(&(FluxNumberBoxDesc) {ctx, store, SEED_NONE, min, max, step, NULL, NULL});
 }
 
-static XentNodeId mount_split_view(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
-	( void ) env;
+static XentNodeId mount_split_view(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_splitview_init(&(FluxSplitViewDesc) {
 	  .ctx                 = ctx,
 	  .store               = store,
 	  .parent              = SEED_NONE,
-	  .display_mode        = ( int ) mount_enum(props, prop_count, XTK_PROP_DISPLAY_MODE, 0u),
-	  .pane_placement      = ( int ) mount_enum(props, prop_count, XTK_PROP_PANE_PLACEMENT, 0u),
-	  .pane_open           = mount_bool(props, prop_count, XTK_PROP_OPEN, false),
-	  .open_pane_length    = mount_f32(props, prop_count, XTK_PROP_OPEN_PANE_LENGTH, 0.0f),
-	  .compact_pane_length = mount_f32(props, prop_count, XTK_PROP_COMPACT_PANE_LENGTH, 0.0f)});
+	  .display_mode        = ( int ) mount_enum(m, XTK_PROP_DISPLAY_MODE, 0u),
+	  .pane_placement      = ( int ) mount_enum(m, XTK_PROP_PANE_PLACEMENT, 0u),
+	  .pane_open           = mount_bool(m, XTK_PROP_OPEN, false),
+	  .open_pane_length    = mount_f32(m, XTK_PROP_OPEN_PANE_LENGTH, 0.0f),
+	  .compact_pane_length = mount_f32(m, XTK_PROP_COMPACT_PANE_LENGTH, 0.0f)});
 }
 
-static XentNodeId mount_title_bar(
-  XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count
-) {
+static XentNodeId mount_title_bar(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_titlebar_init(&(FluxTitleBarDesc) {
 	  .ctx              = ctx,
 	  .store            = store,
 	  .parent           = SEED_NONE,
-	  .window           = env->window,
-	  .title            = mount_string(props, prop_count, XTK_PROP_TEXT, NULL),
-	  .subtitle         = mount_string(props, prop_count, XTK_PROP_SUBTITLE, NULL),
-	  .icon             = mount_string(props, prop_count, XTK_PROP_ICON, NULL),
-	  .show_back        = mount_bool(props, prop_count, XTK_PROP_SHOW_BACK, false),
-	  .back_disabled    = mount_bool(props, prop_count, XTK_PROP_BACK_DISABLED, false),
-	  .show_pane_toggle = mount_bool(props, prop_count, XTK_PROP_SHOW_PANE_TOGGLE, false),
+	  .window           = m->env->window,
+	  .title            = mount_string(m, XTK_PROP_TEXT, NULL),
+	  .subtitle         = mount_string(m, XTK_PROP_SUBTITLE, NULL),
+	  .icon             = mount_string(m, XTK_PROP_ICON, NULL),
+	  .show_back        = mount_bool(m, XTK_PROP_SHOW_BACK, false),
+	  .back_disabled    = mount_bool(m, XTK_PROP_BACK_DISABLED, false),
+	  .show_pane_toggle = mount_bool(m, XTK_PROP_SHOW_PANE_TOGGLE, false),
 	  .integrate_window = false});
 }
 
-static XentNodeId
-mount_pager(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
-	( void ) env;
+static XentNodeId mount_pager(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_pager_init(&(FluxPagerDesc) {
 	  .ctx          = ctx,
 	  .store        = store,
 	  .parent       = SEED_NONE,
-	  .count        = mount_i32(props, prop_count, XTK_PROP_ITEM_COUNT, 1),
-	  .selected     = mount_i32(props, prop_count, XTK_PROP_SELECTED_INDEX, 0),
-	  .display_mode = ( int ) mount_enum(props, prop_count, XTK_PROP_DISPLAY_MODE, 0u),
-	  .first_button = ( int ) mount_enum(props, prop_count, XTK_PROP_FIRST_BUTTON, 0u),
-	  .prev_button  = ( int ) mount_enum(props, prop_count, XTK_PROP_PREVIOUS_BUTTON, 0u),
-	  .next_button  = ( int ) mount_enum(props, prop_count, XTK_PROP_NEXT_BUTTON, 0u),
-	  .last_button  = ( int ) mount_enum(props, prop_count, XTK_PROP_LAST_BUTTON, 0u),
-	  .prefix       = mount_string(props, prop_count, XTK_PROP_PREFIX, NULL),
-	  .suffix       = mount_string(props, prop_count, XTK_PROP_SUFFIX, NULL)});
+	  .count        = mount_i32(m, XTK_PROP_ITEM_COUNT, 1),
+	  .selected     = mount_i32(m, XTK_PROP_SELECTED_INDEX, 0),
+	  .display_mode = ( int ) mount_enum(m, XTK_PROP_DISPLAY_MODE, 0u),
+	  .first_button = ( int ) mount_enum(m, XTK_PROP_FIRST_BUTTON, 0u),
+	  .prev_button  = ( int ) mount_enum(m, XTK_PROP_PREVIOUS_BUTTON, 0u),
+	  .next_button  = ( int ) mount_enum(m, XTK_PROP_NEXT_BUTTON, 0u),
+	  .last_button  = ( int ) mount_enum(m, XTK_PROP_LAST_BUTTON, 0u),
+	  .prefix       = mount_string(m, XTK_PROP_PREFIX, NULL),
+	  .suffix       = mount_string(m, XTK_PROP_SUFFIX, NULL)});
 }
 
-static XentNodeId
-mount_pips(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
-	( void ) env;
+static XentNodeId mount_pips(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	XentNodeId node = flux_pips_init(&(FluxPipsPagerDesc) {
-	  .ctx      = ctx,
-	  .store    = store,
-	  .parent   = SEED_NONE,
-	  .vertical = mount_enum(props, prop_count, XTK_PROP_ORIENTATION, 0u) != 0u});
+	  .ctx = ctx, .store = store, .parent = SEED_NONE, .vertical = mount_enum(m, XTK_PROP_ORIENTATION, 0u) != 0u});
 	if (node == XENT_NODE_INVALID) return node;
 	flux_pips_configure(
-	  store, node, mount_i32(props, prop_count, XTK_PROP_ITEM_COUNT, 0),
-	  mount_i32(props, prop_count, XTK_PROP_SELECTED_INDEX, 0), mount_i32(props, prop_count, XTK_PROP_MAX_VISIBLE, 5),
-	  ( int ) mount_enum(props, prop_count, XTK_PROP_NAV_VISIBILITY, 0u)
+	  store, node, mount_i32(m, XTK_PROP_ITEM_COUNT, 0), mount_i32(m, XTK_PROP_SELECTED_INDEX, 0),
+	  mount_i32(m, XTK_PROP_MAX_VISIBLE, 5), ( int ) mount_enum(m, XTK_PROP_NAV_VISIBILITY, 0u)
 	);
 	return node;
 }
 
-static bool mount_tab_values(FluxStore *store, XentNodeId node, XtkPropPatch const *props, uint32_t prop_count) {
+static bool mount_tab_values(FluxStore *store, XentNodeId node, FluxControlMount const *m) {
 	MountStrings strings = {0};
-	if (!mount_strings_open(props, prop_count, XTK_PROP_ITEMS, &strings)) return false;
+	if (!mount_strings_open(m, XTK_PROP_ITEMS, &strings)) return false;
 	if ((strings.count & 1) != 0 || strings.count / 2 > FLUX_TAB_VIEW_MAX_TABS) {
 		mount_strings_close(&strings);
 		return false;
@@ -1162,319 +938,69 @@ static bool mount_tab_values(FluxStore *store, XentNodeId node, XtkPropPatch con
 		labels [i] = strings.items [i * 2 + 1];
 	}
 	bool ok = flux_tabs_mount_items(
-	  store, node, icons, labels, strings.count / 2, mount_i32(props, prop_count, XTK_PROP_SELECTED_INDEX, -1),
-	  mount_bool(props, prop_count, XTK_PROP_ADD_VISIBLE, false)
+	  store, node, icons, labels, strings.count / 2, mount_i32(m, XTK_PROP_SELECTED_INDEX, -1),
+	  mount_bool(m, XTK_PROP_ADD_VISIBLE, false)
 	);
 	mount_strings_close(&strings);
 	return ok;
 }
 
-static XentNodeId
-mount_tab(XentCtx *ctx, FluxStore *store, FluxControlEnv const *env, XtkPropPatch const *props, uint32_t prop_count) {
+static XentNodeId mount_tab(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	XentNodeId node = flux_tabs_init(&(FluxTabViewDesc) {
-	  .ctx = ctx, .store = store, .parent = SEED_NONE, .window = env->window, .text = env->text, .input = env->input});
-	if (node == XENT_NODE_INVALID || mount_tab_values(store, node, props, prop_count)) return node;
+	  .ctx    = ctx,
+	  .store  = store,
+	  .parent = SEED_NONE,
+	  .window = m->env->window,
+	  .text   = m->env->text,
+	  .input  = m->env->input});
+	if (node == XENT_NODE_INVALID || mount_tab_values(store, node, m)) return node;
 	flux_tree_drop(store, node);
 	return XENT_NODE_INVALID;
 }
 
-typedef struct FluxMountProperty {
-	FluxControlType type;
-	XtkPropertyId   property;
-} FluxMountProperty;
-
-#define MOUNT_PROP(type, property) {FLUX_CONTROL_##type, XTK_PROP_##property}
-
-static FluxMountProperty const mount_properties [] = {
-  MOUNT_PROP(BUTTON, TEXT),
-  MOUNT_PROP(REPEAT_BUTTON, TEXT),
-  MOUNT_PROP(DROPDOWN_BUTTON, TEXT),
-  MOUNT_PROP(DROPDOWN_BUTTON, ICON),
-  MOUNT_PROP(SPLIT_BUTTON, TEXT),
-  MOUNT_PROP(SPLIT_BUTTON, ICON),
-  MOUNT_PROP(TOGGLE_SPLIT_BUTTON, TEXT),
-  MOUNT_PROP(TOGGLE_SPLIT_BUTTON, ICON),
-  MOUNT_PROP(TOGGLE_SPLIT_BUTTON, CHECKED),
-  MOUNT_PROP(HYPERLINK, TEXT),
-  MOUNT_PROP(HYPERLINK, URL),
-  MOUNT_PROP(TEXT, TEXT),
-  MOUNT_PROP(TEXT, FONT_SIZE),
-  MOUNT_PROP(CHECKBOX, TEXT),
-  MOUNT_PROP(CHECKBOX, CHECKED),
-  MOUNT_PROP(RADIO, TEXT),
-  MOUNT_PROP(RADIO, CHECKED),
-  MOUNT_PROP(SWITCH, TEXT),
-  MOUNT_PROP(SWITCH, CHECKED),
-  MOUNT_PROP(SLIDER, MIN_F32),
-  MOUNT_PROP(SLIDER, MAX_F32),
-  MOUNT_PROP(SLIDER, VALUE_F32),
-  MOUNT_PROP(PROGRESS, MAX_F32),
-  MOUNT_PROP(PROGRESS, MIN_F32),
-  MOUNT_PROP(PROGRESS, VALUE_F32),
-  MOUNT_PROP(PROGRESS_RING, MAX_F32),
-  MOUNT_PROP(PROGRESS_RING, MIN_F32),
-  MOUNT_PROP(PROGRESS_RING, VALUE_F32),
-  MOUNT_PROP(INFO_BADGE, BADGE_MODE),
-  MOUNT_PROP(INFO_BADGE, BADGE_VALUE),
-  MOUNT_PROP(RATING, VALUE_F64),
-  MOUNT_PROP(RATING, MAX_F64),
-  MOUNT_PROP(RATING, PLACEHOLDER_F64),
-  MOUNT_PROP(RATING, INITIAL_VALUE),
-  MOUNT_PROP(RATING, CLEAR_ENABLED),
-  MOUNT_PROP(RATING, READ_ONLY),
-  MOUNT_PROP(RATING, TEXT),
-  MOUNT_PROP(COMBO_BOX, ITEMS),
-  MOUNT_PROP(COMBO_BOX, SELECTED_INDEX),
-  MOUNT_PROP(COMBO_BOX, PLACEHOLDER),
-  MOUNT_PROP(EXPANDER, TEXT),
-  MOUNT_PROP(EXPANDER, EXPANDED),
-  MOUNT_PROP(EXPANDER, WIDTH),
-  MOUNT_PROP(EXPANDER, CONTENT_HEIGHT),
-  MOUNT_PROP(REFRESH, PULL_DIRECTION),
-  MOUNT_PROP(REFRESH, VISUALIZER_SIZE),
-  MOUNT_PROP(REFRESH, THRESHOLD_RATIO),
-  MOUNT_PROP(INFO_BAR, TEXT),
-  MOUNT_PROP(INFO_BAR, MESSAGE),
-  MOUNT_PROP(INFO_BAR, SEVERITY),
-  MOUNT_PROP(INFO_BAR, CLOSABLE),
-  MOUNT_PROP(CONTENT_DIALOG, TEXT),
-  MOUNT_PROP(CONTENT_DIALOG, PRIMARY_TEXT),
-  MOUNT_PROP(CONTENT_DIALOG, SECONDARY_TEXT),
-  MOUNT_PROP(CONTENT_DIALOG, CLOSE_TEXT),
-  MOUNT_PROP(CONTENT_DIALOG, WIDTH),
-  MOUNT_PROP(CONTENT_DIALOG, CONTENT_HEIGHT),
-  MOUNT_PROP(NAV_VIEW, WIDTH),
-  MOUNT_PROP(NAV_VIEW, HEIGHT),
-  MOUNT_PROP(TEXT_INPUT, PLACEHOLDER),
-  MOUNT_PROP(PASSWORD_BOX, PLACEHOLDER),
-  MOUNT_PROP(NUMBER_BOX, MIN_F64),
-  MOUNT_PROP(NUMBER_BOX, MAX_F64),
-  MOUNT_PROP(NUMBER_BOX, STEP_F64),
-  MOUNT_PROP(SPLIT_VIEW, DISPLAY_MODE),
-  MOUNT_PROP(SPLIT_VIEW, PANE_PLACEMENT),
-  MOUNT_PROP(SPLIT_VIEW, OPEN),
-  MOUNT_PROP(SPLIT_VIEW, OPEN_PANE_LENGTH),
-  MOUNT_PROP(SPLIT_VIEW, COMPACT_PANE_LENGTH),
-  MOUNT_PROP(TITLE_BAR, TEXT),
-  MOUNT_PROP(TITLE_BAR, SUBTITLE),
-  MOUNT_PROP(TITLE_BAR, ICON),
-  MOUNT_PROP(TITLE_BAR, SHOW_BACK),
-  MOUNT_PROP(TITLE_BAR, BACK_DISABLED),
-  MOUNT_PROP(TITLE_BAR, SHOW_PANE_TOGGLE),
-  MOUNT_PROP(PAGER, ITEM_COUNT),
-  MOUNT_PROP(PAGER, SELECTED_INDEX),
-  MOUNT_PROP(PAGER, DISPLAY_MODE),
-  MOUNT_PROP(PAGER, FIRST_BUTTON),
-  MOUNT_PROP(PAGER, PREVIOUS_BUTTON),
-  MOUNT_PROP(PAGER, NEXT_BUTTON),
-  MOUNT_PROP(PAGER, LAST_BUTTON),
-  MOUNT_PROP(PAGER, PREFIX),
-  MOUNT_PROP(PAGER, SUFFIX),
-  MOUNT_PROP(PIPS_PAGER, ORIENTATION),
-  MOUNT_PROP(PIPS_PAGER, ITEM_COUNT),
-  MOUNT_PROP(PIPS_PAGER, SELECTED_INDEX),
-  MOUNT_PROP(PIPS_PAGER, MAX_VISIBLE),
-  MOUNT_PROP(PIPS_PAGER, NAV_VISIBILITY),
-  MOUNT_PROP(TAB_VIEW, ITEMS),
-  MOUNT_PROP(TAB_VIEW, SELECTED_INDEX),
-  MOUNT_PROP(TAB_VIEW, ADD_VISIBLE),
-};
-
-bool flux_control_mount_consumed(FluxControlType type, XtkPropertyId property) {
-	for (size_t i = 0; i < sizeof(mount_properties) / sizeof(mount_properties [0]); i++)
-		if (mount_properties [i].type == type && mount_properties [i].property == property) return true;
-	return false;
+static XentNodeId seed_colheader(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_colheader_init(ctx, store, m->env->window);
 }
 
-static FluxRetargetFn const k_retarget [XTK_CTRL_TYPE_COUNT] = {
-  [FLUX_CONTROL_BUTTON]              = retarget_button,
-  [FLUX_CONTROL_REPEAT_BUTTON]       = retarget_repeat,
-  [FLUX_CONTROL_HYPERLINK]           = retarget_hyperlink,
-  [FLUX_CONTROL_DROPDOWN_BUTTON]     = retarget_dropdown,
-  [FLUX_CONTROL_SPLIT_BUTTON]        = retarget_split,
-  [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = retarget_split,
-  [FLUX_CONTROL_SLIDER]              = retarget_slider,
-  [FLUX_CONTROL_SCROLL_BAR]          = retarget_scroll_bar,
-  [FLUX_CONTROL_LOOPING_SELECTOR]    = retarget_looping,
-  [FLUX_CONTROL_DATE_PICKER]         = retarget_picker,
-  [FLUX_CONTROL_TIME_PICKER]         = retarget_picker,
-  [FLUX_CONTROL_CALENDAR_VIEW]       = flux_calendar_retarget,
-  [FLUX_CONTROL_COLOR_PICKER]        = flux_colorpicker_retarget,
-  [FLUX_CONTROL_RATING]              = retarget_rating,
-  [FLUX_CONTROL_CHECKBOX]            = retarget_checkbox,
-  [FLUX_CONTROL_RADIO]               = retarget_radio,
-  [FLUX_CONTROL_SWITCH]              = retarget_switch,
-  [FLUX_CONTROL_SCROLL]              = retarget_scroll,
-  [FLUX_CONTROL_LIST]                = retarget_list,
-  [FLUX_CONTROL_LIST_BOX]            = retarget_list,
-  [FLUX_CONTROL_GRID_VIEW]           = retarget_list,
-  [FLUX_CONTROL_ITEMS_REPEATER]      = retarget_list,
-  [FLUX_CONTROL_ITEMS_VIEW]          = retarget_list,
-  [FLUX_CONTROL_RADIO_BUTTONS]       = retarget_radio_buttons,
-  [FLUX_CONTROL_TREE_VIEW]           = retarget_tree,
-  [FLUX_CONTROL_REFRESH]             = retarget_refresh,
-  [FLUX_CONTROL_SELECTOR_BAR]        = retarget_selector,
-  [FLUX_CONTROL_BREADCRUMB_BAR]      = retarget_breadcrumb,
-  [FLUX_CONTROL_NAV_VIEW]            = retarget_nav,
-  [FLUX_CONTROL_TAB_VIEW]            = retarget_tab,
-  [FLUX_CONTROL_MENU_BAR]            = retarget_menu_bar,
-  [FLUX_CONTROL_EXPANDER]            = retarget_expander,
-  [FLUX_CONTROL_COMBO_BOX]           = retarget_combo,
-  [FLUX_CONTROL_CONTENT_DIALOG]      = retarget_dialog,
-  [FLUX_CONTROL_TEXT_INPUT]          = retarget_textbox,
-  [FLUX_CONTROL_PASSWORD_BOX]        = retarget_textbox,
-  [FLUX_CONTROL_NUMBER_BOX]          = retarget_textbox,
-  [FLUX_CONTROL_INFO_BAR]            = retarget_info_bar,
-  [FLUX_CONTROL_FLIP_VIEW]           = retarget_flip,
-  [FLUX_CONTROL_PAGER]               = retarget_pager,
-  [FLUX_CONTROL_PIPS_PAGER]          = retarget_pips,
-  [FLUX_CONTROL_PERSON_PICTURE]      = retarget_person,
-  [FLUX_CONTROL_SPLIT_VIEW]          = retarget_split_view,
-  [FLUX_CONTROL_TITLE_BAR]           = retarget_title_bar,
-  [FLUX_CONTROL_AUTO_SUGGEST]        = retarget_auto_suggest,
-  [FLUX_CONTROL_TEACHING_TIP]        = retarget_teaching_tip,
-};
-
-static void apply_retarget(XentCtx *ctx, FluxStore *store, XentNodeId dst, FluxControlType type) {
-	if (( unsigned ) type >= XTK_CTRL_TYPE_COUNT) return;
-	if (k_retarget [type]) k_retarget [type](ctx, store, dst);
+static XentNodeId seed_colitem(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
+	return flux_colitem_init(ctx, store);
 }
 
-static FluxMountSeedFn const k_mount_seed [XTK_CTRL_TYPE_COUNT] = {
-  [FLUX_CONTROL_BUTTON]              = mount_button,
-  [FLUX_CONTROL_REPEAT_BUTTON]       = mount_repeat,
-  [FLUX_CONTROL_DROPDOWN_BUTTON]     = mount_dropdown,
-  [FLUX_CONTROL_SPLIT_BUTTON]        = mount_split,
-  [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = mount_toggle_split,
-  [FLUX_CONTROL_HYPERLINK]           = mount_hyperlink,
-  [FLUX_CONTROL_TEXT]                = mount_text,
-  [FLUX_CONTROL_CHECKBOX]            = mount_checkbox,
-  [FLUX_CONTROL_RADIO]               = mount_radio,
-  [FLUX_CONTROL_SWITCH]              = mount_switch,
-  [FLUX_CONTROL_SLIDER]              = mount_slider,
-  [FLUX_CONTROL_SCROLL_BAR]          = mount_scroll_bar,
-  [FLUX_CONTROL_LOOPING_SELECTOR]    = mount_looping,
-  [FLUX_CONTROL_PROGRESS]            = mount_progress,
-  [FLUX_CONTROL_PROGRESS_RING]       = mount_progress_ring,
-  [FLUX_CONTROL_INFO_BADGE]          = mount_badge,
-  [FLUX_CONTROL_RATING]              = mount_rating,
-  [FLUX_CONTROL_COMBO_BOX]           = mount_combo,
-  [FLUX_CONTROL_EXPANDER]            = mount_expander,
-  [FLUX_CONTROL_REFRESH]             = mount_refresh,
-  [FLUX_CONTROL_INFO_BAR]            = mount_info_bar,
-  [FLUX_CONTROL_CONTENT_DIALOG]      = mount_dialog,
-  [FLUX_CONTROL_NAV_VIEW]            = mount_nav,
-  [FLUX_CONTROL_TEXT_INPUT]          = mount_textbox,
-  [FLUX_CONTROL_PASSWORD_BOX]        = mount_password,
-  [FLUX_CONTROL_NUMBER_BOX]          = mount_number,
-  [FLUX_CONTROL_SPLIT_VIEW]          = mount_split_view,
-  [FLUX_CONTROL_TITLE_BAR]           = mount_title_bar,
-  [FLUX_CONTROL_PAGER]               = mount_pager,
-  [FLUX_CONTROL_PIPS_PAGER]          = mount_pips,
-  [FLUX_CONTROL_TAB_VIEW]            = mount_tab,
-};
-
-static FluxLayoutFn const k_layout [XTK_CTRL_TYPE_COUNT] = {
-  [FLUX_CONTROL_CONTAINER]          = layout_flex_column,
-  [FLUX_CONTROL_CARD]               = layout_card,
-  [FLUX_CONTROL_DIVIDER]            = layout_divider,
-  [FLUX_CONTROL_SPLIT_VIEW_CONTENT] = layout_flex_column,
-  [FLUX_CONTROL_SPLIT_VIEW_PANE]    = layout_flex_column,
-};
-
-static FluxSeedFn const k_seed [XTK_CTRL_TYPE_COUNT] = {
-  [FLUX_CONTROL_BUTTON]              = seed_button,
-  [FLUX_CONTROL_DROPDOWN_BUTTON]     = seed_dropdown,
-  [FLUX_CONTROL_REPEAT_BUTTON]       = seed_repeat,
-  [FLUX_CONTROL_HYPERLINK]           = seed_hyperlink,
-  [FLUX_CONTROL_TEXT]                = seed_text,
-  [FLUX_CONTROL_CHECKBOX]            = seed_checkbox,
-  [FLUX_CONTROL_RADIO]               = seed_radio,
-  [FLUX_CONTROL_SWITCH]              = seed_switch,
-  [FLUX_CONTROL_SLIDER]              = seed_slider,
-  [FLUX_CONTROL_SCROLL_BAR]          = seed_scroll_bar,
-  [FLUX_CONTROL_LOOPING_SELECTOR]    = seed_looping,
-  [FLUX_CONTROL_IMAGE]               = seed_image,
-  [FLUX_CONTROL_SCROLL]              = seed_scroll,
-  [FLUX_CONTROL_PROGRESS]            = seed_progress,
-  [FLUX_CONTROL_PROGRESS_RING]       = seed_progress_ring,
-  [FLUX_CONTROL_INFO_BADGE]          = seed_info_badge,
-  [FLUX_CONTROL_CALENDAR_VIEW]       = flux_calendar_init,
-  [FLUX_CONTROL_SPLIT_BUTTON]        = seed_split,
-  [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = seed_toggle_split,
-  [FLUX_CONTROL_LIST_ITEM]           = seed_list_item,
-  [FLUX_CONTROL_TREE_VIEW]           = seed_tree,
-  [FLUX_CONTROL_RADIO_BUTTONS]       = seed_radio_buttons,
-  [FLUX_CONTROL_RATING]              = seed_rating,
-  [FLUX_CONTROL_SELECTOR_BAR]        = seed_selector,
-  [FLUX_CONTROL_PAGER]               = seed_pager,
-  [FLUX_CONTROL_PERSON_PICTURE]      = seed_person,
-  [FLUX_CONTROL_SPLIT_VIEW]          = seed_split_view,
-  [FLUX_CONTROL_INFO_BAR]            = seed_info_bar,
-  [FLUX_CONTROL_PIPS_PAGER]          = seed_pips,
-};
-
-static FluxEnvSeedFn const k_env_seed [XTK_CTRL_TYPE_COUNT] = {
-  [FLUX_CONTROL_DATE_PICKER]    = seed_date_picker,
-  [FLUX_CONTROL_TIME_PICKER]    = seed_time_picker,
-  [FLUX_CONTROL_COLOR_PICKER]   = flux_colorpicker_init,
-  [FLUX_CONTROL_COMBO_BOX]      = seed_combo,
-  [FLUX_CONTROL_AUTO_SUGGEST]   = seed_auto_suggest,
-  [FLUX_CONTROL_BREADCRUMB_BAR] = seed_breadcrumb,
-  [FLUX_CONTROL_TEACHING_TIP]   = seed_teaching_tip,
-  [FLUX_CONTROL_CONTENT_DIALOG] = seed_dialog,
-  [FLUX_CONTROL_MENU_BAR]       = seed_menu_bar,
-  [FLUX_CONTROL_NAV_VIEW]       = seed_nav,
-  [FLUX_CONTROL_TAB_VIEW]       = seed_tab,
-  [FLUX_CONTROL_TITLE_BAR]      = seed_title_bar,
-  [FLUX_CONTROL_TEXT_INPUT]     = seed_textbox,
-  [FLUX_CONTROL_PASSWORD_BOX]   = seed_password,
-  [FLUX_CONTROL_NUMBER_BOX]     = seed_number,
-  [FLUX_CONTROL_LIST]           = seed_list,
-  [FLUX_CONTROL_LIST_BOX]       = seed_list_box,
-  [FLUX_CONTROL_GRID_VIEW]      = seed_grid,
-  [FLUX_CONTROL_ITEMS_REPEATER] = seed_repeater,
-  [FLUX_CONTROL_ITEMS_VIEW]     = seed_items_view,
-  [FLUX_CONTROL_REFRESH]        = seed_refresh,
-  [FLUX_CONTROL_EXPANDER]       = seed_expander,
-  [FLUX_CONTROL_FLIP_VIEW]      = seed_flip,
-};
-
-static FluxUnmountFn const k_unmount [XTK_CTRL_TYPE_COUNT] = {
-  [FLUX_CONTROL_CONTENT_DIALOG] = flux_dialog_hide,
-  [FLUX_CONTROL_DATE_PICKER]    = flux_picker_close,
-  [FLUX_CONTROL_TIME_PICKER]    = flux_picker_close,
-};
-
-void flux_control_unmount(FluxStore *store, XentNodeId node, FluxControlType type) {
-	if (( unsigned ) type >= XTK_CTRL_TYPE_COUNT || !k_unmount [type]) return;
-	k_unmount [type](store, node);
+static XentNodeId seed_commandbar(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_cmdbar_init(ctx, store, m->env);
 }
 
-static bool build_menu_shell(
-  XentCtx *ctx, FluxStore *store, XentNodeId node, FluxControlType type, FluxControlEnv const *env, bool *handled
-) {
-	*handled = true;
-	if (type == FLUX_CONTROL_MENU_FLYOUT) return flux_host_menufly_build(ctx, store, node, env);
-	if (type == FLUX_CONTROL_MENU_BAR_ITEM) return flux_host_menuitem_build(ctx, store, node);
-	*handled = false;
-	return true;
+static XentNodeId seed_appbarbutton(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_appbar_init(ctx, store, m->env->text, FLUX_APPBAR_BUTTON);
 }
 
-static XentNodeId
-control_seed(XentCtx *ctx, FluxStore *store, FluxControlType type, FluxControlMount const *mount, bool *handled) {
-	*handled = true;
-	if (k_mount_seed [type]) return k_mount_seed [type](ctx, store, mount->env, mount->props, mount->prop_count);
-	if (k_env_seed [type]) return k_env_seed [type](ctx, store, mount->env);
-	if (k_seed [type]) return k_seed [type](ctx, store);
-	*handled = false;
-	return XENT_NODE_INVALID;
+static XentNodeId seed_appbartoggle(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_appbar_init(ctx, store, m->env->text, FLUX_APPBAR_TOGGLE);
 }
 
-static bool absorb_seed(XentCtx *ctx, FluxStore *store, XentNodeId node, XentNodeId seed, FluxControlType type) {
+static XentNodeId seed_appbarsep(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_appbar_init(ctx, store, m->env->text, FLUX_APPBAR_SEPARATOR);
+}
+
+static XentNodeId seed_calendar(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
+	return flux_calendar_init(ctx, store);
+}
+
+static XentNodeId seed_colorpicker(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	return flux_colorpicker_init(ctx, store, m->env);
+}
+
+static bool shell_menuitem(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxControlEnv const *env) {
+	( void ) env;
+	return flux_host_menuitem_build(ctx, store, node);
+}
+
+static bool absorb_seed(XentCtx *ctx, FluxStore *store, XentNodeId node, XentNodeId seed, FluxControlModule const *m) {
 	if (seed == XENT_NODE_INVALID) return false;
 	transfer(ctx, store, node, seed);
-	apply_retarget(ctx, store, node, type);
+	if (m->retarget) m->retarget(ctx, store, node);
 	FluxNodeData *nd = flux_store_find(store, node);
 	return nd && nd->component_data;
 }
@@ -1485,15 +1011,810 @@ bool flux_control_build(
 	if (!mount || !mount->env) return false;
 	FluxNodeData *nd = flux_store_find(store, node);
 	if (!nd) return false;
-	if (nd->component_data) return true;
-	if (( unsigned ) type >= XTK_CTRL_TYPE_COUNT) return true;
-	bool handled = false;
-	bool ok      = build_menu_shell(ctx, store, node, type, mount->env, &handled);
-	if (handled) return ok;
-	if (k_layout [type]) {
-		k_layout [type](ctx, node);
-		return true;
-	}
-	XentNodeId seed = control_seed(ctx, store, type, mount, &handled);
-	return handled ? absorb_seed(ctx, store, node, seed, type) : true;
+	if (nd->component_data || ( unsigned ) type >= XTK_CTRL_TYPE_COUNT) return true;
+	FluxControlModule const *m = flux_module_get(type);
+	if (!m) return false;
+	if (m->shell) return m->shell(ctx, store, node, mount->env);
+	if (m->layout) m->layout(ctx, node);
+	return m->seed ? absorb_seed(ctx, store, node, m->seed(ctx, store, mount), m) : true;
 }
+
+void flux_control_unmount(FluxStore *store, XentNodeId node, FluxControlType type) {
+	FluxControlModule const *m = flux_module_get(type);
+	if (m && m->unmount) m->unmount(store, node);
+}
+
+static uint32_t frame_list(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) {
+	( void ) store;
+	( void ) node;
+	( void ) flux_list_sync_header(nd);
+	return flux_list_window_stale(ctx, nd) ? FLUX_FRAME_DEFER : 0u;
+}
+
+static uint32_t frame_scroll(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) {
+	( void ) store;
+	return flux_scroll_sync(ctx, node, nd) ? FLUX_FRAME_DEFER : 0u;
+}
+
+static uint32_t frame_looping(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) {
+	( void ) ctx;
+	( void ) store;
+	return flux_looping_sync(node, nd) ? FLUX_FRAME_REDRAW : 0u;
+}
+
+static uint32_t frame_tabs(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) {
+	( void ) ctx;
+	( void ) nd;
+	flux_tabs_sync_layout(store, node);
+	return 0u;
+}
+
+#define FRAME_CTX(name, fn)                                                                   \
+	static uint32_t name(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) { \
+		( void ) store;                                                                       \
+		fn(ctx, node, nd);                                                                    \
+		return 0u;                                                                            \
+	}
+
+#define FRAME_NODE(name, fn)                                                                  \
+	static uint32_t name(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) { \
+		( void ) ctx;                                                                         \
+		( void ) store;                                                                       \
+		fn(node, nd);                                                                         \
+		return 0u;                                                                            \
+	}
+
+FRAME_CTX(frame_flip, flux_flip_sync)
+FRAME_CTX(frame_splitview, flux_splitview_sync)
+FRAME_CTX(frame_breadcrumb, flux_breadcrumb_sync)
+FRAME_CTX(collect_titlebar, flux_titlebar_sync)
+FRAME_NODE(frame_picker, flux_picker_sync)
+FRAME_NODE(frame_colorpicker, flux_colorpicker_sync)
+
+static void touch_self(FluxTouch *touch, XentNodeId node) { flux_touch_note(touch, node); }
+
+static void touch_listitem(FluxTouch *touch, XentNodeId node) {
+	XentNodeId owner = node;
+	for (int i = 0; i < 3 && owner != XENT_NODE_INVALID; i++) owner = xent_node_parent(touch->ctx, owner);
+	if (owner != XENT_NODE_INVALID && xtk_ctrl_islist(flux_node_type(touch->store, owner)))
+		flux_touch_note(touch, owner);
+}
+
+static void touch_radio(FluxTouch *touch, XentNodeId node) {
+	XentNodeId parent = xent_node_parent(touch->ctx, node);
+	if (parent != XENT_NODE_INVALID && flux_node_type(touch->store, parent) == FLUX_CONTROL_RADIO_BUTTONS)
+		flux_touch_note(touch, parent);
+}
+
+static void touch_menufly(FluxTouch *touch, XentNodeId fly) {
+	flux_touch_note(touch, fly);
+	XentNodeId parent = flux_host_menufly_parent(touch->store, fly);
+	if (parent != XENT_NODE_INVALID && flux_node_type(touch->store, parent) == FLUX_CONTROL_MENU_BAR)
+		flux_touch_note(touch, parent);
+}
+
+static void touch_menuitem(FluxTouch *touch, XentNodeId node) {
+	touch_menufly(touch, xent_node_parent(touch->ctx, node));
+}
+
+static FluxTreeHooks const tree_list = {
+  .content  = flux_list_content_node,
+  .slot     = flux_list_slot,
+  .touch    = touch_self,
+  .commit   = flux_list_apply_pending,
+  .frame    = frame_list,
+  .deferred = flux_list_notify_stale,
+};
+static FluxTreeHooks const tree_listitem = {.placed = fluxlistitem_bind_owner, .touch = touch_listitem};
+static FluxTreeHooks const tree_scroll   = {.frame = frame_scroll, .deferred = flux_scroll_report};
+static FluxTreeHooks const tree_nav      = {.content = flux_nav_content_node};
+static FluxTreeHooks const tree_expander = {.content = flux_expbody_node};
+static FluxTreeHooks const tree_dialog   = {.content = flux_dialogbody_node};
+static FluxTreeHooks const tree_flip     = {.content = flux_flip_content_node, .frame = frame_flip};
+static FluxTreeHooks const tree_refresh  = {.content = flux_refresh_content_node};
+static FluxTreeHooks const tree_tabs     = {.content = flux_tabs_content_node, .frame = frame_tabs};
+static FluxTreeHooks const tree_menubar
+  = {.content = flux_menubar_content_node, .touch = touch_self, .commit = flux_host_menu_sync_bar};
+static FluxTreeHooks const tree_menufly    = {.touch = touch_menufly, .commit = flux_host_menu_sync_fly};
+static FluxTreeHooks const tree_menuitem   = {.touch = touch_menuitem};
+static FluxTreeHooks const tree_radiogroup = {.touch = touch_self, .commit = flux_radiogroup_sync_children};
+static FluxTreeHooks const tree_radio      = {.touch = touch_radio};
+static FluxTreeHooks const tree_splitview  = {.frame = frame_splitview};
+static FluxTreeHooks const tree_breadcrumb = {.frame = frame_breadcrumb};
+static FluxTreeHooks const tree_looping    = {.frame = frame_looping};
+static FluxTreeHooks const tree_commandbar
+  = {.content = flux_cmdbar_content, .slot = flux_cmdbar_slot, .frame = flux_cmdbar_frame};
+static FluxTreeHooks const tree_picker      = {.frame = frame_picker};
+static FluxTreeHooks const tree_colorpicker = {.frame = frame_colorpicker};
+static FluxTreeHooks const tree_textbox     = {.focus = flux_textbox_sync_ime};
+static FluxTreeHooks const tree_titlebar    = {.collect = collect_titlebar};
+
+#define WHEEL(name, fn)                                                                  \
+	static bool name(FluxStore *store, XentNodeId node, float delta, float *remaining) { \
+		( void ) remaining;                                                              \
+		return fn(store, node, delta);                                                   \
+	}
+
+WHEEL(wheel_combo, flux_combo_handle_wheel)
+WHEEL(wheel_flip, flux_flip_handle_wheel)
+WHEEL(wheel_calendar, flux_calendar_handle_wheel)
+
+static bool wheel_textbox(FluxStore *store, XentNodeId node, float delta, float *remaining) {
+	( void ) delta;
+	*remaining -= flux_textbox_wheel(store, node, *remaining);
+	return *remaining == 0.0f;
+}
+
+static FluxInputHooks const input_combo    = {.wheel = wheel_combo};
+static FluxInputHooks const input_flip     = {.wheel = wheel_flip};
+static FluxInputHooks const input_calendar = {.wheel = wheel_calendar};
+static FluxInputHooks const input_textbox  = {.wheel = wheel_textbox};
+static FluxInputHooks const input_looping  = {.scroll_wheel = flux_looping_handle_wheel};
+static FluxInputHooks const input_refresh
+  = {.pull = flux_refresh_touch_pull, .release = flux_refresh_touch_release, .cancel = flux_refresh_touch_cancel};
+
+static void range_slider(FluxStore *store, XentNodeId node, double value) {
+	flux_prop_slider_value(store, node, ( float ) value);
+}
+
+static FluxUiaHooks const uia_combo     = {.text = flux_combo_text, .set_text = flux_prop_combo_text};
+static FluxUiaHooks const uia_picker    = {.text = flux_picker_valuetext};
+static FluxUiaHooks const uia_textbox   = {.set_text = flux_prop_textbox_content};
+static FluxUiaHooks const uia_password  = {.set_text = flux_prop_password_content};
+static FluxUiaHooks const uia_number    = {.set_range = flux_prop_numberbox_value};
+static FluxUiaHooks const uia_scrollbar = {.set_range = flux_scroll_bar_setvalue};
+static FluxUiaHooks const uia_slider
+  = {.set_range = range_slider, .thumb = flux_slider_thumb, .set_thumb = flux_slider_userthumb};
+
+#define MODULE(name)        FluxControlModule const flux_ctrl_##name
+#define CONSUMES(name, ...) static XtkPropertyId const name##_consumed [] = {__VA_ARGS__, XTK_PROP_ID_INVALID}
+#define DEPS(name, ...)     static FluxControlModule const *const name##_deps [] = {__VA_ARGS__, NULL}
+
+CONSUMES(text, XTK_PROP_TEXT, XTK_PROP_FONT_SIZE);
+CONSUMES(label, XTK_PROP_TEXT);
+CONSUMES(check, XTK_PROP_TEXT, XTK_PROP_CHECKED);
+CONSUMES(range, XTK_PROP_MIN_F32, XTK_PROP_MAX_F32, XTK_PROP_VALUE_F32);
+CONSUMES(placeholder, XTK_PROP_PLACEHOLDER);
+CONSUMES(number, XTK_PROP_MIN_F64, XTK_PROP_MAX_F64, XTK_PROP_STEP_F64);
+CONSUMES(link, XTK_PROP_TEXT, XTK_PROP_URL);
+CONSUMES(badge, XTK_PROP_BADGE_MODE, XTK_PROP_BADGE_VALUE);
+CONSUMES(labelicon, XTK_PROP_TEXT, XTK_PROP_ICON);
+CONSUMES(togglesplit, XTK_PROP_TEXT, XTK_PROP_ICON, XTK_PROP_CHECKED);
+CONSUMES(combo, XTK_PROP_ITEMS, XTK_PROP_SELECTED_INDEX, XTK_PROP_PLACEHOLDER);
+CONSUMES(expander, XTK_PROP_TEXT, XTK_PROP_EXPANDED, XTK_PROP_WIDTH, XTK_PROP_CONTENT_HEIGHT);
+CONSUMES(infobar, XTK_PROP_TEXT, XTK_PROP_MESSAGE, XTK_PROP_SEVERITY, XTK_PROP_CLOSABLE);
+CONSUMES(
+  dialog, XTK_PROP_TEXT, XTK_PROP_PRIMARY_TEXT, XTK_PROP_SECONDARY_TEXT, XTK_PROP_CLOSE_TEXT, XTK_PROP_WIDTH,
+  XTK_PROP_CONTENT_HEIGHT
+);
+CONSUMES(nav, XTK_PROP_WIDTH, XTK_PROP_HEIGHT);
+CONSUMES(tabs, XTK_PROP_ITEMS, XTK_PROP_SELECTED_INDEX, XTK_PROP_ADD_VISIBLE);
+CONSUMES(
+  pips, XTK_PROP_ORIENTATION, XTK_PROP_ITEM_COUNT, XTK_PROP_SELECTED_INDEX, XTK_PROP_MAX_VISIBLE,
+  XTK_PROP_NAV_VISIBILITY
+);
+CONSUMES(
+  rating, XTK_PROP_VALUE_F64, XTK_PROP_MAX_F64, XTK_PROP_PLACEHOLDER_F64, XTK_PROP_INITIAL_VALUE,
+  XTK_PROP_CLEAR_ENABLED, XTK_PROP_READ_ONLY, XTK_PROP_TEXT
+);
+CONSUMES(refresh, XTK_PROP_PULL_DIRECTION, XTK_PROP_VISUALIZER_SIZE, XTK_PROP_THRESHOLD_RATIO);
+CONSUMES(
+  pager, XTK_PROP_ITEM_COUNT, XTK_PROP_SELECTED_INDEX, XTK_PROP_DISPLAY_MODE, XTK_PROP_FIRST_BUTTON,
+  XTK_PROP_PREVIOUS_BUTTON, XTK_PROP_NEXT_BUTTON, XTK_PROP_LAST_BUTTON, XTK_PROP_PREFIX, XTK_PROP_SUFFIX
+);
+CONSUMES(
+  splitview, XTK_PROP_DISPLAY_MODE, XTK_PROP_PANE_PLACEMENT, XTK_PROP_OPEN, XTK_PROP_OPEN_PANE_LENGTH,
+  XTK_PROP_COMPACT_PANE_LENGTH
+);
+CONSUMES(
+  titlebar, XTK_PROP_TEXT, XTK_PROP_SUBTITLE, XTK_PROP_ICON, XTK_PROP_SHOW_BACK, XTK_PROP_BACK_DISABLED,
+  XTK_PROP_SHOW_PANE_TOGGLE
+);
+
+DEPS(list, &flux_ctrl_scroll, &flux_ctrl_listitem);
+DEPS(tree, &flux_ctrl_list, &flux_ctrl_treeitem);
+DEPS(combo, &flux_ctrl_textbox);
+DEPS(suggest, &flux_ctrl_textbox, &flux_ctrl_button);
+DEPS(expander, &flux_ctrl_exphead, &flux_ctrl_expbody, &flux_ctrl_text);
+DEPS(dialog, &flux_ctrl_dialogbody, &flux_ctrl_card, &flux_ctrl_button, &flux_ctrl_text);
+DEPS(menubar, &flux_ctrl_menuitem);
+DEPS(nav, &flux_ctrl_navitem, &flux_ctrl_scroll, &flux_ctrl_titlebar);
+DEPS(tabs, &flux_ctrl_tabitem, &flux_ctrl_scroll);
+DEPS(radiogroup, &flux_ctrl_radio, &flux_ctrl_text);
+DEPS(selector, &flux_ctrl_selectoritem, &flux_ctrl_scroll);
+DEPS(breadcrumb, &flux_ctrl_crumb);
+DEPS(refresh, &flux_ctrl_scroll);
+DEPS(splitview, &flux_ctrl_splitpane, &flux_ctrl_splitbody);
+DEPS(looping, &flux_ctrl_scroll, &flux_ctrl_loopitem);
+DEPS(pickerflyout, &flux_ctrl_looping, &flux_ctrl_button);
+DEPS(picker, &flux_ctrl_pickerflyout);
+DEPS(colheader, &flux_ctrl_colitem);
+DEPS(commandbar, &flux_ctrl_cmdmore);
+DEPS(colorpicker, &flux_ctrl_combo, &flux_ctrl_slider, &flux_ctrl_textbox);
+
+MODULE(container) = {.type = FLUX_CONTROL_CONTAINER, .layout = layout_flex_column, .record = flux_container_record};
+MODULE(text)      = {
+  .type     = FLUX_CONTROL_TEXT,
+  .snapshot = flux_snap_text,
+  .props    = flux_props_text,
+  .seed     = mount_text,
+  .consumed = text_consumed,
+  .record   = flux_text_record};
+MODULE(button) = {
+  .type     = FLUX_CONTROL_BUTTON,
+  .snapshot = flux_snap_button,
+  .props    = flux_props_button,
+  .seed     = mount_button,
+  .retarget = retarget_button,
+  .consumed = label_consumed,
+  .record   = flux_button_record,
+};
+MODULE(toggle)   = {.type = FLUX_CONTROL_TOGGLE_BUTTON, .snapshot = flux_snap_button, .record = flux_toggle_record};
+MODULE(checkbox) = {
+  .type     = FLUX_CONTROL_CHECKBOX,
+  .snapshot = flux_snap_checkbox_like,
+  .props    = flux_props_checkbox,
+  .seed     = mount_checkbox,
+  .retarget = retarget_checkbox,
+  .consumed = check_consumed,
+  .record   = flux_checkbox_record,
+};
+MODULE(radio) = {
+  .type     = FLUX_CONTROL_RADIO,
+  .snapshot = flux_snap_checkbox_like,
+  .tree     = &tree_radio,
+  .props    = flux_props_radio,
+  .seed     = mount_radio,
+  .retarget = retarget_radio,
+  .consumed = check_consumed,
+  .record   = flux_radio_record,
+};
+MODULE(switch) = {
+  .type     = FLUX_CONTROL_SWITCH,
+  .snapshot = flux_snap_switch,
+  .props    = flux_props_switch,
+  .seed     = mount_switch,
+  .retarget = retarget_switch,
+  .consumed = check_consumed,
+  .record   = flux_switch_record,
+};
+MODULE(slider) = {
+  .type     = FLUX_CONTROL_SLIDER,
+  .snapshot = flux_snap_slider,
+  .uia      = &uia_slider,
+  .props    = flux_props_slider,
+  .seed     = mount_slider,
+  .retarget = retarget_slider,
+  .consumed = range_consumed,
+  .record   = flux_slider_record,
+};
+MODULE(textbox) = {
+  .type     = FLUX_CONTROL_TEXT_INPUT,
+  .snapshot = flux_snap_textbox,
+  .tree     = &tree_textbox,
+  .input    = &input_textbox,
+  .uia      = &uia_textbox,
+  .props    = flux_props_textbox,
+  .seed     = mount_textbox,
+  .retarget = retarget_textbox,
+  .consumed = placeholder_consumed,
+  .record   = flux_textbox_record,
+};
+MODULE(scroll) = {
+  .type     = FLUX_CONTROL_SCROLL,
+  .snapshot = flux_snap_scroll,
+  .tree     = &tree_scroll,
+  .props    = flux_props_scroll,
+  .seed     = seed_scroll,
+  .retarget = retarget_scroll,
+  .record   = flux_scroll_record,
+  .overlay  = flux_scroll_overlay_record,
+};
+MODULE(image) = {
+  .type     = FLUX_CONTROL_IMAGE,
+  .snapshot = flux_snap_image,
+  .props    = flux_props_image,
+  .seed     = seed_image,
+  .record   = flux_image_record};
+MODULE(progress) = {
+  .type     = FLUX_CONTROL_PROGRESS,
+  .snapshot = flux_snap_progress,
+  .props    = flux_props_progress,
+  .seed     = mount_progress,
+  .consumed = range_consumed,
+  .record   = flux_progress_record};
+MODULE(list) = {
+  .type     = FLUX_CONTROL_LIST,
+  .tree     = &tree_list,
+  .props    = flux_props_list,
+  .deps     = list_deps,
+  .seed     = seed_list,
+  .retarget = retarget_list,
+  .record   = flux_container_record,
+};
+MODULE(tab)      = {.type = FLUX_CONTROL_TAB, .record = flux_container_record};
+MODULE(card)     = {.type = FLUX_CONTROL_CARD, .layout = layout_card, .record = flux_card_record};
+MODULE(divider)  = {.type = FLUX_CONTROL_DIVIDER, .layout = layout_divider, .record = flux_divider_record};
+MODULE(canvas)   = {.type = FLUX_CONTROL_CANVAS, .record = flux_container_record};
+MODULE(password) = {
+  .type     = FLUX_CONTROL_PASSWORD_BOX,
+  .snapshot = flux_snap_password_box,
+  .tree     = &tree_textbox,
+  .uia      = &uia_password,
+  .props    = flux_props_password,
+  .seed     = mount_password,
+  .retarget = retarget_textbox,
+  .consumed = placeholder_consumed,
+  .record   = flux_password_record,
+};
+MODULE(number) = {
+  .type     = FLUX_CONTROL_NUMBER_BOX,
+  .snapshot = flux_snap_number_box,
+  .tree     = &tree_textbox,
+  .uia      = &uia_number,
+  .props    = flux_props_number,
+  .seed     = mount_number,
+  .retarget = retarget_textbox,
+  .consumed = number_consumed,
+  .record   = flux_number_record,
+};
+MODULE(link) = {
+  .type     = FLUX_CONTROL_HYPERLINK,
+  .snapshot = flux_snap_hyperlink,
+  .props    = flux_props_link,
+  .seed     = mount_hyperlink,
+  .retarget = retarget_hyperlink,
+  .consumed = link_consumed,
+  .record   = flux_link_record,
+};
+MODULE(repeat) = {
+  .type     = FLUX_CONTROL_REPEAT_BUTTON,
+  .snapshot = flux_snap_repeat_button,
+  .props    = flux_props_repeat,
+  .seed     = mount_repeat,
+  .retarget = retarget_repeat,
+  .consumed = label_consumed,
+  .record   = flux_repeat_record,
+};
+MODULE(progressring) = {
+  .type     = FLUX_CONTROL_PROGRESS_RING,
+  .snapshot = flux_snap_progress_ring,
+  .props    = flux_props_progressring,
+  .seed     = mount_progress_ring,
+  .consumed = range_consumed,
+  .record   = flux_progressring_record,
+};
+MODULE(badge) = {
+  .type     = FLUX_CONTROL_INFO_BADGE,
+  .snapshot = flux_snap_info_badge,
+  .props    = flux_props_badge,
+  .seed     = mount_badge,
+  .consumed = badge_consumed,
+  .record   = flux_badge_record};
+MODULE(tooltip) = {.type = FLUX_CONTROL_TOOLTIP};
+MODULE(flyout)  = {.type = FLUX_CONTROL_FLYOUT};
+MODULE(menufly) = {
+  .type  = FLUX_CONTROL_MENU_FLYOUT,
+  .tree  = &tree_menufly,
+  .props = flux_props_menufly,
+  .shell = flux_host_menufly_build};
+MODULE(dropdown) = {
+  .type     = FLUX_CONTROL_DROPDOWN_BUTTON,
+  .snapshot = flux_snap_button,
+  .props    = flux_props_button,
+  .seed     = mount_dropdown,
+  .retarget = retarget_dropdown,
+  .consumed = labelicon_consumed,
+  .record   = flux_dropdown_record,
+};
+MODULE(split) = {
+  .type     = FLUX_CONTROL_SPLIT_BUTTON,
+  .snapshot = flux_snap_button,
+  .props    = flux_props_button,
+  .seed     = mount_split,
+  .retarget = retarget_split,
+  .consumed = labelicon_consumed,
+  .record   = flux_split_record,
+};
+MODULE(combo) = {
+  .type     = FLUX_CONTROL_COMBO_BOX,
+  .snapshot = flux_snap_combo_box,
+  .input    = &input_combo,
+  .uia      = &uia_combo,
+  .props    = flux_props_combo,
+  .deps     = combo_deps,
+  .seed     = mount_combo,
+  .retarget = retarget_combo,
+  .consumed = combo_consumed,
+  .record   = flux_combo_record,
+};
+MODULE(expander) = {
+  .type     = FLUX_CONTROL_EXPANDER,
+  .tree     = &tree_expander,
+  .props    = flux_props_expander,
+  .deps     = expander_deps,
+  .seed     = mount_expander,
+  .retarget = retarget_expander,
+  .consumed = expander_consumed,
+};
+MODULE(exphead)
+  = {.type = FLUX_CONTROL_EXPANDER_HEADER, .snapshot = flux_snap_expander_header, .record = flux_exphead_record};
+MODULE(expbody) = {.type = FLUX_CONTROL_EXPANDER_CONTENT, .record = flux_expbody_record};
+MODULE(infobar) = {
+  .type     = FLUX_CONTROL_INFO_BAR,
+  .snapshot = flux_snap_info_bar,
+  .props    = flux_props_infobar,
+  .seed     = mount_info_bar,
+  .retarget = retarget_info_bar,
+  .consumed = infobar_consumed,
+  .record   = flux_infobar_record,
+};
+MODULE(dialog) = {
+  .type     = FLUX_CONTROL_CONTENT_DIALOG,
+  .tree     = &tree_dialog,
+  .props    = flux_props_dialog,
+  .deps     = dialog_deps,
+  .seed     = mount_dialog,
+  .retarget = retarget_dialog,
+  .unmount  = flux_dialog_hide,
+  .consumed = dialog_consumed,
+  .record   = flux_dialog_record,
+};
+MODULE(dialogbody) = {.type = FLUX_CONTROL_DIALOG_CONTENT, .record = flux_dialogbody_record};
+MODULE(menubar)    = {
+  .type     = FLUX_CONTROL_MENU_BAR,
+  .tree     = &tree_menubar,
+  .deps     = menubar_deps,
+  .seed     = seed_menu_bar,
+  .retarget = retarget_menu_bar};
+MODULE(menuitem) = {
+  .type     = FLUX_CONTROL_MENU_BAR_ITEM,
+  .snapshot = flux_snap_menu_bar_item,
+  .tree     = &tree_menuitem,
+  .props    = flux_props_menuitem,
+  .shell    = shell_menuitem,
+  .record   = flux_menuitem_record};
+MODULE(nav) = {
+  .type     = FLUX_CONTROL_NAV_VIEW,
+  .snapshot = flux_snap_nav_view,
+  .tree     = &tree_nav,
+  .props    = flux_props_nav,
+  .deps     = nav_deps,
+  .seed     = mount_nav,
+  .retarget = retarget_nav,
+  .consumed = nav_consumed,
+  .record   = flux_nav_record,
+  .overlay  = flux_nav_overlay_record,
+};
+MODULE(navitem)
+  = {.type = FLUX_CONTROL_NAV_VIEW_ITEM, .snapshot = flux_snap_nav_view_item, .record = flux_navitem_record};
+MODULE(tabs) = {
+  .type     = FLUX_CONTROL_TAB_VIEW,
+  .tree     = &tree_tabs,
+  .props    = flux_props_tabs,
+  .deps     = tabs_deps,
+  .seed     = mount_tab,
+  .retarget = retarget_tab,
+  .consumed = tabs_consumed,
+  .record   = flux_tabs_record,
+};
+MODULE(tabitem)
+  = {.type = FLUX_CONTROL_TAB_VIEW_ITEM, .snapshot = flux_snap_tab_view_item, .record = flux_tabitem_record};
+MODULE(listitem) = {
+  .type     = FLUX_CONTROL_LIST_ITEM,
+  .snapshot = flux_snap_list_item,
+  .tree     = &tree_listitem,
+  .props    = flux_props_listitem,
+  .seed     = seed_list_item,
+  .record   = flux_listitem_record};
+MODULE(listbox) = {
+  .type     = FLUX_CONTROL_LIST_BOX,
+  .tree     = &tree_list,
+  .props    = flux_props_list,
+  .deps     = list_deps,
+  .seed     = seed_list_box,
+  .retarget = retarget_list,
+  .record   = flux_listbox_record,
+};
+MODULE(gridview) = {
+  .type     = FLUX_CONTROL_GRID_VIEW,
+  .tree     = &tree_list,
+  .props    = flux_props_list,
+  .deps     = list_deps,
+  .seed     = seed_grid,
+  .retarget = retarget_list,
+  .record   = flux_container_record,
+};
+MODULE(repeater) = {
+  .type     = FLUX_CONTROL_ITEMS_REPEATER,
+  .tree     = &tree_list,
+  .props    = flux_props_list,
+  .deps     = list_deps,
+  .seed     = seed_repeater,
+  .retarget = retarget_list,
+  .record   = flux_container_record,
+};
+MODULE(itemsview) = {
+  .type     = FLUX_CONTROL_ITEMS_VIEW,
+  .tree     = &tree_list,
+  .props    = flux_props_itemsview,
+  .deps     = list_deps,
+  .seed     = seed_items_view,
+  .retarget = retarget_list,
+  .record   = flux_container_record,
+};
+MODULE(flip) = {
+  .type     = FLUX_CONTROL_FLIP_VIEW,
+  .snapshot = flux_snap_flip_view,
+  .tree     = &tree_flip,
+  .input    = &input_flip,
+  .props    = flux_props_flip,
+  .seed     = seed_flip,
+  .retarget = retarget_flip,
+  .record   = flux_flip_record,
+  .overlay  = flux_flip_overlay_record,
+};
+MODULE(pips) = {
+  .type     = FLUX_CONTROL_PIPS_PAGER,
+  .snapshot = flux_snap_pips_pager,
+  .props    = flux_props_pips,
+  .seed     = mount_pips,
+  .retarget = retarget_pips,
+  .consumed = pips_consumed,
+  .record   = flux_pips_record,
+};
+MODULE(suggest) = {
+  .type     = FLUX_CONTROL_AUTO_SUGGEST,
+  .props    = flux_props_suggest,
+  .deps     = suggest_deps,
+  .seed     = seed_auto_suggest,
+  .retarget = retarget_auto_suggest,
+  .record   = flux_container_record,
+};
+MODULE(togglesplit) = {
+  .type     = FLUX_CONTROL_TOGGLE_SPLIT_BUTTON,
+  .snapshot = flux_snap_button,
+  .props    = flux_props_togglesplit,
+  .seed     = mount_toggle_split,
+  .retarget = retarget_split,
+  .consumed = togglesplit_consumed,
+  .record   = flux_split_record,
+};
+MODULE(radiogroup) = {
+  .type     = FLUX_CONTROL_RADIO_BUTTONS,
+  .tree     = &tree_radiogroup,
+  .props    = flux_props_radiogroup,
+  .deps     = radiogroup_deps,
+  .seed     = seed_radio_buttons,
+  .retarget = retarget_radio_buttons,
+  .record   = flux_container_record,
+};
+MODULE(rating) = {
+  .type     = FLUX_CONTROL_RATING,
+  .snapshot = flux_snap_rating,
+  .props    = flux_props_rating,
+  .seed     = mount_rating,
+  .retarget = retarget_rating,
+  .consumed = rating_consumed,
+  .record   = flux_rating_record,
+};
+MODULE(selector) = {
+  .type     = FLUX_CONTROL_SELECTOR_BAR,
+  .props    = flux_props_selector,
+  .deps     = selector_deps,
+  .seed     = seed_selector,
+  .retarget = retarget_selector,
+  .record   = flux_container_record,
+};
+MODULE(selectoritem)
+  = {.type = FLUX_CONTROL_SELECTOR_BAR_ITEM, .snapshot = flux_snap_selector_item, .record = flux_selectoritem_record};
+MODULE(breadcrumb) = {
+  .type     = FLUX_CONTROL_BREADCRUMB_BAR,
+  .tree     = &tree_breadcrumb,
+  .props    = flux_props_breadcrumb,
+  .deps     = breadcrumb_deps,
+  .seed     = seed_breadcrumb,
+  .retarget = retarget_breadcrumb};
+MODULE(crumb)
+  = {.type = FLUX_CONTROL_BREADCRUMB_ITEM, .snapshot = flux_snap_breadcrumb_item, .record = flux_crumb_record};
+MODULE(teachtip) = {
+  .type     = FLUX_CONTROL_TEACHING_TIP,
+  .props    = flux_props_teachtip,
+  .seed     = seed_teaching_tip,
+  .retarget = retarget_teaching_tip,
+  .record   = flux_teachtip_record,
+};
+MODULE(tree) = {
+  .type     = FLUX_CONTROL_TREE_VIEW,
+  .props    = flux_props_tree,
+  .deps     = tree_deps,
+  .seed     = seed_tree,
+  .retarget = retarget_tree,
+  .record   = flux_container_record,
+};
+MODULE(treeitem) = {
+  .type     = FLUX_CONTROL_TREE_ITEM,
+  .snapshot = flux_snap_tree_item,
+  .props    = flux_props_treeitem,
+  .record   = flux_treeitem_record};
+MODULE(refresh) = {
+  .type     = FLUX_CONTROL_REFRESH,
+  .snapshot = flux_snap_refresh,
+  .tree     = &tree_refresh,
+  .input    = &input_refresh,
+  .props    = flux_props_refresh,
+  .deps     = refresh_deps,
+  .seed     = mount_refresh,
+  .retarget = retarget_refresh,
+  .consumed = refresh_consumed,
+  .record   = flux_refresh_record,
+  .overlay  = flux_refresh_overlay_record,
+};
+MODULE(avatar) = {
+  .type     = FLUX_CONTROL_PERSON_PICTURE,
+  .snapshot = flux_snap_person_picture,
+  .props    = flux_props_avatar,
+  .seed     = seed_person,
+  .retarget = retarget_person,
+  .record   = flux_avatar_record};
+MODULE(pager) = {
+  .type     = FLUX_CONTROL_PAGER,
+  .snapshot = flux_snap_pager,
+  .props    = flux_props_pager,
+  .seed     = mount_pager,
+  .retarget = retarget_pager,
+  .consumed = pager_consumed,
+  .record   = flux_pager_record,
+};
+MODULE(splitview) = {
+  .type     = FLUX_CONTROL_SPLIT_VIEW,
+  .tree     = &tree_splitview,
+  .props    = flux_props_splitview,
+  .deps     = splitview_deps,
+  .seed     = mount_split_view,
+  .retarget = retarget_split_view,
+  .consumed = splitview_consumed,
+  .record   = flux_container_record,
+};
+MODULE(splitpane) = {
+  .type     = FLUX_CONTROL_SPLIT_VIEW_PANE,
+  .snapshot = flux_snap_split_pane,
+  .layout   = layout_flex_column,
+  .record   = flux_splitpane_record};
+MODULE(splitbody)
+  = {.type = FLUX_CONTROL_SPLIT_VIEW_CONTENT, .layout = layout_flex_column, .record = flux_container_record};
+MODULE(titlebar) = {
+  .type     = FLUX_CONTROL_TITLE_BAR,
+  .snapshot = flux_snap_title_bar,
+  .tree     = &tree_titlebar,
+  .props    = flux_props_titlebar,
+  .seed     = mount_title_bar,
+  .retarget = retarget_title_bar,
+  .consumed = titlebar_consumed,
+  .record   = flux_titlebar_record,
+};
+MODULE(scrollbar) = {
+  .type     = FLUX_CONTROL_SCROLL_BAR,
+  .snapshot = flux_snap_scroll_bar,
+  .uia      = &uia_scrollbar,
+  .props    = flux_props_scrollbar,
+  .seed     = mount_scroll_bar,
+  .retarget = retarget_scroll_bar,
+  .record   = flux_scroll_bar_record,
+};
+MODULE(looping) = {
+  .type     = FLUX_CONTROL_LOOPING_SELECTOR,
+  .snapshot = flux_snap_looping,
+  .tree     = &tree_looping,
+  .input    = &input_looping,
+  .props    = flux_props_looping,
+  .deps     = looping_deps,
+  .seed     = mount_looping,
+  .retarget = retarget_looping,
+  .overlay  = flux_looping_record,
+};
+MODULE(loopitem)
+  = {.type = FLUX_CONTROL_LOOPING_ITEM, .snapshot = flux_snap_looping_item, .record = flux_looping_item_record};
+MODULE(datepicker) = {
+  .type     = FLUX_CONTROL_DATE_PICKER,
+  .snapshot = flux_snap_picker,
+  .tree     = &tree_picker,
+  .uia      = &uia_picker,
+  .props    = flux_props_datepicker,
+  .deps     = picker_deps,
+  .seed     = seed_date_picker,
+  .retarget = retarget_picker,
+  .unmount  = flux_picker_close,
+  .record   = flux_picker_record,
+};
+MODULE(timepicker) = {
+  .type     = FLUX_CONTROL_TIME_PICKER,
+  .snapshot = flux_snap_picker,
+  .tree     = &tree_picker,
+  .uia      = &uia_picker,
+  .props    = flux_props_timepicker,
+  .deps     = picker_deps,
+  .seed     = seed_time_picker,
+  .retarget = retarget_picker,
+  .unmount  = flux_picker_close,
+  .record   = flux_picker_record,
+};
+MODULE(pickerflyout) = {
+  .type     = FLUX_CONTROL_PICKER_FLYOUT,
+  .snapshot = flux_snap_picker_card,
+  .deps     = pickerflyout_deps,
+  .record   = flux_pickercard_record};
+MODULE(calendar) = {
+  .type     = FLUX_CONTROL_CALENDAR_VIEW,
+  .snapshot = flux_snap_calendar,
+  .input    = &input_calendar,
+  .props    = flux_props_calendar,
+  .seed     = seed_calendar,
+  .retarget = flux_calendar_retarget,
+  .record   = flux_calendar_record,
+};
+MODULE(calday)      = {.type = FLUX_CONTROL_CALENDAR_DAY};
+MODULE(colorpicker) = {
+  .type     = FLUX_CONTROL_COLOR_PICKER,
+  .snapshot = flux_snap_colorpicker,
+  .tree     = &tree_colorpicker,
+  .props    = flux_props_colorpicker,
+  .deps     = colorpicker_deps,
+  .seed     = seed_colorpicker,
+  .retarget = flux_colorpicker_retarget,
+  .record   = flux_colorpicker_record,
+};
+MODULE(colorspectrum) = {.type = FLUX_CONTROL_COLOR_SPECTRUM};
+MODULE(colorslider)   = {.type = FLUX_CONTROL_COLOR_SLIDER};
+MODULE(colheader)     = {
+  .type     = FLUX_CONTROL_COLHEADER,
+  .deps     = colheader_deps,
+  .snapshot = flux_snap_colheader,
+  .seed     = seed_colheader,
+  .retarget = flux_colheader_retarget,
+  .record   = flux_colheader_record,
+  .overlay  = flux_colheader_overlay_record,
+};
+MODULE(colitem) = {
+  .type     = FLUX_CONTROL_COLITEM,
+  .props    = flux_props_colitem,
+  .snapshot = flux_snap_colitem,
+  .seed     = seed_colitem,
+  .retarget = flux_colitem_retarget,
+  .record   = flux_colitem_record,
+};
+MODULE(commandbar) = {
+  .type     = FLUX_CONTROL_COMMANDBAR,
+  .deps     = commandbar_deps,
+  .tree     = &tree_commandbar,
+  .props    = flux_props_commandbar,
+  .snapshot = flux_snap_cmdbar,
+  .seed     = seed_commandbar,
+  .retarget = flux_cmdbar_retarget,
+  .record   = flux_cmdbar_record,
+};
+MODULE(appbarbutton) = {
+  .type     = FLUX_CONTROL_APPBARBUTTON,
+  .props    = flux_props_appbar,
+  .snapshot = flux_snap_appbar,
+  .seed     = seed_appbarbutton,
+  .retarget = flux_appbar_retarget,
+  .record   = flux_appbar_record,
+};
+MODULE(appbartoggle) = {
+  .type     = FLUX_CONTROL_APPBARTOGGLE,
+  .props    = flux_props_appbar,
+  .snapshot = flux_snap_appbar,
+  .seed     = seed_appbartoggle,
+  .retarget = flux_appbar_retarget,
+  .record   = flux_appbar_record,
+};
+MODULE(appbarsep) = {
+  .type     = FLUX_CONTROL_APPBARSEP,
+  .props    = flux_props_appbar,
+  .snapshot = flux_snap_appbar,
+  .seed     = seed_appbarsep,
+  .retarget = flux_appbar_retarget,
+  .record   = flux_appbar_record,
+};
+MODULE(cmdmore) = {.type = FLUX_CONTROL_CMDMORE, .snapshot = flux_snap_cmdmore, .record = flux_cmdmore_record};

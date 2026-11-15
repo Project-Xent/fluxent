@@ -21,6 +21,9 @@ typedef struct FluxListViewData {
 	XentNodeId        root;
 	XentNodeId        scroll;
 	XentNodeId        host;
+	XentNodeId        header;
+	float             header_h;
+	float             header_w;
 
 	XtkListKind       kind;
 	XtkListSelMode    sel_mode;

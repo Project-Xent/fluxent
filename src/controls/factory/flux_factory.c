@@ -430,7 +430,7 @@ XentNodeId flux_scroll_init(FluxContainerDesc const *info) {
 	sd->v_vis                  = FLUX_SCROLL_AUTO;
 
 	nd->component_data         = sd;
-	nd->destroy_component_data = free;
+	nd->destroy_component_data = flux_scroll_data_destroy;
 
 	xent_setproto(info->ctx, node, XENT_PROTOCOL_FLEX);
 	xent_setflexdir(info->ctx, node, XENT_FLEX_COLUMN);

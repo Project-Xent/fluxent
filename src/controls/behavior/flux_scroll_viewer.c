@@ -3,7 +3,57 @@
 
 #include <xtk/xtk_catalog.h>
 
+#include "runtime/flux_anim_driver.h"
+#include "fluxent/flux_window.h"
+
+#include <stdlib.h>
 #include <math.h>
+
+void flux_scroll_measure(XentCtx const *ctx, XentNodeId node, FluxScrollData *sd) {
+	XentRect rect = {0}, cr = {0};
+	if (!sd || sd->content_manual || !xent_layout_rect(ctx, node, &rect)) return;
+	float max_r = 0.0f, max_b = 0.0f;
+	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
+	{
+		if (!xent_layout_rect(ctx, child, &cr)) continue;
+		max_r = fmaxf(max_r, cr.x + cr.w - rect.x);
+		max_b = fmaxf(max_b, cr.y + cr.h - rect.y);
+	}
+	XentResolvedInsets pad = {0};
+	xent_resolved_p(ctx, node, XENT_AXIS_VERTICAL, &pad);
+	sd->content_w = max_r + pad.cross_end;
+	sd->content_h = max_b + pad.main_end;
+}
+
+void flux_scroll_data_destroy(void *data) {
+	flux_anim_unregister(data);
+	free(data);
+}
+
+static bool scroll_wheel_step(void *data, unsigned long now) {
+	FluxScrollData *sd = data;
+	if (!sd->wheel_active) return false;
+	float t        = fminf(( float ) (now - sd->wheel_start) / 160.0f, 1.0f);
+	float eased    = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+	sd->scroll_x   = sd->wheel_from_x + (sd->wheel_target_x - sd->wheel_from_x) * eased;
+	sd->scroll_y   = sd->wheel_from_y + (sd->wheel_target_y - sd->wheel_from_y) * eased;
+	sd->user_moved = 1;
+	flux_scroll_offset_changed(sd);
+	if (sd->wheel_window) flux_window_redraw(sd->wheel_window);
+	sd->wheel_active = t < 1.0f;
+	return sd->wheel_active;
+}
+
+void flux_scroll_wheel_animate(FluxScrollData *sd, FluxWindow *window, float x, float y) {
+	sd->wheel_window   = window;
+	sd->wheel_from_x   = sd->scroll_x;
+	sd->wheel_from_y   = sd->scroll_y;
+	sd->wheel_target_x = x;
+	sd->wheel_target_y = y;
+	sd->wheel_start    = flux_anim_now();
+	sd->wheel_active   = 1;
+	flux_anim_register(sd, scroll_wheel_step);
+}
 
 static FluxScrollData *reporting_scroll(FluxStore *store, XentNodeId node) {
 	FluxNodeData   *nd = flux_store_find(store, node);

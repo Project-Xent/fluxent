@@ -34,7 +34,6 @@ bool flux_control_build(
   XentCtx *ctx, FluxStore *store, XentNodeId node, FluxControlType type, FluxControlMount const *mount
 );
 
-bool flux_control_mount_consumed(FluxControlType type, XtkPropertyId property);
 void flux_control_unmount(FluxStore *store, XentNodeId node, FluxControlType type);
 
 #endif

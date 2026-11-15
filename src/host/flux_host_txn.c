@@ -1,7 +1,7 @@
 #include "flux_host_internal.h"
-#include "flux_limit.h"
 
 #include "controls/factory/flux_control_build.h"
+#include "controls/flux_module.h"
 #include "controls/factory/flux_init_basic.h"
 #include "controls/factory/flux_init_container.h"
 #include "controls/factory/flux_init_items.h"
@@ -254,7 +254,7 @@ static XtkBatchError pf_component_patch(XtkCompType const *type, XtkPropPatch co
 
 static XtkBatchError pf_create_type(PreflightCtx *ctx, XtkCtrlId id, XtkCompType const **out) {
 	*out = NULL;
-	if (xtk_catalog_standard(id)) return XTK_BATCH_OK;
+	if (xtk_catalog_standard(id)) return flux_module_get(( FluxControlType ) id) ? XTK_BATCH_OK : XTK_BATCH_ERR_BACKEND;
 	if (!xtk_ctrl_iscomp(id) || !ctx->R->comp) return XTK_BATCH_ERR_VALIDATION;
 	*out = xtk_comp_lookup(ctx->R->comp, id);
 	return *out ? XTK_BATCH_OK : XTK_BATCH_ERR_VALIDATION;
@@ -430,43 +430,17 @@ static XtkBatchError capture_topo(Prepare *P, XentNodeId child) {
 	return flux_host_undo_push(P, u) ? XTK_BATCH_OK : XTK_BATCH_ERR_OOM;
 }
 
-static bool is_list_control(XtkCtrlId type) {
-	return type == XTK_CTRL_LIST
-	    || type == XTK_CTRL_LISTBOX
-	    || type == XTK_CTRL_GRIDVIEW
-	    || type == XTK_CTRL_REPEATER
-	    || type == XTK_CTRL_ITEMSVIEW;
+static FluxTreeHooks const *tree_hooks(FluxHostState *R, XentNodeId node) {
+	FluxControlModule const *m = flux_module_get(( FluxControlType ) flux_host_types_get(R, node));
+	return m ? m->tree : NULL;
 }
 
-typedef XentNodeId (*ContentNodeFn)(FluxStore *store, XentNodeId node);
-
-typedef struct ContentRoute {
-	XtkCtrlId     type;
-	ContentNodeFn node;
-} ContentRoute;
-
-static XentNodeId content_parent(FluxHostState *R, XentNodeId parent) {
-	static ContentRoute const routes [] = {
-	  {XTK_CTRL_LIST,      flux_list_content_node   },
-	  {XTK_CTRL_LISTBOX,   flux_list_content_node   },
-	  {XTK_CTRL_GRIDVIEW,  flux_list_content_node   },
-	  {XTK_CTRL_REPEATER,  flux_list_content_node   },
-	  {XTK_CTRL_ITEMSVIEW, flux_list_content_node   },
-	  {XTK_CTRL_NAV,       flux_nav_content_node    },
-	  {XTK_CTRL_EXPANDER,  flux_expbody_node        },
-	  {XTK_CTRL_DIALOG,    flux_dialogbody_node     },
-	  {XTK_CTRL_FLIP,      flux_flip_content_node   },
-	  {XTK_CTRL_REFRESH,   flux_refresh_content_node},
-	  {XTK_CTRL_TABS,      flux_tabs_content_node   },
-	  {XTK_CTRL_MENUBAR,   flux_menubar_content_node},
-	};
-	XtkCtrlId type = flux_host_types_get(R, parent);
-	for (uint32_t i = 0; i < sizeof(routes) / sizeof(routes [0]); i++) {
-		if (routes [i].type != type) continue;
-		XentNodeId host = routes [i].node(R->store, parent);
-		return host != XENT_NODE_INVALID ? host : parent;
-	}
-	return parent;
+static XentNodeId content_parent(FluxHostState *R, XentNodeId parent, XentNodeId child) {
+	FluxTreeHooks const *t    = tree_hooks(R, parent);
+	XentNodeId           host = t && t->slot    ? t->slot(R->store, parent, child)
+	                          : t && t->content ? t->content(R->store, parent)
+	                                            : XENT_NODE_INVALID;
+	return host != XENT_NODE_INVALID ? host : parent;
 }
 
 static bool stage_place_invalidations(Prepare *P, XentNodeId parent, XentNodeId previous) {
@@ -477,7 +451,7 @@ static bool stage_place_invalidations(Prepare *P, XentNodeId parent, XentNodeId 
 }
 
 static XtkBatchError place(Prepare *P, XentNodeId parent, XentNodeId child, XentNodeId before) {
-	parent                = content_parent(P->R, parent);
+	parent                = content_parent(P->R, parent, child);
 	XtkBatchError cap_err = capture_topo(P, child);
 	if (cap_err != XTK_BATCH_OK) return cap_err;
 	XentNodeId cur = xent_node_parent(P->R->ctx, child);
@@ -486,7 +460,8 @@ static XtkBatchError place(Prepare *P, XentNodeId parent, XentNodeId child, Xent
 	else if (cur == parent) ok = xent_node_move(P->R->ctx, parent, child, before);
 	else ok = xent_node_reparent(P->R->ctx, parent, child, before);
 	if (!ok) return XTK_BATCH_ERR_VALIDATION;
-	if (flux_host_types_get(P->R, child) == XTK_CTRL_LISTITEM) fluxlistitem_bind_owner(P->R->store, child);
+	FluxTreeHooks const *t = tree_hooks(P->R, child);
+	if (t && t->placed) t->placed(P->R->store, child);
 	return stage_place_invalidations(P, parent, cur) ? XTK_BATCH_OK : XTK_BATCH_ERR_OOM;
 }
 
@@ -663,90 +638,14 @@ static void finish_destroys(Prepare *P) {
 	}
 }
 
-static void note_list_sync(Prepare *P, XentNodeId list, XentNodeId *lists, uint32_t *count, uint32_t cap) {
-	if (list == XENT_NODE_INVALID || !is_list_control(flux_host_types_get(P->R, list))) return;
-	for (uint32_t i = 0; i < *count; i++)
-		if (lists [i] == list) return;
-	if (*count < cap) lists [(*count)++] = list;
-	else flux_limit_exceeded(FLUX_LIMIT_TXN_LISTS);
-}
-
-static XentNodeId list_root_from_node(Prepare *P, XentNodeId node) {
-	XtkCtrlId type = flux_host_types_get(P->R, node);
-	if (is_list_control(type)) return node;
-	if (type != XTK_CTRL_LISTITEM) return XENT_NODE_INVALID;
-	XentNodeId parent = xent_node_parent(P->R->ctx, node);
-	XentNodeId scroll = parent != XENT_NODE_INVALID ? xent_node_parent(P->R->ctx, parent) : XENT_NODE_INVALID;
-	return scroll != XENT_NODE_INVALID ? xent_node_parent(P->R->ctx, scroll) : XENT_NODE_INVALID;
-}
-
-static void note_list_node(Prepare *P, XentNodeId node, XentNodeId *lists, uint32_t *count, uint32_t cap) {
-	note_list_sync(P, list_root_from_node(P, node), lists, count, cap);
-}
-
-static bool topology_child_ref(XtkBatchOp const *op, XtkNodeRef *out) {
-	if (op->kind == XTK_BATCH_OP_MOVE) {
-		*out = op->u.move.child;
-		return true;
+static bool op_touch_ref(XtkBatchOp const *op, XtkNodeRef *out) {
+	switch (op->kind) {
+	case XTK_BATCH_OP_SET_PROP : *out = op->u.set_prop.target; return true;
+	case XTK_BATCH_OP_MOVE     : *out = op->u.move.child; return true;
+	case XTK_BATCH_OP_INSERT   : *out = op->u.insert.child; return true;
+	case XTK_BATCH_OP_REPARENT : *out = op->u.reparent.child; return true;
+	default                    : return false;
 	}
-	if (op->kind == XTK_BATCH_OP_INSERT) {
-		*out = op->u.insert.child;
-		return true;
-	}
-	if (op->kind == XTK_BATCH_OP_REPARENT) {
-		*out = op->u.reparent.child;
-		return true;
-	}
-	return false;
-}
-
-static void note_list_op(Prepare *P, XtkBatchOp const *op, XentNodeId *lists, uint32_t *count, uint32_t cap) {
-	if (op->kind == XTK_BATCH_OP_CREATE) {
-		XtkCtrl control = P->locals [op->u.create.local];
-		if (control != XTK_CTRL_INVALID) note_list_node(P, flux_host_as_node(control), lists, count, cap);
-		return;
-	}
-	XtkNodeRef ref;
-	if (op->kind == XTK_BATCH_OP_SET_PROP) ref = op->u.set_prop.target;
-	else if (!topology_child_ref(op, &ref)) return;
-	bool    ok      = false;
-	XtkCtrl control = XTK_CTRL_INVALID;
-	if (flux_host_resolve_ref(P, ref, &ok, &control) && ok)
-		note_list_node(P, flux_host_as_node(control), lists, count, cap);
-}
-
-static void sync_list_places(Prepare *P) {
-	XentNodeId lists [64];
-	uint32_t   count = 0u;
-	for (uint32_t i = 0; i < P->batch->count; i++) note_list_op(P, &P->batch->ops [i], lists, &count, 64u);
-	for (uint32_t i = 0; i < count; i++) flux_list_apply_pending(P->R->store, lists [i]);
-}
-
-static void note_compound(XentNodeId *seen, uint32_t *n, uint32_t cap, XentNodeId id) {
-	if (id == XENT_NODE_INVALID || *n >= cap) return;
-	for (uint32_t i = 0; i < *n; i++)
-		if (seen [i] == id) return;
-	seen [(*n)++] = id;
-}
-
-static bool op_topo_ref(XtkBatchOp const *op, XtkNodeRef *out) {
-	if (op->kind == XTK_BATCH_OP_SET_PROP) {
-		*out = op->u.set_prop.target;
-		return true;
-	}
-	if (op->kind == XTK_BATCH_OP_MOVE) {
-		*out = op->u.move.child;
-		return true;
-	}
-	if (op->kind == XTK_BATCH_OP_INSERT) {
-		*out = op->u.insert.child;
-		return true;
-	}
-	if (op->kind == XTK_BATCH_OP_REPARENT) {
-		*out = op->u.reparent.child;
-		return true;
-	}
-	return false;
 }
 
 static XentNodeId op_touched_node(Prepare *P, XtkBatchOp const *op) {
@@ -755,68 +654,24 @@ static XentNodeId op_touched_node(Prepare *P, XtkBatchOp const *op) {
 		return c == XTK_CTRL_INVALID ? XENT_NODE_INVALID : flux_host_as_node(c);
 	}
 	XtkNodeRef ref;
-	if (!op_topo_ref(op, &ref)) return XENT_NODE_INVALID;
+	if (!op_touch_ref(op, &ref)) return XENT_NODE_INVALID;
 	bool    ok     = false;
 	XtkCtrl target = XTK_CTRL_INVALID;
 	if (!flux_host_resolve_ref(P, ref, &ok, &target) || !ok) return XENT_NODE_INVALID;
 	return flux_host_as_node(target);
 }
 
-typedef struct CompoundBuckets {
-	XentNodeId radios [32];
-	XentNodeId menu_flies [16];
-	XentNodeId menu_bars [16];
-	uint32_t   n_radio;
-	uint32_t   n_menu_fly;
-	uint32_t   n_menu_bar;
-} CompoundBuckets;
-
-static void note_radio_parent(Prepare *P, CompoundBuckets *b, XentNodeId node) {
-	XentNodeId parent = xent_node_parent(P->R->ctx, node);
-	if (parent != XENT_NODE_INVALID && flux_host_types_get(P->R, parent) == XTK_CTRL_RADIOGROUP)
-		note_compound(b->radios, &b->n_radio, 32u, parent);
-}
-
-static void note_menu_fly(Prepare *P, CompoundBuckets *b, XentNodeId fly) {
-	note_compound(b->menu_flies, &b->n_menu_fly, 16u, fly);
-	XentNodeId parent = flux_host_menufly_parent(P->R->store, fly);
-	if (parent != XENT_NODE_INVALID && flux_host_types_get(P->R, parent) == XTK_CTRL_MENUBAR)
-		note_compound(b->menu_bars, &b->n_menu_bar, 16u, parent);
-}
-
-static void note_compound_touch(Prepare *P, CompoundBuckets *b, XentNodeId node) {
-	XtkCtrlId type = flux_host_types_get(P->R, node);
-	if (type == XTK_CTRL_MENUFLY) {
-		note_menu_fly(P, b, node);
-		return;
-	}
-	if (type == XTK_CTRL_MENUITEM) {
-		note_menu_fly(P, b, xent_node_parent(P->R->ctx, node));
-		return;
-	}
-	if (type == XTK_CTRL_MENUBAR) {
-		note_compound(b->menu_bars, &b->n_menu_bar, 16u, node);
-		return;
-	}
-	if (type == XTK_CTRL_RADIOGROUP) {
-		note_compound(b->radios, &b->n_radio, 32u, node);
-		return;
-	}
-	if (type == XTK_CTRL_RADIO) {
-		note_radio_parent(P, b, node);
-		return;
-	}
-}
-
-static void sync_compound_groups(Prepare *P) {
-	CompoundBuckets b = {0};
+static void sync_touched_owners(Prepare *P) {
+	FluxTouch touch = {.store = P->R->store, .ctx = P->R->ctx};
 	for (uint32_t i = 0; i < P->batch->count; i++) {
-		XentNodeId node = op_touched_node(P, &P->batch->ops [i]);
-		if (node != XENT_NODE_INVALID) note_compound_touch(P, &b, node);
+		XentNodeId           node = op_touched_node(P, &P->batch->ops [i]);
+		FluxTreeHooks const *t    = node != XENT_NODE_INVALID ? tree_hooks(P->R, node) : NULL;
+		if (t && t->touch) t->touch(&touch, node);
 	}
-	for (uint32_t i = 0; i < b.n_radio; i++) flux_radiogroup_sync_children(P->R->store, b.radios [i]);
-	for (uint32_t i = 0; i < b.n_menu_fly; i++) flux_host_menu_sync_fly(P->R->store, b.menu_flies [i]);
-	for (uint32_t i = 0; i < b.n_menu_bar; i++) flux_host_menu_sync_bar(P->R->store, b.menu_bars [i]);
+	for (uint32_t i = 0; i < touch.count; i++) {
+		FluxTreeHooks const *t = tree_hooks(P->R, touch.nodes [i]);
+		if (t && t->commit) t->commit(P->R->store, touch.nodes [i]);
+	}
 }
 
 static void count_result_slots(XtkBatch const *batch, uint32_t *creates, uint32_t *subs) {
@@ -866,7 +721,7 @@ static void project_create_props(Prepare *P, XtkBatchCreate const *create) {
 	XtkCtrl control = P->locals [create->local];
 	for (uint32_t i = 0; i < create->prop_count; i++) {
 		XtkPropPatch const *patch = &create->props [i];
-		if (flux_control_mount_consumed(( FluxControlType ) create->type, patch->id)) continue;
+		if (flux_module_consumes(( FluxControlType ) create->type, patch->id)) continue;
 		project_patch(P, control, patch);
 	}
 }
@@ -928,8 +783,7 @@ XtkBatchResult *flux_host_commit(XtkHost *host, XtkPrepare *prepare, XtkBatchDia
 
 	project_native_props(P);
 	finish_destroys(P);
-	sync_list_places(P);
-	sync_compound_groups(P);
+	sync_touched_owners(P);
 	flux_host_publish_invalidations(P);
 	P->R->revision += 1u;
 	P->undo_count   = 0u;

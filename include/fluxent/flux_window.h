@@ -74,9 +74,10 @@ void      flux_window_abandonpointer(FluxWindow *win, uint32_t pointer_id);
 void      flux_window_setmenu(FluxWindow *win, FluxMenu *menu);
 FluxMenu *flux_window_menu(FluxWindow *win);
 
-#define FLUX_CURSOR_ARROW 0
-#define FLUX_CURSOR_IBEAM 1
-#define FLUX_CURSOR_HAND  2
+#define FLUX_CURSOR_ARROW  0
+#define FLUX_CURSOR_IBEAM  1
+#define FLUX_CURSOR_HAND   2
+#define FLUX_CURSOR_SIZEWE 3
 void flux_window_redraw(FluxWindow *win);
 int  flux_window_run(FluxWindow *win);
 void flux_window_close(FluxWindow *win);

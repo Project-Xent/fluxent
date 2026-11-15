@@ -1,3 +1,4 @@
+#include <fluxent/flux_controls.h>
 #include <fluxent/flux_host.h>
 #include <xtk/xtk_batch.h>
 #include <xtk/xtk_catalog.h>
@@ -161,6 +162,7 @@ static int test_commit_diverged_tree_reports_validation(void) {
 }
 
 int main(void) {
+	flux_controls_all();
 	if (test_commit_oom_sweep()) return 1;
 	if (test_commit_diverged_tree_reports_validation()) return 1;
 	printf("PASS: commit error granularity\n");

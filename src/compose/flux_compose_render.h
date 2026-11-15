@@ -4,15 +4,13 @@
 #include "compose/flux_compose.h"
 #include "fluxent/flux_node_store.h"
 
-typedef struct FluxRenderCtx       FluxRenderCtx;
-typedef struct FluxControlRegistry FluxControlRegistry;
-typedef struct XtkBackend          XtkBackend;
+typedef struct FluxRenderCtx     FluxRenderCtx;
+typedef struct XtkBackend        XtkBackend;
 
-typedef struct FluxComposeRender   FluxComposeRender;
+typedef struct FluxComposeRender FluxComposeRender;
 
-FluxComposeRender                 *flux_compose_render_create(
-  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, FluxControlRegistry const *registry,
-  XtkBackend *backend
+FluxComposeRender               *flux_compose_render_create(
+  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, XtkBackend *backend
 );
 
 void flux_compose_render_destroy(FluxComposeRender *r);

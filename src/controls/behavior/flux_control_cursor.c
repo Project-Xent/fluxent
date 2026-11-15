@@ -1,4 +1,5 @@
 #include "flux_control_cursor.h"
+#include "controls/behavior/flux_colheader.h"
 #include "store/flux_node_data.h"
 
 #include "controls/textbox/tb_metrics.h"
@@ -71,6 +72,7 @@ int flux_control_cursor_for(XentCtx *ctx, FluxStore *store, XentNodeId node) {
 	case FLUX_CONTROL_TEXT_INPUT   : return text_input_cursor(ctx, store, node);
 	case FLUX_CONTROL_PASSWORD_BOX : return password_cursor(ctx, store, node);
 	case FLUX_CONTROL_NUMBER_BOX   : return number_cursor(ctx, store, node);
+	case FLUX_CONTROL_COLITEM      : return flux_colitem_cursor(store, node);
 	default                        : return default_cursor_for_type(type);
 	}
 }

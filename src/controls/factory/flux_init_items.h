@@ -31,6 +31,8 @@ XentNodeId flux_list_init(FluxListViewDesc const *info);
 XentNodeId flux_listitem_init(FluxListItemDesc const *info);
 
 XentNodeId flux_list_content_node(FluxStore *store, XentNodeId list);
+XentNodeId flux_list_slot(FluxStore *store, XentNodeId list, XentNodeId child);
+bool       flux_list_sync_header(struct FluxNodeData *nd);
 
 void       flux_list_set_extent(
   FluxStore *store, XentNodeId list, int count, float item_height, float item_width, int columns

@@ -2,6 +2,7 @@
 #define FLUXENT_H
 
 #include "flux_control_type.h"
+#include "flux_controls.h"
 #include "flux_theme.h"
 #include "flux_popup.h"
 #include "flux_tooltip.h"

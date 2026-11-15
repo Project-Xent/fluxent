@@ -14,23 +14,24 @@ static bool cp_hgrad(XentDlBuilder *b, FluxRect const *r, FluxColor left, FluxCo
 	return xent_dl_fillrectgrad(b, flux_rec_xrect(r), &g);
 }
 
-static bool cp_spectrum_columns(XentDlBuilder *b, FluxColorPickerSnapshot const *c, FluxRect const *sq) {
-	int columns = ( int ) sq->w;
-	for (int x = 0; x < columns; ++x) {
-		float     f = ( float ) x / ( float ) (columns - 1);
-		FluxColor top, bottom = flux_color_rgb(0, 0, 0);
-		switch (c->spectrum) {
-		case XTK_SPECTRUM_HUE_VALUE        : top = cp_hsv(f * FLUX_CP_MAX_HUE, c->saturation, 1.0f); break;
-		case XTK_SPECTRUM_SATURATION_VALUE : top = cp_hsv(c->hue, f, 1.0f); break;
-		default :
-			top    = cp_hsv(f * FLUX_CP_MAX_HUE, 1.0f, 1.0f);
-			bottom = flux_color_rgb(255, 255, 255);
-			break;
-		}
-		FluxRect stripe = {sq->x + ( float ) x, sq->y, 1.0f, sq->h};
-		if (!cp_vgrad(b, &stripe, top, bottom)) return false;
+static bool cp_hue_band(XentDlBuilder *b, FluxRect const *r, float saturation) {
+	for (int i = 0; i < 6; ++i) {
+		float    h0 = i * 60.0f, h1 = i == 5 ? FLUX_CP_MAX_HUE : (i + 1) * 60.0f;
+		float    x0 = r->x + r->w * h0 / FLUX_CP_MAX_HUE, x1 = r->x + r->w * h1 / FLUX_CP_MAX_HUE;
+		FluxRect seg = {x0, r->y, x1 - x0, r->h};
+		if (!cp_hgrad(b, &seg, cp_hsv(h0, saturation, 1.0f), cp_hsv(h1, saturation, 1.0f))) return false;
 	}
 	return true;
+}
+
+static bool cp_spectrum_fill(XentDlBuilder *b, FluxColorPickerSnapshot const *c, FluxRect const *sq) {
+	bool      sv     = c->spectrum == XTK_SPECTRUM_SATURATION_VALUE;
+	bool      hs     = c->spectrum == XTK_SPECTRUM_HUE_SATURATION;
+	bool      ok     = sv ? cp_hgrad(b, sq, flux_color_rgb(255, 255, 255), cp_hsv(c->hue, 1.0f, 1.0f))
+	                      : cp_hue_band(b, sq, hs ? 1.0f : c->saturation);
+	FluxColor bottom = hs ? flux_color_rgb(255, 255, 255) : flux_color_rgb(0, 0, 0);
+	FluxColor clear  = {bottom.rgba & 0xffffff00u};
+	return ok && cp_vgrad(b, sq, clear, bottom);
 }
 
 static bool cp_checkers(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *r, float radius) {
@@ -95,7 +96,7 @@ static bool cp_spectrum(
 ) {
 	FluxRect sq = {bounds->x, bounds->y + FLUX_CP_PAD, FLUX_CP_SPECTRUM, FLUX_CP_SPECTRUM};
 	bool     ok = xent_dl_pushcliprrect(b, flux_rec_xrect(&sq), FLUX_CORNER_RADIUS);
-	ok          = ok && cp_spectrum_columns(b, &snap->u.color_picker, &sq) && xent_dl_popclip(b);
+	ok          = ok && cp_spectrum_fill(b, &snap->u.color_picker, &sq) && xent_dl_popclip(b);
 	ok          = ok && cp_border(b, t, &sq);
 	return ok && cp_selection(b, snap, state, &sq, bounds);
 }
@@ -110,21 +111,11 @@ static bool cp_preview(
 	return ok && cp_border(b, t, &r);
 }
 
-static bool cp_hue_track(XentDlBuilder *b, FluxRect const *r) {
-	for (int i = 0; i < 6; ++i) {
-		float    h0 = i * 60.0f, h1 = i == 5 ? FLUX_CP_MAX_HUE : (i + 1) * 60.0f;
-		float    x0 = r->x + r->w * h0 / FLUX_CP_MAX_HUE, x1 = r->x + r->w * h1 / FLUX_CP_MAX_HUE;
-		FluxRect seg = {x0, r->y, x1 - x0, r->h};
-		if (!cp_hgrad(b, &seg, cp_hsv(h0, 1.0f, 1.0f), cp_hsv(h1, 1.0f, 1.0f))) return false;
-	}
-	return true;
-}
-
 static bool cp_third_track(XentDlBuilder *b, FluxColorPickerSnapshot const *c, FluxRect const *r) {
 	if (!xent_dl_pushcliprrect(b, flux_rec_xrect(r), 6.0f)) return false;
 	bool ok;
 	switch (c->spectrum) {
-	case XTK_SPECTRUM_SATURATION_VALUE : ok = cp_hue_track(b, r); break;
+	case XTK_SPECTRUM_SATURATION_VALUE : ok = cp_hue_band(b, r, 1.0f); break;
 	case XTK_SPECTRUM_HUE_VALUE : ok = cp_hgrad(b, r, cp_hsv(c->hue, 0.0f, 1.0f), cp_hsv(c->hue, 1.0f, 1.0f)); break;
 	default : ok = cp_hgrad(b, r, cp_hsv(c->hue, c->saturation, 0.0f), cp_hsv(c->hue, c->saturation, 1.0f)); break;
 	}

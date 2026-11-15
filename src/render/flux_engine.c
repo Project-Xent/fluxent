@@ -1,9 +1,9 @@
-#include "controls/factory/flux_control_registry.h"
 #include "store/flux_node_data.h"
 #include "render/flux_dl_replay.h"
 #include "flux_display_paint.h"
 #include "flux_fluent.h"
-#include "controls/factory/flux_init_nav.h"
+#include "controls/flux_module.h"
+#include "controls/factory/flux_init_container.h"
 #include "flux_render_internal.h"
 
 #include <assert.h>
@@ -19,15 +19,14 @@ typedef struct FluxCommandBuffer {
 } FluxCommandBuffer;
 
 struct FluxEngine {
-	FluxStore                 *store;
-	FluxControlRegistry const *registry;
-	XtkBackend                *backend;
-	FluxCommandBuffer          commands;
-	uint32_t                   transform_overflow_count;
-	uint32_t                   transform_overflow_logged;
-	bool                       render_degraded;
-	FluxDegradedFn             degraded_cb;
-	void                      *degraded_ctx;
+	FluxStore        *store;
+	XtkBackend       *backend;
+	FluxCommandBuffer commands;
+	uint32_t          transform_overflow_count;
+	uint32_t          transform_overflow_logged;
+	bool              render_degraded;
+	FluxDegradedFn    degraded_cb;
+	void             *degraded_ctx;
 };
 
 static bool command_buffer_push(FluxCommandBuffer *buf, FluxRenderCommand const *cmd) {
@@ -142,24 +141,8 @@ collect_emit_transform_push(FluxEngine *eng, CollectFrame const *frame, XentRect
 	engine_push(eng, &cmd);
 }
 
-static void collect_update_scroll_extent(XentCtx *ctx, XentNodeId node, FluxNodeData *nd, XentRect const *rect) {
-	if (!nd || nd->component_type != FLUX_CONTROL_SCROLL || !nd->component_data) return;
-	FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
-	if (sd->content_manual) return;
-
-	float max_r = 0.0f, max_b = 0.0f;
-	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
-	{
-		XentRect cr = {0};
-		if (!xent_layout_rect(ctx, child, &cr)) continue;
-		max_r = flux_maxf(max_r, cr.x + cr.w - rect->x);
-		max_b = flux_maxf(max_b, cr.y + cr.h - rect->y);
-	}
-
-	XentResolvedInsets pad = {0};
-	xent_resolved_p(ctx, node, XENT_AXIS_VERTICAL, &pad);
-	sd->content_w = max_r + pad.cross_end;
-	sd->content_h = max_b + pad.main_end;
+static void collect_update_scroll_extent(XentCtx *ctx, XentNodeId node, FluxNodeData *nd) {
+	if (nd && nd->component_type == FLUX_CONTROL_SCROLL) flux_scroll_measure(ctx, node, nd->component_data);
 }
 
 static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame) {
@@ -170,9 +153,9 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	frame->abs_y     = rect.y;
 
 	FluxNodeData *nd = flux_store_find(eng->store, frame->node);
-	collect_update_scroll_extent(ctx, frame->node, nd, &rect);
-	if (nd && nd->component_data && nd->component_type == FLUX_CONTROL_TITLE_BAR)
-		flux_titlebar_sync(ctx, frame->node, nd);
+	collect_update_scroll_extent(ctx, frame->node, nd);
+	FluxControlModule const *m = nd && nd->component_data ? flux_module_get(nd->component_type) : NULL;
+	if (m && m->tree && m->tree->collect) ( void ) m->tree->collect(ctx, eng->store, frame->node, nd);
 	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
 	frame->state          = compute_control_state(ctx, frame->node, nd);
 	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;
@@ -292,10 +275,9 @@ FluxEngine *flux_engine_create(FluxStore *store) {
 	return eng;
 }
 
-void flux_engine_bind(FluxEngine *eng, FluxControlRegistry const *registry, XtkBackend *backend) {
+void flux_engine_bind(FluxEngine *eng, XtkBackend *backend) {
 	if (!eng) return;
-	eng->registry = registry;
-	eng->backend  = backend;
+	eng->backend = backend;
 }
 
 void flux_engine_ondegraded(FluxEngine *eng, FluxDegradedFn cb, void *ctx) {
@@ -472,10 +454,10 @@ static void execute_transform_pop(FluxRenderCtx const *rc, FluxTransformStack *s
 
 static void execute_draw(FluxEngine const *eng, FluxRenderCtx const *rc, FluxRenderCommand const *cmd) {
 	if (cmd->phase == FLUX_PHASE_MAIN) {
-		flux_display_paint_main(eng->store, eng->backend, eng->registry, rc, &cmd->snapshot, &cmd->bounds, &cmd->state);
+		flux_display_paint_main(eng->store, eng->backend, rc, &cmd->snapshot, &cmd->bounds, &cmd->state);
 		return;
 	}
-	flux_display_paint_overlay(eng->backend, eng->registry, rc, &cmd->snapshot, &cmd->bounds, &cmd->state);
+	flux_display_paint_overlay(eng->backend, rc, &cmd->snapshot, &cmd->bounds, &cmd->state);
 }
 
 void flux_engine_execute(FluxEngine const *eng, FluxRenderCtx const *rc) {

@@ -5,6 +5,7 @@
 #include "controls/factory/flux_init_nav.h"
 #include "fluxent/flux_host.h"
 #include "fluxent/flux_window.h"
+#include "window/flux_window_internal.h"
 #include <xtk/xtk_catalog.h>
 
 #include <stdlib.h>
@@ -67,7 +68,7 @@ static char const *titlebar_tooltip_at(void *ctx, float x, float y) {
 	FluxTitleBarData *d = ( FluxTitleBarData * ) ctx;
 	switch (titlebar_hit(d, x, y)) {
 	case FLUX_TB_REGION_MIN   : return "Minimize";
-	case FLUX_TB_REGION_MAX   : return d->maximized ? "Restore" : "Maximize";
+	case FLUX_TB_REGION_MAX   : return NULL;
 	case FLUX_TB_REGION_CLOSE : return "Close";
 	default                   : return NULL;
 	}
@@ -213,6 +214,7 @@ void flux_titlebar_sync(XentCtx *ctx, XentNodeId node, struct FluxNodeData *nd) 
 	pass [n++] = (FluxRect) {r.x + l.max.x, r.y + l.max.y, l.max.w, l.max.h};
 	pass [n++] = (FluxRect) {r.x + l.close.x, r.y + l.close.y, l.close.w, l.close.h};
 	flux_window_settitlebar(d->window, bounds, pass, n);
+	flux_window_setmaxbutton(d->window, (FluxRect) {r.x + l.max.x, r.y + l.max.y, l.max.w, l.max.h});
 }
 
 void flux_titlebar_set_title(FluxStore *store, XentNodeId id, char const *title, char const *subtitle) {

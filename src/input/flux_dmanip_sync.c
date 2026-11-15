@@ -127,6 +127,15 @@ bool flux_dmanip_pan_handoff(FluxDManip *dmanip, FluxInput *input, FluxStore *st
 	return true;
 }
 
+bool flux_dmanip_contact(FluxStore *store, XentNodeId node, uint32_t pointer_id) {
+	FluxNodeData       *nd = flux_store_find(store, node);
+	FluxScrollData     *sd = nd && nd->component_type == FLUX_CONTROL_SCROLL ? nd->component_data : NULL;
+	FluxDManipViewport *vp = sd ? ( FluxDManipViewport * ) sd->dmanip_viewport : NULL;
+	if (!vp) return false;
+	flux_dmanip_vp_sync(vp, sd->scroll_x, sd->scroll_y);
+	return SUCCEEDED(flux_dmanip_vp_setcontact(vp, pointer_id));
+}
+
 static void cleanup_scroll_node(XentCtx *ctx, FluxStore *store, XentNodeId node) {
 	if (flux_node_type(store, node) != FLUX_CONTROL_SCROLL) return;
 

@@ -9,7 +9,6 @@
 #include <stdbool.h>
 
 #include "render/flux_engine.h"
-#include "controls/factory/flux_control_registry.h"
 #include "render/flux_render_snapshot.h"
 #include "flux_render_cache.h"
 #include "fluxent/flux_text.h"
@@ -26,7 +25,7 @@ typedef struct FluxFillSink {
 	bool      written;
 } FluxFillSink;
 
-void flux_engine_bind(FluxEngine *eng, FluxControlRegistry const *registry, XtkBackend *backend);
+void flux_engine_bind(FluxEngine *eng, XtkBackend *backend);
 
 struct FluxRenderCtx {
 	ID2D1DeviceContext    *d2d;
@@ -38,6 +37,7 @@ struct FluxRenderCtx {
 	double                 now;
 	float                  dt;
 	bool                  *animations_active;
+	double                *next_redraw;
 	bool                   is_dark;
 	FluxFillSink          *fill_sink;
 };

@@ -23,6 +23,10 @@ HRESULT                        flux_interaction_redirectpid(FluxInteraction *it,
 
 void                           flux_interaction_scroll_to(FluxInteraction *it, float x, float y);
 
+bool                           flux_interaction_active(FluxInteraction const *it);
+
+void                           flux_interaction_set_manual(FluxInteraction *it, bool manual, float x, float y);
+
 bool                           flux_interaction_poll(FluxInteraction *it, float *out_x, float *out_y);
 
 #endif

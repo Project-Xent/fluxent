@@ -1,6 +1,7 @@
 #include "flux_display_paint.h"
 #include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
+#include "controls/flux_module.h"
 
 #include <xent/xent_display.h>
 
@@ -34,15 +35,15 @@ paint_replay_translated(XtkBackend *backend, FluxRenderCtx const *rc, XentDl con
 }
 
 void flux_display_paint_main(
-  FluxStore *store, XtkBackend *backend, FluxControlRegistry const *registry, FluxRenderCtx const *rc,
-  FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+  FluxStore *store, XtkBackend *backend, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
+  FluxControlState const *state
 ) {
 	if (!store || !rc || !snap || !bounds || !state || !rc->d2d || !rc->brush) return;
 
-	FluxControlRenderer const *renderer = flux_control_registry_get(registry, snap->type);
-	if (renderer && renderer->record) {
+	FluxControlModule const *module = flux_module_get(snap->type);
+	if (module && module->record) {
 		FluxRect local = {0.0f, 0.0f, bounds->w, bounds->h};
-		XentDl  *list  = renderer->record(rc, snap, &local, state);
+		XentDl  *list  = module->record(rc, snap, &local, state);
 		flux_node_adoptdl(store, ( XentNodeId ) snap->id, list);
 	}
 
@@ -51,16 +52,16 @@ void flux_display_paint_main(
 }
 
 void flux_display_paint_overlay(
-  XtkBackend *backend, FluxControlRegistry const *registry, FluxRenderCtx const *rc, FluxRenderSnap const *snap,
-  FluxRect const *bounds, FluxControlState const *state
+  XtkBackend *backend, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
+  FluxControlState const *state
 ) {
 	if (!rc || !snap || !bounds || !rc->d2d || !rc->brush) return;
 
-	FluxControlRenderer const *renderer = flux_control_registry_get(registry, snap->type);
-	if (!renderer || !renderer->record_overlay) return;
+	FluxControlModule const *module = flux_module_get(snap->type);
+	if (!module || !module->overlay) return;
 
 	FluxRect local = {0.0f, 0.0f, bounds->w, bounds->h};
-	XentDl  *list  = renderer->record_overlay(rc, snap, &local, state);
+	XentDl  *list  = module->overlay(rc, snap, &local, state);
 	if (list) paint_replay_translated(backend, rc, list, bounds->x, bounds->y);
 	if (list) xent_dl_free(list);
 }

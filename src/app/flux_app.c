@@ -1,10 +1,11 @@
 #include "fluxent/fluxent.h"
-#include "controls/factory/flux_init_picker.h"
-#include "controls/behavior/flux_color_picker.h"
+#include "controls/flux_module.h"
 #include "store/flux_node_data.h"
 #include "fluxent/flux_window.h"
 #include "fluxent/flux_gfx.h"
 #include "fluxent/flux_input.h"
+#include "input/flux_input_internal.h"
+#include "window/flux_window_internal.h"
 #include "fluxent/flux_text.h"
 #include "fluxent/flux_host.h"
 #include "input/flux_dmanip.h"
@@ -17,12 +18,7 @@
 #include "app/flux_post.h"
 #include "input/flux_dmanip_sync.h"
 #include "controls/behavior/flux_control_cursor.h"
-#include "controls/draw/flux_control_draw.h"
 #include "controls/factory/flux_factory.h"
-#include "controls/factory/flux_init_container.h"
-#include "controls/factory/flux_init_items.h"
-#include "controls/factory/flux_init_nav.h"
-#include "controls/factory/flux_init_textbox.h"
 #include "compose/flux_compose_render.h"
 #include "a11y/flux_uia.h"
 #include "graphics/flux_graphics_compose.h"
@@ -46,7 +42,6 @@ typedef struct FluxRenderBackend FluxRenderBackend;
 struct FluxApp {
 	FluxWindow              *window;
 	FluxEngine              *engine;
-	FluxControlRegistry     *registry;
 	FluxInput               *input;
 	FluxText                *text;
 	FluxRenderCache         *cache;
@@ -107,8 +102,10 @@ static void app_try_interaction_handoff(FluxApp *app, FluxPointerEvent const *ev
 	if (!app->compose || !flux_input_takepan(app->input)) return;
 	XentNodeId target = flux_input_pantarget(app->input);
 	if (target == XENT_NODE_INVALID) return;
-	if (flux_compose_redirect_scroll(app->compose, target, ev->pointer_id))
+	if (flux_compose_redirect_scroll(app->compose, target, ev->pointer_id)) {
+		flux_input_clearpan(app->input);
 		flux_window_abandonpointer(app->window, ev->pointer_id);
+	}
 }
 
 static void app_init_dmanip(FluxApp *app) {
@@ -159,30 +156,12 @@ static bool app_defer(FluxApp *app, XentNodeId node) {
 	return true;
 }
 
-static void app_sync_picker_control(FluxApp *app, XentNodeId node, FluxNodeData *nd) {
-	switch (nd->component_type) {
-	case FLUX_CONTROL_LOOPING_SELECTOR :
-		if (flux_looping_sync(node, nd)) flux_window_redraw(app->window);
-		break;
-	case FLUX_CONTROL_DATE_PICKER  :
-	case FLUX_CONTROL_TIME_PICKER  : flux_picker_sync(node, nd); break;
-	case FLUX_CONTROL_COLOR_PICKER : flux_colorpicker_sync(node, nd); break;
-	default                        : break;
-	}
-}
-
 static void app_sync_layout_control(FluxApp *app, XentCtx *ctx, XentNodeId node, FluxNodeData *nd) {
 	if (!nd || !nd->component_data) return;
-	if (xtk_ctrl_islist(( XtkCtrlType ) nd->component_type) && flux_list_window_stale(ctx, nd))
-		( void ) app_defer(app, node);
-	if (nd->component_type == FLUX_CONTROL_SCROLL && flux_scroll_sync(ctx, node, nd)) ( void ) app_defer(app, node);
-	switch (nd->component_type) {
-	case FLUX_CONTROL_FLIP_VIEW      : flux_flip_sync(ctx, node, nd); break;
-	case FLUX_CONTROL_SPLIT_VIEW     : flux_splitview_sync(ctx, node, nd); break;
-	case FLUX_CONTROL_BREADCRUMB_BAR : flux_breadcrumb_sync(ctx, node, nd); break;
-	case FLUX_CONTROL_TAB_VIEW       : flux_tabs_sync_layout(app_store(app), node); break;
-	default                          : app_sync_picker_control(app, node, nd); break;
-	}
+	FluxControlModule const *m = flux_module_get(nd->component_type);
+	uint32_t flags             = m && m->tree && m->tree->frame ? m->tree->frame(ctx, app_store(app), node, nd) : 0u;
+	if (flags & FLUX_FRAME_DEFER) ( void ) app_defer(app, node);
+	if (flags & FLUX_FRAME_REDRAW) flux_window_redraw(app->window);
 }
 
 static bool app_layout_stack_push(XentNodeId **stack, uint32_t *top, uint32_t *cap, XentNodeId node) {
@@ -228,12 +207,14 @@ static void app_prepare_layout_tree(FluxApp *app, FluxDpi dpi) {
 	XentNodeId root  = app_root(app);
 	float      scale = app_dpi_scale(dpi);
 
-	if (app->dmanip) flux_dmanip_tick(app->dmanip);
+	if (app->dmanip && flux_dmanip_tick(app->dmanip)) flux_app_redraw(app);
 	xent_layout(ctx, root, dips.w, dips.h);
 	app_sync_layout_controls(app, ctx, store, root);
 	xent_layout(ctx, root, dips.w, dips.h);
 	if (app->dmanip) flux_dmanip_sync_tree(app->dmanip, ctx, store, root, scale);
-	flux_textbox_sync_ime(store, flux_input_focus(app->input));
+	XentNodeId           focus = flux_input_focus(app->input);
+	FluxTreeHooks const *t     = flux_module_tree(store, focus);
+	if (t && t->focus) t->focus(store, focus);
 }
 
 static FluxRenderCtx app_render_context(FluxApp *app, FluxGfx *gfx, FluxDpi dpi, int64_t now_ticks) {
@@ -293,7 +274,7 @@ static void app_ensure_compose(FluxApp *app, FluxGfx *gfx) {
 	FluxCompositor                *c    = flux_graphics_compositor(gfx);
 	WUC_CompositionGraphicsDevice *gdev = flux_graphics_graphics_device(gfx);
 	WUC_Visual                    *root = flux_graphics_composition_root(gfx);
-	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root, app->registry, app->xtk_backend);
+	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root, app->xtk_backend);
 }
 
 static void app_render_composition(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
@@ -308,12 +289,15 @@ static void app_render_composition(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 
 	bool anims_active       = false;
 	rc.animations_active    = &anims_active;
+	double next_redraw      = 0.0;
+	rc.next_redraw          = &next_redraw;
 	app_sync_tooltip_theme(app, &rc);
 	if (app->tooltip) app_sync_auto_tooltip(app);
 
 	flux_compose_render_frame(app->compose, app_ctx(app), app_store(app), app_root(app), &rc);
 
 	if (anims_active) flux_app_redraw(app);
+	if (next_redraw > 0.0) flux_window_redraw_after(app->window, next_redraw);
 }
 
 static void app_render_classic(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
@@ -329,6 +313,8 @@ static void app_render_classic(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 
 	bool anims_active       = false;
 	rc.animations_active    = &anims_active;
+	double next_redraw      = 0.0;
+	rc.next_redraw          = &next_redraw;
 	app_sync_tooltip_theme(app, &rc);
 	if (app->tooltip) app_sync_auto_tooltip(app);
 
@@ -340,6 +326,7 @@ static void app_render_classic(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	flux_gfx_present(gfx, kFluxAppPresentUseVsync);
 
 	if (anims_active) flux_app_redraw(app);
+	if (next_redraw > 0.0) flux_window_redraw_after(app->window, next_redraw);
 }
 
 struct FluxRenderBackend {
@@ -378,8 +365,8 @@ static void app_render(void *ctx) {
 	if (!app->backend) app->backend = app_select_backend(gfx);
 	app->backend->render_frame(app, gfx, dpi);
 	for (uint32_t i = 0; i < app->deferred_count; i++) {
-		flux_list_notify_stale(app_store(app), app->deferred [i]);
-		flux_scroll_report(app_store(app), app->deferred [i]);
+		FluxTreeHooks const *t = flux_module_tree(app_store(app), app->deferred [i]);
+		if (t && t->deferred) t->deferred(app_store(app), app->deferred [i]);
 	}
 	app->deferred_count = 0;
 }
@@ -442,6 +429,13 @@ static void app_pointer_wheel(FluxApp *app, FluxPointerEvent const *ev) {
 	flux_input_dispatch(app->input, app_root(app), ev);
 }
 
+static void app_pointer_hittest(FluxApp *app, FluxPointerEvent const *ev) {
+	XentNodeId target = flux_input_scrollat(app->input, app_root(app), ev->x, ev->y);
+	if (target == XENT_NODE_INVALID) return;
+	if (app->compose && flux_compose_redirect_scroll(app->compose, target, ev->pointer_id)) return;
+	if (app->dmanip) ( void ) flux_dmanip_contact(app_store(app), target, ev->pointer_id);
+}
+
 static void app_pointer_default(FluxApp *app, FluxPointerEvent const *ev) {
 	flux_input_dispatch(app->input, app_root(app), ev);
 }
@@ -451,6 +445,7 @@ static void app_pointer_route(FluxApp *app, FluxPointerEvent const *ev, bool is_
 	case FLUX_POINTER_MOVE         : app_pointer_move(app, ev, is_touch); break;
 	case FLUX_POINTER_DOWN         : app_pointer_down(app, ev); break;
 	case FLUX_POINTER_WHEEL        : app_pointer_wheel(app, ev); break;
+	case FLUX_POINTER_HITTEST      : app_pointer_hittest(app, ev); break;
 	case FLUX_POINTER_UP           :
 	case FLUX_POINTER_HOLD         :
 	case FLUX_POINTER_CONTEXT_MENU :
@@ -567,9 +562,10 @@ static bool app_bind_scene_runtime(FluxApp *app) {
 	if (!ctx || !store || app_root(app) == XENT_NODE_INVALID) return false;
 
 	app->engine = flux_engine_create(store);
-	if (app->engine) flux_engine_bind(app->engine, app->registry, app->xtk_backend);
+	if (app->engine) flux_engine_bind(app->engine, app->xtk_backend);
 	app->input = flux_input_create(ctx, store);
-	app->text  = flux_text_create();
+	flux_input_setwindow(app->input, app->window);
+	app->text = flux_text_create();
 	if (app->text) flux_text_register(app->text, ctx);
 
 	flux_store_ondel(store, app_on_node_removed, app);
@@ -629,8 +625,6 @@ static void app_bind_window_callbacks(FluxApp *app) {
 }
 
 static void app_create_runtime_services(FluxApp *app, FluxThemeMode mode) {
-	app->registry = flux_control_registry_create();
-	if (app->registry) flux_register_builtins(app->registry);
 	app->cache = flux_render_cache_create(FLUX_APP_RENDER_CACHE_CAPACITY);
 	app->theme = flux_theme_create();
 	if (app->theme) flux_theme_setmode(app->theme, mode);
@@ -686,8 +680,6 @@ static void app_destroy_render_state(FluxApp *app) {
 	if (app->xtk_backend) flux_xtk_backend_destroy(app->xtk_backend);
 	app->xtk_backend = NULL;
 	app->host        = NULL;
-	flux_control_registry_destroy(app->registry);
-	app->registry = NULL;
 	if (app->text) flux_text_destroy(app->text);
 }
 
@@ -763,7 +755,7 @@ void      flux_app_sethost(FluxApp *app, XtkHost *host, XtkBackend *backend) {
 	flux_host_bindapp(host, app);
 	app->host        = host;
 	app->xtk_backend = backend;
-	if (app->engine) flux_engine_bind(app->engine, app->registry, backend);
+	if (app->engine) flux_engine_bind(app->engine, backend);
 	FluxStore *store = app_store(app);
 	if (store) flux_store_sethost(store, host);
 }

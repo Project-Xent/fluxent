@@ -53,6 +53,8 @@ typedef struct FluxNodeBehavior {
 	void       *on_context_menu_ctx;
 	void        (*on_cancel)(void *ctx);
 	void       *on_cancel_ctx;
+	bool        (*on_release)(void *ctx);
+	void       *on_release_ctx;
 	void        (*on_middle_click)(void *ctx);
 	void       *on_middle_click_ctx;
 	void        (*on_hover_changed)(void *ctx, bool hovered);

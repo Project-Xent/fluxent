@@ -53,8 +53,9 @@ static float scroll_animated_expansion(FluxRenderCtx const *rc, FluxRenderSnap c
 	}
 	float k = 1.0f - expf(-rc->dt * 16.0f);
 	if (k > 1.0f) k = 1.0f;
-	a->current += (target - a->current) * k;
-	if (rc->animations_active && (fabsf(target - a->current) > 0.001f || target > 0.0f)) *rc->animations_active = true;
+	a->current  += (target - a->current) * k;
+	bool fading  = scroll_activity_expansion(snap, rc->now) > 0.0f;
+	flux_rec_note_animating(rc, fabsf(target - a->current) > 0.001f || fading);
 	return a->current;
 }
 

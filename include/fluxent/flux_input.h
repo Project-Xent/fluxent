@@ -20,6 +20,7 @@ void                      flux_input_destroy(FluxInput *input);
 FluxHitResult             flux_input_hittest(FluxInput *input, XentNodeId root, float px, float py);
 
 void                      flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev);
+XentNodeId                flux_input_scrollat(FluxInput *input, XentNodeId root, float x, float y);
 
 bool                      flux_input_keydown(FluxInput *input, FluxKey key);
 void                      flux_input_keyup(FluxInput *input, FluxKey key);

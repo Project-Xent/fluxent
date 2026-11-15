@@ -305,6 +305,11 @@ WUC_Visual *flux_vtree_scrollholder(FluxVisualTree *vt, XentNodeId node) {
 	return vn ? vn->holder_visual : NULL;
 }
 
+bool flux_vtree_trackerbound(FluxVisualTree *vt, XentNodeId node) {
+	VisNode *vn = tree_owned(vt, node);
+	return vn && vn->tracker_bound;
+}
+
 void flux_vtree_bindtracker(FluxVisualTree *vt, XentNodeId node, bool bound) {
 	VisNode *vn = tree_owned(vt, node);
 	if (vn) vn->tracker_bound = bound;

@@ -10,7 +10,7 @@
 
 #include <stddef.h>
 
-#define PAGE_EXTRA          4
+#define PAGE_EXTRA          64
 #define GALLERY_LIST_WINDOW 256
 
 typedef struct GalleryApp GalleryApp;
@@ -102,6 +102,7 @@ GalleryBind *page_bind(PageBuild *b, int tag);
 GalleryBind *page_bind_i(PageBuild *b, int tag, int i);
 void        *page_alloc(PageBuild *b, size_t size);
 uint32_t     page_post(void *arg, XtkEvent const *event);
+void         gallery_post(GalleryApp *g, XtkMsg msg);
 void         page_on(PageBuild *b, XtkLocalId local, XtkEventId event, int tag, int i);
 void         page_sync(PageBuild *b, PageSyncFn sync);
 void         page_keep(PageBuild *b, int tag, XtkLocalId local);
@@ -157,6 +158,7 @@ bool         page_person_picture_build(PageBuild *b);
 bool         page_flipview_build(PageBuild *b);
 bool         page_pager_build(PageBuild *b);
 bool         page_menus_build(PageBuild *b);
+bool         page_commandbar_build(PageBuild *b);
 bool         page_tabview_build(PageBuild *b);
 bool         page_expander_build(PageBuild *b);
 bool         page_breadcrumb_build(PageBuild *b);
@@ -164,6 +166,7 @@ bool         page_selector_bar_build(PageBuild *b);
 bool         page_listview_build(PageBuild *b);
 bool         page_gridview_build(PageBuild *b);
 bool         page_listbox_build(PageBuild *b);
+bool         page_details_build(PageBuild *b);
 bool         page_tree_view_build(PageBuild *b);
 bool         page_items_view_build(PageBuild *b);
 bool         page_pull_refresh_build(PageBuild *b);

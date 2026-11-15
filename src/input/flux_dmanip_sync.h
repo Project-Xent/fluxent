@@ -10,6 +10,7 @@ typedef struct FluxInput FluxInput;
 void flux_dmanip_sync_tree(FluxDManip *dmanip, XentCtx *ctx, FluxStore *store, XentNodeId root, float scale);
 
 bool flux_dmanip_pan_handoff(FluxDManip *dmanip, FluxInput *input, FluxStore *store, uint32_t pointer_id);
+bool flux_dmanip_contact(FluxStore *store, XentNodeId node, uint32_t pointer_id);
 
 void flux_dmanip_cleanup_tree(XentCtx *ctx, FluxStore *store, XentNodeId root);
 

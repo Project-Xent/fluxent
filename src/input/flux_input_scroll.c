@@ -1,11 +1,9 @@
 #include "flux_input_internal.h"
 #include "controls/behavior/flux_refresh_internal.h"
 #include "store/flux_node_data.h"
+#include "controls/flux_module.h"
+
 #include "controls/factory/flux_init_container.h"
-#include "controls/factory/flux_init_items.h"
-#include "controls/factory/flux_init_popup.h"
-#include "controls/factory/flux_init_textbox.h"
-#include "controls/behavior/flux_calendar.h"
 
 #include <assert.h>
 #include <windows.h>
@@ -65,6 +63,17 @@ static void input_scroll_changed(FluxScrollData *sd, float old_x, float old_y) {
 	if (sd->scroll_x == old_x && sd->scroll_y == old_y) return;
 	sd->user_moved = 1;
 	flux_scroll_offset_changed(sd);
+}
+
+XentNodeId input_scrollable_ancestor(FluxInput *input, XentNodeId node) {
+	for (; node != XENT_NODE_INVALID; node = xent_node_parent(input->ctx, node)) {
+		FluxScrollData *sd
+		  = flux_node_type(input->store, node) == FLUX_CONTROL_SCROLL ? input_scroll_data(input, node) : NULL;
+		XentRect rect = {0};
+		if (!sd || !xent_layout_rect(input->ctx, node, &rect)) continue;
+		if (sd->content_h > rect.h || sd->content_w > rect.w) return node;
+	}
+	return XENT_NODE_INVALID;
 }
 
 static XentNodeId input_nearest_scroll_node(FluxInput *input, XentNodeId node) {
@@ -232,6 +241,17 @@ static XentNodeId input_refresh_root_for_scroll(FluxInput *input, XentNodeId scr
 	return XENT_NODE_INVALID;
 }
 
+static bool input_refresh_pull(FluxInput *input, XentNodeId refresh, float x, float y, float max_x, float max_y) {
+	FluxInputHooks const *h = flux_module_input(input->store, refresh);
+	return h && h->pull && h->pull(input->store, refresh, x, y, max_x, max_y);
+}
+
+static void input_refresh_end(FluxInput *input, XentNodeId refresh, bool cancel) {
+	FluxInputHooks const *h  = flux_module_input(input->store, refresh);
+	FluxNodeFn            fn = h ? (cancel ? h->cancel : h->release) : NULL;
+	if (fn) fn(input->store, refresh);
+}
+
 static void
 input_scroll_limits(FluxInput *input, XentNodeId scroll, FluxScrollData const *sd, float *max_x, float *max_y) {
 	XentRect rect = {0};
@@ -309,7 +329,7 @@ bool input_drive_refresh_pull(FluxInput *input, float px, float py) {
 	input_scroll_limits(input, pull->scroll, sd, &max_x, &max_y);
 	float new_sx = pull->origin_sx - (px - pull->start_x);
 	float new_sy = pull->origin_sy - (py - pull->start_y);
-	bool  active = flux_refresh_touch_pull(input->store, pull->refresh, new_sx, new_sy, max_x, max_y);
+	bool  active = input_refresh_pull(input, pull->refresh, new_sx, new_sy, max_x, max_y);
 	if (!pull->active && !active) return false;
 	if (!pull->active) {
 		input_clear_pressed_for_pan(input);
@@ -326,13 +346,13 @@ bool input_drive_refresh_pull(FluxInput *input, float px, float py) {
 
 bool input_finish_refresh_pull(FluxInput *input) {
 	bool active = input->refresh_pull.active;
-	if (active) flux_refresh_touch_release(input->store, input->refresh_pull.refresh);
+	if (active) input_refresh_end(input, input->refresh_pull.refresh, false);
 	input_refresh_pull_reset(input);
 	return active;
 }
 
 void input_cancel_refresh_pull(FluxInput *input) {
-	if (input->refresh_pull.active) flux_refresh_touch_cancel(input->store, input->refresh_pull.refresh);
+	if (input->refresh_pull.active) input_refresh_end(input, input->refresh_pull.refresh, true);
 	input_refresh_pull_reset(input);
 }
 
@@ -352,7 +372,7 @@ bool input_drive_touch_pan(FluxInput *input, float px, float py) {
 	float      new_sy  = input->touch.origin_sy - (py - input->touch.start_y);
 
 	XentNodeId refresh = input_refresh_root_for_scroll(input, input->touch.target);
-	if (refresh != XENT_NODE_INVALID) flux_refresh_touch_pull(input->store, refresh, new_sx, new_sy, max_x, max_y);
+	if (refresh != XENT_NODE_INVALID) input_refresh_pull(input, refresh, new_sx, new_sy, max_x, max_y);
 
 	float old_x            = sd->scroll_x;
 	float old_y            = sd->scroll_y;
@@ -526,7 +546,7 @@ bool input_finish_touch_pan(FluxInput *input) {
 
 	if (input->touch.target != XENT_NODE_INVALID) {
 		XentNodeId refresh = input_refresh_root_for_scroll(input, input->touch.target);
-		if (refresh != XENT_NODE_INVALID) flux_refresh_touch_release(input->store, refresh);
+		if (refresh != XENT_NODE_INVALID) input_refresh_end(input, refresh, false);
 	}
 
 	input->touch.active = false;
@@ -550,25 +570,9 @@ bool input_handle_number_box_wheel(FluxInput *input, XentNodeId node, float delt
 	return true;
 }
 
-bool input_handle_textbox_wheel(FluxInput *input, XentNodeId node, float *remaining_y) {
-	if (flux_node_type(input->store, node) != FLUX_CONTROL_TEXT_INPUT) return false;
-	*remaining_y -= flux_textbox_wheel(input->store, node, *remaining_y);
-	return *remaining_y == 0.0f;
-}
-
-bool input_handle_combo_wheel(FluxInput *input, XentNodeId node, float delta_y) {
-	if (flux_node_type(input->store, node) != FLUX_CONTROL_COMBO_BOX) return false;
-	return flux_combo_handle_wheel(input->store, node, delta_y);
-}
-
-bool input_handle_calendar_wheel(FluxInput *input, XentNodeId node, float delta_y) {
-	if (flux_node_type(input->store, node) != FLUX_CONTROL_CALENDAR_VIEW) return false;
-	return flux_calendar_handle_wheel(input->store, node, delta_y);
-}
-
-bool input_handle_flip_view_wheel(FluxInput *input, XentNodeId node, float delta_y) {
-	if (flux_node_type(input->store, node) != FLUX_CONTROL_FLIP_VIEW) return false;
-	return flux_flip_handle_wheel(input->store, node, delta_y);
+bool input_handle_module_wheel(FluxInput *input, XentNodeId node, float delta_y, float *remaining_y) {
+	FluxInputHooks const *h = flux_module_input(input->store, node);
+	return h && h->wheel && h->wheel(input->store, node, delta_y, remaining_y);
 }
 
 static float input_scroll_axis_max(float content, float viewport) {
@@ -586,12 +590,37 @@ static bool input_consume_scroll_axis(float *scroll, float *remaining, float max
 	return consumed != 0.0f;
 }
 
-bool input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining_x, float *remaining_y) {
-	if (flux_node_type(input->store, node) != FLUX_CONTROL_SCROLL) return false;
-
-	XentNodeId parent = xent_node_parent(input->ctx, node);
-	if (flux_looping_handle_wheel(input->store, parent, *remaining_y / FLUX_SCROLLBAR_SMALL_CHANGE))
+static void input_scroll_owner_wheel(FluxInput *input, XentNodeId node, float *remaining_y) {
+	XentNodeId            parent = xent_node_parent(input->ctx, node);
+	FluxInputHooks const *owner  = flux_module_input(input->store, parent);
+	if (owner
+	    && owner->scroll_wheel
+	    && owner->scroll_wheel(input->store, parent, *remaining_y / FLUX_SCROLLBAR_SMALL_CHANGE))
 		*remaining_y = 0.0f;
+}
+
+static void input_scroll_apply(FluxInput *input, FluxScrollData *sd, FluxPoint next, bool moved, bool smooth) {
+	if (smooth) {
+		if (!moved) return;
+		sd->user_moved         = 1;
+		sd->pin_end            = 0;
+		sd->last_activity_time = now_seconds();
+		flux_scroll_wheel_animate(sd, input->window, next.x, next.y);
+		return;
+	}
+	float old_x      = sd->scroll_x;
+	float old_y      = sd->scroll_y;
+	sd->scroll_x     = next.x;
+	sd->scroll_y     = next.y;
+	sd->wheel_active = 0;
+	if (!moved) return;
+	sd->last_activity_time = now_seconds();
+	input_scroll_changed(sd, old_x, old_y);
+}
+
+bool input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining_x, float *remaining_y, bool smooth) {
+	if (flux_node_type(input->store, node) != FLUX_CONTROL_SCROLL) return false;
+	input_scroll_owner_wheel(input, node, remaining_y);
 
 	FluxScrollData *sd = input_scroll_data(input, node);
 	if (!sd) return false;
@@ -599,17 +628,11 @@ bool input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining
 	XentRect rect = {0};
 	xent_layout_rect(input->ctx, node, &rect);
 
-	float max_x = input_scroll_axis_max(sd->content_w, rect.w);
-	float max_y = input_scroll_axis_max(sd->content_h, rect.h);
-	float old_x = sd->scroll_x;
-	float old_y = sd->scroll_y;
-	bool  moved = input_consume_scroll_axis(&sd->scroll_x, remaining_x, max_x);
-	moved       = input_consume_scroll_axis(&sd->scroll_y, remaining_y, max_y) || moved;
-
-	if (moved) {
-		sd->last_activity_time = now_seconds();
-		input_scroll_changed(sd, old_x, old_y);
-	}
+	bool      retarget = smooth && sd->wheel_active;
+	FluxPoint next     = {retarget ? sd->wheel_target_x : sd->scroll_x, retarget ? sd->wheel_target_y : sd->scroll_y};
+	bool      moved    = input_consume_scroll_axis(&next.x, remaining_x, input_scroll_axis_max(sd->content_w, rect.w));
+	moved = input_consume_scroll_axis(&next.y, remaining_y, input_scroll_axis_max(sd->content_h, rect.h)) || moved;
+	input_scroll_apply(input, sd, next, moved, smooth);
 	return *remaining_x == 0.0f && *remaining_y == 0.0f;
 }
 

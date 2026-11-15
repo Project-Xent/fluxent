@@ -83,7 +83,7 @@ struct FluxDManip {
 	IDirectManipulationUpdateManager *update_mgr;
 	DWORD                             ui_thread_id;
 	bool                              activated;
-	int                               live_viewports;
+	int                               active_viewports;
 };
 
 struct FluxDManipViewport {
@@ -93,7 +93,6 @@ struct FluxDManipViewport {
 	FluxDManipHandler           *handler;
 	DWORD                        handler_cookie;
 	bool                         enabled;
-	bool                         counted;
 	DIRECTMANIPULATION_STATUS    status;
 	int                          content_w;
 	int                          content_h;
@@ -103,8 +102,14 @@ struct FluxDManipViewport {
 	void                        *on_updated_ctx;
 };
 
+static bool viewport_status_active(DIRECTMANIPULATION_STATUS status) {
+	return status == DIRECTMANIPULATION_RUNNING || status == DIRECTMANIPULATION_INERTIA;
+}
+
 static void viewport_set_status(struct FluxDManipViewport *vp, DIRECTMANIPULATION_STATUS s) {
-	if (vp) vp->status = s;
+	if (!vp) return;
+	vp->dm->active_viewports += ( int ) viewport_status_active(s) - ( int ) viewport_status_active(vp->status);
+	vp->status                = s;
 }
 
 static bool dmanip_is_ui_thread(FluxDManipViewport const *vp) {
@@ -196,7 +201,7 @@ void flux_dmanip_destroy(FluxDManip *dm) {
 bool flux_dmanip_tick(FluxDManip *dm) {
 	if (!dm || !dm->update_mgr) return false;
 	IDirectManipulationUpdateManager_Update(dm->update_mgr, NULL);
-	return dm->live_viewports > 0;
+	return dm->active_viewports > 0;
 }
 
 #define FLUX_DM_CONFIG_PAN                                   \
@@ -268,9 +273,7 @@ HRESULT flux_dmanip_viewport_create(FluxDManip *dm, FluxDManipViewport **out) {
 		return hr;
 	}
 
-	dm->live_viewports++;
-	vp->counted = true;
-	*out        = vp;
+	*out = vp;
 	return S_OK;
 }
 
@@ -297,7 +300,7 @@ void flux_dmanip_viewport_destroy(FluxDManipViewport *vp) {
 	dmanip_viewport_shutdown_native(vp);
 	dmanip_viewport_release_handler(vp);
 	dmanip_viewport_release_native(vp);
-	if (vp->dm && vp->counted) vp->dm->live_viewports--;
+	viewport_set_status(vp, DIRECTMANIPULATION_DISABLED);
 	free(vp);
 }
 

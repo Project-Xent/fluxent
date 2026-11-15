@@ -55,6 +55,7 @@ typedef struct FluxThemeColors {
 
 	FluxColor card_bg_default;
 	FluxColor card_stroke_default;
+	FluxColor card_stroke_solid;
 	FluxColor divider_stroke_default;
 
 	FluxColor focus_stroke_outer;
@@ -65,6 +66,7 @@ typedef struct FluxThemeColors {
 	FluxColor layer_on_mica_alt_default;
 	FluxColor layer_on_mica_alt_secondary;
 	FluxColor solid_background;
+	FluxColor solid_background_secondary;
 	FluxColor solid_background_tertiary;
 
 	FluxColor ctrl_on_image_default;

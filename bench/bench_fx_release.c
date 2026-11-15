@@ -1,3 +1,4 @@
+#include <fluxent/flux_controls.h>
 #include <fluxent/flux_app.h>
 #include <fluxent/flux_host.h>
 #include <xtk/xtk_batch.h>
@@ -195,6 +196,7 @@ static void report(Measure const *measure) {
 }
 
 int main(void) {
+	flux_controls_all();
 	setvbuf(stdout, NULL, _IONBF, 0);
 	Fixture fixture = {0};
 	if (!fixture_init(&fixture)) return 1;

@@ -117,6 +117,10 @@ void flux_window_settitle(FluxWindow *win, wchar_t const *title) {
 	SetWindowTextW(win->hwnd, title);
 }
 
+void flux_window_setmaxbutton(FluxWindow *win, FluxRect bounds) {
+	if (win) win->title_bar_max = bounds;
+}
+
 void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *passthrough, int count) {
 	if (!win) return;
 	if (drag.w <= 0.0f || drag.h <= 0.0f) {
@@ -134,7 +138,12 @@ void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *pas
 
 void flux_window_applyframe(FluxWindow *win, bool deferred) {
 	if (!win || !win->hwnd) return;
-	MARGINS m = win->title_bar_extended ? (MARGINS) {0, 0, 1, 0} : (MARGINS) {0, 0, 0, 0};
+	UINT     dpi        = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
+	int      top        = ( int ) (48.0f * dpi / FLUX_DPI_BASE);
+	MARGINS  m          = win->title_bar_extended ? (MARGINS) {0, 0, top, 0} : (MARGINS) {0, 0, 0, 0};
+	LONG_PTR style      = GetWindowLongPtrW(win->hwnd, GWL_STYLE);
+	LONG_PTR next_style = win->title_bar_extended ? style & ~WS_CAPTION : style | WS_CAPTION;
+	if (next_style != style) SetWindowLongPtrW(win->hwnd, GWL_STYLE, next_style);
 	DwmExtendFrameIntoClientArea(win->hwnd, &m);
 	if (deferred) {
 		PostMessageW(win->hwnd, FLUX_WM_APPLY_FRAME, 0, 0);
@@ -157,10 +166,17 @@ void flux_window_redraw(FluxWindow *win) {
 	if (win) win->render_requested = true;
 }
 
+void flux_window_redraw_after(FluxWindow *win, double seconds) {
+	if (!win || !win->hwnd || seconds <= 0.0) return;
+	UINT      delay = ( UINT ) (seconds * 1000.0 + 0.999);
+	ULONGLONG due   = GetTickCount64() + delay;
+	if (win->redraw_due && win->redraw_due <= due) return;
+	if (SetTimer(win->hwnd, FLUX_WINDOW_REDRAW_TIMER, delay, NULL)) win->redraw_due = due;
+}
+
 void flux_window_abandonpointer(FluxWindow *win, uint32_t pointer_id) {
 	if (!win) return;
 	if (win->primary_touch_pid == pointer_id) win->primary_touch_pid = 0;
-	if (win->hwnd && GetCapture() == win->hwnd) ReleaseCapture();
 }
 
 void flux_window_setmenu(FluxWindow *win, FluxMenu *menu) {

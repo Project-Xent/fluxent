@@ -7,17 +7,13 @@
 
 #include "a11y/flux_uia.h"
 #include "store/flux_node_data.h"
+#include "controls/flux_module.h"
 #include "bridge/flux_internal.h"
 
 #include "controls/data/flux_slider_data.h"
 #include "controls/data/flux_textbox_data.h"
-#include "controls/behavior/flux_slider.h"
 #include "render/flux_slider_geom.h"
 #include "fluxent/flux_control_type.h"
-#include "host/flux_prop_apply.h"
-#include "controls/factory/flux_init_value.h"
-#include "controls/factory/flux_init_popup.h"
-#include "controls/factory/flux_init_picker.h"
 
 #include <windows.h>
 #include <oleauto.h>
@@ -634,26 +630,26 @@ static bool                    uia_range_is_readonly(FluxUia *self) {
 }
 
 static HRESULT STDMETHODCALLTYPE rng_set_value(IRangeValueProvider *p, double value) {
-	FluxUia        *self = SELF_RANGE(p);
-	FluxControlType t    = flux_node_type(self->info.store, self->node);
+	FluxUia *self = SELF_RANGE(p);
 	if (!self->info.store || uia_range_is_readonly(self)) return UIA_E_INVALIDOPERATION;
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
 	if (self->thumb >= 0)
-		return flux_slider_userthumb(self->info.store, self->node, self->thumb, ( float ) value)
+		return h && h->set_thumb && h->set_thumb(self->info.store, self->node, self->thumb, ( float ) value)
 		       ? S_OK
 		       : UIA_E_INVALIDOPERATION;
-	if (t == FLUX_CONTROL_NUMBER_BOX) flux_prop_numberbox_value(self->info.store, self->node, value);
-	else if (t == FLUX_CONTROL_SCROLL_BAR) flux_scroll_bar_setvalue(self->info.store, self->node, value);
-	else flux_prop_slider_value(self->info.store, self->node, ( float ) value);
+	if (h && h->set_range) h->set_range(self->info.store, self->node, value);
 	return S_OK;
 }
 
 static HRESULT rng_get_component(IRangeValueProvider *p, double *out, int component) {
 	FluxUia *self = SELF_RANGE(p);
 	if (!out) return E_POINTER;
-	float vals [3] = {0.0f, 0.0f, 0.0f};
-	if (self->thumb >= 0) flux_slider_thumb(self->info.store, self->node, self->thumb, &vals [0], &vals [1], &vals [2]);
+	float               vals [3] = {0.0f, 0.0f, 0.0f};
+	FluxUiaHooks const *h        = flux_module_uia(self->info.store, self->node);
+	if (self->thumb >= 0 && h && h->thumb)
+		h->thumb(self->info.store, self->node, self->thumb, &vals [0], &vals [1], &vals [2]);
 	else xent_sem_value(self->info.ctx, self->node, &vals [0], &vals [1], &vals [2]);
 	*out = vals [component];
 	return S_OK;
@@ -716,9 +712,8 @@ static ULONG STDMETHODCALLTYPE val_release(IValueProvider *p) { return uia_relea
 static char const             *uia_text_content(FluxUia *self) {
 	FluxNodeData *nd = uia_node_data(self);
 	if (!nd || !nd->component_data) return NULL;
-	if (nd->component_type == FLUX_CONTROL_COMBO_BOX) return flux_combo_text(self->info.store, self->node);
-	if (nd->component_type == FLUX_CONTROL_DATE_PICKER || nd->component_type == FLUX_CONTROL_TIME_PICKER)
-		return flux_picker_valuetext(self->info.store, self->node);
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
+	if (h && h->text) return h->text(self->info.store, self->node);
 	if (nd->component_type == FLUX_CONTROL_PASSWORD_BOX) return "";
 	FluxTextBoxData const *tb = ( FluxTextBoxData const * ) nd->component_data;
 	return tb->content;
@@ -740,10 +735,8 @@ static HRESULT STDMETHODCALLTYPE val_set_value(IValueProvider *p, LPCWSTR value)
 	if (!utf8) return E_OUTOFMEMORY;
 	WideCharToMultiByte(CP_UTF8, 0, value ? value : L"", -1, utf8, n, NULL, NULL);
 
-	FluxControlType type = flux_node_type(self->info.store, self->node);
-	if (type == FLUX_CONTROL_PASSWORD_BOX) flux_prop_password_content(self->info.store, self->node, utf8);
-	else if (type == FLUX_CONTROL_COMBO_BOX) flux_prop_combo_text(self->info.store, self->node, utf8);
-	else flux_prop_textbox_content(self->info.store, self->node, utf8);
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
+	if (h && h->set_text) h->set_text(self->info.store, self->node, utf8);
 	free(utf8);
 	return S_OK;
 }

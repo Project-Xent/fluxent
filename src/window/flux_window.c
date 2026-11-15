@@ -33,6 +33,9 @@
 #ifndef WS_EX_NOREDIRECTIONBITMAP
   #define WS_EX_NOREDIRECTIONBITMAP 0x00200000l
 #endif
+#ifndef DM_POINTERHITTEST
+  #define DM_POINTERHITTEST 0x0250
+#endif
 #ifndef PT_TOUCHPAD
   #define PT_TOUCHPAD 5
 #endif
@@ -106,9 +109,10 @@ static void window_emit_pointer(FluxWindow *win, FluxPointerEvent const *ev) {
 
 static HCURSOR window_cursor_handle(FluxWindow *win, int cursor_type) {
 	switch (cursor_type) {
-	case FLUX_CURSOR_IBEAM : return win->cursor_ibeam;
-	case FLUX_CURSOR_HAND  : return win->cursor_hand;
-	default                : return win->cursor_arrow;
+	case FLUX_CURSOR_IBEAM  : return win->cursor_ibeam;
+	case FLUX_CURSOR_HAND   : return win->cursor_hand;
+	case FLUX_CURSOR_SIZEWE : return win->cursor_sizewe;
+	default                 : return win->cursor_arrow;
 	}
 }
 
@@ -207,6 +211,14 @@ static bool window_on_nc_hittest(FluxWindow *win, HWND hwnd, LPARAM lp, LRESULT 
 	    && !IsZoomed(hwnd)
 	    && window_hittest_top_border(win, hwnd, pt, result))
 		return true;
+	if (win->title_bar_active
+	    && win->title_bar_extended
+	    && win->config.resizable
+	    && window_rect_contains_pt(&win->title_bar_max, x, y))
+	{
+		*result = HTMAXBUTTON;
+		return true;
+	}
 	if (win->title_bar_active && window_hittest_drag(win, x, y, result)) return true;
 	return false;
 }
@@ -250,16 +262,17 @@ static LRESULT window_on_paint(FluxWindow *win, HWND hwnd) {
 	return 0;
 }
 
-static bool window_accept_touch_pointer(FluxWindow *win, UINT msg, UINT32 pid, bool is_touch) {
+static LRESULT window_on_capture_changed(FluxWindow *win, HWND hwnd, bool touch);
+
+static bool window_accept_touch_pointer(FluxWindow *win, HWND hwnd, UINT msg, UINT32 pid, bool is_touch, bool primary) {
 	if (!is_touch) return true;
 
-	if (msg == WM_POINTERDOWN) {
-		if (win->primary_touch_pid != 0 && win->primary_touch_pid != pid) return false;
-		win->primary_touch_pid = pid;
-		return true;
-	}
-
-	return win->primary_touch_pid == pid;
+	if (msg != WM_POINTERDOWN) return win->primary_touch_pid == pid;
+	bool other = win->primary_touch_pid != 0 && win->primary_touch_pid != pid;
+	if (other && !primary) return false;
+	if (other) window_on_capture_changed(win, hwnd, true);
+	win->primary_touch_pid = pid;
+	return true;
 }
 
 static FluxPointerEvent
@@ -314,9 +327,19 @@ window_emit_mouse_pointer(FluxWindow *win, HWND hwnd, UINT msg, FluxPointerEvent
 	window_emit_pointer(win, ev);
 }
 
+static void window_emit_contact_up(WindowContactPointer const *contact) {
+	bool touch                  = contact->ev->device == FLUX_POINTER_TOUCH;
+	contact->ev->kind           = FLUX_POINTER_UP;
+	contact->ev->buttons        = 0;
+	contact->ev->changed_button = FLUX_POINTER_BUTTON_LEFT;
+	window_emit_pointer(contact->win, contact->ev);
+	if (!touch) ReleaseCapture();
+	if (touch && contact->win->primary_touch_pid == contact->pid) contact->win->primary_touch_pid = 0;
+}
+
 static void window_emit_contact_pointer(WindowContactPointer const *contact) {
 	if (contact->msg == WM_POINTERDOWN) {
-		SetCapture(contact->hwnd);
+		if (contact->ev->device != FLUX_POINTER_TOUCH) SetCapture(contact->hwnd);
 		contact->ev->kind           = FLUX_POINTER_DOWN;
 		contact->ev->buttons        = FLUX_POINTER_BUTTON_LEFT;
 		contact->ev->changed_button = FLUX_POINTER_BUTTON_LEFT;
@@ -325,13 +348,7 @@ static void window_emit_contact_pointer(WindowContactPointer const *contact) {
 	}
 
 	if (contact->msg == WM_POINTERUP) {
-		contact->ev->kind           = FLUX_POINTER_UP;
-		contact->ev->buttons        = 0;
-		contact->ev->changed_button = FLUX_POINTER_BUTTON_LEFT;
-		window_emit_pointer(contact->win, contact->ev);
-		ReleaseCapture();
-		if (contact->ev->device == FLUX_POINTER_TOUCH && contact->win->primary_touch_pid == contact->pid)
-			contact->win->primary_touch_pid = 0;
+		window_emit_contact_up(contact);
 		return;
 	}
 
@@ -372,6 +389,12 @@ static LRESULT window_on_touch_hold_timer(FluxWindow *win, HWND hwnd) {
 	return 0;
 }
 
+static bool window_touch_canceled(FluxWindow *win, HWND hwnd, WPARAM wp, bool is_touch) {
+	if (!is_touch || !IS_POINTER_CANCELED_WPARAM(wp)) return false;
+	if (win->primary_touch_pid == GET_POINTERID_WPARAM(wp)) window_on_capture_changed(win, hwnd, true);
+	return true;
+}
+
 static LRESULT window_on_pointer_contact(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 	UINT32             pid   = GET_POINTERID_WPARAM(wp);
 	POINTER_INPUT_TYPE ptype = PT_POINTER;
@@ -380,7 +403,8 @@ static LRESULT window_on_pointer_contact(FluxWindow *win, HWND hwnd, UINT msg, W
 
 	bool is_touch = (ptype == PT_TOUCH);
 	bool is_mouse = (ptype == PT_MOUSE);
-	if (!window_accept_touch_pointer(win, msg, pid, is_touch)) return 0;
+	if (window_touch_canceled(win, hwnd, wp, is_touch)) return 0;
+	if (!window_accept_touch_pointer(win, hwnd, msg, pid, is_touch, IS_POINTER_PRIMARY_WPARAM(wp))) return 0;
 
 	POINTER_INFO pi = {0};
 	if (!GetPointerInfo(pid, &pi)) return 0;
@@ -414,19 +438,23 @@ static LRESULT window_on_pointer_wheel(FluxWindow *win, HWND hwnd, UINT msg, WPA
 	return 0;
 }
 
-static LRESULT window_on_capture_changed(FluxWindow *win, HWND hwnd) {
+static LRESULT window_on_capture_changed(FluxWindow *win, HWND hwnd, bool touch) {
 	FluxPointerEvent ev = {0};
 	ev.kind             = FLUX_POINTER_CANCEL;
-	ev.device           = FLUX_POINTER_MOUSE;
+	ev.device           = touch ? FLUX_POINTER_TOUCH : FLUX_POINTER_MOUSE;
+	ev.pointer_id       = touch ? win->primary_touch_pid : 0;
 
 	POINT cur;
 	GetCursorPos(&cur);
 	ScreenToClient(hwnd, &cur);
-	float scale            = window_dpi_scale(win);
-	ev.x                   = ( float ) cur.x / scale;
-	ev.y                   = ( float ) cur.y / scale;
-	win->primary_touch_pid = 0;
-	win->mouse_buttons     = 0;
+	float scale = window_dpi_scale(win);
+	ev.x        = ( float ) cur.x / scale;
+	ev.y        = ( float ) cur.y / scale;
+	if (touch) {
+		win->primary_touch_pid = 0;
+		KillTimer(hwnd, WINDOW_TOUCH_HOLD_TIMER);
+	}
+	else win->mouse_buttons = 0;
 	window_emit_pointer(win, &ev);
 	return 0;
 }
@@ -533,8 +561,8 @@ static bool window_run_iteration(FluxWindow *win, int *exit_code) {
 
 	bool animating = flux_anim_frame();
 	window_render_if_requested(win);
-	if (win->render_requested) return true;
-	if (!animating) MsgWaitForMultipleObjectsEx(0, NULL, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+	if (!animating && !win->render_requested)
+		MsgWaitForMultipleObjectsEx(0, NULL, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
 	else if (!flux_anim_take_presented()) DwmFlush();
 	return true;
 }
@@ -550,9 +578,10 @@ static FluxWindow *window_bind_or_get(HWND hwnd, UINT msg, LPARAM lp) {
 }
 
 static LRESULT window_on_create(FluxWindow *win, HWND hwnd) {
-	win->cursor_arrow = LoadCursorW(NULL, IDC_ARROW);
-	win->cursor_ibeam = LoadCursorW(NULL, IDC_IBEAM);
-	win->cursor_hand  = LoadCursorW(NULL, IDC_HAND);
+	win->cursor_arrow  = LoadCursorW(NULL, IDC_ARROW);
+	win->cursor_ibeam  = LoadCursorW(NULL, IDC_IBEAM);
+	win->cursor_hand   = LoadCursorW(NULL, IDC_HAND);
+	win->cursor_sizewe = LoadCursorW(NULL, IDC_SIZEWE);
 	window_enable_pointer_input(hwnd);
 	return 0;
 }
@@ -692,11 +721,65 @@ static bool window_is_pointer_contact(UINT msg) {
 
 static bool window_is_pointer_wheel(UINT msg) { return msg == WM_POINTERWHEEL || msg == WM_POINTERHWHEEL; }
 
-static bool window_is_capture_change(UINT msg) { return msg == WM_POINTERCAPTURECHANGED || msg == WM_CAPTURECHANGED; }
+static bool window_pointer_is_touch(UINT32 pid) {
+	POINTER_INPUT_TYPE type = PT_POINTER;
+	return !GetPointerType(pid, &type) || type == PT_TOUCH;
+}
+
+static bool window_handle_capture_change(WindowMessage const *m) {
+	if (m->msg == WM_CAPTURECHANGED) {
+		if (!m->win->primary_touch_pid) window_on_capture_changed(m->win, m->hwnd, false);
+		return true;
+	}
+	if (m->msg != WM_POINTERCAPTURECHANGED) return false;
+	UINT32 pid = GET_POINTERID_WPARAM(m->wp);
+	if (pid == m->win->primary_touch_pid) window_on_capture_changed(m->win, m->hwnd, true);
+	else if (!window_pointer_is_touch(pid)) window_on_capture_changed(m->win, m->hwnd, false);
+	return true;
+}
 
 static bool window_is_mouse_wheel(UINT msg) { return msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL; }
 
+static bool window_handle_max_button(WindowMessage const *m, LRESULT *result) {
+	if (!m->win->title_bar_extended) return false;
+	if (m->msg == WM_NCLBUTTONDOWN && m->wp == HTMAXBUTTON) {
+		m->win->title_bar_max_pressed = true;
+		*result                       = 0;
+		return true;
+	}
+	if (m->msg != WM_NCLBUTTONUP || !m->win->title_bar_max_pressed) return false;
+	m->win->title_bar_max_pressed = false;
+	LRESULT hit                   = HTNOWHERE;
+	window_on_nc_hittest(m->win, m->hwnd, m->lp, &hit);
+	if (hit == HTMAXBUTTON) PostMessageW(m->hwnd, WM_SYSCOMMAND, IsZoomed(m->hwnd) ? SC_RESTORE : SC_MAXIMIZE, 0);
+	*result = 0;
+	return true;
+}
+
+static void window_forward_nc_hover(WindowMessage const *m) {
+	if (!m->win->title_bar_extended) return;
+	if (m->msg != WM_NCMOUSEMOVE && m->msg != WM_NCMOUSELEAVE) return;
+	FluxPointerEvent ev = {.kind = FLUX_POINTER_MOVE, .device = FLUX_POINTER_MOUSE, .x = -1.0f, .y = -1.0f};
+	if (m->msg == WM_NCMOUSEMOVE) window_client_point_from_lparam(m->hwnd, m->lp, m->win, &ev.x, &ev.y);
+	window_emit_pointer(m->win, &ev);
+}
+
+static bool window_handle_hittest(WindowMessage const *m, LRESULT *result) {
+	if (m->msg != DM_POINTERHITTEST) return false;
+	UINT32             pid   = GET_POINTERID_WPARAM(m->wp);
+	POINTER_INPUT_TYPE ptype = PT_POINTER;
+	if (!GetPointerType(pid, &ptype) || ptype != PT_TOUCHPAD) return false;
+	FluxPointerEvent ev = window_pointer_base_event(m->win, m->hwnd, m->lp, ptype, pid);
+	ev.kind             = FLUX_POINTER_HITTEST;
+	window_emit_pointer(m->win, &ev);
+	*result = 0;
+	return true;
+}
+
 static bool window_handle_pointer(WindowMessage const *m, LRESULT *result) {
+	if (window_handle_hittest(m, result)) return true;
+	if (window_handle_max_button(m, result)) return true;
+	window_forward_nc_hover(m);
 	if (window_is_pointer_contact(m->msg)) {
 		*result = window_on_pointer_contact(m->win, m->hwnd, m->msg, m->wp, m->lp);
 		return true;
@@ -705,8 +788,8 @@ static bool window_handle_pointer(WindowMessage const *m, LRESULT *result) {
 		*result = window_on_pointer_wheel(m->win, m->hwnd, m->msg, m->wp, m->lp);
 		return true;
 	}
-	if (window_is_capture_change(m->msg)) {
-		*result = window_on_capture_changed(m->win, m->hwnd);
+	if (window_handle_capture_change(m)) {
+		*result = 0;
 		return true;
 	}
 	if (m->msg == WM_CONTEXTMENU) {
@@ -756,7 +839,17 @@ static bool window_handle_system(WindowMessage const *m, LRESULT *result) {
 	}
 }
 
+static bool window_handle_redraw_timer(WindowMessage const *m, LRESULT *result) {
+	if (m->msg != WM_TIMER || m->wp != FLUX_WINDOW_REDRAW_TIMER) return false;
+	KillTimer(m->hwnd, FLUX_WINDOW_REDRAW_TIMER);
+	m->win->redraw_due       = 0;
+	m->win->render_requested = true;
+	*result                  = 0;
+	return true;
+}
+
 static bool window_handle_message(WindowMessage const *m, LRESULT *result) {
+	if (window_handle_redraw_timer(m, result)) return true;
 	if (window_handle_lifecycle(m, result)) return true;
 	if (window_handle_layout(m, result)) return true;
 	if (window_handle_pointer(m, result)) return true;

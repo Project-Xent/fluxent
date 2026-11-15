@@ -2,6 +2,30 @@
 
 Entries start at 0.3.1; earlier releases are described by their tags.
 
+## 0.3.3 (unreleased)
+
+- made every control a `FluxControlModule` (`fluxent/flux_controls.h`). A
+  program registers the controls it creates with `flux_controls_use(&flux_ctrl_<name>)`
+  or all of them with `flux_controls_all()`; a module registers the controls it
+  builds internally. Nothing outside the registry references control code, so
+  the linker drops unregistered controls: titlebar_demo went from 780 KB to
+  388 KB, the oxent examples from 1.08 MB to 0.69 MB, and the zxent examples
+  from 1.30 MB to 0.91 MB. Creating an unregistered type fails the transaction
+  with `XTK_BATCH_ERR_BACKEND`;
+- added CommandBar, AppBarButton, AppBarToggleButton and AppBarSeparator,
+  ported from WinUI: closed display modes, label positions, an overflow menu
+  for secondary commands, dynamic overflow with `DynamicOverflowOrder`, and
+  keyboard navigation. New props `IS_STICKY`, `CLOSED_DISPLAY_MODE`,
+  `DEFAULT_LABEL_POSITION`, `OVERFLOW_BUTTON_VISIBILITY`, `DYNAMIC_OVERFLOW`,
+  `SECONDARY`, `DYNAMIC_OVERFLOW_ORDER`, `LABEL_POSITION`, `ACCELERATOR_TEXT`;
+  new event `OPEN`; new theme color `card_stroke_solid`;
+
+### Breaking changes
+
+| Change | Migration |
+| --- | --- |
+| Controls are no longer available implicitly | Call `flux_controls_all()` once before the first commit, or `flux_controls_use` per control |
+
 ## 0.3.2
 
 - replaced `FluxAppCfg.dark_mode` with `FluxAppCfg.theme` (`FluxThemeMode`).

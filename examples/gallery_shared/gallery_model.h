@@ -42,6 +42,7 @@ enum
 	PAGE_PAGER,
 	PAGE_CAT_MENUS,
 	PAGE_MENUS,
+	PAGE_COMMANDBAR,
 	PAGE_TABVIEW,
 	PAGE_EXPANDER,
 	PAGE_BREADCRUMB,
@@ -50,6 +51,7 @@ enum
 	PAGE_LISTVIEW,
 	PAGE_GRIDVIEW,
 	PAGE_LISTBOX,
+	PAGE_DETAILS,
 	PAGE_TREE_VIEW,
 	PAGE_ITEMS_VIEW,
 	PAGE_PULL_REFRESH,
@@ -148,10 +150,21 @@ enum
 	MSG_SLIDER_RANGE,
 	MSG_COMBO_EDIT,
 	MSG_COMBO_SUBMIT,
+	MSG_DET_SORT,
+	MSG_DET_RESIZE,
+	MSG_DET_FIT,
+	MSG_DET_REORDER,
+	MSG_CB_ACTION,
+	MSG_CB_OPEN,
+	MSG_CB_FAV,
+	MSG_CB_BOLD,
 	MSG_COUNT,
 };
 
 #define BAR_COUNT 4
+#define DET_COLS  4
+#define DET_ROWS  12
+#define CB_COUNT  10
 
 typedef struct Model {
 	int      page;
@@ -235,9 +248,23 @@ typedef struct Model {
 	float    slider_range_hi;
 	int      combo_edit_sel;
 	char    *combo_submit;
+	int      det_order [DET_COLS];
+	float    det_width [DET_COLS];
+	int      det_sort;
+	bool     det_desc;
+	int      cb_last;
+	bool     cb_open;
+	bool     cb_fav;
+	bool     cb_bold;
 } Model;
 
-void gallery_model_init(Model *m);
-void gallery_model_update(Model *m, XtkMsg msg);
+void                     gallery_model_init(Model *m);
+
+extern char const *const kDetHeaders [DET_COLS];
+extern char const *const kCbCommands [CB_COUNT];
+char const              *gallery_det_cell(int row, int col);
+void                     gallery_det_rows(Model const *m, int out [DET_ROWS]);
+float                    gallery_det_fit(int col);
+void                     gallery_model_update(Model *m, XtkMsg msg);
 
 #endif

@@ -55,6 +55,7 @@ target("fluxent")
         "src/a11y/*.c",
         "src/app/*.c",
         "src/compose/*.c",
+        "src/controls/*.c",
         "src/controls/behavior/*.c",
         "src/controls/draw/*.c",
         "src/controls/factory/*.c",

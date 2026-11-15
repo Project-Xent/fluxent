@@ -314,6 +314,40 @@ typedef struct FluxPersonSnapshot {
 	bool        is_group;
 } FluxPersonSnapshot;
 
+typedef struct FluxColItemSnapshot {
+	char const *label;
+	uint8_t     align;
+	uint8_t     sort;
+	bool        sortable;
+	bool        resizable;
+	uint8_t     press_part;
+	uint8_t     focus_part;
+} FluxColItemSnapshot;
+
+typedef struct FluxColHeaderSnapshot {
+	bool                ghost;
+	float               ghost_x;
+	float               ghost_w;
+	FluxColItemSnapshot item;
+} FluxColHeaderSnapshot;
+
+typedef struct FluxAppBarSnapshot {
+	char const *label;
+	char const *icon;
+	uint8_t     kind;
+	uint8_t     view;
+	bool        checked;
+	float       label_h;
+} FluxAppBarSnapshot;
+
+typedef struct FluxCmdBarSnapshot {
+	bool  open;
+	bool  more_open;
+	bool  minimal;
+	float bg_y;
+	float bg_h;
+} FluxCmdBarSnapshot;
+
 typedef struct FluxRenderSnap {
 	uint64_t        id;
 	FluxControlType type;
@@ -365,8 +399,67 @@ typedef struct FluxRenderSnap {
 		FluxPagerSnapshot        pager;
 		FluxSplitPaneSnapshot    split_pane;
 		FluxTitleBarSnapshot     title_bar;
+		FluxColItemSnapshot      col_item;
+		FluxColHeaderSnapshot    col_header;
+		FluxAppBarSnapshot       app_bar;
+		FluxCmdBarSnapshot       cmd_bar;
 	} u;
 } FluxRenderSnap;
+
+typedef struct FluxSnapCtx {
+	FluxRenderSnap *snap;
+	XentCtx const  *ctx;
+	XentNodeId      node;
+	void const     *data;
+} FluxSnapCtx;
+
+void flux_snap_breadcrumb_item(FluxSnapCtx const *ctx);
+void flux_snap_button(FluxSnapCtx const *ctx);
+void flux_snap_calendar(FluxSnapCtx const *ctx);
+void flux_snap_checkbox_like(FluxSnapCtx const *ctx);
+void flux_snap_colorpicker(FluxSnapCtx const *ctx);
+void flux_snap_combo_box(FluxSnapCtx const *ctx);
+void flux_snap_expander_header(FluxSnapCtx const *ctx);
+void flux_snap_flip_view(FluxSnapCtx const *ctx);
+void flux_snap_hyperlink(FluxSnapCtx const *ctx);
+void flux_snap_image(FluxSnapCtx const *ctx);
+void flux_snap_info_badge(FluxSnapCtx const *ctx);
+void flux_snap_info_bar(FluxSnapCtx const *ctx);
+void flux_snap_list_item(FluxSnapCtx const *ctx);
+void flux_snap_looping(FluxSnapCtx const *ctx);
+void flux_snap_looping_item(FluxSnapCtx const *ctx);
+void flux_snap_menu_bar_item(FluxSnapCtx const *ctx);
+void flux_snap_nav_view(FluxSnapCtx const *ctx);
+void flux_snap_nav_view_item(FluxSnapCtx const *ctx);
+void flux_snap_number_box(FluxSnapCtx const *ctx);
+void flux_snap_pager(FluxSnapCtx const *ctx);
+void flux_snap_password_box(FluxSnapCtx const *ctx);
+void flux_snap_person_picture(FluxSnapCtx const *ctx);
+void flux_snap_picker(FluxSnapCtx const *ctx);
+void flux_snap_picker_card(FluxSnapCtx const *ctx);
+void flux_snap_pips_pager(FluxSnapCtx const *ctx);
+void flux_snap_progress(FluxSnapCtx const *ctx);
+void flux_snap_progress_ring(FluxSnapCtx const *ctx);
+void flux_snap_rating(FluxSnapCtx const *ctx);
+void flux_snap_refresh(FluxSnapCtx const *ctx);
+void flux_snap_repeat_button(FluxSnapCtx const *ctx);
+void flux_snap_scroll(FluxSnapCtx const *ctx);
+void flux_snap_scroll_bar(FluxSnapCtx const *ctx);
+void flux_snap_selector_item(FluxSnapCtx const *ctx);
+void flux_snap_slider(FluxSnapCtx const *ctx);
+void flux_snap_split_pane(FluxSnapCtx const *ctx);
+void flux_snap_switch(FluxSnapCtx const *ctx);
+void flux_snap_tab_view_item(FluxSnapCtx const *ctx);
+void flux_snap_text(FluxSnapCtx const *ctx);
+void flux_snap_textbox(FluxSnapCtx const *ctx);
+void flux_snap_title_bar(FluxSnapCtx const *ctx);
+void flux_snap_tree_item(FluxSnapCtx const *ctx);
+
+void flux_snap_colitem(FluxSnapCtx const *ctx);
+void flux_snap_colheader(FluxSnapCtx const *ctx);
+void flux_snap_appbar(FluxSnapCtx const *ctx);
+void flux_snap_cmdbar(FluxSnapCtx const *ctx);
+void flux_snap_cmdmore(FluxSnapCtx const *ctx);
 
 void flux_snapshot_build(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId node, FluxNodeData const *nd);
 

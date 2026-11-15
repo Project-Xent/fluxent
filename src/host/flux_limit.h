@@ -4,7 +4,7 @@
 typedef enum FluxLimitKind
 {
 	FLUX_LIMIT_EVENT_CHAIN,
-	FLUX_LIMIT_TXN_LISTS,
+	FLUX_LIMIT_TXN_OWNERS,
 	FLUX_LIMIT_COUNT,
 } FluxLimitKind;
 

@@ -1,6 +1,5 @@
 #include "popup/flux_popup_tree.h"
-#include "controls/factory/flux_init_items.h"
-#include "controls/factory/flux_control_registry.h"
+#include "controls/flux_module.h"
 #include "runtime/flux_time.h"
 #include "store/flux_node_data.h"
 
@@ -8,22 +7,20 @@
 #include <stdlib.h>
 
 struct FluxPopupTree {
-	FluxWindow          *owner;
-	XentCtx             *ctx;
-	FluxStore           *store;
-	XentNodeId           root;
-	FluxEngine          *engine;
-	FluxControlRegistry *registry;
-	FluxRenderCache     *cache;
-	FluxText            *text;
-	FluxTheme           *theme;
-	int64_t              last_frame;
+	FluxWindow      *owner;
+	XentCtx         *ctx;
+	FluxStore       *store;
+	XentNodeId       root;
+	FluxEngine      *engine;
+	FluxRenderCache *cache;
+	FluxText        *text;
+	FluxTheme       *theme;
+	int64_t          last_frame;
 };
 
 void flux_popup_tree_destroy(FluxPopupTree *tree) {
 	if (!tree) return;
 	flux_engine_destroy(tree->engine);
-	flux_control_registry_destroy(tree->registry);
 	flux_render_cache_destroy(tree->cache);
 	flux_text_destroy(tree->text);
 	flux_theme_destroy(tree->theme);
@@ -33,27 +30,28 @@ void flux_popup_tree_destroy(FluxPopupTree *tree) {
 FluxPopupTree *flux_popup_tree_create(FluxWindow *owner, XentCtx *ctx, FluxStore *store, XentNodeId root) {
 	FluxPopupTree *tree = calloc(1, sizeof(*tree));
 	if (!tree) return NULL;
-	tree->owner    = owner;
-	tree->ctx      = ctx;
-	tree->store    = store;
-	tree->root     = root;
-	tree->engine   = flux_engine_create(store);
-	tree->registry = flux_control_registry_create();
-	tree->cache    = flux_render_cache_create(1024);
-	tree->text     = flux_text_create();
-	tree->theme    = flux_theme_create();
-	if (!tree->engine || !tree->registry || !tree->cache || !tree->text || !tree->theme) {
+	tree->owner  = owner;
+	tree->ctx    = ctx;
+	tree->store  = store;
+	tree->root   = root;
+	tree->engine = flux_engine_create(store);
+	tree->cache  = flux_render_cache_create(1024);
+	tree->text   = flux_text_create();
+	tree->theme  = flux_theme_create();
+	if (!tree->engine || !tree->cache || !tree->text || !tree->theme) {
 		flux_popup_tree_destroy(tree);
 		return NULL;
 	}
-	flux_register_builtins(tree->registry);
-	flux_engine_bind(tree->engine, tree->registry, NULL);
+	flux_engine_bind(tree->engine, NULL);
 	return tree;
 }
 
 static bool popup_tree_sync(FluxPopupTree *tree, XentNodeId node) {
-	FluxNodeData *nd   = flux_store_find(tree->store, node);
-	bool          busy = nd && nd->component_type == FLUX_CONTROL_LOOPING_SELECTOR && flux_looping_sync(node, nd);
+	FluxNodeData            *nd = flux_store_find(tree->store, node);
+	FluxControlModule const *m
+	  = nd && nd->component_type == FLUX_CONTROL_LOOPING_SELECTOR ? flux_module_get(nd->component_type) : NULL;
+	bool busy
+	  = m && m->tree && m->tree->frame && (m->tree->frame(tree->ctx, tree->store, node, nd) & FLUX_FRAME_REDRAW);
 	for (XentNodeId child = xent_node_first(tree->ctx, node); child != XENT_NODE_INVALID;
 	  child               = xent_node_next(tree->ctx, child))
 		busy |= popup_tree_sync(tree, child);

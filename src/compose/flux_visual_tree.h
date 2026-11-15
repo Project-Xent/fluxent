@@ -17,5 +17,6 @@ WUC_Container *flux_vtree_visual(FluxVisualTree *vt, XentNodeId node);
 WUC_Visual    *flux_vtree_scrollholder(FluxVisualTree *vt, XentNodeId node);
 
 void           flux_vtree_bindtracker(FluxVisualTree *vt, XentNodeId node, bool bound);
+bool           flux_vtree_trackerbound(FluxVisualTree *vt, XentNodeId node);
 
 #endif

@@ -69,6 +69,7 @@ static void init_light_palette(FluxThemeColors *c) {
 
 	c->card_bg_default                 = flux_color_rgba(255, 255, 255, 0xb3);
 	c->card_stroke_default             = flux_color_rgba(0, 0, 0, 0x0f);
+	c->card_stroke_solid               = flux_color_rgb(235, 235, 235);
 	c->divider_stroke_default          = flux_color_rgba(0, 0, 0, 0x0f);
 
 	c->focus_stroke_outer              = flux_color_rgba(0, 0, 0, 0xe4);
@@ -79,6 +80,7 @@ static void init_light_palette(FluxThemeColors *c) {
 	c->layer_on_mica_alt_default       = flux_color_rgba(255, 255, 255, 0xb3);
 	c->layer_on_mica_alt_secondary     = flux_color_rgba(0, 0, 0, 0x0a);
 	c->solid_background                = flux_color_rgb(243, 243, 243);
+	c->solid_background_secondary      = flux_color_rgb(238, 238, 238);
 	c->solid_background_tertiary       = flux_color_rgb(249, 249, 249);
 
 	c->ctrl_on_image_default           = flux_color_rgba(255, 255, 255, 0xc9);
@@ -141,6 +143,7 @@ static void init_dark_palette(FluxThemeColors *c) {
 
 	c->card_bg_default                 = flux_color_rgba(255, 255, 255, 0x0d);
 	c->card_stroke_default             = flux_color_rgba(0, 0, 0, 0x19);
+	c->card_stroke_solid               = flux_color_rgb(28, 28, 28);
 	c->divider_stroke_default          = flux_color_rgba(255, 255, 255, 0x15);
 
 	c->focus_stroke_outer              = flux_color_rgb(255, 255, 255);
@@ -151,6 +154,7 @@ static void init_dark_palette(FluxThemeColors *c) {
 	c->layer_on_mica_alt_default       = flux_color_rgba(58, 58, 58, 0x73);
 	c->layer_on_mica_alt_secondary     = flux_color_rgba(255, 255, 255, 0x0f);
 	c->solid_background                = flux_color_rgb(32, 32, 32);
+	c->solid_background_secondary      = flux_color_rgb(28, 28, 28);
 	c->solid_background_tertiary       = flux_color_rgb(40, 40, 40);
 
 	c->ctrl_on_image_default           = flux_color_rgba(28, 28, 28, 0xb3);

@@ -51,6 +51,8 @@ XtkEl *page_expander(XtkUi *ui, Model const *m);
 XtkEl *page_listview(XtkUi *ui, Model const *m);
 XtkEl *page_gridview(XtkUi *ui, Model const *m);
 XtkEl *page_listbox(XtkUi *ui, Model const *m);
+XtkEl *page_details(XtkUi *ui, Model const *m);
+XtkEl *page_commandbar(XtkUi *ui, Model const *m);
 XtkEl *page_tree_view(XtkUi *ui, Model const *m);
 XtkEl *page_items_view(XtkUi *ui, Model const *m);
 XtkEl *page_pull_refresh(XtkUi *ui, Model const *m);

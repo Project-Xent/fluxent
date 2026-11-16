@@ -98,6 +98,8 @@ typedef struct FluxProgressSnapshot {
 typedef struct FluxImageSnapshot {
 	char const      *text_content;
 	FluxImageStretch stretch;
+	uint32_t         frame;
+	XentInsets       nine;
 } FluxImageSnapshot;
 
 typedef struct FluxInfoBadgeSnapshot {
@@ -350,6 +352,11 @@ typedef struct FluxCmdBarSnapshot {
 	float bg_h;
 } FluxCmdBarSnapshot;
 
+typedef struct FluxListSnapshot {
+	bool     band;
+	FluxRect rect;
+} FluxListSnapshot;
+
 typedef struct FluxRenderSnap {
 	uint64_t        id;
 	FluxControlType type;
@@ -405,6 +412,7 @@ typedef struct FluxRenderSnap {
 		FluxColHeaderSnapshot    col_header;
 		FluxAppBarSnapshot       app_bar;
 		FluxCmdBarSnapshot       cmd_bar;
+		FluxListSnapshot         list;
 	} u;
 } FluxRenderSnap;
 
@@ -459,6 +467,7 @@ void flux_snap_tree_item(FluxSnapCtx const *ctx);
 
 void flux_snap_colitem(FluxSnapCtx const *ctx);
 void flux_snap_colbutton(FluxSnapCtx const *ctx);
+void flux_snap_list(FluxSnapCtx const *ctx);
 void flux_snap_colheader(FluxSnapCtx const *ctx);
 void flux_snap_appbar(FluxSnapCtx const *ctx);
 void flux_snap_cmdbar(FluxSnapCtx const *ctx);

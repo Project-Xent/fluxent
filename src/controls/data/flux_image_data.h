@@ -1,7 +1,12 @@
 #ifndef FLUX_IMAGE_DATA_H
 #define FLUX_IMAGE_DATA_H
 
+#include <xent/xent.h>
 #include <xtk/xtk_types.h>
+
+#include <stdint.h>
+
+struct FluxImage;
 
 typedef XtkImageStretch FluxImageStretch;
 
@@ -11,10 +16,15 @@ typedef XtkImageStretch FluxImageStretch;
 #define FLUX_IMAGE_UNIFORM_TO_FILL XTK_IMAGE_UNIFORM_TO_FILL
 
 typedef struct FluxImageData {
-	char const      *source;
-	FluxImageStretch stretch;
-	float            natural_w;
-	float            natural_h;
+	char const       *source;
+	FluxImageStretch  stretch;
+	XentInsets        nine;
+	struct FluxImage *image;
+	uint32_t          frame;
+	float             seen_w;
+	float             seen_h;
+	double            start;
+	uint8_t           reported;
 } FluxImageData;
 
 #endif

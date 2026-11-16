@@ -527,6 +527,11 @@ static XentNodeId seed_list_item(XentCtx *ctx, FluxStore *store, FluxControlMoun
 	return flux_listitem_init(&(FluxListItemDesc) {ctx, store, SEED_NONE});
 }
 
+static XentNodeId seed_group_header(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
+	( void ) m;
+	return flux_groupheader_init(&(FluxListItemDesc) {ctx, store, SEED_NONE});
+}
+
 static XentNodeId seed_items_view(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
 	return flux_itemsview_init(&(FluxItemsViewDesc) {
 	  .ctx = ctx, .store = store, .parent = SEED_NONE, .input = m->env->input});
@@ -1026,7 +1031,7 @@ void flux_control_unmount(FluxStore *store, XentNodeId node, FluxControlType typ
 static uint32_t frame_list(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) {
 	( void ) store;
 	( void ) node;
-	( void ) flux_list_sync_header(nd);
+	( void ) flux_list_sync_layout(nd);
 	return flux_list_window_stale(ctx, nd) ? FLUX_FRAME_DEFER : 0u;
 }
 
@@ -1103,6 +1108,7 @@ static FluxTreeHooks const tree_list = {
   .commit   = flux_list_apply_pending,
   .frame    = frame_list,
   .deferred = flux_list_notify_stale,
+  .collect  = flux_list_stick,
 };
 static FluxTreeHooks const tree_listitem = {.placed = fluxlistitem_bind_owner, .touch = touch_listitem};
 static FluxTreeHooks const tree_scroll   = {.frame = frame_scroll, .deferred = flux_scroll_report};
@@ -1210,7 +1216,7 @@ CONSUMES(
   XTK_PROP_SHOW_PANE_TOGGLE
 );
 
-DEPS(list, &flux_ctrl_scroll, &flux_ctrl_listitem);
+DEPS(list, &flux_ctrl_scroll, &flux_ctrl_listitem, &flux_ctrl_groupheader);
 DEPS(tree, &flux_ctrl_list, &flux_ctrl_treeitem);
 DEPS(combo, &flux_ctrl_textbox);
 DEPS(suggest, &flux_ctrl_textbox, &flux_ctrl_button);
@@ -1310,8 +1316,10 @@ MODULE(scroll) = {
   .record   = flux_scroll_record,
   .overlay  = flux_scroll_overlay_record,
 };
-MODULE(image) = {
+static FluxTreeHooks const tree_image = {.frame = flux_image_sync};
+MODULE(image)                         = {
   .type     = FLUX_CONTROL_IMAGE,
+  .tree     = &tree_image,
   .snapshot = flux_snap_image,
   .props    = flux_props_image,
   .seed     = seed_image,
@@ -1330,6 +1338,8 @@ MODULE(list) = {
   .deps     = list_deps,
   .seed     = seed_list,
   .retarget = retarget_list,
+  .snapshot = flux_snap_list,
+  .overlay  = flux_list_overlay_record,
   .record   = flux_container_record,
 };
 MODULE(tab)      = {.type = FLUX_CONTROL_TAB, .record = flux_container_record};
@@ -1514,6 +1524,8 @@ MODULE(listbox) = {
   .deps     = list_deps,
   .seed     = seed_list_box,
   .retarget = retarget_list,
+  .snapshot = flux_snap_list,
+  .overlay  = flux_list_overlay_record,
   .record   = flux_listbox_record,
 };
 MODULE(gridview) = {
@@ -1523,6 +1535,8 @@ MODULE(gridview) = {
   .deps     = list_deps,
   .seed     = seed_grid,
   .retarget = retarget_list,
+  .snapshot = flux_snap_list,
+  .overlay  = flux_list_overlay_record,
   .record   = flux_container_record,
 };
 MODULE(repeater) = {
@@ -1532,6 +1546,8 @@ MODULE(repeater) = {
   .deps     = list_deps,
   .seed     = seed_repeater,
   .retarget = retarget_list,
+  .snapshot = flux_snap_list,
+  .overlay  = flux_list_overlay_record,
   .record   = flux_container_record,
 };
 MODULE(itemsview) = {
@@ -1541,6 +1557,8 @@ MODULE(itemsview) = {
   .deps     = list_deps,
   .seed     = seed_items_view,
   .retarget = retarget_list,
+  .snapshot = flux_snap_list,
+  .overlay  = flux_list_overlay_record,
   .record   = flux_container_record,
 };
 MODULE(flip) = {
@@ -1820,3 +1838,9 @@ MODULE(appbarsep) = {
 };
 MODULE(cmdmore)   = {.type = FLUX_CONTROL_CMDMORE, .snapshot = flux_snap_cmdmore, .record = flux_cmdmore_record};
 MODULE(colbutton) = {.type = FLUX_CONTROL_COLBUTTON, .snapshot = flux_snap_colbutton, .record = flux_colbutton_record};
+MODULE(groupheader) = {
+  .type   = FLUX_CONTROL_GROUP_HEADER,
+  .tree   = &tree_listitem,
+  .seed   = seed_group_header,
+  .record = flux_groupheader_record,
+};

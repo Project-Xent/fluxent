@@ -12,6 +12,13 @@ static XtkEl *grid_cell(XtkUi *ui, void *env, int index) {
 	);
 }
 
+static int32_t const kGridGroups [] = {7, 12, 3, 18, 5, 9, 14, 2, 11, 6};
+
+static XtkEl        *grid_header(XtkUi *ui, void *env, int group) {
+	( void ) env;
+	return xtk_text(ui, xtk_fmt(ui, "Group %d", group + 1), (XtkTextDesc) {0});
+}
+
 XtkEl *page_gridview(XtkUi *ui, Model const *m) {
 	char const *status = m->grid_sel >= 0 ? xtk_fmt(ui, "Selected cell: %d", m->grid_sel) : "Nothing selected yet.";
 	return xtk_column(
@@ -45,6 +52,24 @@ XtkEl *page_gridview(XtkUi *ui, Model const *m) {
 			  ),
 			  xtk_text(ui, status, (XtkTextDesc) {.size = 13})
 			)
+		  )
+		),
+		example(
+		  ui, "Grouped: each group starts a new row under its header; headers stick while the group is in view.",
+		  xtk_sized(
+			xtk_gridview(
+			  ui,
+			  (XtkListDesc) {
+				.itemh        = 104.0f,
+				.itemw        = 152.0f,
+				.item         = grid_cell,
+				.sel          = -1,
+				.groups       = kGridGroups,
+				.ngroup       = 10,
+				.group_header = grid_header,
+			  }
+			),
+			NAN, 420.0f
 		  )
 		)
 	  )

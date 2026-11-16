@@ -246,5 +246,7 @@ void flux_titlebar_set_icon(FluxStore *store, XentNodeId id, char const *icon) {
 
 void flux_titlebar_set_window_integration(FluxStore *store, XentNodeId id, bool integrate) {
 	FluxTitleBarData *d = titlebar_data(store, id);
-	if (d) d->integrate_window = integrate;
+	if (!d || d->integrate_window == integrate) return;
+	d->integrate_window = integrate;
+	if (d->window) flux_window_extendtitlebar(d->window, integrate);
 }

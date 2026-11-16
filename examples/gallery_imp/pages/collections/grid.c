@@ -7,6 +7,14 @@ static void grid_cell(GalleryApp *g, XtkTxn *txn, XtkNodeRef item, int index) {
 	ui_text(txn, xtk_ref_local(col), gallery_fmt(g, "Item %d", index), 11.0f, FLUX_FONT_REGULAR);
 }
 
+static int32_t const kGridGroups [] = {7, 12, 3, 18, 5, 9, 14, 2, 11, 6};
+
+static void          grid_header(GalleryApp *g, XtkTxn *txn, XtkNodeRef item, int group) {
+	xtk_text_create(
+	  txn, item, &(XtkTextProps) {.set = XTK_TEXT_TEXT_MASK, .text = gallery_fmt(g, "Group %d", group + 1)}
+	);
+}
+
 static char const *grid_text(GalleryApp *g) {
 	return g->model.grid_sel >= 0 ? gallery_fmt(g, "Selected cell: %d", g->model.grid_sel) : "Nothing selected yet.";
 }
@@ -40,5 +48,22 @@ bool        page_gridview_build(PageBuild *b) {
 	xtk_gridview_onselect(&b->txn, xtk_ref_local(grid), page_post, page_bind(b, MSG_GRID_SELECT));
 	page_list(b, grid, grid_cell);
 	page_keepout(b, MSG_GRID_SELECT, page_note(b, col, grid_text(b->app)));
+	int total = 0;
+	for (int i = 0; i < 10; i++) total += kGridGroups [i];
+	XtkLocalId grouped = xtk_gridview_create(
+	  &b->txn,
+	  page_example(
+		b, parent, "Grouped: each group starts a new row under its header; headers stick while the group is in view."
+	  ),
+	  &(XtkListProps) {
+		.set   = XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK | XTK_LIST_ITEMW_MASK,
+		.h     = 420.0f,
+		.sel   = -1,
+		.nitem = total,
+		.itemh = 104.0f,
+		.itemw = 152.0f,
+	  }
+	);
+	page_groups(b, grouped, kGridGroups, 10, grid_header, grid_cell);
 	return true;
 }

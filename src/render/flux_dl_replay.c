@@ -2,7 +2,7 @@
 #include "bridge/flux_internal.h"
 #include "render/flux_fluent.h"
 #include "render/flux_icon.h"
-#include "render/flux_image_cache.h"
+#include "render/flux_image.h"
 #include "render/flux_render_internal.h"
 #include "render/flux_resource_intern.h"
 #include "render/flux_shape_resource.h"
@@ -59,38 +59,12 @@ static char const *xtk_resolve_image(FluxBackendXtkState *S, XentResourceId id) 
 
 static FluxRect xent_rect_to_flux(XentRect r) { return (FluxRect) {r.x, r.y, r.w, r.h}; }
 
-static FluxRect xtk_image_dest(FluxRect bounds, float image_w, float image_h, XentImageFit stretch) {
-	if (image_w <= 0.0f || image_h <= 0.0f) return bounds;
-
-	float sx    = bounds.w / image_w;
-	float sy    = bounds.h / image_h;
-	float scale = sx;
-	switch (stretch) {
-	case XENT_IMAGE_FIT_UNIFORM         : scale = flux_minf(sx, sy); break;
-	case XENT_IMAGE_FIT_UNIFORM_TO_FILL : scale = flux_maxf(sx, sy); break;
-	case XENT_IMAGE_FIT_NONE            : scale = 1.0f; break;
-	default                             : break;
-	}
-
-	float w = image_w * scale;
-	float h = image_h * scale;
-	return (FluxRect) {bounds.x + (bounds.w - w) * 0.5f, bounds.y + (bounds.h - h) * 0.5f, w, h};
-}
-
-static void xtk_draw_image(FluxBackendXtkState *S, XentDlCmd const *cmd) {
-	if (!S->rc || !S->rc->d2d) return;
-	char const *path = xtk_resolve_image(S, cmd->u.image.image);
+static void     xtk_draw_image(FluxBackendXtkState *S, XentDlCmd const *cmd) {
+	char const *path = S->rc && S->rc->d2d ? xtk_resolve_image(S, cmd->u.image.image) : NULL;
 	if (!path) return;
-
-	float nw = 0.0f, nh = 0.0f;
-	void *bmp = flux_image_cache_acquire(S->rc->d2d, path, &nw, &nh);
-	if (!bmp) return;
-
-	FluxRect    bounds = xent_rect_to_flux(cmd->u.image.bounds);
-	FluxRect    dest   = xtk_image_dest(bounds, nw, nh, cmd->u.image.stretch);
-	D2D1_RECT_F d      = {dest.x, dest.y, dest.x + dest.w, dest.y + dest.h};
-	ID2D1DeviceContext_DrawBitmap(
-	  S->rc->d2d, ( ID2D1Bitmap * ) bmp, &d, 1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, NULL
+	flux_image_draw(
+	  S->rc->d2d, path, cmd->u.image.frame, xent_rect_to_flux(cmd->u.image.bounds), cmd->u.image.stretch,
+	  cmd->u.image.nine
 	);
 }
 

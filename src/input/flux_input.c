@@ -137,6 +137,7 @@ static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 	FluxPoint     node_offset = hit_test_node_offset(query, nd);
 	bool          inside      = hit_rect_contains(&rect, query->point, node_offset);
 	if (!inside && !flux_node_lifted(query->store, query->node)) return (FluxHitResult) {0};
+	if (nd && query->point.y < rect.y - node_offset.y + nd->clip_top) return (FluxHitResult) {0};
 
 	FluxPoint     child_scroll = hit_test_child_scroll_offset(query, nd, node_offset);
 	HitChildList  children     = hit_collect_children(query->ctx, query->node);

@@ -211,6 +211,8 @@ void flux_snap_expander_header(FluxSnapCtx const *ctx) {
 static void snapshot_image(FluxRenderSnap *snap, FluxImageData const *im) {
 	snap->u.image.text_content = im->source;
 	snap->u.image.stretch      = im->stretch;
+	snap->u.image.frame        = im->frame;
+	snap->u.image.nine         = im->nine;
 }
 
 void        flux_snap_image(FluxSnapCtx const *ctx) { snapshot_image(ctx->snap, ( FluxImageData const * ) ctx->data); }
@@ -326,6 +328,8 @@ void flux_snap_tab_view_item(FluxSnapCtx const *ctx) {
 void flux_snap_text(FluxSnapCtx const *ctx) {
 	snapshot_text(ctx->snap, ( FluxTextData const * ) ctx->data);
 	ctx->snap->u.text.text_content = xent_node_text(ctx->ctx, ctx->node);
+	ctx->snap->font_size           = xent_fontsize(ctx->ctx, ctx->node);
+	ctx->snap->u.text.font_weight  = ( FluxFontWeight ) xent_fontweight(ctx->ctx, ctx->node);
 }
 
 void flux_snap_button(FluxSnapCtx const *ctx) { snapshot_button(ctx->snap, ( FluxButtonData const * ) ctx->data); }

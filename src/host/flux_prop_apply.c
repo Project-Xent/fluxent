@@ -160,15 +160,15 @@ void flux_prop_text_content(FluxStore *store, XentNodeId id, char const *content
 void flux_prop_text_fontsize(FluxStore *store, XentNodeId id, float size) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT)) return;
-	(( FluxTextData * ) nd->component_data)->font_size = size;
-	xent_setfontsize(flux_store_ctx(store), id, size);
+	(( FluxTextData * ) nd->component_data)->font_size = size > 0.0f ? size : 0.0f;
+	xent_setfontsize(flux_store_ctx(store), id, size > 0.0f ? size : NAN);
 }
 
 void flux_prop_text_font_weight(FluxStore *store, XentNodeId id, FluxFontWeight weight) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT)) return;
 	(( FluxTextData * ) nd->component_data)->font_weight = weight;
-	xent_setfontweight(flux_store_ctx(store), id, flux_font_weightnum(weight));
+	xent_setfontweight(flux_store_ctx(store), id, ( uint16_t ) (weight > 0 ? weight : 0));
 }
 
 FLUX_PROP(text, FluxTextData, text_color, FluxColor, FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT))

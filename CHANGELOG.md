@@ -2,7 +2,7 @@
 
 Entries start at 0.3.1; earlier releases are described by their tags.
 
-## 0.3.3 (unreleased)
+## 0.3.3
 
 - made every control a `FluxControlModule` (`fluxent/flux_controls.h`). A
   program registers the controls it creates with `flux_controls_use(&flux_ctrl_<name>)`
@@ -19,12 +19,43 @@ Entries start at 0.3.1; earlier releases are described by their tags.
   `DEFAULT_LABEL_POSITION`, `OVERFLOW_BUTTON_VISIBILITY`, `DYNAMIC_OVERFLOW`,
   `SECONDARY`, `DYNAMIC_OVERFLOW_ORDER`, `LABEL_POSITION`, `ACCELERATOR_TEXT`;
   new event `OPEN`; new theme color `card_stroke_solid`;
+- measured variable-height rows in List, ListBox and ItemsRepeater: with
+  `ITEM_HEIGHT` 0 realized rows are stacked at their measured height and the
+  rest are estimated from the average of the last 1000 measured rows, as in
+  WinUI's ItemsStackPanel;
+- added ListView grouping: `XTK_PROP_GROUPS` (int32 group sizes) and the
+  `GroupHeader` control, with WinUI's inline sticky headers. A grouped list
+  realizes rows (headers and items interleaved) and prepends the current
+  group's header when the window starts inside a group; `xtk_list_row` maps a
+  row to its group and item. GridView groups too: each group starts a new row
+  of cells under its header. New theme color `base_low`;
+- inherited `FontSize` and `FontWeight` through the tree (xent-core): a NaN
+  size or 0 weight inherits from the nearest ancestor, defaulting to 14 / 400;
+  `xtk_text` with `size` 0 or `XTK_FONT_INHERIT` inherits. Group headers set 20;
+- added rectangle (rubber band) selection for Multiple and Extended lists,
+  opt-in through `XTK_PROP_RECTANGLE_SELECTION`, following the Files app; a
+  Shift+click in Multiple mode now deselects the range when the anchor is not
+  selected, as in WinUI. New theme colors `system_accent`,
+  `system_accent_light1`;
+- decoded images on the thread pool instead of the render thread. An Image
+  without a size measures to its natural size once the header is read. Added
+  animated GIF and APNG playback, SVG sources (`.svg`, drawn with
+  `ID2D1SvgDocument`) and `NineGrid` (`XTK_PROP_NINE_GRID_LEFT/TOP/RIGHT/BOTTOM`).
+  Animations honour the file's loop count and start when each image loads;
+  new events `IMAGE_OPENED` and `IMAGE_FAILED`;
+- made `INTEGRATE_WINDOW` on a TitleBar extend the window's title bar; the
+  property only recorded the flag, so the window kept its system title bar;
+- clamped every ScrollViewer's offset to its range after layout, not only the
+  ones that report scroll events;
 
 ### Breaking changes
 
 | Change | Migration |
 | --- | --- |
 | Controls are no longer available implicitly | Call `flux_controls_all()` once before the first commit, or `flux_controls_use` per control |
+| `xtk_list` / `xtk_listbox` / `xtk_repeater` default to measured rows (`itemh` 0) instead of 40 px | Set `itemh` to keep fixed-height rows |
+| `ITEM_HEIGHT` 0 on a single-column list means measured rows, not 40 px | Set the height explicitly |
+| Text nodes no longer default to an explicit 14 px / regular; they inherit | Set the size or weight on the text node when a parent sets a different one |
 
 ## 0.3.2
 

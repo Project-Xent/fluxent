@@ -29,10 +29,13 @@ typedef struct FluxListItemDesc {
 XentNodeId flux_list_init(FluxListViewDesc const *info);
 
 XentNodeId flux_listitem_init(FluxListItemDesc const *info);
+XentNodeId flux_groupheader_init(FluxListItemDesc const *info);
+uint32_t   flux_list_stick(XentCtx *ctx, FluxStore *store, XentNodeId node, struct FluxNodeData *nd);
+bool       flux_list_groups(FluxStore *store, XentNodeId list, void const *sizes, int count);
 
 XentNodeId flux_list_content_node(FluxStore *store, XentNodeId list);
 XentNodeId flux_list_slot(FluxStore *store, XentNodeId list, XentNodeId child);
-bool       flux_list_sync_header(struct FluxNodeData *nd);
+bool       flux_list_sync_layout(struct FluxNodeData *nd);
 
 void       flux_list_set_extent(
   FluxStore *store, XentNodeId list, int count, float item_height, float item_width, int columns
@@ -65,7 +68,7 @@ void flux_list_scrollto(FluxStore *store, XentNodeId list, int index);
 
 void fluxlistitem_bind_owner(FluxStore *store, XentNodeId item);
 
-void fluxlistitem_set_place(FluxStore *store, XentNodeId item, int index, float x, float y);
+void fluxlistitem_set_place(FluxStore *store, XentNodeId item, int row, int index, float x, float y);
 
 void fluxlistitem_set_state(FluxStore *store, XentNodeId item, bool selected, bool multi);
 

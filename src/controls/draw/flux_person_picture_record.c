@@ -3,7 +3,7 @@
 #include "controls/data/flux_person_picture_data.h"
 
 #include "render/flux_resource_intern.h"
-#include "render/flux_image_cache.h"
+#include "render/flux_image.h"
 
 #include <stdio.h>
 
@@ -11,7 +11,7 @@ static bool person_rec_photo(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect
 	if (!path || !path [0]) return false;
 	if (rc && rc->d2d) {
 		float nw = 0.0f, nh = 0.0f;
-		void *bmp = flux_image_cache_acquire(rc->d2d, path, &nw, &nh);
+		void *bmp = flux_image_bitmap(rc->d2d, path, &nw, &nh);
 		if (!bmp || nw <= 0.0f || nh <= 0.0f) return false;
 	}
 	XentRect xbox = flux_rec_xrect(box);

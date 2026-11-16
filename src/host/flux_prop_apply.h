@@ -142,6 +142,7 @@ void flux_prop_expander_content_height(FluxStore *store, XentNodeId id, float he
 void flux_prop_image_source(FluxStore *store, XentNodeId id, char const *source);
 
 void flux_prop_image_stretch(FluxStore *store, XentNodeId id, FluxImageStretch stretch);
+void flux_prop_image_nine(FluxStore *store, XentNodeId id, XtkPropertyId prop, float value);
 
 void flux_prop_node_tooltip(FluxStore *store, XentNodeId id, char const *text);
 void flux_prop_node_drop(FluxStore *store, XentNodeId id, uint32_t operation);

@@ -95,6 +95,9 @@ local function gui_binary(name, dirs)
         for _, dir in ipairs(dirs) do
             add_files(dir .. "/**.c")
             add_includedirs(dir)
+            if dir == "examples/gallery_shared" then
+                add_defines("GALLERY_ASSETS=\"" .. path.unix(path.join(os.scriptdir(), dir, "assets")) .. "\"")
+            end
         end
         if is_plat("mingw") then
             add_cflags("-ffunction-sections", "-fdata-sections", { force = true })

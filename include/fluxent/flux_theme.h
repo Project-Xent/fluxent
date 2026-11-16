@@ -57,6 +57,9 @@ typedef struct FluxThemeColors {
 	FluxColor card_stroke_default;
 	FluxColor card_stroke_solid;
 	FluxColor divider_stroke_default;
+	FluxColor base_low;
+	FluxColor system_accent;
+	FluxColor system_accent_light1;
 
 	FluxColor focus_stroke_outer;
 	FluxColor focus_stroke_inner;

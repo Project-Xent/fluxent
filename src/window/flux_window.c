@@ -176,6 +176,22 @@ static LRESULT window_on_nccalcsize(FluxWindow *win, HWND hwnd, WPARAM wp, LPARA
 	return ret;
 }
 
+static LRESULT window_on_minmax(FluxWindow *win, HWND hwnd, WPARAM wp, LPARAM lp) {
+	LRESULT     ret = DefWindowProcW(hwnd, WM_GETMINMAXINFO, wp, lp);
+	MINMAXINFO *mm  = ( MINMAXINFO * ) lp;
+	MONITORINFO mi  = {.cbSize = sizeof(mi)};
+	if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) return ret;
+	UINT dpi            = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
+	int  pad            = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+	int  fx             = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + pad;
+	int  fy             = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + pad;
+	mm->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left - fx;
+	mm->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top - fy;
+	mm->ptMaxSize.x     = mi.rcWork.right - mi.rcWork.left + 2 * fx;
+	mm->ptMaxSize.y     = mi.rcWork.bottom - mi.rcWork.top + 2 * fy;
+	return ret;
+}
+
 static bool window_hittest_top_border(FluxWindow *win, HWND hwnd, POINT pt, LRESULT *result) {
 	UINT dpi = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
 	int  rb  = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
@@ -695,6 +711,10 @@ static bool window_handle_lifecycle(WindowMessage const *m, LRESULT *result) {
 		  m->hwnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
 		);
 		*result = 0;
+		return true;
+	}
+	if (m->msg == WM_GETMINMAXINFO && m->win->title_bar_extended) {
+		*result = window_on_minmax(m->win, m->hwnd, m->wp, m->lp);
 		return true;
 	}
 	if (m->msg == WM_NCCALCSIZE && m->win->title_bar_extended) {

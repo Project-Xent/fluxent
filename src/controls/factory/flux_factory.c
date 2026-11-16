@@ -173,7 +173,6 @@ XentNodeId flux_text_init(FluxTextDesc const *info) {
 
 	xent_settext(info->ctx, node, info->content ? info->content : "");
 	if (info->font_size > 0.0f) xent_setfontsize(info->ctx, node, info->font_size);
-	xent_setfontweight(info->ctx, node, flux_font_weightnum(FLUX_FONT_REGULAR));
 	xent_setlinebreak(info->ctx, node, XENT_LINEBREAK_WORDWRAP);
 
 	FluxNodeData *nd = flux_store_find(info->store, node);
@@ -183,8 +182,8 @@ XentNodeId flux_text_init(FluxTextDesc const *info) {
 		return flux_factory_fail_node(info->ctx, info->store, node);
 	}
 	td->content                = flux_str_dup(info->content);
-	td->font_size              = info->font_size > 0.0f ? info->font_size : 14.0f;
-	td->font_weight            = FLUX_FONT_REGULAR;
+	td->font_size              = info->font_size > 0.0f ? info->font_size : 0.0f;
+	td->font_weight            = 0;
 	td->alignment              = FLUX_TEXT_LEFT;
 	td->vertical_alignment     = FLUX_TEXT_TOP;
 	td->wrap                   = true;
@@ -397,6 +396,7 @@ XentNodeId flux_image_init(FluxImageDesc const *info) {
 
 	nd->component_data         = im;
 	nd->destroy_component_data = image_data_destroy;
+	flux_image_bind(info->ctx, node, im);
 
 	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_IMAGE);
 	return node;
@@ -405,13 +405,27 @@ XentNodeId flux_image_init(FluxImageDesc const *info) {
 void flux_prop_image_source(FluxStore *store, XentNodeId id, char const *source) {
 	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || nd->component_type != FLUX_CONTROL_IMAGE) return;
-	flux_str_replace(&(( FluxImageData * ) nd->component_data)->source, source);
+	FluxImageData *im = ( FluxImageData * ) nd->component_data;
+	flux_str_replace(&im->source, source);
+	flux_image_bind(flux_store_ctx(store), id, im);
+}
+
+void flux_prop_image_nine(FluxStore *store, XentNodeId id, XtkPropertyId prop, float value) {
+	FluxNodeData *nd = flux_store_find(store, id);
+	if (!nd || nd->component_type != FLUX_CONTROL_IMAGE) return;
+	XentInsets *n = &(( FluxImageData * ) nd->component_data)->nine;
+	if (prop == XTK_PROP_NINE_GRID_LEFT) n->left = value;
+	else if (prop == XTK_PROP_NINE_GRID_TOP) n->top = value;
+	else if (prop == XTK_PROP_NINE_GRID_RIGHT) n->right = value;
+	else n->bottom = value;
 }
 
 void flux_prop_image_stretch(FluxStore *store, XentNodeId id, FluxImageStretch stretch) {
 	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || nd->component_type != FLUX_CONTROL_IMAGE) return;
-	(( FluxImageData * ) nd->component_data)->stretch = stretch;
+	FluxImageData *im = ( FluxImageData * ) nd->component_data;
+	im->stretch       = stretch;
+	flux_image_bind(flux_store_ctx(store), id, im);
 }
 
 XentNodeId flux_scroll_init(FluxContainerDesc const *info) {

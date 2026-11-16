@@ -1,3 +1,4 @@
+#include "render/flux_image.h"
 #include "fluxent/fluxent.h"
 #include "controls/flux_module.h"
 #include "store/flux_node_data.h"
@@ -130,6 +131,11 @@ static bool app_focused_accepts_command(FluxApp *app) {
 static void app_request_render(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (app) flux_app_redraw(app);
+}
+
+static void app_image_wake(void *ctx) {
+	FluxApp *app = ( FluxApp * ) ctx;
+	flux_app_invoke(app, app_request_render, app);
 }
 
 static float    app_dpi_scale(FluxDpi dpi) { return dpi.dpi_x / FLUX_DPI_BASE; }
@@ -670,7 +676,7 @@ FluxApp *flux_app_create(FluxAppCfg const *cfg) {
 		flux_app_destroy(app);
 		return NULL;
 	}
-
+	flux_image_onwake(app_image_wake, app);
 	return app;
 }
 
@@ -708,6 +714,7 @@ static void app_destroy_input_state(FluxApp *app) {
 
 void flux_app_destroy(FluxApp *app) {
 	if (!app) return;
+	flux_image_onwake(NULL, NULL);
 	flux_postsink_destroy(app->post_sink);
 	app_cleanup_dmanip(app);
 	app_destroy_input_state(app);

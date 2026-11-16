@@ -14,6 +14,12 @@ typedef struct FluxListSelRange {
 	int last;
 } FluxListSelRange;
 
+typedef struct FluxSizeRing {
+	float *slots;
+	double total;
+	int    stored;
+} FluxSizeRing;
+
 typedef struct FluxListViewData {
 	XentCtx          *ctx;
 	FluxStore        *store;
@@ -38,6 +44,30 @@ typedef struct FluxListViewData {
 
 	int               realized_first;
 	int               realized_last;
+	float             block_top;
+	float             block_bottom;
+	int               pin;
+	float             pin_y;
+	bool              pinned;
+
+	FluxSizeRing      item_sizes;
+	FluxSizeRing      header_sizes;
+
+	int              *groups;
+	int              *group_row;
+	int              *group_item;
+	int              *group_line;
+	int               ngroup;
+
+	bool              rect_select;
+	uint8_t           band;
+	uint8_t           band_mode;
+	float             band_x;
+	float             band_y;
+	float             band_cx;
+	float             band_cy;
+	FluxListSelRange *band_prev;
+	int               band_prev_count;
 	bool              stale_fired;
 	bool              realize_events;
 
@@ -65,8 +95,14 @@ typedef struct FluxListViewData {
 typedef struct FluxListItemData {
 	FluxListViewData *owner;
 	int               index;
+	int               row;
+	int               line;
+	int               col;
+	int               group;
+	bool              header;
 	float             logical_x;
 	float             logical_y;
+	float             extent;
 	bool              selected;
 	bool              multi;
 } FluxListItemData;

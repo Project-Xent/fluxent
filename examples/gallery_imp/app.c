@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <xtk/xtk.h>
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -217,6 +219,88 @@ void page_list(PageBuild *b, XtkLocalId list, PageFillFn fill) {
 	if (!l) return;
 	*l = (GalleryList) {.app = b->app, .fill = fill};
 	xtk_txn_on(&b->txn, xtk_ref_local(list), XTK_EVENT_REALIZE, XTK_EVENT_PHASE_MASK_TARGET, list_realize, l);
+}
+
+static int groups_header_row(GalleryGroups const *l, int group) {
+	int row = 0;
+	for (int g = 0; g < group; g++) row += 1 + l->sizes [g];
+	return row;
+}
+
+static int groups_window(GalleryGroups const *l, XtkEvent const *event, int *rows) {
+	int        first = event->payload.u.window.first, n = 0;
+	XtkListRow at = xtk_list_row(l->sizes, l->nsize, first);
+	if (at.item >= 0) rows [n++] = groups_header_row(l, at.group);
+	for (int r = first; r <= event->payload.u.window.last && n < GALLERY_LIST_WINDOW; r++) rows [n++] = r;
+	return n;
+}
+
+static int groups_find(GalleryGroups const *l, int row) {
+	for (int i = 0; i < l->count; i++)
+		if (l->rows [i] == row) return i;
+	return -1;
+}
+
+static bool groups_wanted(int const *rows, int n, int row) {
+	for (int i = 0; i < n; i++)
+		if (rows [i] == row) return true;
+	return false;
+}
+
+static XtkNodeRef groups_before(GalleryGroups const *l, int const *rows, int n, int row) {
+	for (int i = 0; i < l->count; i++)
+		if (l->rows [i] > row && groups_wanted(rows, n, l->rows [i])) return xtk_ref_existing(l->nodes [i]);
+	return xtk_ref_none();
+}
+
+static XtkNodeRef groups_ref(GalleryGroups *l, XtkTxn *txn, XtkNodeRef list, int const *rows, int n, int row) {
+	int kept = groups_find(l, row);
+	if (kept >= 0) return xtk_ref_existing(l->nodes [kept]);
+	XtkListRow  at   = xtk_list_row(l->sizes, l->nsize, row);
+	XtkCtrlType type = at.item < 0 ? XTK_CTRL_GROUPHEADER : XTK_CTRL_LISTITEM;
+	XtkLocalId  id   = xtk_txn_create(txn, type, list, groups_before(l, rows, n, row), NULL, 0);
+	(at.item < 0 ? l->header : l->item)(l->app, txn, xtk_ref_local(id), at.item < 0 ? at.group : at.item);
+	return xtk_ref_local(id);
+}
+
+static uint32_t groups_realize(void *arg, XtkEvent const *event) {
+	GalleryGroups *l = ( GalleryGroups * ) arg;
+	int            rows [GALLERY_LIST_WINDOW];
+	XtkNodeRef     refs [GALLERY_LIST_WINDOW];
+	int            n    = groups_window(l, event, rows);
+	XtkNodeRef     list = xtk_ref_existing(event->target);
+	XtkTxn         txn;
+	if (!xtk_txn_begin(&l->app->scene, &txn)) return XTK_EVENT_HANDLED;
+	for (int i = 0; i < l->count; i++)
+		if (!groups_wanted(rows, n, l->rows [i])) xtk_txn_drop(&txn, xtk_ref_existing(l->nodes [i]));
+	for (int i = 0; i < n; i++) refs [i] = groups_ref(l, &txn, list, rows, n, rows [i]);
+	xtk_txn_set(
+	  &txn, list, XTK_PROP_REALIZED_FIRST, (XtkValue) {.kind = XTK_VALUE_I32, .u.i32 = event->payload.u.window.first},
+	  (XtkChangeStamp) {0}
+	);
+	XtkBatchResult *result = xtk_txn_commit(&txn, NULL);
+	if (!result) return XTK_EVENT_HANDLED;
+	for (int i = 0; i < n; i++) {
+		l->rows [i]  = rows [i];
+		l->nodes [i] = refs [i].kind == XTK_REF_LOCAL ? result_ctrl(result, refs [i].u.local) : refs [i].u.existing;
+	}
+	l->count = n;
+	xtk_batchresult_destroy(result);
+	return XTK_EVENT_HANDLED;
+}
+
+void page_groups(PageBuild *b, XtkLocalId list, int32_t const *sizes, int nsize, PageFillFn header, PageFillFn item) {
+	GalleryGroups *l = ( GalleryGroups * ) page_alloc(b, sizeof(*l));
+	if (!l) return;
+	*l = (GalleryGroups) {.app = b->app, .header = header, .item = item, .sizes = sizes, .nsize = nsize};
+	xtk_txn_set(
+	  &b->txn, xtk_ref_local(list), XTK_PROP_GROUPS,
+	  (XtkValue) {
+		.kind = XTK_VALUE_BYTES, .u.bytes = {( uint8_t * ) ( uintptr_t ) sizes, sizeof(int32_t) * ( uint32_t ) nsize}
+    },
+	  (XtkChangeStamp) {0}
+	);
+	xtk_txn_on(&b->txn, xtk_ref_local(list), XTK_EVENT_REALIZE, XTK_EVENT_PHASE_MASK_TARGET, groups_realize, l);
 }
 
 static void page_reset(PageBuild *b) {

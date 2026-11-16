@@ -75,6 +75,7 @@ typedef struct CollectFrame {
 	FluxControlState state;
 	XentNodeId       current_child;
 	bool             has_transform;
+	bool             clipped_top;
 } CollectFrame;
 
 static CollectFrame collect_root_frame(XentNodeId root) {
@@ -127,6 +128,15 @@ static void collect_emit_clip(FluxEngine *eng, CollectFrame const *frame, XentRe
 	engine_push(eng, &cmd);
 }
 
+static void collect_emit_clip_top(FluxEngine *eng, CollectFrame const *frame, XentRect const *rect, float top) {
+	FluxRenderCommand cmd;
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.phase       = FLUX_PHASE_MAIN;
+	cmd.clip_action = FLUX_CLIP_PUSH;
+	cmd.bounds      = (FluxRect) {frame->abs_x, frame->abs_y + top, rect->w, rect->h > top ? rect->h - top : 0.0f};
+	engine_push(eng, &cmd);
+}
+
 static void
 collect_emit_transform_push(FluxEngine *eng, CollectFrame const *frame, XentRect const *rect, FluxNodeData const *nd) {
 	FluxRenderCommand cmd;
@@ -170,6 +180,8 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	  = nd
 	 && (nd->render_scale != 1.0f || nd->render_opacity < 1.0f || nd->render_translate_y != 0.0f || nd->render_translate_x != 0.0f || nd->render_rotate_x != 0.0f || nd->render_rotate_y != 0.0f);
 	if (frame->has_transform) collect_emit_transform_push(eng, frame, &rect, nd);
+	frame->clipped_top = nd && nd->clip_top > 0.0f;
+	if (frame->clipped_top) collect_emit_clip_top(eng, frame, &rect, nd->clip_top);
 
 	FluxRenderCommand cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_MAIN);
 	engine_push(eng, &cmd);
@@ -239,6 +251,14 @@ static void collect_emit_finish(FluxEngine *eng, XentCtx *ctx, CollectFrame cons
 	xent_layout_rect(ctx, frame->node, &rect);
 	FluxRenderCommand overlay_cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_OVERLAY);
 	engine_push(eng, &overlay_cmd);
+
+	if (frame->clipped_top) {
+		FluxRenderCommand pop_cmd;
+		memset(&pop_cmd, 0, sizeof(pop_cmd));
+		pop_cmd.phase       = FLUX_PHASE_MAIN;
+		pop_cmd.clip_action = FLUX_CLIP_POP;
+		engine_push(eng, &pop_cmd);
+	}
 
 	if (frame->has_transform) {
 		FluxRenderCommand pop_cmd;

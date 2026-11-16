@@ -402,6 +402,34 @@ XentDl *flux_listitem_record(
 	FLUX_REC_END(flux_rec_listitem(b, rc, snap, bounds, state));
 }
 
+XentDl *flux_list_overlay_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	( void ) state;
+	FLUX_REC_BEGIN();
+	FluxListSnapshot const *ls = &snap->u.list;
+	if (!ls->band) FLUX_REC_END(true);
+	FluxThemeColors const *t  = flux_rec_theme(rc);
+	FluxRect               r  = {bounds->x + ls->rect.x, bounds->y + ls->rect.y, ls->rect.w, ls->rect.h};
+	bool                   ok = xent_dl_pushopacity(b, 0.5f);
+	if (ok) ok = flux_rec_fill_rect(b, &r, t->system_accent);
+	if (ok) ok = flux_rec_stroke_rounded(b, &r, 0.0f, t->system_accent_light1, 1.0f);
+	ok = xent_dl_popopacity(b) && ok;
+	FLUX_REC_END(ok);
+}
+
+XentDl *flux_groupheader_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	( void ) snap;
+	FLUX_REC_BEGIN();
+	FluxRect line  = {bounds->x + 12.0f, bounds->y + bounds->h - 5.0f, bounds->w - 24.0f, 1.0f};
+	FluxRect frame = {bounds->x, bounds->y, bounds->w, bounds->h - 4.0f};
+	bool     ok    = line.w <= 0.0f || flux_rec_fill_rect(b, &line, flux_rec_theme(rc)->base_low);
+	if (ok && state->focused) ok = flux_rec_focus_rect(b, flux_rec_theme(rc), &frame, 0.0f);
+	FLUX_REC_END(ok);
+}
+
 XentDl *flux_treeitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
@@ -421,7 +449,10 @@ static bool image_content_record(XentDlBuilder *b, FluxRenderSnap const *snap, F
 	if (!path || !path [0]) return true;
 	XentResourceId id = flux_resource_intern_path(path);
 	bool           ok = xent_dl_pushcliprect(b, flux_rec_xrect(bounds));
-	if (ok) ok = xent_dl_drawimg(b, flux_rec_xrect(bounds), id, image_fit(snap->u.image.stretch));
+	if (ok)
+		ok = xent_dl_drawframe(
+		  b, flux_rec_xrect(bounds), id, image_fit(snap->u.image.stretch), snap->u.image.frame, snap->u.image.nine
+		);
 	return xent_dl_popclip(b) && ok;
 }
 

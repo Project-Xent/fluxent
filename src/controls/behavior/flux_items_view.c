@@ -1,3 +1,4 @@
+#include "controls/behavior/flux_list_internal.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/data/flux_items_view_data.h"
@@ -10,7 +11,7 @@
 static void items_view_data_destroy(void *component_data) {
 	FluxItemsViewData *d = ( FluxItemsViewData * ) component_data;
 	if (!d) return;
-	free(d->list.ranges);
+	flux_list_release(&d->list);
 	free(d);
 }
 

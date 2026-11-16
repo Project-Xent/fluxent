@@ -16,6 +16,8 @@ typedef struct FluxImageDesc {
 } FluxImageDesc;
 
 XentNodeId flux_image_init(FluxImageDesc const *info);
+void       flux_image_bind(XentCtx *ctx, XentNodeId node, FluxImageData *im);
+uint32_t   flux_image_sync(XentCtx *ctx, FluxStore *store, XentNodeId node, struct FluxNodeData *nd);
 
 typedef struct FluxInfoBadgeDesc {
 	XentCtx          *ctx;

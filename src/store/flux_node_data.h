@@ -91,6 +91,7 @@ typedef struct FluxNodeData {
 	float            render_rotate_x;
 	float            render_rotate_y;
 	bool             render_clip_subtree;
+	float            clip_top;
 	bool             clips_children;
 
 	XentDl const    *display_list;

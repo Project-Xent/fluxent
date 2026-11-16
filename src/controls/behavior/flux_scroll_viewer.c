@@ -80,15 +80,17 @@ void flux_scroll_request(FluxStore *store, XentNodeId node, float x, float y) {
 bool flux_scroll_sync(XentCtx *ctx, XentNodeId node, FluxNodeData *nd) {
 	FluxScrollData *sd   = ( FluxScrollData * ) nd->component_data;
 	XentRect        rect = {0};
-	if (!sd || !sd->reports || !xent_layout_rect(ctx, node, &rect)) return false;
-	bool moved     = sd->user_moved;
-	sd->user_moved = 0;
-	float max_x    = scroll_max(sd->content_w, rect.w);
-	float max_y    = scroll_max(sd->content_h, rect.h);
+	if (!sd || !xent_layout_rect(ctx, node, &rect)) return false;
+	flux_scroll_measure(ctx, node, sd);
+	float max_x = scroll_max(sd->content_w, rect.w);
+	float max_y = scroll_max(sd->content_h, rect.h);
+	bool  moved = sd->reports && sd->user_moved;
 	if (moved) sd->pin_end = 0;
 	if (sd->pin_end) sd->scroll_y = max_y;
-	sd->scroll_x   = fminf(fmaxf(sd->scroll_x, 0.0f), max_x);
-	sd->scroll_y   = fminf(fmaxf(sd->scroll_y, 0.0f), max_y);
+	sd->scroll_x = fminf(fmaxf(sd->scroll_x, 0.0f), max_x);
+	sd->scroll_y = fminf(fmaxf(sd->scroll_y, 0.0f), max_y);
+	if (!sd->reports) return false;
+	sd->user_moved = 0;
 	sd->reported_x = sd->scroll_x;
 	sd->reported_y = sd->scroll_y;
 	sd->max_x      = max_x;

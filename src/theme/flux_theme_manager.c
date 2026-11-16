@@ -71,6 +71,9 @@ static void init_light_palette(FluxThemeColors *c) {
 	c->card_stroke_default             = flux_color_rgba(0, 0, 0, 0x0f);
 	c->card_stroke_solid               = flux_color_rgb(235, 235, 235);
 	c->divider_stroke_default          = flux_color_rgba(0, 0, 0, 0x0f);
+	c->base_low                        = flux_color_rgba(0, 0, 0, 0x33);
+	c->system_accent                   = flux_color_rgb(0x00, 0x78, 0xd7);
+	c->system_accent_light1            = flux_color_rgb(0x42, 0x9c, 0xe3);
 
 	c->focus_stroke_outer              = flux_color_rgba(0, 0, 0, 0xe4);
 	c->focus_stroke_inner              = flux_color_rgba(255, 255, 255, 0xb3);
@@ -145,6 +148,9 @@ static void init_dark_palette(FluxThemeColors *c) {
 	c->card_stroke_default             = flux_color_rgba(0, 0, 0, 0x19);
 	c->card_stroke_solid               = flux_color_rgb(28, 28, 28);
 	c->divider_stroke_default          = flux_color_rgba(255, 255, 255, 0x15);
+	c->base_low                        = flux_color_rgba(255, 255, 255, 0x33);
+	c->system_accent                   = flux_color_rgb(0x00, 0x78, 0xd7);
+	c->system_accent_light1            = flux_color_rgb(0x42, 0x9c, 0xe3);
 
 	c->focus_stroke_outer              = flux_color_rgb(255, 255, 255);
 	c->focus_stroke_inner              = flux_color_rgba(0, 0, 0, 0xb3);
@@ -213,6 +219,10 @@ static void theme_rebuild(FluxTheme *tm) {
 		tm->light.accent_text_primary = flux_color_rgb(accent.R, accent.G, accent.B);
 	if (theme_read_accent(tm->settings, WUIVI_UIColorType_AccentLight3, &accent))
 		tm->dark.accent_text_primary = flux_color_rgb(accent.R, accent.G, accent.B);
+	if (theme_read_accent(tm->settings, WUIVI_UIColorType_Accent, &accent))
+		tm->light.system_accent = tm->dark.system_accent = flux_color_rgb(accent.R, accent.G, accent.B);
+	if (theme_read_accent(tm->settings, WUIVI_UIColorType_AccentLight1, &accent))
+		tm->light.system_accent_light1 = tm->dark.system_accent_light1 = flux_color_rgb(accent.R, accent.G, accent.B);
 	resolve_current(tm);
 	tm->version++;
 }

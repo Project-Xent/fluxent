@@ -1,3 +1,4 @@
+#include "controls/behavior/flux_list_internal.h"
 #include "flux_host_internal.h"
 #include "store/flux_node_data.h"
 
@@ -447,9 +448,25 @@ FluxPropHandler const flux_props_scroll [] = {
 SETTER(image_source, flux_prop_image_source, flux_resource_path(( XentResourceId ) v->u.resource))
 SETTER(image_stretch, flux_prop_image_stretch, ( FluxImageStretch ) v->u.u32)
 
+#define NINE(name, prop)                                                 \
+	HANDLER(name) {                                                      \
+		( void ) control;                                                \
+		flux_prop_image_nine(R->store, node, XTK_PROP_##prop, v->u.f32); \
+		return true;                                                     \
+	}
+
+NINE(image_nl, NINE_GRID_LEFT)
+NINE(image_nt, NINE_GRID_TOP)
+NINE(image_nr, NINE_GRID_RIGHT)
+NINE(image_nb, NINE_GRID_BOTTOM)
+
 FluxPropHandler const flux_props_image [] = {
   ON(IMAGE_SOURCE, RESOURCE, image_source),
   ON(IMAGE_STRETCH, ENUM, image_stretch),
+  ON(NINE_GRID_LEFT, F32, image_nl),
+  ON(NINE_GRID_TOP, F32, image_nt),
+  ON(NINE_GRID_RIGHT, F32, image_nr),
+  ON(NINE_GRID_BOTTOM, F32, image_nb),
   END,
 };
 
@@ -548,14 +565,12 @@ FluxPropHandler const flux_props_progressring [] = {
   END,
 };
 
-static void list_extent(FluxHostState *R, XentNodeId node, int count, float height, float width, int columns) {
-	flux_list_set_extent(R->store, node, count, height > 0.0f ? height : 40.0f, width, columns);
-}
-
 HANDLER(list_count) {
 	( void ) control;
 	FluxListViewData *ld = component(R, node);
-	list_extent(R, node, v->u.i32, ld ? ld->item_height : 0.0f, ld ? ld->item_width : 0.0f, ld ? ld->columns : 0);
+	flux_list_set_extent(
+	  R->store, node, v->u.i32, ld ? ld->item_height : 0.0f, ld ? ld->item_width : 0.0f, ld ? ld->columns : 0
+	);
 	return true;
 }
 
@@ -569,14 +584,14 @@ HANDLER(list_height) {
 HANDLER(list_width) {
 	( void ) control;
 	FluxListViewData *ld = component(R, node);
-	if (ld) list_extent(R, node, ld->count, ld->item_height, v->u.f32, ld->columns);
+	if (ld) flux_list_set_extent(R->store, node, ld->count, ld->item_height, v->u.f32, ld->columns);
 	return true;
 }
 
 HANDLER(list_columns) {
 	( void ) control;
 	FluxListViewData *ld = component(R, node);
-	if (ld) list_extent(R, node, ld->count, ld->item_height, ld->item_width, v->u.i32);
+	if (ld) flux_list_set_extent(R->store, node, ld->count, ld->item_height, ld->item_width, v->u.i32);
 	return true;
 }
 
@@ -585,6 +600,18 @@ HANDLER(list_invoked) {
 	FluxListViewData *ld = component(R, node);
 	if (ld) ld->item_invoked_enabled = v->u.b;
 	return true;
+}
+
+HANDLER(list_rectsel) {
+	( void ) control;
+	FluxListViewData *ld = component(R, node);
+	if (ld) flux_list_band_enable(ld, v->u.b);
+	return true;
+}
+
+HANDLER(list_groups) {
+	( void ) control;
+	return flux_list_groups(R->store, node, v->u.bytes.data, ( int ) (v->u.bytes.len / sizeof(int32_t)));
 }
 
 SETTER(list_selected, flux_list_set_selected, v->u.i32)
@@ -599,6 +626,8 @@ FluxPropHandler const flux_props_list [] = {
   ON(REALIZED_FIRST, I32, list_first),
   ON(COLUMN_COUNT, I32, list_columns),
   ON(SELECTION_MODE, ENUM, list_mode),
+  ON(GROUPS, BYTES, list_groups),
+  ON(RECTANGLE_SELECTION, BOOL, list_rectsel),
   END,
 };
 
@@ -1537,6 +1566,12 @@ static FluxPropHandler const core_props [] = {
   ON(DYNAMIC_OVERFLOW_ORDER, I32, prop_none),
   ON(LABEL_POSITION, ENUM, prop_none),
   ON(ACCELERATOR_TEXT, STRING, prop_none),
+  ON(GROUPS, BYTES, prop_none),
+  ON(RECTANGLE_SELECTION, BOOL, prop_none),
+  ON(NINE_GRID_LEFT, F32, prop_none),
+  ON(NINE_GRID_TOP, F32, prop_none),
+  ON(NINE_GRID_RIGHT, F32, prop_none),
+  ON(NINE_GRID_BOTTOM, F32, prop_none),
   END,
 };
 

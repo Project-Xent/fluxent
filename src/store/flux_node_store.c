@@ -25,6 +25,9 @@ struct FluxStore {
 	FluxNodeRemovedFn removed_fn;
 	void             *removed_userdata;
 	XtkHost          *host;
+	XentNodeId       *lifted;
+	uint32_t          nlifted;
+	uint32_t          lifted_cap;
 };
 
 static uint32_t ns_hash(XentNodeId id, uint32_t cap) {
@@ -173,6 +176,7 @@ void flux_store_destroy(FluxStore *store) {
 	for (uint32_t i = 0; i < store->capacity; i++)
 		if (store->slots [i].tag == FLUX_NS_OCCUPIED) node_data_destroy_component(&store->slots [i].data);
 	free(store->slots);
+	free(store->lifted);
 	free(store);
 }
 
@@ -199,13 +203,52 @@ void flux_store_del(FluxStore *store, XentNodeId id) {
 	if (!store || id == XENT_NODE_INVALID) return;
 	FluxNodeSlot *s = ns_find(store, id);
 	if (!s) return;
+	flux_node_lift(store, id, false);
 	node_data_destroy_component(&s->data);
 	s->tag = FLUX_NS_DELETED;
 	store->count--;
 	store->tombstones++;
 }
 
-uint32_t    flux_store_n(FluxStore const *store) { return store ? store->count : 0; }
+uint32_t   flux_store_n(FluxStore const *store) { return store ? store->count : 0; }
+
+static int lifted_index(FluxStore const *store, XentNodeId node) {
+	for (uint32_t i = 0; i < store->nlifted; i++)
+		if (store->lifted [i] == node) return ( int ) i;
+	return -1;
+}
+
+static bool lifted_append(FluxStore *store, XentNodeId node) {
+	if (store->nlifted == store->lifted_cap) {
+		uint32_t    cap   = store->lifted_cap ? store->lifted_cap * 2u : 4u;
+		XentNodeId *items = ( XentNodeId * ) realloc(store->lifted, sizeof(*items) * cap);
+		if (!items) return false;
+		store->lifted     = items;
+		store->lifted_cap = cap;
+	}
+	store->lifted [store->nlifted++] = node;
+	return true;
+}
+
+bool flux_node_lift(FluxStore *store, XentNodeId node, bool lifted) {
+	if (!store || node == XENT_NODE_INVALID) return false;
+	int i = lifted_index(store, node);
+	if (lifted) return i >= 0 || lifted_append(store, node);
+	if (i < 0) return true;
+	memmove(&store->lifted [i], &store->lifted [i + 1], sizeof(XentNodeId) * (store->nlifted - ( uint32_t ) i - 1u));
+	store->nlifted--;
+	return true;
+}
+
+bool flux_node_lifted(FluxStore const *store, XentNodeId node) {
+	return store && store->nlifted && lifted_index(store, node) >= 0;
+}
+
+uint32_t   flux_store_nlifted(FluxStore const *store) { return store ? store->nlifted : 0; }
+
+XentNodeId flux_store_lifted(FluxStore const *store, uint32_t i) {
+	return store && i < store->nlifted ? store->lifted [i] : XENT_NODE_INVALID;
+}
 
 static void ns_on_node_lifecycle(XentCtx *ctx, XentNodeEvent const *lifecycle, void *userdata) {
 	( void ) ctx;

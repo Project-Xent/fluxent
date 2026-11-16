@@ -253,6 +253,9 @@ XentDl *flux_tabitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 
+XentDl *flux_colbutton_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
 XentDl *flux_colitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );

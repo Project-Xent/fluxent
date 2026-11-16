@@ -406,7 +406,7 @@ SETTER(text_selectable, flux_prop_text_selectable, v->u.b)
 
 HANDLER(text_trim) {
 	( void ) control;
-	if (v->u.u32 <= XENT_TEXT_TRIM_WORD_ELLIPSIS) flux_prop_text_trim(R->store, node, ( XentTextTrim ) v->u.u32);
+	if (v->u.u32 <= XENT_TEXT_TRIM_PATH_ELLIPSIS) flux_prop_text_trim(R->store, node, ( XentTextTrim ) v->u.u32);
 	return true;
 }
 

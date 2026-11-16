@@ -59,8 +59,10 @@ static float clamp_width(FluxColItemData const *d, float w) {
 }
 
 static void apply_width(FluxColItemData *d, float w) {
-	d->width = w;
+	d->width   = w;
+	float span = fmaxf(0.0f, w - FLUX_COL_SPLITTER_W + 2.0f * FLUX_COL_CELL_OVERLAP);
 	xent_setw(d->ctx, d->node, w);
+	xent_setsize(d->ctx, d->button, (XentSize) {span, FLUX_COL_HEADER_H});
 }
 
 static void user_resize(FluxColItemData *d, float w) {
@@ -240,6 +242,7 @@ static void col_down(void *ctx, float x, float y, int clicks) {
 	}
 	FluxColHeaderData *h  = item_header(d);
 	FluxNodeData      *nd = flux_store_find(d->store, d->node);
+	flux_tilt_press(&d->tilt, d->button, x + FLUX_COL_CELL_OVERLAP, y);
 	if (!h) return;
 	end_reorder(h, false);
 	h->drag    = d->node;
@@ -263,6 +266,7 @@ static bool col_release(void *ctx) {
 	FluxColPart        part = ( FluxColPart ) d->press_part;
 	FluxColHeaderData *h    = item_header(d);
 	d->press_part           = FLUX_COL_PART_NONE;
+	flux_tilt_release(&d->tilt);
 	if (part == FLUX_COL_PART_SPLITTER) return true;
 	if (!h || !h->reordering || h->drag != d->node) {
 		if (h) h->drag = XENT_NODE_INVALID;
@@ -285,6 +289,7 @@ static void col_cancel(void *ctx) {
 	FluxColItemData   *d = ( FluxColItemData * ) ctx;
 	FluxColHeaderData *h = item_header(d);
 	d->press_part        = FLUX_COL_PART_NONE;
+	flux_tilt_release(&d->tilt);
 	if (h && h->drag == d->node) end_reorder(h, false);
 }
 
@@ -332,6 +337,7 @@ static void col_blur(void *ctx) { (( FluxColItemData * ) ctx)->focus_part = FLUX
 static void colitem_destroy(void *data) {
 	FluxColItemData *d = ( FluxColItemData * ) data;
 	if (!d) return;
+	flux_tilt_stop(&d->tilt);
 	flux_str_free(d->text);
 	free(d);
 }
@@ -364,7 +370,7 @@ static void wire_item(FluxNodeData *nd, FluxColItemData *d) {
 	};
 }
 
-XentNodeId flux_colitem_init(XentCtx *ctx, FluxStore *store) {
+XentNodeId flux_colitem_init(XentCtx *ctx, FluxStore *store, FluxWindow *window) {
 	XentNodeId       node = flux_factory_create_node(ctx, store, XENT_NODE_INVALID, FLUX_CONTROL_COLITEM);
 	FluxNodeData    *nd   = node == XENT_NODE_INVALID ? NULL : flux_store_find(store, node);
 	FluxColItemData *d    = nd ? ( FluxColItemData * ) calloc(1, sizeof(*d)) : NULL;
@@ -376,10 +382,18 @@ XentNodeId flux_colitem_init(XentCtx *ctx, FluxStore *store) {
 	  .min_width = 50.0f,
 	  .max_width = 800.0f,
 	  .sortable  = true,
-	  .resizable = true};
+	  .resizable = true,
+	  .tilt      = {.store = store, .window = window}
+    };
 	nd->component_data         = d;
 	nd->destroy_component_data = colitem_destroy;
 	wire_item(nd, d);
+	xent_setproto(ctx, node, XENT_PROTOCOL_ABSOLUTE);
+	d->button            = flux_factory_create_node(ctx, store, node, FLUX_CONTROL_COLBUTTON);
+	FluxNodeData *button = flux_store_find(store, d->button);
+	if (!button) return flux_factory_fail_node(ctx, store, node);
+	button->component_data = d;
+	xent_setpos(ctx, d->button, (XentPoint) {-FLUX_COL_CELL_OVERLAP, 0.0f});
 	apply_width(d, 200.0f);
 	xent_setshrink(ctx, node, 0.0f);
 	xent_sem_setrole(ctx, node, XENT_SEM_ROLE_BUTTON);
@@ -485,6 +499,16 @@ void flux_snap_colitem(FluxSnapCtx const *ctx) {
 	ctx->snap->u.col_item = snap_item(( FluxColItemData const * ) ctx->data);
 }
 
+void flux_snap_colbutton(FluxSnapCtx const *ctx) {
+	FluxColItemData const *d     = ( FluxColItemData const * ) ctx->data;
+	FluxNodeData const    *nd    = flux_store_find(d->store, d->node);
+	float                  split = d->resizable ? d->width - FLUX_COL_SPLITTER_W : d->width;
+	ctx->snap->u.col_item        = snap_item(d);
+	if (!nd) return;
+	ctx->snap->u.col_item.hover   = nd->state.hovered && nd->hover_local_x >= 0.0f && nd->hover_local_x < split;
+	ctx->snap->u.col_item.pressed = nd->state.pressed && d->press_part == FLUX_COL_PART_BUTTON;
+}
+
 void flux_snap_colheader(FluxSnapCtx const *ctx) {
 	FluxColHeaderData const *h = ( FluxColHeaderData const * ) ctx->data;
 	FluxColItemData const   *d = h->reordering ? item_data(h->store, h->drag) : NULL;
@@ -492,4 +516,5 @@ void flux_snap_colheader(FluxSnapCtx const *ctx) {
 	ctx->snap->u.col_header
 	  = (FluxColHeaderSnapshot) {.ghost = true, .ghost_x = h->ghost_x, .ghost_w = h->ghost_w, .item = snap_item(d)};
 	ctx->snap->u.col_header.item.press_part = FLUX_COL_PART_BUTTON;
+	ctx->snap->u.col_header.item.pressed    = true;
 }

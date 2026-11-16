@@ -67,6 +67,7 @@ target("fluxent")
         "src/popup/*.c",
         "src/render/*.c",
         "src/runtime/*.c",
+        "src/shell/*.c",
         "src/store/*.c",
         "src/text/*.c",
         "src/theme/*.c",

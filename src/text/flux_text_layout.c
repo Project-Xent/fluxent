@@ -49,7 +49,8 @@ static DWRITE_FONT_STYLE to_dw_slant(XentFontSlant slant) {
 static DWRITE_TRIMMING_GRANULARITY to_dw_granularity(XentTextTrim trim) {
 	switch (trim) {
 	case XENT_TEXT_TRIM_CHAR          :
-	case XENT_TEXT_TRIM_CHAR_ELLIPSIS : return DWRITE_TRIMMING_GRANULARITY_CHARACTER;
+	case XENT_TEXT_TRIM_CHAR_ELLIPSIS :
+	case XENT_TEXT_TRIM_PATH_ELLIPSIS : return DWRITE_TRIMMING_GRANULARITY_CHARACTER;
 	case XENT_TEXT_TRIM_WORD          :
 	case XENT_TEXT_TRIM_WORD_ELLIPSIS : return DWRITE_TRIMMING_GRANULARITY_WORD;
 	default                           : return DWRITE_TRIMMING_GRANULARITY_NONE;
@@ -57,7 +58,9 @@ static DWRITE_TRIMMING_GRANULARITY to_dw_granularity(XentTextTrim trim) {
 }
 
 static bool trim_shows_ellipsis(XentTextTrim trim) {
-	return trim == XENT_TEXT_TRIM_CHAR_ELLIPSIS || trim == XENT_TEXT_TRIM_WORD_ELLIPSIS;
+	return trim == XENT_TEXT_TRIM_CHAR_ELLIPSIS
+	    || trim == XENT_TEXT_TRIM_WORD_ELLIPSIS
+	    || trim == XENT_TEXT_TRIM_PATH_ELLIPSIS;
 }
 
 static DWRITE_TEXT_RANGE run_to_range(char const *utf8, XentTextRun const *run) {
@@ -84,11 +87,19 @@ static void apply_run_style(IDWriteTextLayout *layout, char const *utf8, XentTex
 		IDWriteTextLayout_SetFontFamilyName(layout, family, range);
 }
 
-static void apply_trimming(FluxText *tr, IDWriteTextLayout *layout, XentTextTrim trim) {
+static UINT32 path_delimiter(char const *utf8) {
+	char const *back  = utf8 ? strrchr(utf8, '\\') : NULL;
+	char const *slash = utf8 ? strrchr(utf8, '/') : NULL;
+	if (!back && !slash) return 0u;
+	return slash > back ? L'/' : L'\\';
+}
+
+static void apply_trimming(FluxText *tr, IDWriteTextLayout *layout, char const *utf8, XentTextTrim trim) {
 	if (trim == XENT_TEXT_TRIM_NONE) return;
 
-	DWRITE_TRIMMING      options = {to_dw_granularity(trim), 0u, 0u};
-	IDWriteInlineObject *sign    = NULL;
+	UINT32               delimiter = trim == XENT_TEXT_TRIM_PATH_ELLIPSIS ? path_delimiter(utf8) : 0u;
+	DWRITE_TRIMMING      options   = {to_dw_granularity(trim), delimiter, delimiter ? 1u : 0u};
+	IDWriteInlineObject *sign      = NULL;
 	if (trim_shows_ellipsis(trim))
 		( void ) IDWriteFactory_CreateEllipsisTrimmingSign(tr->factory, ( IDWriteTextFormat * ) layout, &sign);
 
@@ -145,6 +156,6 @@ static void apply_max_lines(IDWriteTextLayout *layout, uint32_t max_lines) {
 
 void text_configure_layout(FluxText *tr, IDWriteTextLayout *layout, char const *utf8, FluxTextStyle const *style) {
 	for (uint32_t i = 0u; i < style->run_count; ++i) apply_run_style(layout, utf8, &style->runs [i]);
-	apply_trimming(tr, layout, style->trim);
+	apply_trimming(tr, layout, utf8, style->trim);
 	apply_max_lines(layout, style->max_lines);
 }

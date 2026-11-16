@@ -15,8 +15,7 @@ static void  replace_str(char **slot, char const *s) {
 
 void wizard_init(Model *m) {
 	memset(m, 0, sizeof(*m));
-	m->dir         = dup_str(kFolders [0]);
-	m->browse_sel  = 0;
+	m->dir         = dup_str(kDefaultDir);
 	m->channel_sel = 0;
 	m->channel     = dup_str(kChannels [0]);
 	m->update_date = xtk_date(2026, 12, 1);
@@ -226,15 +225,12 @@ static void msg_dir(Model *m, XtkMsg msg) { replace_str(&m->dir, ( char const * 
 
 static void msg_browse(Model *m, XtkMsg msg) {
 	( void ) msg;
-	m->browse_open = true;
+	FluxFileDialogDesc desc = {.kind = FLUX_FILEDIALOG_FOLDER, .title = "Choose a folder", .folder = m->dir};
+	( void ) flux_filedialog_post(m->worker.app, &desc, xtk_msg(MSG_BROWSE_RESULT));
 }
 
-static void msg_browse_pick(Model *m, XtkMsg msg) { m->browse_sel = msg.i; }
-
 static void msg_browse_result(Model *m, XtkMsg msg) {
-	m->browse_open = false;
-	if (msg.i == 1 && m->browse_sel >= 0 && m->browse_sel < FOLDER_COUNT)
-		replace_str(&m->dir, kFolders [m->browse_sel]);
+	if (msg.b && msg.ptr) replace_str(&m->dir, ( char const * ) msg.ptr);
 }
 
 static void msg_channel_select(Model *m, XtkMsg msg) {
@@ -268,7 +264,6 @@ static WizardMsgFn const kMsgFn [] = {
   [MSG_ACCEPT]         = msg_accept,
   [MSG_DIR]            = msg_dir,
   [MSG_BROWSE]         = msg_browse,
-  [MSG_BROWSE_PICK]    = msg_browse_pick,
   [MSG_BROWSE_RESULT]  = msg_browse_result,
   [MSG_COMP_SELECT]    = msg_comp_select,
   [MSG_COMP_EXPAND]    = msg_comp_expand,

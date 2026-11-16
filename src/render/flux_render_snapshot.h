@@ -322,6 +322,8 @@ typedef struct FluxColItemSnapshot {
 	bool        resizable;
 	uint8_t     press_part;
 	uint8_t     focus_part;
+	bool        hover;
+	bool        pressed;
 } FluxColItemSnapshot;
 
 typedef struct FluxColHeaderSnapshot {
@@ -456,6 +458,7 @@ void flux_snap_title_bar(FluxSnapCtx const *ctx);
 void flux_snap_tree_item(FluxSnapCtx const *ctx);
 
 void flux_snap_colitem(FluxSnapCtx const *ctx);
+void flux_snap_colbutton(FluxSnapCtx const *ctx);
 void flux_snap_colheader(FluxSnapCtx const *ctx);
 void flux_snap_appbar(FluxSnapCtx const *ctx);
 void flux_snap_cmdbar(FluxSnapCtx const *ctx);

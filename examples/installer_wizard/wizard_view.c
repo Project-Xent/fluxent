@@ -68,8 +68,6 @@ static XtkEl *page_license(XtkUi *ui, Model const *m) {
 }
 
 static XtkEl *page_location(XtkUi *ui, Model const *m) {
-	XtkRadioItem items [FOLDER_COUNT];
-	for (int i = 0; i < FOLDER_COUNT; i++) items [i] = (XtkRadioItem) {.label = kFolders [i]};
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 16, .align = XENT_FLEX_ALIGN_STRETCH},
 	  xtk_kids(
@@ -86,24 +84,6 @@ static XtkEl *page_location(XtkUi *ui, Model const *m) {
 		xtk_text(
 		  ui, xtk_fmt(ui, "At least %d MB of free disk space is required.", wizard_required_mb(m)),
 		  (XtkTextDesc) {.size = 13}
-		),
-		xtk_dialog(
-		  ui, "Choose a folder",
-		  (XtkDialogDesc) {
-			.open     = m->browse_open,
-			.primary  = "Select folder",
-			.close    = "Cancel",
-			.w        = 440,
-			.contenth = 176,
-			.result   = xtk_msg(MSG_BROWSE_RESULT)},
-		  xtk_kids(xtk_radiogroup(
-			ui, (XtkRadioButtonsDesc) {
-				  .header = "Locations",
-				  .items  = items,
-				  .nitem  = FOLDER_COUNT,
-				  .sel    = m->browse_sel,
-				  .select = xtk_msg(MSG_BROWSE_PICK)}
-		  ))
 		)
 	  )
 	);

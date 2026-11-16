@@ -4,6 +4,7 @@
 
 #include <fluxent/flux_node_store.h>
 #include "store/flux_node_data.h"
+#include "render/flux_lift.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -12,6 +13,7 @@
 typedef struct InputHitQuery {
 	XentCtx   *ctx;
 	FluxStore *store;
+	XentNodeId root;
 	XentNodeId node;
 	FluxPoint  point;
 	FluxPoint  scroll;
@@ -87,13 +89,34 @@ static bool          hit_node_interactive(XentCtx *ctx, XentNodeId node, FluxNod
 	return b->on_click || b->on_pointer_down || b->on_middle_click || b->on_hover_changed || nd->tooltip_text;
 }
 
+static FluxHitResult hit_test_lifted(InputHitQuery const *query, XentNodeId layer) {
+	for (uint32_t i = flux_store_nlifted(query->store); i > 0; i--) {
+		InputHitQuery lifted = *query;
+		lifted.node          = flux_store_lifted(query->store, i - 1u);
+		FluxLiftPlace place  = {0};
+		if (!flux_lift_place(query->ctx, query->store, lifted.node, &place) || place.layer != layer) continue;
+		lifted.scroll   = (FluxPoint) {-place.dx, -place.dy};
+		FluxHitResult r = hit_test_recursive(&lifted);
+		if (r.node != XENT_NODE_INVALID) return r;
+	}
+	return (FluxHitResult) {0};
+}
+
+static FluxHitResult hit_test_child(InputHitQuery const *query, XentNodeId child, FluxPoint child_scroll) {
+	bool layer = query->node == query->root;
+	if (!layer && flux_node_lifted(query->store, child)) return (FluxHitResult) {0};
+	FluxHitResult r = layer ? hit_test_lifted(query, child) : (FluxHitResult) {0};
+	if (r.node != XENT_NODE_INVALID) return r;
+	InputHitQuery child_query = *query;
+	child_query.node          = child;
+	child_query.scroll        = child_scroll;
+	return hit_test_recursive(&child_query);
+}
+
 static FluxHitResult
 hit_test_children(InputHitQuery const *query, HitChildList const *children, FluxPoint child_scroll) {
 	for (uint32_t i = children->count; i > 0; i--) {
-		InputHitQuery child_query = *query;
-		child_query.node          = children->items [i - 1u];
-		child_query.scroll        = child_scroll;
-		FluxHitResult r           = hit_test_recursive(&child_query);
+		FluxHitResult r = hit_test_child(query, children->items [i - 1u], child_scroll);
 		if (r.node != XENT_NODE_INVALID) return r;
 	}
 	return (FluxHitResult) {0};
@@ -105,13 +128,14 @@ static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 
 	FluxNodeData *nd          = flux_store_find(query->store, query->node);
 	FluxPoint     node_offset = hit_test_node_offset(query, nd);
-	if (!hit_rect_contains(&rect, query->point, node_offset)) return (FluxHitResult) {0};
+	bool          inside      = hit_rect_contains(&rect, query->point, node_offset);
+	if (!inside && !flux_node_lifted(query->store, query->node)) return (FluxHitResult) {0};
 
 	FluxPoint     child_scroll = hit_test_child_scroll_offset(query, nd, node_offset);
 	HitChildList  children     = hit_collect_children(query->ctx, query->node);
 	FluxHitResult child_hit    = hit_test_children(query, &children, child_scroll);
 	free(children.items);
-	if (child_hit.node != XENT_NODE_INVALID) return child_hit;
+	if (child_hit.node != XENT_NODE_INVALID || !inside) return child_hit;
 
 	if (children.count == 0 && !hit_node_interactive(query->ctx, query->node, nd)) return (FluxHitResult) {0};
 
@@ -129,6 +153,7 @@ static FluxHitResult input_hit_test_root(FluxInput *input, XentNodeId root, floa
 	InputHitQuery query = {
 	  .ctx    = input->ctx,
 	  .store  = input->store,
+	  .root   = root,
 	  .node   = root,
 	  .point  = {px,   py  },
 	  .scroll = {0.0f, 0.0f},
@@ -473,6 +498,11 @@ static void fi_context_menu(FluxInput *input, XentNodeId root, float px, float p
 static void fi_touch_hold(FluxInput *input, XentNodeId root, float px, float py);
 static void fi_scroll(InputScrollEvent const *event);
 
+static void fi_pointer_leave(FluxInput *input) {
+	input->pointer_valid = false;
+	if (input->pressed == XENT_NODE_INVALID) input_clear_hovered(input);
+}
+
 static void fi_cancel(FluxInput *input) {
 	if (!input) return;
 
@@ -522,6 +552,7 @@ void flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent con
 	case FLUX_POINTER_HOLD         : fi_touch_hold(input, root, ev->x, ev->y); break;
 	case FLUX_POINTER_CONTEXT_MENU : fi_context_menu(input, root, ev->x, ev->y); break;
 	case FLUX_POINTER_CANCEL       : fi_cancel(input); break;
+	case FLUX_POINTER_LEAVE        : fi_pointer_leave(input); break;
 	case FLUX_POINTER_HITTEST      : break;
 	}
 }

@@ -7,7 +7,7 @@
 #include <stdint.h>
 
 XentNodeId flux_colheader_init(XentCtx *ctx, FluxStore *store, FluxWindow *window);
-XentNodeId flux_colitem_init(XentCtx *ctx, FluxStore *store);
+XentNodeId flux_colitem_init(XentCtx *ctx, FluxStore *store, FluxWindow *window);
 void       flux_colheader_retarget(XentCtx *ctx, FluxStore *store, XentNodeId node);
 void       flux_colitem_retarget(XentCtx *ctx, FluxStore *store, XentNodeId node);
 bool       flux_colheader_step(void *ctx, unsigned long now);

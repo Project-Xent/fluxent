@@ -22,7 +22,7 @@ struct FluxWindow {
 	bool                 render_requested;
 	ULONGLONG            redraw_due;
 	bool                 shown;
-	bool                 com_initialized;
+	bool                 ole_initialized;
 	int                  cursor_type;
 	HCURSOR              cursor_arrow;
 	HCURSOR              cursor_ibeam;

@@ -81,6 +81,7 @@ typedef enum FluxPointerEventKind
 	FLUX_POINTER_HOLD,
 	FLUX_POINTER_CONTEXT_MENU,
 	FLUX_POINTER_HITTEST,
+	FLUX_POINTER_LEAVE,
 } FluxPointerEventKind;
 
 typedef enum FluxPointerButton

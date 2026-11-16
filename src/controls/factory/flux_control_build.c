@@ -963,8 +963,7 @@ static XentNodeId seed_colheader(XentCtx *ctx, FluxStore *store, FluxControlMoun
 }
 
 static XentNodeId seed_colitem(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
-	( void ) m;
-	return flux_colitem_init(ctx, store);
+	return flux_colitem_init(ctx, store, m->env->window);
 }
 
 static XentNodeId seed_commandbar(XentCtx *ctx, FluxStore *store, FluxControlMount const *m) {
@@ -1229,6 +1228,7 @@ DEPS(looping, &flux_ctrl_scroll, &flux_ctrl_loopitem);
 DEPS(pickerflyout, &flux_ctrl_looping, &flux_ctrl_button);
 DEPS(picker, &flux_ctrl_pickerflyout);
 DEPS(colheader, &flux_ctrl_colitem);
+DEPS(colitem, &flux_ctrl_colbutton);
 DEPS(commandbar, &flux_ctrl_cmdmore);
 DEPS(colorpicker, &flux_ctrl_combo, &flux_ctrl_slider, &flux_ctrl_textbox);
 
@@ -1777,6 +1777,7 @@ MODULE(colheader)     = {
 };
 MODULE(colitem) = {
   .type     = FLUX_CONTROL_COLITEM,
+  .deps     = colitem_deps,
   .props    = flux_props_colitem,
   .snapshot = flux_snap_colitem,
   .seed     = seed_colitem,
@@ -1817,4 +1818,5 @@ MODULE(appbarsep) = {
   .retarget = flux_appbar_retarget,
   .record   = flux_appbar_record,
 };
-MODULE(cmdmore) = {.type = FLUX_CONTROL_CMDMORE, .snapshot = flux_snap_cmdmore, .record = flux_cmdmore_record};
+MODULE(cmdmore)   = {.type = FLUX_CONTROL_CMDMORE, .snapshot = flux_snap_cmdmore, .record = flux_cmdmore_record};
+MODULE(colbutton) = {.type = FLUX_CONTROL_COLBUTTON, .snapshot = flux_snap_colbutton, .record = flux_colbutton_record};

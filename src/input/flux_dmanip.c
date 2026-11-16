@@ -42,16 +42,18 @@ static ULONG STDMETHODCALLTYPE handler_Release(IDirectManipulationViewportEventH
 }
 
 struct FluxDManipViewport;
-static void                      viewport_set_status(struct FluxDManipViewport *vp, DIRECTMANIPULATION_STATUS s);
+static void viewport_set_status(struct FluxDManipViewport *vp, DIRECTMANIPULATION_STATUS s);
+static void viewport_status_changed(
+  struct FluxDManipViewport *vp, DIRECTMANIPULATION_STATUS current, DIRECTMANIPULATION_STATUS previous
+);
 
 static HRESULT STDMETHODCALLTYPE handler_OnViewportStatusChanged(
   IDirectManipulationViewportEventHandler *This, IDirectManipulationViewport *viewport,
   DIRECTMANIPULATION_STATUS current, DIRECTMANIPULATION_STATUS previous
 ) {
 	( void ) viewport;
-	( void ) previous;
 	FluxDManipHandler *self = ( FluxDManipHandler * ) This;
-	if (self->owner) viewport_set_status(self->owner, current);
+	if (self->owner) viewport_status_changed(self->owner, current, previous);
 	return S_OK;
 }
 
@@ -87,19 +89,20 @@ struct FluxDManip {
 };
 
 struct FluxDManipViewport {
-	FluxDManip                  *dm;
-	IDirectManipulationViewport *viewport;
-	IDirectManipulationContent  *primary;
-	FluxDManipHandler           *handler;
-	DWORD                        handler_cookie;
-	bool                         enabled;
-	DIRECTMANIPULATION_STATUS    status;
-	int                          content_w;
-	int                          content_h;
-	float                        dpi_scale;
-	float                        snap_y;
-	FluxDManipContentUpdatedFn   on_updated;
-	void                        *on_updated_ctx;
+	FluxDManip                      *dm;
+	IDirectManipulationViewport     *viewport;
+	IDirectManipulationContent      *primary;
+	FluxDManipHandler               *handler;
+	DWORD                            handler_cookie;
+	bool                             enabled;
+	DIRECTMANIPULATION_STATUS        status;
+	int                              content_w;
+	int                              content_h;
+	float                            dpi_scale;
+	float                            snap_y;
+	DIRECTMANIPULATION_CONFIGURATION config;
+	FluxDManipContentUpdatedFn       on_updated;
+	void                            *on_updated_ctx;
 };
 
 static bool viewport_status_active(DIRECTMANIPULATION_STATUS status) {
@@ -116,27 +119,31 @@ static bool dmanip_is_ui_thread(FluxDManipViewport const *vp) {
 	return vp && vp->dm && GetCurrentThreadId() == vp->dm->ui_thread_id;
 }
 
+static void viewport_publish(struct FluxDManipViewport *vp, IDirectManipulationContent *content) {
+	if (!content || !dmanip_is_ui_thread(vp) || !vp->on_updated) return;
+	float m [6] = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+	if (FAILED(IDirectManipulationContent_GetContentTransform(content, m, 6))) return;
+	float inv = (vp->dpi_scale > 0.0f) ? (1.0f / vp->dpi_scale) : 1.0f;
+	vp->on_updated(vp->on_updated_ctx, -m [4] * inv, -m [5] * inv);
+}
+
+static void viewport_status_changed(
+  struct FluxDManipViewport *vp, DIRECTMANIPULATION_STATUS current, DIRECTMANIPULATION_STATUS previous
+) {
+	viewport_set_status(vp, current);
+	if (viewport_status_active(previous) && !viewport_status_active(current)) viewport_publish(vp, vp->primary);
+	InvalidateRect(vp->dm->hwnd, NULL, FALSE);
+}
+
+/* DManip may report READY before the content update that lands the overpan bounce at rest; the status
+   handler republishes the final transform so the offset never stays overpanned. */
 static HRESULT STDMETHODCALLTYPE handler_OnContentUpdated(
   IDirectManipulationViewportEventHandler *This, IDirectManipulationViewport *viewport,
   IDirectManipulationContent *content
 ) {
 	( void ) viewport;
 	FluxDManipHandler *self = ( FluxDManipHandler * ) This;
-	if (!self->owner || !content) return S_OK;
-	if (!dmanip_is_ui_thread(self->owner)) return S_OK;
-
-	DIRECTMANIPULATION_STATUS st = self->owner->status;
-	if (st != DIRECTMANIPULATION_RUNNING && st != DIRECTMANIPULATION_INERTIA) return S_OK;
-
-	float   m [6] = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
-	HRESULT hr    = IDirectManipulationContent_GetContentTransform(content, m, 6);
-	if (FAILED(hr)) return S_OK;
-
-	float inv      = (self->owner->dpi_scale > 0.0f) ? (1.0f / self->owner->dpi_scale) : 1.0f;
-	float scroll_x = -m [4] * inv;
-	float scroll_y = -m [5] * inv;
-
-	if (self->owner->on_updated) self->owner->on_updated(self->owner->on_updated_ctx, scroll_x, scroll_y);
+	if (self->owner && viewport_status_active(self->owner->status)) viewport_publish(self->owner, content);
 	return S_OK;
 }
 
@@ -235,6 +242,7 @@ static HRESULT dmanip_viewport_get_primary(FluxDManipViewport *vp) {
 static HRESULT dmanip_viewport_configure(FluxDManipViewport *vp) {
 	HRESULT hr = IDirectManipulationViewport_AddConfiguration(vp->viewport, FLUX_DM_CONFIG_PAN);
 	if (SUCCEEDED(hr)) hr = IDirectManipulationViewport_ActivateConfiguration(vp->viewport, FLUX_DM_CONFIG_PAN);
+	if (SUCCEEDED(hr)) vp->config = FLUX_DM_CONFIG_PAN;
 	if (SUCCEEDED(hr))
 		hr = IDirectManipulationViewport_SetViewportOptions(
 		  vp->viewport, DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE
@@ -327,6 +335,18 @@ HRESULT flux_dmanip_vp_setcontact(FluxDManipViewport *vp, uint32_t pointer_id) {
 	if (!vp || !vp->viewport) return E_INVALIDARG;
 	if (!vp->enabled) return E_NOT_VALID_STATE;
 	return IDirectManipulationViewport_SetContact(vp->viewport, pointer_id);
+}
+
+void flux_dmanip_vp_setaxes(FluxDManipViewport *vp, bool x, bool y) {
+	if (!vp || !vp->viewport || viewport_status_active(vp->status)) return;
+	DIRECTMANIPULATION_CONFIGURATION cfg
+	  = DIRECTMANIPULATION_CONFIGURATION_INTERACTION | DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_INERTIA;
+	if (x) cfg |= DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_X;
+	if (y) cfg |= DIRECTMANIPULATION_CONFIGURATION_TRANSLATION_Y;
+	if (x && y) cfg |= DIRECTMANIPULATION_CONFIGURATION_RAILS_X | DIRECTMANIPULATION_CONFIGURATION_RAILS_Y;
+	if (cfg == vp->config) return;
+	( void ) IDirectManipulationViewport_AddConfiguration(vp->viewport, cfg);
+	if (SUCCEEDED(IDirectManipulationViewport_ActivateConfiguration(vp->viewport, cfg))) vp->config = cfg;
 }
 
 void flux_dmanip_vp_onchange(FluxDManipViewport *vp, FluxDManipContentUpdatedFn cb, void *ctx) {

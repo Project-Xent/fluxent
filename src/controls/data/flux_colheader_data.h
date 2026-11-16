@@ -2,6 +2,7 @@
 #define FLUX_COLHEADER_DATA_H
 
 #include "fluxent/flux_node_store.h"
+#include "render/flux_tilt.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -23,8 +24,6 @@
 #define FLUX_COL_GHOST_OPACITY 0.85f
 #define FLUX_COL_SPLIT_OPACITY 0.8f
 
-typedef struct FluxWindow FluxWindow;
-
 typedef enum FluxColPart
 {
 	FLUX_COL_PART_NONE = 0,
@@ -36,6 +35,8 @@ typedef struct FluxColItemData {
 	XentCtx      *ctx;
 	FluxStore    *store;
 	XentNodeId    node;
+	XentNodeId    button;
+	FluxTilt      tilt;
 	char const   *text;
 	float         width;
 	float         min_width;

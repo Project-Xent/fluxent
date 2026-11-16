@@ -10,5 +10,7 @@
 #include "flux_menu.h"
 #include "flux_app.h"
 #include "flux_host.h"
+#include "flux_filedialog.h"
+#include "flux_data.h"
 
 #endif

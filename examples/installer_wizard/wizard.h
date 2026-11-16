@@ -30,7 +30,6 @@ typedef enum WizardMsg
 	MSG_ACCEPT,
 	MSG_DIR,
 	MSG_BROWSE,
-	MSG_BROWSE_PICK,
 	MSG_BROWSE_RESULT,
 	MSG_COMP_SELECT,
 	MSG_COMP_EXPAND,
@@ -55,12 +54,11 @@ typedef struct WizardComp {
 enum
 {
 	COMP_COUNT    = 10,
-	FOLDER_COUNT  = 4,
 	CHANNEL_COUNT = 3,
 };
 
 extern WizardComp const  kComps [COMP_COUNT];
-extern char const *const kFolders [FOLDER_COUNT];
+extern char const *const kDefaultDir;
 extern char const *const kChannels [CHANNEL_COUNT];
 extern char const *const kLicense;
 
@@ -76,8 +74,6 @@ typedef struct Model {
 	int          page;
 	bool         accepted;
 	char        *dir;
-	bool         browse_open;
-	int          browse_sel;
 	bool         checked [COMP_COUNT];
 	bool         expanded [COMP_COUNT];
 	int          channel_sel;

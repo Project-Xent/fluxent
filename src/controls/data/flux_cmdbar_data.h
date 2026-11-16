@@ -14,10 +14,7 @@
 #define FLUX_CMDBAR_CORNER          4.0f
 #define FLUX_CMDBAR_MORE_W          48.0f
 #define FLUX_CMDBAR_MORE_MIN_W      6.0f
-#define FLUX_CMDBAR_MORE_PAD_TOP    19.0f
-#define FLUX_CMDBAR_MORE_MIN_TOP    11.0f
 #define FLUX_CMDBAR_MORE_GLYPH      20.0f
-#define FLUX_CMDBAR_MORE_GLYPH_H    3.0f
 #define FLUX_CMDBAR_OPEN_MS         250u
 #define FLUX_CMDBAR_CLOSE_MS        167u
 

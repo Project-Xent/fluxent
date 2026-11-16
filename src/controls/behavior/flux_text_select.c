@@ -1,7 +1,7 @@
 #include "controls/behavior/flux_text_select.h"
 
 #include "render/flux_fluent.h"
-#include "text/flux_clipboard.h"
+#include "fluxent/flux_data.h"
 #include "text/flux_utf.h"
 
 #include <string.h>
@@ -77,7 +77,7 @@ static void text_select_pointer_finish(void *ctx) {
 static void text_select_copy(FluxTextData *td) {
 	uint32_t a = td->selection_start < td->selection_end ? td->selection_start : td->selection_end;
 	uint32_t e = td->selection_start > td->selection_end ? td->selection_start : td->selection_end;
-	if (e > a) flux_clipboard_set_utf8(td->content + a, e - a);
+	if (e > a) ( void ) flux_clipboard_settext(td->content + a, e - a);
 }
 
 static bool text_select_key(void *ctx, FluxKey key, bool down) {

@@ -13,7 +13,7 @@ void flux_window_destroy(FluxWindow *win) {
 	if (!win) return;
 	if (win->gfx) flux_gfx_destroy(win->gfx);
 	if (win->hwnd) DestroyWindow(win->hwnd);
-	if (win->com_initialized) CoUninitialize();
+	if (win->ole_initialized) OleUninitialize();
 	free(win);
 }
 

@@ -423,6 +423,16 @@ static LRESULT window_on_pointer_contact(FluxWindow *win, HWND hwnd, UINT msg, W
 	return 0;
 }
 
+static LRESULT window_on_pointer_leave(FluxWindow *win, HWND hwnd, WPARAM wp, LPARAM lp) {
+	UINT32             pid   = GET_POINTERID_WPARAM(wp);
+	POINTER_INPUT_TYPE ptype = PT_POINTER;
+	if (!GetPointerType(pid, &ptype) || ptype == PT_TOUCH || ptype == PT_TOUCHPAD) return 0;
+	FluxPointerEvent ev = window_pointer_base_event(win, hwnd, lp, ptype, pid);
+	ev.kind             = FLUX_POINTER_LEAVE;
+	window_emit_pointer(win, &ev);
+	return 0;
+}
+
 static LRESULT window_on_pointer_wheel(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 	UINT32             pid   = GET_POINTERID_WPARAM(wp);
 	POINTER_INPUT_TYPE ptype = PT_POINTER;
@@ -788,6 +798,10 @@ static bool window_handle_pointer(WindowMessage const *m, LRESULT *result) {
 		*result = window_on_pointer_wheel(m->win, m->hwnd, m->msg, m->wp, m->lp);
 		return true;
 	}
+	if (m->msg == WM_POINTERLEAVE) {
+		*result = window_on_pointer_leave(m->win, m->hwnd, m->wp, m->lp);
+		return true;
+	}
 	if (window_handle_capture_change(m)) {
 		*result = 0;
 		return true;
@@ -874,10 +888,10 @@ static void window_apply_config(FluxWindow *win, FluxWindowCfg const *cfg) {
 	if (win->config.height <= 0) win->config.height = FLUX_WINDOW_DEFAULT_H;
 }
 
-static HRESULT window_initialize_com(FluxWindow *win) {
-	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+static HRESULT window_initialize_ole(FluxWindow *win) {
+	HRESULT hr = OleInitialize(NULL);
 	if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return hr;
-	win->com_initialized = (hr == S_OK || hr == S_FALSE);
+	win->ole_initialized = (hr == S_OK || hr == S_FALSE);
 	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 	return S_OK;
 }
@@ -928,7 +942,7 @@ static HRESULT window_create_graphics(FluxWindow *win) {
 static void window_dispose_failed_create(FluxWindow *win) {
 	if (win->gfx) flux_gfx_destroy(win->gfx);
 	if (win->hwnd) DestroyWindow(win->hwnd);
-	if (win->com_initialized) CoUninitialize();
+	if (win->ole_initialized) OleUninitialize();
 	free(win);
 }
 
@@ -941,7 +955,7 @@ HRESULT flux_window_create(FluxWindowCfg const *cfg, FluxWindow **out) {
 
 	window_apply_config(win, cfg);
 
-	HRESULT hr = window_initialize_com(win);
+	HRESULT hr = window_initialize_ole(win);
 	if (FAILED(hr)) {
 		free(win);
 		return hr;

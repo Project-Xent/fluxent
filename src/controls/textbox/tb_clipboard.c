@@ -1,26 +1,8 @@
 #include "tb_internal.h"
 
-#include "text/flux_clipboard.h"
+#include "fluxent/flux_data.h"
 #include <stdlib.h>
 #include <string.h>
-
-typedef struct TbClipboardText {
-	HANDLE         handle;
-	wchar_t const *text;
-} TbClipboardText;
-
-static bool tb_clipboard_lock_text(TbClipboardText *clip) {
-	clip->handle = GetClipboardData(CF_UNICODETEXT);
-	if (!clip->handle) return false;
-	clip->text = ( wchar_t const * ) GlobalLock(clip->handle);
-	return clip->text != NULL;
-}
-
-static void tb_clipboard_unlock_text(TbClipboardText *clip) {
-	if (clip->text) GlobalUnlock(clip->handle);
-	clip->handle = NULL;
-	clip->text   = NULL;
-}
 
 static bool tb_copy_selection_range(FluxTextBoxInputData *tb, uint32_t *start, uint32_t *len) {
 	if (!tb_has_selection(tb)) return false;
@@ -36,79 +18,45 @@ void tb_perform_copy(FluxTextBoxInputData *tb) {
 	uint32_t len   = 0;
 	if (!tb_copy_selection_range(tb, &start, &len)) return;
 	char const *content = tb_sync_content(tb);
-	flux_clipboard_set_utf8(content + start, len);
+	( void ) flux_clipboard_settext(content + start, len);
 }
 
-static wchar_t const *tb_filtered_clip_text(
-  FluxTextBoxInputData *tb, wchar_t const *wclip, int *wclip_len, wchar_t **heap, wchar_t stack [256]
-) {
-	*heap      = NULL;
-	*wclip_len = ( int ) wcslen(wclip);
-	if (tb->base.multiline) return wclip;
-
-	if (*wclip_len + 1 > 256) {
-		*heap = ( wchar_t * ) malloc((( size_t ) *wclip_len + 1u) * sizeof(wchar_t));
-		if (!*heap) return L"";
-	}
-
-	wchar_t *filtered = *heap ? *heap : stack;
-	int      out      = 0;
-	for (int i = 0; i < *wclip_len; i++)
-		if (wclip [i] != L'\n' && wclip [i] != L'\r') filtered [out++] = wclip [i];
-	filtered [out] = 0;
-	*wclip_len     = out;
-	return filtered;
+static uint32_t tb_strip_newlines(char *text) {
+	uint32_t out = 0;
+	for (char const *p = text; *p; p++)
+		if (*p != '\n' && *p != '\r') text [out++] = *p;
+	text [out] = '\0';
+	return out;
 }
 
-static int tb_clipboard_u8_limit(FluxTextBoxInputData *tb, int u8len) {
-	if (tb->base.max_length == 0) return u8len;
+static uint32_t tb_paste_limit(FluxTextBoxInputData const *tb, char const *text, uint32_t len) {
+	if (tb->base.max_length == 0) return len;
 	if (tb->buf_len >= tb->base.max_length) return 0;
-
 	uint32_t room = tb->base.max_length - tb->buf_len;
-	return ( uint32_t ) u8len > room ? ( int ) room : u8len;
+	if (len <= room) return len;
+	while (room > 0 && (( unsigned char ) text [room] & 0xc0u) == 0x80u) room--;
+	return room;
 }
 
-static void tb_insert_clip_utf16(FluxTextBoxInputData *tb, wchar_t const *wclip, int wclip_len) {
-	int u8len = WideCharToMultiByte(CP_UTF8, 0, wclip, wclip_len, NULL, 0, NULL, NULL);
-	u8len     = u8len > 0 ? tb_clipboard_u8_limit(tb, u8len) : 0;
-	if (u8len <= 0) return;
-
-	char  u8_stack [512];
-	char *u8buf = u8len + 1 > 512 ? ( char * ) malloc(( size_t ) u8len + 1u) : u8_stack;
-	if (!u8buf) return;
-
-	WideCharToMultiByte(CP_UTF8, 0, wclip, wclip_len, u8buf, u8len, NULL, NULL);
-	u8buf [u8len] = 0;
-	tb_insert_utf8(tb, tb->base.cursor_position, u8buf, ( uint32_t ) u8len);
-	tb->base.cursor_position += ( uint32_t ) u8len;
-	tb->base.selection_start  = tb->base.cursor_position;
-	tb->base.selection_end    = tb->base.cursor_position;
-	if (u8buf != u8_stack) free(u8buf);
-}
-
-static void tb_paste_locked_text(FluxTextBoxInputData *tb, wchar_t const *wclip) {
-	wchar_t  filtered_stack [256];
-	wchar_t *filtered_heap = NULL;
-	int      wclip_len     = 0;
-	wclip                  = tb_filtered_clip_text(tb, wclip, &wclip_len, &filtered_heap, filtered_stack);
-
+static void tb_paste_text(FluxTextBoxInputData *tb, char *text) {
+	uint32_t len = tb->base.multiline ? ( uint32_t ) strlen(text) : tb_strip_newlines(text);
+	len          = tb_paste_limit(tb, text, len);
 	tb_push_undo(tb);
 	tb->last_op_was_typing = false;
 	if (tb_has_selection(tb)) tb_delete_selection(tb);
-	tb_insert_clip_utf16(tb, wclip, wclip_len);
-	free(filtered_heap);
+	if (len == 0) return;
+	tb_insert_utf8(tb, tb->base.cursor_position, text, len);
+	tb->base.cursor_position += len;
+	tb->base.selection_start  = tb->base.cursor_position;
+	tb->base.selection_end    = tb->base.cursor_position;
 }
 
 void tb_perform_paste(FluxTextBoxInputData *tb) {
 	if (tb->base.readonly) return;
-	if (!OpenClipboard(NULL)) return;
-
-	TbClipboardText clip = {0};
-	if (tb_clipboard_lock_text(&clip)) tb_paste_locked_text(tb, clip.text);
-
-	tb_clipboard_unlock_text(&clip);
-	CloseClipboard();
-
+	char *text = flux_clipboard_text();
+	if (!text) return;
+	tb_paste_text(tb, text);
+	free(text);
 	tb_update_scroll(tb);
 	tb_update_ime_position(tb);
 	tb_notify_change(tb);

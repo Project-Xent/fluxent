@@ -13,12 +13,7 @@ WizardComp const kComps [COMP_COUNT] = {
   {"Offline documentation", -1, 31,  "docs",    "reference_topic",  "html"},
 };
 
-char const *const kFolders [FOLDER_COUNT] = {
-  "C:\\Program Files\\Xent Sample",
-  "C:\\Program Files (x86)\\Xent Sample",
-  "D:\\Applications\\Xent Sample",
-  "C:\\Users\\Public\\Xent Sample",
-};
+char const *const kDefaultDir               = "C:\\Program Files\\Xent Sample";
 
 char const *const kChannels [CHANNEL_COUNT] = {"Stable", "Preview", "Nightly"};
 

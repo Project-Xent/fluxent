@@ -55,6 +55,7 @@ static void sync_scroll_viewport(DManipSyncContext const *sync, FluxScrollData *
 
 	int cw = ( int ) (sd->content_w * sync->scale + 0.5f);
 	int ch = ( int ) (sd->content_h * sync->scale + 0.5f);
+	flux_dmanip_vp_setaxes(vp, cw > pw, ch > ph);
 	if (cw < pw) cw = pw;
 	if (ch < ph) ch = ph;
 	flux_dmanip_vp_setsize(vp, cw, ch);

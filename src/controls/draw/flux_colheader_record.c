@@ -17,8 +17,6 @@ typedef struct ColDraw {
 	FluxThemeColors const     *t;
 	FluxColItemSnapshot const *col;
 	FluxRect                   cell;
-	bool                       hover_button;
-	bool                       pressed;
 	float                      angle;
 } ColDraw;
 
@@ -39,8 +37,8 @@ static FluxRect col_splitter(FluxRect const *cell) {
 
 static FluxColor col_fill(ColDraw const *c) {
 	if (!c->col->sortable) return c->t->ctrl_fill_disabled;
-	if (c->pressed) return c->t->ctrl_fill_tertiary;
-	if (c->hover_button) return c->t->ctrl_alt_fill_tertiary;
+	if (c->col->pressed) return c->t->ctrl_fill_tertiary;
+	if (c->col->hover) return c->t->ctrl_alt_fill_tertiary;
 	return (FluxColor) {0};
 }
 
@@ -75,11 +73,10 @@ static bool col_sort_icon(XentDlBuilder *b, ColDraw const *c, FluxRect const *bu
 	    && xent_dl_poptransform(b);
 }
 
-static bool col_body(XentDlBuilder *b, ColDraw const *c) {
-	FluxRect  button = col_button(&c->cell);
-	FluxColor fill   = col_fill(c);
-	if (fill.rgba & 0xffu && !flux_rec_fill_rect(b, &button, fill)) return false;
-	return col_label(b, c, &button) && col_sort_icon(b, c, &button);
+static bool col_body(XentDlBuilder *b, ColDraw const *c, FluxRect const *button) {
+	FluxColor fill = col_fill(c);
+	if (fill.rgba & 0xffu && !flux_rec_fill_rect(b, button, fill)) return false;
+	return col_label(b, c, button) && col_sort_icon(b, c, button);
 }
 
 static bool col_divider(XentDlBuilder *b, FluxRenderCtx const *rc, ColDraw const *c) {
@@ -110,27 +107,22 @@ static float col_sort_angle(FluxRenderCtx const *rc, FluxRenderSnap const *snap,
 	return vs->aux [0];
 }
 
-static ColDraw col_draw(
-  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxColItemSnapshot const *col, FluxRect const *cell,
-  FluxControlState const *state
+XentDl *flux_colbutton_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	float split = col->resizable ? cell->w - FLUX_COL_SPLITTER_W : cell->w;
-	return (ColDraw) {
-	  .t            = flux_rec_theme(rc),
-	  .col          = col,
-	  .cell         = *cell,
-	  .hover_button = state->hovered && snap->hover_local_x >= 0.0f && snap->hover_local_x < split,
-	  .pressed      = state->pressed && col->press_part == FLUX_COL_PART_BUTTON,
-	  .angle        = col_sort_angle(rc, snap, col->sort),
-	};
+	( void ) state;
+	FLUX_REC_BEGIN();
+	FluxColItemSnapshot const *col = &snap->u.col_item;
+	ColDraw c = {.t = flux_rec_theme(rc), .col = col, .cell = *bounds, .angle = col_sort_angle(rc, snap, col->sort)};
+	FLUX_REC_END(col_body(b, &c, bounds));
 }
 
 XentDl *flux_colitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	FLUX_REC_BEGIN();
-	ColDraw c = col_draw(rc, snap, &snap->u.col_item, bounds, state);
-	FLUX_REC_END(col_body(b, &c) && col_divider(b, rc, &c) && col_focus(b, &c, state));
+	ColDraw c = {.t = flux_rec_theme(rc), .col = &snap->u.col_item, .cell = *bounds};
+	FLUX_REC_END(col_divider(b, rc, &c) && col_focus(b, &c, state));
 }
 
 XentDl *flux_colheader_record(
@@ -152,14 +144,18 @@ XentDl *flux_colheader_overlay_record(
 	FluxColHeaderSnapshot const *h = &snap->u.col_header;
 	if (!h->ghost) return NULL;
 	FLUX_REC_BEGIN();
-	FluxRect         cell  = {bounds->x + h->ghost_x, bounds->y, h->ghost_w, bounds->h};
-	FluxControlState press = {.pressed = 1, .enabled = 1};
-	ColDraw          c     = col_draw(rc, snap, &h->item, &cell, &press);
-	c.angle                = h->item.sort == XTK_SORT_DESCENDING ? -180.0f : 0.0f;
+	FluxRect cell   = {bounds->x + h->ghost_x, bounds->y, h->ghost_w, bounds->h};
+	FluxRect button = col_button(&cell);
+	ColDraw  c      = {
+	  .t     = flux_rec_theme(rc),
+	  .col   = &h->item,
+	  .cell  = cell,
+	  .angle = h->item.sort == XTK_SORT_DESCENDING ? -180.0f : 0.0f,
+	};
 	FLUX_REC_END(
 	  xent_dl_pushopacity(b, FLUX_COL_GHOST_OPACITY)
 	  && flux_rec_fill_rect(b, &cell, c.t->solid_background_secondary)
-	  && col_body(b, &c)
+	  && col_body(b, &c, &button)
 	  && col_divider(b, rc, &c)
 	  && xent_dl_popopacity(b)
 	);

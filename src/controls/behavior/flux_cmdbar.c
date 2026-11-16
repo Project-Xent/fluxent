@@ -412,6 +412,7 @@ static bool place_parts(FluxCmdBarData *b, float width) {
 	bool  ch   = false;
 	xent_seth(b->ctx, b->node, b->closed_h);
 	ch |= place(b->ctx, b->root, (FluxRect) {0.0f, b->shift, width, b->visible_h});
+	( void ) flux_node_lift(b->store, b->node, b->open || b->animating);
 	ch |= place(b->ctx, b->primary, (FluxRect) {px, 0.0f, pw, b->content_h});
 	ch |= place(
 	  b->ctx, b->more, (FluxRect) {width - FLUX_CMDBAR_MORE_W, 0.0f, b->more_shown ? FLUX_CMDBAR_MORE_W : 0.0f, mh}

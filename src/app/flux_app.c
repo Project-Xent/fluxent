@@ -23,6 +23,7 @@
 #include "a11y/flux_uia.h"
 #include "graphics/flux_graphics_compose.h"
 #include "render/flux_dl_replay.h"
+#include "render/flux_lift.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -410,8 +411,10 @@ static void app_pointer_move(FluxApp *app, FluxPointerEvent const *ev, bool is_t
 	app_update_cursor_and_tooltip(app, ev->x, ev->y, is_touch);
 }
 
-static bool app_lightdismiss_popups(FluxApp *app) {
+static bool app_lightdismiss_popups(FluxApp *app, FluxPointerEvent const *ev) {
 	if (!flux_popup_lightdismissvisible(flux_app_hwnd(app))) return false;
+	FluxHitResult hit = flux_input_hittest(app->input, app_root(app), ev->x, ev->y);
+	if (flux_lift_within(app_ctx(app), app_store(app), hit.node)) return false;
 	FluxMenu *menu;
 	if (app_active_menu_visible(app, &menu)) flux_menu_dismissall(menu);
 	flux_popup_dismissowner(flux_app_hwnd(app));
@@ -420,12 +423,12 @@ static bool app_lightdismiss_popups(FluxApp *app) {
 
 static void app_pointer_down(FluxApp *app, FluxPointerEvent const *ev) {
 	if (app->tooltip) flux_tooltip_dismiss(app->tooltip);
-	if (app_lightdismiss_popups(app)) return;
+	if (app_lightdismiss_popups(app, ev)) return;
 	flux_input_dispatch(app->input, app_root(app), ev);
 }
 
 static void app_pointer_wheel(FluxApp *app, FluxPointerEvent const *ev) {
-	if (app_lightdismiss_popups(app)) return;
+	if (app_lightdismiss_popups(app, ev)) return;
 	flux_input_dispatch(app->input, app_root(app), ev);
 }
 
@@ -440,12 +443,18 @@ static void app_pointer_default(FluxApp *app, FluxPointerEvent const *ev) {
 	flux_input_dispatch(app->input, app_root(app), ev);
 }
 
+static void app_pointer_leave(FluxApp *app, FluxPointerEvent const *ev) {
+	if (app->tooltip) flux_tooltip_dismiss(app->tooltip);
+	flux_input_dispatch(app->input, app_root(app), ev);
+}
+
 static void app_pointer_route(FluxApp *app, FluxPointerEvent const *ev, bool is_touch) {
 	switch (ev->kind) {
 	case FLUX_POINTER_MOVE         : app_pointer_move(app, ev, is_touch); break;
 	case FLUX_POINTER_DOWN         : app_pointer_down(app, ev); break;
 	case FLUX_POINTER_WHEEL        : app_pointer_wheel(app, ev); break;
 	case FLUX_POINTER_HITTEST      : app_pointer_hittest(app, ev); break;
+	case FLUX_POINTER_LEAVE        : app_pointer_leave(app, ev); break;
 	case FLUX_POINTER_UP           :
 	case FLUX_POINTER_HOLD         :
 	case FLUX_POINTER_CONTEXT_MENU :

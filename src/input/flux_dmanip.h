@@ -23,6 +23,8 @@ void                              flux_dmanip_viewport_destroy(FluxDManipViewpor
 void                              flux_dmanip_vp_setrect(FluxDManipViewport *vp, int x, int y, int w, int h);
 
 void                              flux_dmanip_vp_setsize(FluxDManipViewport *vp, int w, int h);
+/* Pans only along axes whose content exceeds the viewport; ignored mid-manipulation. */
+void                              flux_dmanip_vp_setaxes(FluxDManipViewport *vp, bool x, bool y);
 
 void                              flux_dmanip_vp_setdpi(FluxDManipViewport *vp, float scale);
 

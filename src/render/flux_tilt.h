@@ -5,9 +5,6 @@
 
 typedef struct FluxWindow FluxWindow;
 
-/* WinUI's PointerDownThemeAnimation / PointerUpThemeAnimation on one node: press snaps to the tilt and
-   depression for the pressed point, release eases back after a hold. The owner calls flux_tilt_stop before
-   freeing the struct. */
 typedef struct FluxTilt {
 	FluxStore    *store;
 	FluxWindow   *window;

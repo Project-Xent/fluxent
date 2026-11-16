@@ -68,9 +68,14 @@ struct FluxInput {
 	XentNodeId         modal_root;
 	void               (*modal_escape)(void *ctx);
 	void              *modal_escape_ctx;
+
+	FluxPoint          press_point;
+	void               (*drag_start)(void *ctx, XentNodeId source);
+	void              *drag_ctx;
 };
 
 void flux_input_setwindow(FluxInput *input, struct FluxWindow *window);
+void flux_input_ondragstart(FluxInput *input, void (*fn)(void *ctx, XentNodeId source), void *ctx);
 
 void input_blur_focused(FluxInput *input);
 void input_clear_node_hover(FluxNodeData *nd);

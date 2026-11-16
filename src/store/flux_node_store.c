@@ -96,7 +96,11 @@ static void node_data_destroy_component(FluxNodeData *d) {
 	if (!d) return;
 
 	flux_str_free(d->tooltip_text);
+	flux_str_free(d->drag_text);
+	flux_str_free(d->drag_files);
 	d->tooltip_text = NULL;
+	d->drag_text    = NULL;
+	d->drag_files   = NULL;
 	node_data_clear_display_list(d);
 
 	if (!d->component_data) return;

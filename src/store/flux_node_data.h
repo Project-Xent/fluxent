@@ -80,13 +80,14 @@ typedef struct FluxNodeData {
 	float            hover_local_y;
 
 	char const      *tooltip_text;
+	uint8_t          drop_operation;
+	char const      *drag_text;
+	char const      *drag_files;
 
 	float            render_scale;
 	float            render_opacity;
 	float            render_translate_x;
 	float            render_translate_y;
-	/* PlaneProjection RotationX / RotationY in degrees about the node center, seen from 999 DIPs (WinUI's
-	   projection camera). Applied after render_scale. */
 	float            render_rotate_x;
 	float            render_rotate_y;
 	bool             render_clip_subtree;
@@ -102,10 +103,6 @@ typedef struct FluxStore FluxStore;
 FluxNodeData            *flux_store_find(FluxStore *store, XentNodeId id);
 FluxNodeData            *flux_store_ensure(FluxStore *store, XentNodeId id);
 
-/* A lifted subtree paints above every unlifted node of its layer (the root's child holding it), in lift
-   order, and is hit-tested before them. It keeps ancestor scroll offsets and translations; ancestor clips,
-   scale and opacity do not apply, and neither ancestor bounds nor its own bounds limit where its descendants
-   are hit. Lifting a layer or the root has no effect. Returns false only when the lift could not be recorded. */
 bool                     flux_node_lift(FluxStore *store, XentNodeId node, bool lifted);
 bool                     flux_node_lifted(FluxStore const *store, XentNodeId node);
 uint32_t                 flux_store_nlifted(FluxStore const *store);

@@ -317,6 +317,21 @@ void flux_prop_node_tooltip(FluxStore *store, XentNodeId id, char const *text) {
 	flux_str_replace(&nd->tooltip_text, text);
 }
 
+void flux_prop_node_drop(FluxStore *store, XentNodeId id, uint32_t operation) {
+	FluxNodeData *nd = flux_store_ensure(store, id);
+	if (nd && operation <= XTK_DROP_LINK) nd->drop_operation = ( uint8_t ) operation;
+}
+
+void flux_prop_node_dragtext(FluxStore *store, XentNodeId id, char const *text) {
+	FluxNodeData *nd = flux_store_ensure(store, id);
+	if (nd) flux_str_replace(&nd->drag_text, text && *text ? text : NULL);
+}
+
+void flux_prop_node_dragfiles(FluxStore *store, XentNodeId id, char const *paths) {
+	FluxNodeData *nd = flux_store_ensure(store, id);
+	if (nd) flux_str_replace(&nd->drag_files, paths && *paths ? paths : NULL);
+}
+
 void flux_prop_password_content(FluxStore *store, XentNodeId id, char const *content) {
 	FluxTextBoxInputData *tb = text_input_data(store, id, FLUX_CONTROL_PASSWORD_BOX);
 	if (tb) tb_replace_text(tb, content);

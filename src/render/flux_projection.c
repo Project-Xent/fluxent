@@ -53,8 +53,6 @@ static void mat4_mul(float const a [16], float const b [16], float out [16]) {
 			  = a [r * 4] * b [c] + a [r * 4 + 1] * b [4 + c] + a [r * 4 + 2] * b [8 + c] + a [r * 4 + 3] * b [12 + c];
 }
 
-/* Row-vector convention (D2D): x right, y down, z toward the viewer. RotationX > 0 sends the bottom edge
-   away, RotationY > 0 brings the right edge closer; X is applied before Y, as in PlaneProjection. */
 static void projection_matrix(float rotate_x, float rotate_y, float out [16]) {
 	float b       = rotate_x * 3.14159265f / 180.0f;
 	float a       = rotate_y * 3.14159265f / 180.0f;

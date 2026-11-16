@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
 #ifdef _MSC_VER
   #define strdup _strdup
@@ -60,6 +61,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_CAT_SHELL]       = {XTK_NAV_ITEM,      "GlobalNavButton", "Layout & shell"   },
   [PAGE_SPLIT_VIEW]      = {XTK_NAV_CHILD,     NULL,              "SplitView"        },
   [PAGE_TITLE_BAR]       = {XTK_NAV_CHILD,     NULL,              "TitleBar"         },
+  [PAGE_DRAG_DROP]       = {XTK_NAV_CHILD,     NULL,              "Drag and drop"    },
   [PAGE_CAT_DIALOGS]     = {XTK_NAV_ITEM,      "Flag",            "Dialogs & flyouts"},
   [PAGE_DIALOG]          = {XTK_NAV_CHILD,     NULL,              "ContentDialog"    },
   [PAGE_TEACHING_TIP]    = {XTK_NAV_CHILD,     NULL,              "TeachingTip"      },
@@ -110,7 +112,11 @@ void gallery_model_init(Model *m) {
 	m->check_state                                                        = XTK_CHECK_INDETERMINATE;
 	m->slider_vert                                                        = 40.0f;
 	for (int i = 0; i < DET_COLS; i++) m->det_order [i] = i;
-	m->cb_last         = -1;
+	m->cb_last = -1;
+	m->dd_done = -1;
+	wchar_t exe [512];
+	DWORD   n = GetModuleFileNameW(NULL, exe, 512);
+	if (n && n < 512) WideCharToMultiByte(CP_UTF8, 0, exe, -1, m->dd_exe, sizeof(m->dd_exe), NULL, NULL);
 	m->det_width [0]   = 260.0f;
 	m->det_width [1]   = 200.0f;
 	m->det_width [2]   = 160.0f;
@@ -475,6 +481,16 @@ static void msg_combo_submit(Model *m, XtkMsg msg) {
 	m->combo_submit = msg.ptr ? strdup(( char const * ) msg.ptr) : NULL;
 }
 
+static void msg_dd_hover(Model *m, XtkMsg msg) { m->dd_hover = msg.b; }
+
+static void msg_dd_drop(Model *m, XtkMsg msg) {
+	free(m->dd_drop);
+	m->dd_drop  = msg.ptr ? strdup(( char const * ) msg.ptr) : NULL;
+	m->dd_files = msg.tag == MSG_DD_FILES;
+}
+
+static void               msg_dd_done(Model *m, XtkMsg msg) { m->dd_done = msg.i; }
+
 static GalleryMsgFn const k_msg_fn [] = {
   [MSG_NAV]                = msg_nav,
   [MSG_CLICK]              = msg_click,
@@ -564,10 +580,30 @@ static GalleryMsgFn const k_msg_fn [] = {
   [MSG_SLIDER_RANGE]       = msg_slider_range,
   [MSG_COMBO_EDIT]         = msg_combo_edit,
   [MSG_COMBO_SUBMIT]       = msg_combo_submit,
+  [MSG_DD_HOVER]           = msg_dd_hover,
+  [MSG_DD_FILES]           = msg_dd_drop,
+  [MSG_DD_TEXT]            = msg_dd_drop,
+  [MSG_DD_DONE]            = msg_dd_done,
 };
 
 void gallery_model_update(Model *m, XtkMsg msg) {
 	if (( unsigned ) msg.tag >= sizeof(k_msg_fn) / sizeof(k_msg_fn [0])) return;
 	GalleryMsgFn fn = k_msg_fn [msg.tag];
 	if (fn) fn(m, msg);
+}
+
+char const *gallery_dd_prompt(Model const *m) {
+	return m->dd_hover ? "Release to drop." : "Drag files from Explorer or text from another app onto this card.";
+}
+
+char const *gallery_dd_result(Model const *m) {
+	if (!m->dd_drop) return "Nothing dropped yet.";
+	return m->dd_drop;
+}
+
+char const *gallery_dd_completed(Model const *m) {
+	static char const *const lines []
+	  = {"Last drag was cancelled.", "Last drag was copied.", "Last drag was moved.", "Last drag was linked."};
+	if (m->dd_done < 0 || m->dd_done > 3) return "Drag a card into Explorer, another app, or the target above.";
+	return lines [m->dd_done];
 }

@@ -86,7 +86,14 @@ static bool          hit_node_interactive(XentCtx *ctx, XentNodeId node, FluxNod
 	if (xent_get_focusable(ctx, node)) return true;
 	if (!nd) return false;
 	FluxNodeBehavior const *b = &nd->behavior;
-	return b->on_click || b->on_pointer_down || b->on_middle_click || b->on_hover_changed || nd->tooltip_text;
+	return b->on_click
+	    || b->on_pointer_down
+	    || b->on_middle_click
+	    || b->on_hover_changed
+	    || nd->tooltip_text
+	    || nd->drop_operation
+	    || nd->drag_text
+	    || nd->drag_files;
 }
 
 static FluxHitResult hit_test_lifted(InputHitQuery const *query, XentNodeId layer) {
@@ -557,6 +564,38 @@ void flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent con
 	}
 }
 
+static XentNodeId input_drag_source(FluxInput const *input, XentNodeId node) {
+	for (; node != XENT_NODE_INVALID; node = xent_node_parent(input->ctx, node)) {
+		FluxNodeData const *nd = flux_store_find(input->store, node);
+		if (nd && (nd->drag_text || nd->drag_files)) return node;
+	}
+	return XENT_NODE_INVALID;
+}
+
+static bool input_past_drag_threshold(FluxInput const *input, float px, float py) {
+	float dx = fabsf(px - input->press_point.x);
+	float dy = fabsf(py - input->press_point.y);
+	return dx > ( float ) GetSystemMetricsForDpi(SM_CXDRAG, USER_DEFAULT_SCREEN_DPI)
+	    || dy > ( float ) GetSystemMetricsForDpi(SM_CYDRAG, USER_DEFAULT_SCREEN_DPI);
+}
+
+static bool input_try_drag(FluxInput *input, float px, float py) {
+	if (!input->drag_start || input->pressed == XENT_NODE_INVALID || input->pointer_type == FLUX_POINTER_TOUCH)
+		return false;
+	if (!input_past_drag_threshold(input, px, py)) return false;
+	XentNodeId source = input_drag_source(input, input->pressed);
+	if (source == XENT_NODE_INVALID) return false;
+	input_cancel_pressed(input);
+	input->drag_start(input->drag_ctx, source);
+	return true;
+}
+
+void flux_input_ondragstart(FluxInput *input, void (*fn)(void *ctx, XentNodeId source), void *ctx) {
+	if (!input) return;
+	input->drag_start = fn;
+	input->drag_ctx   = ctx;
+}
+
 static void fi_pointer_move(FluxInput *input, XentNodeId root, float px, float py) {
 	if (!input || root == XENT_NODE_INVALID) return;
 
@@ -567,6 +606,7 @@ static void fi_pointer_move(FluxInput *input, XentNodeId root, float px, float p
 	flux_scroll_update_hover(input, hit.node, px, py);
 	if (input_drive_refresh_pull(input, px, py)) return;
 	if (input_drive_touch_pan(input, px, py)) return;
+	if (input_try_drag(input, px, py)) return;
 
 	FluxHitResult target = input_resolve_interactive(input, &hit);
 	input_update_hover_from_hit(input, &target);
@@ -576,7 +616,8 @@ static void fi_pointer_move(FluxInput *input, XentNodeId root, float px, float p
 static void fi_pointer_down(FluxInput *input, XentNodeId root, float px, float py) {
 	if (!input || root == XENT_NODE_INVALID) return;
 
-	FluxHitResult hit = input_hit_test_root(input, root, px, py);
+	FluxHitResult hit  = input_hit_test_root(input, root, px, py);
+	input->press_point = (FluxPoint) {px, py};
 
 	if (input_press_scroll_overlay(input, &hit, px, py)) return;
 	if (input_press_number_box_spin(input, &hit)) return;

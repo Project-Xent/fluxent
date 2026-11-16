@@ -185,6 +185,9 @@ HANDLER(prop_wrap) {
 }
 
 SETTER(prop_tooltip, flux_prop_node_tooltip, str_or_empty(v))
+SETTER(prop_drop, flux_prop_node_drop, v->u.u32)
+SETTER(prop_dragtext, flux_prop_node_dragtext, str_or_empty(v))
+SETTER(prop_dragfiles, flux_prop_node_dragfiles, str_or_empty(v))
 
 SETTER(button_label, flux_prop_button_label, str_or_empty(v))
 SETTER(button_icon, flux_prop_button_icon, str_or_empty(v))
@@ -1400,6 +1403,9 @@ static FluxPropHandler const core_props [] = {
   ON(FIT_HEIGHT, BOOL, prop_fit_height),
   ON(WRAP, ENUM, prop_wrap),
   ON(TOOLTIP, STRING, prop_tooltip),
+  ON(DROP_OPERATION, ENUM, prop_drop),
+  ON(DRAG_TEXT, STRING, prop_dragtext),
+  ON(DRAG_FILES, STRING, prop_dragfiles),
   ON(TEXT, STRING, prop_none),
   ON(ICON, STRING, prop_none),
   ON(ENABLED, BOOL, prop_none),

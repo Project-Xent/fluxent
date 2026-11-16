@@ -135,8 +135,6 @@ static void viewport_status_changed(
 	InvalidateRect(vp->dm->hwnd, NULL, FALSE);
 }
 
-/* DManip may report READY before the content update that lands the overpan bounce at rest; the status
-   handler republishes the final transform so the offset never stays overpanned. */
 static HRESULT STDMETHODCALLTYPE handler_OnContentUpdated(
   IDirectManipulationViewportEventHandler *This, IDirectManipulationViewport *viewport,
   IDirectManipulationContent *content

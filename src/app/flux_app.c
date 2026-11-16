@@ -14,6 +14,7 @@
 #include "fluxent/flux_popup.h"
 #include "fluxent/flux_tooltip.h"
 #include "app/flux_scene.h"
+#include "shell/flux_dragdrop.h"
 #include "runtime/flux_time.h"
 #include "app/flux_post.h"
 #include "input/flux_dmanip_sync.h"
@@ -44,6 +45,7 @@ struct FluxApp {
 	FluxWindow              *window;
 	FluxEngine              *engine;
 	FluxInput               *input;
+	FluxDragDrop            *dragdrop;
 	FluxText                *text;
 	FluxRenderCache         *cache;
 	FluxTheme               *theme;
@@ -551,6 +553,8 @@ static void app_cleanup_dmanip_tree(FluxApp *app) {
 }
 
 static void app_destroy_scene_runtime(FluxApp *app) {
+	flux_dragdrop_destroy(app->dragdrop);
+	app->dragdrop = NULL;
 	if (app->engine) flux_engine_destroy(app->engine);
 	if (app->input) flux_input_destroy(app->input);
 	if (app->text) flux_text_destroy(app->text);
@@ -574,6 +578,10 @@ static bool app_bind_scene_runtime(FluxApp *app) {
 	if (app->engine) flux_engine_bind(app->engine, app->xtk_backend);
 	app->input = flux_input_create(ctx, store);
 	flux_input_setwindow(app->input, app->window);
+	if (app->input) {
+		FluxDragDropEnv env = {app, app->window, app->input, store, app_root(app)};
+		app->dragdrop       = flux_dragdrop_create(&env);
+	}
 	app->text = flux_text_create();
 	if (app->text) flux_text_register(app->text, ctx);
 
@@ -693,6 +701,7 @@ static void app_destroy_render_state(FluxApp *app) {
 }
 
 static void app_destroy_input_state(FluxApp *app) {
+	flux_dragdrop_destroy(app->dragdrop);
 	if (app->tooltip) flux_tooltip_destroy(app->tooltip);
 	if (app->input) flux_input_destroy(app->input);
 }

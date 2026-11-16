@@ -353,6 +353,7 @@ static PageBuildFn const k_pages [PAGE_COUNT] = {
   [PAGE_PULL_REFRESH]    = page_pull_refresh_build,
   [PAGE_SPLIT_VIEW]      = page_split_view_build,
   [PAGE_TITLE_BAR]       = page_title_bar_build,
+  [PAGE_DRAG_DROP]       = page_drag_drop_build,
   [PAGE_DIALOG]          = page_dialog_build,
   [PAGE_TEACHING_TIP]    = page_teaching_tip_build,
   [PAGE_SETTINGS]        = page_settings_build,

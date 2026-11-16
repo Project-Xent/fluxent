@@ -87,6 +87,7 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_PAGER]           = page_pager,
   [PAGE_SPLIT_VIEW]      = page_split_view,
   [PAGE_TITLE_BAR]       = page_title_bar,
+  [PAGE_DRAG_DROP]       = page_drag_drop,
   [PAGE_MENUS]           = page_menus,
   [PAGE_COMMANDBAR]      = page_commandbar,
   [PAGE_TABVIEW]         = page_tabview,

@@ -58,6 +58,7 @@ enum
 	PAGE_CAT_SHELL,
 	PAGE_SPLIT_VIEW,
 	PAGE_TITLE_BAR,
+	PAGE_DRAG_DROP,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
 	PAGE_TEACHING_TIP,
@@ -158,6 +159,10 @@ enum
 	MSG_CB_OPEN,
 	MSG_CB_FAV,
 	MSG_CB_BOLD,
+	MSG_DD_HOVER,
+	MSG_DD_FILES,
+	MSG_DD_TEXT,
+	MSG_DD_DONE,
 	MSG_COUNT,
 };
 
@@ -256,12 +261,21 @@ typedef struct Model {
 	bool     cb_open;
 	bool     cb_fav;
 	bool     cb_bold;
+	bool     dd_hover;
+	bool     dd_files;
+	char    *dd_drop;
+	int      dd_done;
+	char     dd_exe [1024];
 } Model;
 
 void                     gallery_model_init(Model *m);
 
 extern char const *const kDetHeaders [DET_COLS];
 extern char const *const kCbCommands [CB_COUNT];
+
+char const              *gallery_dd_prompt(Model const *m);
+char const              *gallery_dd_result(Model const *m);
+char const              *gallery_dd_completed(Model const *m);
 char const              *gallery_det_cell(int row, int col);
 void                     gallery_det_rows(Model const *m, int out [DET_ROWS]);
 float                    gallery_det_fit(int col);

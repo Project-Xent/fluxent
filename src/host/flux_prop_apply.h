@@ -144,5 +144,8 @@ void flux_prop_image_source(FluxStore *store, XentNodeId id, char const *source)
 void flux_prop_image_stretch(FluxStore *store, XentNodeId id, FluxImageStretch stretch);
 
 void flux_prop_node_tooltip(FluxStore *store, XentNodeId id, char const *text);
+void flux_prop_node_drop(FluxStore *store, XentNodeId id, uint32_t operation);
+void flux_prop_node_dragtext(FluxStore *store, XentNodeId id, char const *text);
+void flux_prop_node_dragfiles(FluxStore *store, XentNodeId id, char const *paths);
 
 #endif

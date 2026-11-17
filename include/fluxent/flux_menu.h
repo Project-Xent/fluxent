@@ -112,6 +112,7 @@ bool      flux_menu_visible(FluxMenu const *menu);
 
 bool      flux_menu_onkey(FluxMenu *menu, FluxKey key);
 
+/** Borrows `ctx` until this callback is replaced or the menu is destroyed. */
 void      flux_menu_ondismiss(FluxMenu *menu, FluxPopupDismissFn cb, void *ctx);
 
 FluxMenu *flux_menu_submenu(FluxMenu *menu);

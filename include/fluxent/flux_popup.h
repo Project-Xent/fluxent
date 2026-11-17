@@ -65,12 +65,15 @@ void                    flux_popup_setsize(FluxPopup *popup, float width, float 
 void                    flux_popup_setdismissoutside(FluxPopup *popup, bool dismiss);
 
 typedef void            (*FluxPopupDismissFn)(void *ctx);
+/** Borrows `ctx` until this callback is replaced or the popup is destroyed. */
 void                    flux_popup_ondismiss(FluxPopup *popup, FluxPopupDismissFn cb, void *ctx);
 
 typedef void            (*FluxPopupPaintFn)(void *ctx, FluxPopup *popup);
+/** Borrows `ctx` until this callback is replaced or the popup is destroyed. */
 void                    flux_popup_onpaint(FluxPopup *popup, FluxPopupPaintFn cb, void *ctx);
 
 typedef XentDl         *(*FluxPopupRecordFn)(void *ctx, FluxPopup const *popup);
+/** Borrows `ctx` and `text` until this callback is replaced or the popup is destroyed. */
 void                    flux_popup_onrecord(FluxPopup *popup, FluxPopupRecordFn cb, void *ctx, FluxText *text);
 
 typedef enum FluxPopupMouseEvent
@@ -83,6 +86,7 @@ typedef enum FluxPopupMouseEvent
 } FluxPopupMouseEvent;
 
 typedef void (*FluxPopupMouseFn)(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y);
+/** Borrows `ctx` until this callback is replaced or the popup is destroyed. */
 void         flux_popup_onmouse(FluxPopup *popup, FluxPopupMouseFn cb, void *ctx);
 
 FluxGfx     *flux_popup_gfx(FluxPopup *popup);

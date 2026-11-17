@@ -55,6 +55,7 @@ void                               flux_gfx_redraw(FluxGfx *gfx);
 
 typedef void                       (*FluxRedrawFn)(void *ctx);
 
+/** Borrows `ctx` until this callback is replaced or the gfx object is destroyed. */
 void                               flux_gfx_onredraw(FluxGfx *gfx, FluxRedrawFn cb, void *ctx);
 
 bool                               flux_gfx_current(FluxGfx const *gfx);

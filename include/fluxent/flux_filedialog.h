@@ -29,8 +29,10 @@ typedef struct FluxFileDialogDesc {
 	bool                  multiple;
 } FluxFileDialogDesc;
 
+/** malloc'd UTF-8, one path per line. NULL if cancelled. The caller frees it. */
 char         *flux_filedialog_show(FluxApp *app, FluxFileDialogDesc const *desc);
 
+/** Copies the strings in `desc`. The caller may free them. The chosen paths are posted as one UTF-8 path per line. */
 XtkPostStatus flux_filedialog_post(FluxApp *app, FluxFileDialogDesc const *desc, XtkMsg reply);
 
 #endif

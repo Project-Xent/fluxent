@@ -65,6 +65,7 @@ XentNodeId              flux_app_overlay(FluxApp *app);
 
 void                    flux_app_redraw(FluxApp *app);
 
+/** Borrows `ctx` until this callback is replaced or the app is destroyed. */
 void                    flux_app_onframe(FluxApp *app, void (*cb)(void *ctx), void *ctx);
 
 FluxGfx                *flux_app_gfx(FluxApp *app);
@@ -73,8 +74,10 @@ FluxMenu               *flux_app_menu(FluxApp *app);
 
 HWND                    flux_app_hwnd(FluxApp *app);
 
+/** Borrows `ctx` until `fn` runs on the window thread. */
 bool                    flux_app_invoke(FluxApp *app, void (*fn)(void *ctx), void *ctx);
 XtkPostStatus           flux_app_post(FluxApp *app, XtkMsg msg);
+/** Copies `data` and delivers it on the window thread. The caller may free `data`. `len > 0` with NULL `data` is rejected. */
 XtkPostStatus           flux_app_poststring(FluxApp *app, XtkMsg msg, char const *data, uint32_t len);
 
 XtkRt                  *flux_app_createruntime(FluxApp *app, void *model, XtkUpdateFn update, XtkViewFn view);

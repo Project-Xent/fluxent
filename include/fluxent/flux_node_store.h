@@ -26,6 +26,7 @@ void                        flux_store_del(FluxStore *store, XentNodeId id);
 
 typedef void                (*FluxNodeRemovedFn)(void *userdata, XentNodeId id);
 
+/** Borrows `userdata` until this callback is replaced or the store is destroyed. */
 void                        flux_store_ondel(FluxStore *store, FluxNodeRemovedFn fn, void *userdata);
 
 void                        flux_store_sethost(FluxStore *store, XtkHost *host);

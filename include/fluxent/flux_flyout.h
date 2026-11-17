@@ -31,8 +31,10 @@ void                       flux_flyout_setthememanager(FluxFlyout *flyout, FluxT
 
 void                       flux_flyout_setsize(FluxFlyout *flyout, float width, float height);
 
+/** Borrows `user_ctx` until this callback is replaced or the flyout is destroyed. */
 void                       flux_flyout_onpaint(FluxFlyout *flyout, FluxFlyoutPaintFn cb, void *user_ctx);
 
+/** Borrows `user_ctx` until this callback is replaced or the flyout is destroyed. */
 void                       flux_flyout_ondismiss(FluxFlyout *flyout, FluxPopupDismissFn cb, void *user_ctx);
 
 void                       flux_flyout_show(FluxFlyout *flyout, FluxRect anchor, FluxPlacement placement);

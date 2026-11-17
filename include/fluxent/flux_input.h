@@ -60,6 +60,7 @@ void                      flux_input_setfocus(FluxInput *input, XentNodeId node,
 
 void                      flux_input_dropnode(FluxInput *input, XentNodeId node);
 
+/** Borrows `ctx` until this callback is replaced or the input object is destroyed. */
 void flux_input_setmodal(FluxInput *input, XentNodeId root, void (*on_escape)(void *ctx), void *ctx);
 
 #endif

@@ -42,16 +42,26 @@ FluxSize               flux_window_size(FluxWindow const *win);
 FluxDpi                flux_window_dpi(FluxWindow const *win);
 FluxGfx               *flux_window_gfx(FluxWindow *win);
 
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onrender(FluxWindow *win, FluxRenderFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onresize(FluxWindow *win, FluxResizeFn cb, void *ctx);
+/** Borrows `ctx` until `flux_window_delresizeobs` or the window is destroyed. */
 void                   flux_window_addresizeobs(FluxWindow *win, FluxResizeFn cb, void *ctx);
 void                   flux_window_delresizeobs(FluxWindow *win, FluxResizeFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_ondpi(FluxWindow *win, FluxDpiChangedFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onpointer(FluxWindow *win, FluxPointerFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onkey(FluxWindow *win, FluxKeyFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onchar(FluxWindow *win, FluxCharFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onime(FluxWindow *win, FluxImeCompositionFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onsettings(FluxWindow *win, FluxSettingChangedFn cb, void *ctx);
+/** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onuia(FluxWindow *win, FluxUiaProviderFn cb, void *ctx);
 
 void                   flux_window_setbackdrop(FluxWindow *win, int backdrop_type);
@@ -61,6 +71,7 @@ void                   flux_window_settitle(FluxWindow *win, wchar_t const *titl
 
 #define FLUX_WINDOW_MAX_TITLE_BAR_PASS 8
 
+/** Copies `passthrough`. The caller may free it. */
 void      flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *passthrough, int count);
 
 void      flux_window_extendtitlebar(FluxWindow *win, bool enabled);

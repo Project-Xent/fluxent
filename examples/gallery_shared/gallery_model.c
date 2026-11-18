@@ -1,8 +1,40 @@
 #include "gallery_model.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+
+/* --- backdrop persistence -------------------------------------------------
+ * The Materials page remembers the last chosen system backdrop across runs, so
+ * restarting the gallery does not silently fall back to the FluxAppCfg default.
+ */
+#define GALLERY_SETTINGS_FILE "fluxent-gallery.ini"
+
+static char const *settings_path(char *buf, size_t cap) {
+	char const *base = getenv("LOCALAPPDATA");
+	if (!base || !base [0]) base = ".";
+	snprintf(buf, cap, "%s\\%s", base, GALLERY_SETTINGS_FILE);
+	return buf;
+}
+
+int gallery_backdrop_load(void) {
+	char  path [MAX_PATH];
+	FILE *f = fopen(settings_path(path, sizeof(path)), "rb");
+	if (!f) return 1;
+	int v = 1;
+	if (fscanf(f, "backdrop=%d", &v) != 1) v = 1;
+	fclose(f);
+	return (v >= 0 && v <= 3) ? v : 1;
+}
+
+void gallery_backdrop_save(int v) {
+	char  path [MAX_PATH];
+	FILE *f = fopen(settings_path(path, sizeof(path)), "wb");
+	if (!f) return;
+	fprintf(f, "backdrop=%d\n", v);
+	fclose(f);
+}
 
 #ifdef _MSC_VER
   #define strdup _strdup
@@ -62,6 +94,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_SPLIT_VIEW]      = {XTK_NAV_CHILD,     NULL,              "SplitView"        },
   [PAGE_TITLE_BAR]       = {XTK_NAV_CHILD,     NULL,              "TitleBar"         },
   [PAGE_DRAG_DROP]       = {XTK_NAV_CHILD,     NULL,              "Drag and drop"    },
+  [PAGE_MATERIALS]       = {XTK_NAV_CHILD,     NULL,              "Materials"        },
   [PAGE_CAT_DIALOGS]     = {XTK_NAV_ITEM,      "Flag",            "Dialogs & flyouts"},
   [PAGE_DIALOG]          = {XTK_NAV_CHILD,     NULL,              "ContentDialog"    },
   [PAGE_TEACHING_TIP]    = {XTK_NAV_CHILD,     NULL,              "TeachingTip"      },
@@ -71,6 +104,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
 void gallery_model_init(Model *m) {
 	memset(m, 0, sizeof(*m));
 	m->combo_sel    = -1;
+	m->backdrop     = gallery_backdrop_load();
 	m->combo_font   = -1;
 	m->slider_basic = 50.0f;
 	m->scrollbar_v  = 200.0;
@@ -489,7 +523,13 @@ static void msg_dd_drop(Model *m, XtkMsg msg) {
 	m->dd_files = msg.tag == MSG_DD_FILES;
 }
 
-static void               msg_dd_done(Model *m, XtkMsg msg) { m->dd_done = msg.i; }
+static void msg_dd_done(Model *m, XtkMsg msg) { m->dd_done = msg.i; }
+
+static void msg_backdrop(Model *m, XtkMsg msg) {
+	if (msg.i < 0 || msg.i > 3) return;
+	m->backdrop = msg.i;
+	gallery_backdrop_save(msg.i);
+}
 
 static GalleryMsgFn const k_msg_fn [] = {
   [MSG_NAV]                = msg_nav,
@@ -584,6 +624,7 @@ static GalleryMsgFn const k_msg_fn [] = {
   [MSG_DD_FILES]           = msg_dd_drop,
   [MSG_DD_TEXT]            = msg_dd_drop,
   [MSG_DD_DONE]            = msg_dd_done,
+  [MSG_BACKDROP]           = msg_backdrop,
 };
 
 void gallery_model_update(Model *m, XtkMsg msg) {

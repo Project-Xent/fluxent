@@ -59,6 +59,7 @@ enum
 	PAGE_SPLIT_VIEW,
 	PAGE_TITLE_BAR,
 	PAGE_DRAG_DROP,
+	PAGE_MATERIALS,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
 	PAGE_TEACHING_TIP,
@@ -67,6 +68,10 @@ enum
 };
 
 extern XtkNavItemDesc const kNavItems [PAGE_COUNT];
+
+/* Backdrop persistence, shared by both galleries. */
+int                         gallery_backdrop_load(void);
+void                        gallery_backdrop_save(int backdrop);
 
 enum
 {
@@ -163,6 +168,7 @@ enum
 	MSG_DD_FILES,
 	MSG_DD_TEXT,
 	MSG_DD_DONE,
+	MSG_BACKDROP,
 	MSG_COUNT,
 };
 
@@ -173,6 +179,7 @@ enum
 
 typedef struct Model {
 	int      page;
+	int      backdrop;
 	int      clicks;
 	bool     button_disabled;
 	bool     check_a;

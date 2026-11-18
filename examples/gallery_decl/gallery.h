@@ -46,6 +46,8 @@ XtkEl *page_pager(XtkUi *ui, Model const *m);
 XtkEl *page_split_view(XtkUi *ui, Model const *m);
 XtkEl *page_title_bar(XtkUi *ui, Model const *m);
 XtkEl *page_drag_drop(XtkUi *ui, Model const *m);
+XtkEl *page_materials(XtkUi *ui, Model const *m);
+
 XtkEl *page_menus(XtkUi *ui, Model const *m);
 XtkEl *page_tabview(XtkUi *ui, Model const *m);
 XtkEl *page_expander(XtkUi *ui, Model const *m);

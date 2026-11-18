@@ -185,6 +185,7 @@ bool       page_pull_refresh_build(PageBuild *b);
 bool       page_split_view_build(PageBuild *b);
 bool       page_title_bar_build(PageBuild *b);
 bool       page_drag_drop_build(PageBuild *b);
+bool       page_materials_build(PageBuild *b);
 bool       page_dialog_build(PageBuild *b);
 bool       page_teaching_tip_build(PageBuild *b);
 bool       page_settings_build(PageBuild *b);

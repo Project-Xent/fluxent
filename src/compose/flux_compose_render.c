@@ -2,12 +2,10 @@
   #define COBJMACROS
 #endif
 
-#include "compose/flux_compose_anim.h"
 #include "store/flux_node_data.h"
 #include "compose/flux_compose_render.h"
-#include "compose/flux_effect.h"
-#include "compose/flux_shape.h"
 #include "compose/flux_surface.h"
+#include "render/flux_engine.h"
 #include "compose/flux_visual_tree.h"
 #include "compose/flux_interaction.h"
 
@@ -16,7 +14,6 @@
 #include "fluxent/flux_control_type.h"
 #include "render/flux_engine.h"
 #include "fluxent/flux_node_store.h"
-#include "render/flux_render_snapshot.h"
 #include "render/flux_display_paint.h"
 #include "render/flux_render_internal.h"
 
@@ -29,79 +26,114 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FLUX_ACRYLIC_BLUR_RADIUS    30.0f
-#define FLUX_ACRYLIC_TINT_OPACITY   0.72f
-
-#define FLUX_COMPOSE_INLINE_ACRYLIC 0
-
 typedef struct ContentNode {
-	XentNodeId                 owner;
-	WUC_Sprite                *sprite;
-	WUC_Visual                *visual;
-	FluxSurface               *surface;
-	FluxShapeRect             *acrylic;
-	FluxShapeRect             *fill;
-	WUC_CompositionColorBrush *fill_brush;
-	FluxColor                  fill_color;
-	bool                       fill_set;
-	FluxInteraction           *tracker;
-	bool                       scroll_bound;
-	int                        w;
-	int                        h;
-	uint32_t                   seen;
-	bool                       in_use;
+	XentNodeId       owner;
+	FluxInteraction *tracker;
+	bool             scroll_bound;
+	uint32_t         seen;
+	bool             in_use;
 } ContentNode;
 
 struct FluxComposeRender {
 	FluxCompositor                *c;
 	WUC_Comp                      *comp;
 	WUC_CompositionGraphicsDevice *gdev;
-	XtkBackend                    *backend;
+	FluxEngine                    *engine;
 	FluxVisualTree                *vt;
-	FluxAnimKit                   *anim;
+	WUC_Visual                    *root;
 	ContentNode                   *nodes;
 	uint32_t                       cap;
 	uint32_t                       generation;
+
+	/* One drawing surface for the whole window, painted in absolute coordinates once per frame.
+	 * Per-node surfaces put every control in a shared atlas whose origin the compositor relocates
+	 * at will (observed: up to 16 different origins for one surface, differing by a pixel), so any
+	 * repaint could land the same pixels one pixel off. A single surface has one origin per frame,
+	 * which is what makes the Direct2D path stable. */
+	FluxSurface                   *frame;
+	WUC_Sprite                    *frame_sprite;
+	WUC_Visual                    *frame_visual;
+	ID2D1DeviceContext            *frame_dc;
+	ID2D1SolidColorBrush          *frame_brush;
+	FluxRenderCtx                  frame_rc;
+	int                            frame_w;
+	int                            frame_h;
 };
 
 FluxComposeRender *flux_compose_render_create(
-  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, XtkBackend *backend
+  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, FluxEngine *engine
 ) {
 	if (!c || !gdev || !root) return NULL;
 	FluxComposeRender *r = ( FluxComposeRender * ) calloc(1, sizeof(*r));
 	if (!r) return NULL;
-	r->c       = c;
-	r->comp    = flux_compositor_comp(c);
-	r->gdev    = gdev;
-	r->backend = backend;
-	r->vt      = flux_visual_tree_create(c, root);
+	r->c      = c;
+	r->comp   = flux_compositor_comp(c);
+	r->gdev   = gdev;
+	r->engine = engine;
+	r->root   = root;
+	r->vt     = flux_visual_tree_create(c, root);
 	if (!r->vt) {
 		free(r);
 		return NULL;
 	}
-	r->anim = flux_anim_kit_create(c);
 	return r;
+}
+
+static void frame_attach(WUC_Container *container, WUC_Visual *visual) {
+	WUC_VisualCollection *children = NULL;
+	if (FAILED(wuc_container_get__children(container, &children))) return;
+	/* On top: the frame surface carries every node's content, so it has to sit above the
+	 * per-node decorative visuals (fills, acrylic). Inserting it at the bottom hid the whole
+	 * interface behind those opaque layers. */
+	( void ) wuc_visual_collection_insert_at_top(children, visual);
+	(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
+}
+
+/* Make sure the single frame surface matches the window size and attach its brush to a sprite
+ * under the root visual. */
+static bool frame_ensure(FluxComposeRender *r, int w, int h) {
+	WUC_Visual *root = r->root;
+	if (!r->frame) {
+		r->frame = flux_surface_create(r->c, r->gdev, w, h);
+		if (!r->frame) return false;
+		if (FAILED(wuc_comp_create_sprite_visual(r->comp, &r->frame_sprite))) return false;
+		r->frame_visual = flux_compose_as_visual(r->frame_sprite);
+		if (!r->frame_visual) return false;
+		WUC_CompositionSurfaceBrush *surface_brush = flux_surface_brush(r->frame);
+		if (surface_brush) {
+			WUC_Brush *brush = NULL;
+			if (SUCCEEDED(cwinrt_query(surface_brush, &CWINRT_IID_WUC_ICompositionBrush, ( void ** ) &brush))) {
+				( void ) wuc_sprite_put__brush(r->frame_sprite, brush);
+				(( IUnknown * ) brush)->lpVtbl->Release(( IUnknown * ) brush);
+			}
+		}
+		/* A Visual is not a Container: query the container interface first, otherwise the call
+		 * lands on the wrong vtable slot. */
+		WUC_Container *container = NULL;
+		if (SUCCEEDED(cwinrt_query(root, &CWINRT_IID_WUC_IContainerVisual, ( void ** ) &container))) {
+			frame_attach(container, r->frame_visual);
+			(( IUnknown * ) container)->lpVtbl->Release(( IUnknown * ) container);
+		}
+		r->frame_w = w;
+		r->frame_h = h;
+	}
+	else if (r->frame_w != w || r->frame_h != h) {
+		if (FAILED(flux_surface_resize(r->frame, w, h))) return false;
+		r->frame_w = w;
+		r->frame_h = h;
+	}
+
+	WFN_Vector_2 size = {( float ) w, ( float ) h};
+	( void ) wuc_visual_put__size(r->frame_visual, size);
+	return true;
 }
 
 static void content_release(ContentNode *cn) {
 	if (cn->tracker) flux_interaction_destroy(cn->tracker);
 	cn->tracker      = NULL;
 	cn->scroll_bound = false;
-	if (cn->visual) (( IUnknown * ) cn->visual)->lpVtbl->Release(( IUnknown * ) cn->visual);
-	if (cn->sprite) (( IUnknown * ) cn->sprite)->lpVtbl->Release(( IUnknown * ) cn->sprite);
-	if (cn->fill_brush) (( IUnknown * ) cn->fill_brush)->lpVtbl->Release(( IUnknown * ) cn->fill_brush);
-	flux_surface_destroy(cn->surface);
-	flux_shape_rect_destroy(cn->acrylic);
-	flux_shape_rect_destroy(cn->fill);
-	cn->visual     = NULL;
-	cn->sprite     = NULL;
-	cn->fill       = NULL;
-	cn->fill_brush = NULL;
-	cn->surface    = NULL;
-	cn->acrylic    = NULL;
-	cn->fill_set   = false;
-	cn->in_use     = false;
-	cn->owner      = XENT_NODE_INVALID;
+	cn->in_use       = false;
+	cn->owner        = XENT_NODE_INVALID;
 }
 
 void flux_compose_render_destroy(FluxComposeRender *r) {
@@ -109,7 +141,10 @@ void flux_compose_render_destroy(FluxComposeRender *r) {
 	for (uint32_t i = 0; i < r->cap; i++)
 		if (r->nodes [i].in_use) content_release(&r->nodes [i]);
 	free(r->nodes);
-	flux_anim_kit_destroy(r->anim);
+	if (r->frame_brush) ID2D1SolidColorBrush_Release(r->frame_brush);
+	if (r->frame_visual) (( IUnknown * ) r->frame_visual)->lpVtbl->Release(( IUnknown * ) r->frame_visual);
+	if (r->frame_sprite) (( IUnknown * ) r->frame_sprite)->lpVtbl->Release(( IUnknown * ) r->frame_sprite);
+	flux_surface_destroy(r->frame);
 	flux_visual_tree_destroy(r->vt);
 	free(r);
 }
@@ -146,196 +181,14 @@ static ContentNode *content_owned(FluxComposeRender *r, XentNodeId node) {
 	return (cn->in_use && cn->owner == node) ? cn : NULL;
 }
 
-static void content_attach(WUC_Container *container, WUC_Visual *sprite_visual) {
-	WUC_VisualCollection *children = NULL;
-	if (FAILED(wuc_container_get__children(container, &children))) return;
-	( void ) wuc_visual_collection_insert_at_bottom(children, sprite_visual);
-	(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
-}
-
-static bool
-content_create(FluxComposeRender *r, ContentNode *cn, XentNodeId node, WUC_Container *container, int w, int h) {
-	cn->surface = flux_surface_create(r->c, r->gdev, w, h);
-	if (!cn->surface) return false;
-	if (FAILED(wuc_comp_create_sprite_visual(r->comp, &cn->sprite))) {
-		flux_surface_destroy(cn->surface);
-		cn->surface = NULL;
-		return false;
-	}
-	cn->visual = flux_compose_as_visual(cn->sprite);
-	if (!cn->visual) {
-		(( IUnknown * ) cn->sprite)->lpVtbl->Release(( IUnknown * ) cn->sprite);
-		cn->sprite = NULL;
-		flux_surface_destroy(cn->surface);
-		cn->surface = NULL;
-		return false;
-	}
-	WUC_Brush *brush = NULL;
-	if (SUCCEEDED(cwinrt_query(flux_surface_brush(cn->surface), &CWINRT_IID_WUC_ICompositionBrush, ( void ** ) &brush)))
-	{
-		( void ) wuc_sprite_put__brush(cn->sprite, brush);
-		(( IUnknown * ) brush)->lpVtbl->Release(( IUnknown * ) brush);
-	}
-	content_attach(container, cn->visual);
+/* A node owns no visual of its own any more - its pixels live in the single frame surface. The
+ * slot only tracks lifetime, so scroll trackers and fills are released when the node disappears. */
+static bool content_ensure(FluxComposeRender *r, XentNodeId node) {
+	ContentNode *cn = content_slot(r, node);
+	if (!cn) return false;
 	cn->owner  = node;
 	cn->in_use = true;
 	return true;
-}
-
-static bool content_ensure(FluxComposeRender *r, XentNodeId node, WUC_Container *container, int w, int h) {
-	ContentNode *cn = content_slot(r, node);
-	if (!cn) return false;
-	if (cn->in_use && cn->w == w && cn->h == h) return true;
-	if (!cn->in_use && !content_create(r, cn, node, container, w, h)) return false;
-	if (cn->in_use && (cn->w != w || cn->h != h)) ( void ) flux_surface_resize(cn->surface, w, h);
-
-	WFN_Vector_2 size = {( float ) w, ( float ) h};
-	( void ) wuc_visual_put__size(cn->visual, size);
-	cn->w = w;
-	cn->h = h;
-	return true;
-}
-
-static bool node_is_acrylic(FluxStore *store, XentNodeId node) {
-	switch (flux_node_type(store, node)) {
-	case FLUX_CONTROL_CARD        :
-	case FLUX_CONTROL_FLYOUT      :
-	case FLUX_CONTROL_MENU_FLYOUT :
-	case FLUX_CONTROL_TOOLTIP     : return true;
-	default                       : return false;
-	}
-}
-
-static FluxColor acrylic_tint(FluxColor fill) {
-	uint32_t  a = ( uint32_t ) ((fill.rgba & 0xffu) * FLUX_ACRYLIC_TINT_OPACITY + 0.5f);
-	FluxColor t = {(fill.rgba & 0xffffff00u) | (a & 0xffu)};
-	return t;
-}
-
-static void
-acrylic_ensure(FluxComposeRender *r, XentNodeId node, WUC_Container *container, int w, int h, float radius) {
-	ContentNode *cn = content_owned(r, node);
-	if (!cn) return;
-	if (cn->acrylic) {
-		flux_shape_setsize(cn->acrylic, ( float ) w, ( float ) h);
-		flux_shape_setradius(cn->acrylic, radius);
-		return;
-	}
-
-	cn->acrylic = flux_shape_rect_create(r->c, ( float ) w, ( float ) h, radius);
-	if (!cn->acrylic) return;
-
-	WUC_Brush *blur = flux_effect_backdrop_blur(r->c, FLUX_ACRYLIC_BLUR_RADIUS);
-	if (blur) {
-		flux_shape_setfillbrush(cn->acrylic, blur);
-		(( IUnknown * ) blur)->lpVtbl->Release(( IUnknown * ) blur);
-	}
-
-	WUC_VisualCollection *children = NULL;
-	if (SUCCEEDED(wuc_container_get__children(container, &children))) {
-		( void ) wuc_visual_collection_insert_at_bottom(children, flux_shape_rect_visual(cn->acrylic));
-		(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
-	}
-}
-
-static void acrylic_release(FluxComposeRender *r, XentNodeId node) {
-	ContentNode *cn = content_owned(r, node);
-	if (!cn || !cn->acrylic) return;
-	flux_shape_rect_destroy(cn->acrylic);
-	cn->acrylic = NULL;
-}
-
-static FluxControlState content_state(XentCtx *ctx, XentNodeId node, FluxNodeData const *nd) {
-	FluxControlState s = {0};
-	s.enabled          = xent_sem_enabled(ctx, node);
-	if (!nd) return s;
-	s.hovered      = nd->state.hovered;
-	s.pressed      = nd->state.pressed;
-	s.focused      = nd->state.focused && !nd->state.suppress_focus;
-	s.pointer_type = nd->state.pointer_type;
-	return s;
-}
-
-static void content_paint(
-  FluxComposeRender *r, FluxStore *store, XentNodeId node, XentRect const *rect, FluxRenderCtx const *rc_tmpl,
-  FluxNodeData const *nd, FluxRenderSnap *snap, FluxFillSink *out_sink
-) {
-	ContentNode *cn = content_owned(r, node);
-	if (!cn || !cn->surface) return;
-	POINT               offset;
-	ID2D1DeviceContext *dc = flux_surface_begin(cn->surface, &offset);
-	if (!dc) return;
-
-	float dpi_x = rc_tmpl->dpi.dpi_x > 0.0f ? rc_tmpl->dpi.dpi_x : FLUX_DPI_BASE;
-	float dpi_y = rc_tmpl->dpi.dpi_y > 0.0f ? rc_tmpl->dpi.dpi_y : FLUX_DPI_BASE;
-	float scale = dpi_x / FLUX_DPI_BASE;
-	ID2D1DeviceContext_SetDpi(dc, dpi_x, dpi_y);
-
-	ID2D1SolidColorBrush *brush = NULL;
-	D2D1_COLOR_F          black = {0, 0, 0, 1};
-	ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) dc, &black, NULL, &brush);
-
-	ID2D1RenderTarget_Clear(( ID2D1RenderTarget * ) dc, NULL);
-
-	FluxRenderCtx rc        = *rc_tmpl;
-	rc.d2d                  = dc;
-	rc.brush                = brush;
-	rc.fill_sink            = out_sink;
-
-	FluxControlState state  = content_state(flux_store_ctx(store), node, nd);
-	FluxRect         bounds = {offset.x / scale, offset.y / scale, rect->w, rect->h};
-
-	flux_display_paint_main(store, r->backend, &rc, snap, &bounds, &state);
-	flux_display_paint_overlay(r->backend, &rc, snap, &bounds, &state);
-
-	if (brush) ID2D1SolidColorBrush_Release(brush);
-	flux_surface_end(cn->surface);
-}
-
-static WUI_Color content_wui_color(FluxColor c) {
-	WUI_Color out;
-	out.A = ( uint8_t ) (c.rgba & 0xffu);
-	out.R = ( uint8_t ) ((c.rgba >> 24) & 0xffu);
-	out.G = ( uint8_t ) ((c.rgba >> 16) & 0xffu);
-	out.B = ( uint8_t ) ((c.rgba >> 8) & 0xffu);
-	return out;
-}
-
-static void
-content_fill_ensure(FluxComposeRender *r, ContentNode *cn, WUC_Container *container, int w, int h, float radius) {
-	if (cn->fill) return;
-
-	cn->fill = flux_shape_rect_create(r->c, ( float ) w, ( float ) h, radius);
-	if (!cn->fill) return;
-	if (SUCCEEDED(wuc_comp_create_color_brush(r->comp, &cn->fill_brush)))
-		flux_shape_setfillbrush(cn->fill, ( WUC_Brush * ) cn->fill_brush);
-
-	WUC_VisualCollection *children = NULL;
-	if (SUCCEEDED(wuc_container_get__children(container, &children))) {
-		( void ) wuc_visual_collection_insert_at_bottom(children, flux_shape_rect_visual(cn->fill));
-		(( IUnknown * ) children)->lpVtbl->Release(( IUnknown * ) children);
-	}
-}
-
-static void content_fill_apply(
-  FluxComposeRender *r, XentNodeId node, WUC_Container *container, int w, int h, FluxFillSink const *sink
-) {
-	ContentNode *cn = content_owned(r, node);
-	if (!cn || !sink->written) return;
-
-	content_fill_ensure(r, cn, container, w, h, sink->corner_radius);
-	if (!cn->fill || !cn->fill_brush) return;
-
-	flux_shape_setsize(cn->fill, ( float ) w, ( float ) h);
-	flux_shape_setradius(cn->fill, sink->corner_radius);
-
-	if (cn->fill_set && cn->fill_color.rgba == sink->color.rgba) return;
-	cn->fill_color = sink->color;
-	cn->fill_set   = true;
-
-	if (r->anim && SUCCEEDED(flux_anim_color(r->anim, cn->fill_brush, L"Color", sink->color, 0.15, FLUX_EASE_STANDARD)))
-		return;
-	( void ) wuc_composition_color_brush_put__color(cn->fill_brush, content_wui_color(sink->color));
 }
 
 static void content_create_tracker(FluxComposeRender *r, ContentNode *cn, XentNodeId node) {
@@ -409,37 +262,17 @@ static void content_sweep(FluxComposeRender *r) {
 		if (r->nodes [i].in_use && r->nodes [i].seen != r->generation) content_release(&r->nodes [i]);
 }
 
-static void compose_measure_scroll(XentCtx const *ctx, FluxStore *store, XentNodeId node) {
-	FluxNodeData *nd = flux_store_find(store, node);
-	if (nd && nd->component_type == FLUX_CONTROL_SCROLL) flux_scroll_measure(ctx, node, nd->component_data);
-}
-
 static void compose_render_node(
   FluxComposeRender *r, XentCtx *ctx, FluxStore *store, XentNodeId node, float scale, FluxRenderCtx const *rc_tmpl
 ) {
 	XentRect rect = {0};
 	xent_layout_rect(ctx, node, &rect);
-	compose_measure_scroll(ctx, store, node);
+
 	int            w         = ( int ) ceilf(rect.w * scale);
 	int            h         = ( int ) ceilf(rect.h * scale);
 	WUC_Container *container = flux_vtree_visual(r->vt, node);
-	if (!container || w < 1 || h < 1 || !render_reserve(r, node) || !content_ensure(r, node, container, w, h)) return;
+	if (!container || w < 1 || h < 1 || !render_reserve(r, node) || !content_ensure(r, node)) return;
 
-	FluxNodeData const *nd = flux_store_find(store, node);
-	FluxRenderSnap      snap;
-	memset(&snap, 0, sizeof(snap));
-	flux_snapshot_build(&snap, ctx, node, nd);
-
-	if (FLUX_COMPOSE_INLINE_ACRYLIC && node_is_acrylic(store, node)) {
-		acrylic_ensure(r, node, container, w, h, snap.corner_radius * scale);
-		snap.background = acrylic_tint(snap.background);
-	}
-	else { acrylic_release(r, node); }
-
-	FluxFillSink sink = {0};
-	content_paint(r, store, node, &rect, rc_tmpl, nd, &snap, &sink);
-	sink.corner_radius *= scale;
-	content_fill_apply(r, node, container, w, h, &sink);
 	if (flux_node_type(store, node) == FLUX_CONTROL_SCROLL)
 		content_scroll_sync(r, store, node, &rect, scale, rc_tmpl->animations_active);
 	ContentNode *cn = content_owned(r, node);
@@ -466,7 +299,7 @@ static bool compose_push_children(XentNodeId **stack, uint32_t *top, uint32_t *c
 }
 
 void flux_compose_render_frame(
-  FluxComposeRender *r, XentCtx *ctx, FluxStore *store, XentNodeId root, FluxRenderCtx const *rc_tmpl
+  FluxComposeRender *r, XentCtx *ctx, FluxStore *store, XentNodeId root, FluxRenderCtx const *rc_tmpl, FluxColor clear
 ) {
 	if (!r || !ctx || root == XENT_NODE_INVALID) return;
 
@@ -474,6 +307,46 @@ void flux_compose_render_frame(
 
 	flux_visual_tree_reconcile(r->vt, ctx, store, root, scale);
 	r->generation++;
+
+	XentRect root_rect = {0};
+	xent_layout_rect(ctx, root, &root_rect);
+	int fw = ( int ) ceilf(root_rect.w * scale);
+	int fh = ( int ) ceilf(root_rect.h * scale);
+	if (fw < 1 || fh < 1) return;
+
+	if (!frame_ensure(r, fw, fh)) return;
+
+	POINT offset = {0, 0};
+	if (!(r->frame_dc = flux_surface_begin(r->frame, &offset))) return;
+
+	float dpi_x = rc_tmpl && rc_tmpl->dpi.dpi_x > 0.0f ? rc_tmpl->dpi.dpi_x : FLUX_DPI_BASE;
+	float dpi_y = rc_tmpl && rc_tmpl->dpi.dpi_y > 0.0f ? rc_tmpl->dpi.dpi_y : FLUX_DPI_BASE;
+	ID2D1DeviceContext_SetDpi(r->frame_dc, dpi_x, dpi_y);
+
+	/* One origin for the whole frame, applied once. Every node then draws in absolute DIPs. */
+	D2D1_MATRIX_3X2_F base = {1.0f, 0.0f, 0.0f, 1.0f, offset.x / scale, offset.y / scale};
+	ID2D1RenderTarget_SetTransform(( ID2D1RenderTarget * ) r->frame_dc, &base);
+	/* Same rule as the Direct2D path (app_clear_color): transparent when a DWM material is active,
+	 * the theme's solid background otherwise. Clearing to transparent unconditionally made the whole
+	 * window see-through once the backdrop was set to none. */
+	D2D1_COLOR_F bg = {flux_color_rf(clear), flux_color_gf(clear), flux_color_bf(clear), flux_color_af(clear)};
+	ID2D1RenderTarget_Clear(( ID2D1RenderTarget * ) r->frame_dc, &bg);
+
+	if (!r->frame_brush) {
+		D2D1_COLOR_F black = {0, 0, 0, 1};
+		ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) r->frame_dc, &black, NULL, &r->frame_brush);
+	}
+	if (rc_tmpl) {
+		r->frame_rc       = *rc_tmpl;
+		r->frame_rc.d2d   = r->frame_dc;
+		r->frame_rc.brush = r->frame_brush;
+	}
+
+	/* Pixels come from the engine's command list, exactly as on the Direct2D path: it carries the
+	 * per-node transform pushes, scroll clips and child clipping. Painting nodes here by hand lost
+	 * all of that, which is why scrolling did not move and flyouts overlapped. */
+	flux_engine_collect(r->engine, ctx, root);
+	flux_engine_execute(r->engine, &r->frame_rc);
 
 	uint32_t    cap   = 64;
 	uint32_t    top   = 0;
@@ -489,5 +362,9 @@ void flux_compose_render_frame(
 
 done:
 	free(stack);
+	if (r->frame_dc) {
+		flux_surface_end(r->frame);
+		r->frame_dc = NULL;
+	}
 	content_sweep(r);
 }

@@ -6,17 +6,18 @@
 
 typedef struct FluxRenderCtx     FluxRenderCtx;
 typedef struct XtkBackend        XtkBackend;
+typedef struct FluxEngine        FluxEngine;
 
 typedef struct FluxComposeRender FluxComposeRender;
 
 FluxComposeRender               *flux_compose_render_create(
-  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, XtkBackend *backend
+  FluxCompositor *c, WUC_CompositionGraphicsDevice *gdev, WUC_Visual *root, FluxEngine *engine
 );
 
 void flux_compose_render_destroy(FluxComposeRender *r);
 
 void flux_compose_render_frame(
-  FluxComposeRender *r, XentCtx *ctx, FluxStore *store, XentNodeId root, FluxRenderCtx const *rc_tmpl
+  FluxComposeRender *r, XentCtx *ctx, FluxStore *store, XentNodeId root, FluxRenderCtx const *rc_tmpl, FluxColor clear
 );
 
 bool flux_compose_redirect_scroll(FluxComposeRender *r, XentNodeId node, uint32_t pointer_id);

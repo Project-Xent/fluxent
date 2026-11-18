@@ -283,7 +283,7 @@ static void app_ensure_compose(FluxApp *app, FluxGfx *gfx) {
 	FluxCompositor                *c    = flux_graphics_compositor(gfx);
 	WUC_CompositionGraphicsDevice *gdev = flux_graphics_graphics_device(gfx);
 	WUC_Visual                    *root = flux_graphics_composition_root(gfx);
-	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root, app->xtk_backend);
+	if (c && gdev && root) app->compose = flux_compose_render_create(c, gdev, root, app->engine);
 }
 
 static void app_render_composition(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
@@ -303,7 +303,7 @@ static void app_render_composition(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	app_sync_tooltip_theme(app, &rc);
 	if (app->tooltip) app_sync_auto_tooltip(app);
 
-	flux_compose_render_frame(app->compose, app_ctx(app), app_store(app), app_root(app), &rc);
+	flux_compose_render_frame(app->compose, app_ctx(app), app_store(app), app_root(app), &rc, app_clear_color(app));
 
 	if (anims_active) flux_app_redraw(app);
 	if (next_redraw > 0.0) flux_window_redraw_after(app->window, next_redraw);

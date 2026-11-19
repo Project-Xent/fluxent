@@ -1,38 +1,34 @@
 #include "gallery_model.h"
 
+#include <fluxent/flux_window.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 #include <windows.h>
 
-/* --- backdrop persistence -------------------------------------------------
- * The Materials page remembers the last chosen system backdrop across runs, so
- * restarting the gallery does not silently fall back to the FluxAppCfg default.
- */
-#define GALLERY_SETTINGS_FILE "fluxent-gallery.ini"
-
-static char const *settings_path(char *buf, size_t cap) {
-	char const *base = getenv("LOCALAPPDATA");
-	if (!base || !base [0]) base = ".";
-	snprintf(buf, cap, "%s\\%s", base, GALLERY_SETTINGS_FILE);
-	return buf;
+static bool settings_path(wchar_t *buf, size_t cap) {
+	wchar_t const *base = _wgetenv(L"LOCALAPPDATA");
+	return base && base [0] && swprintf(buf, cap, L"%ls\\fluxent-gallery.ini", base) > 0;
 }
 
 int gallery_backdrop_load(void) {
-	char  path [MAX_PATH];
-	FILE *f = fopen(settings_path(path, sizeof(path)), "rb");
-	if (!f) return 1;
-	int v = 1;
-	if (fscanf(f, "backdrop=%d", &v) != 1) v = 1;
+	wchar_t path [MAX_PATH];
+	FILE   *f = settings_path(path, MAX_PATH) ? _wfopen(path, L"rb") : NULL;
+	int     v = 1;
+	if (!f) return v;
+	if (fscanf(f, "backdrop=%d", &v) != 1 || v < 0 || v > 3) v = 1;
 	fclose(f);
-	return (v >= 0 && v <= 3) ? v : 1;
+	return v;
 }
 
-void gallery_backdrop_save(int v) {
-	char  path [MAX_PATH];
-	FILE *f = fopen(settings_path(path, sizeof(path)), "wb");
+void gallery_backdrop_apply(FluxWindow *win, int backdrop) {
+	if (win) flux_window_setbackdrop(win, backdrop);
+	wchar_t path [MAX_PATH];
+	FILE   *f = settings_path(path, MAX_PATH) ? _wfopen(path, L"wb") : NULL;
 	if (!f) return;
-	fprintf(f, "backdrop=%d\n", v);
+	fprintf(f, "backdrop=%d\n", backdrop);
 	fclose(f);
 }
 
@@ -104,7 +100,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
 void gallery_model_init(Model *m) {
 	memset(m, 0, sizeof(*m));
 	m->combo_sel    = -1;
-	m->backdrop     = gallery_backdrop_load();
+	m->backdrop     = 1;
 	m->combo_font   = -1;
 	m->slider_basic = 50.0f;
 	m->scrollbar_v  = 200.0;
@@ -528,7 +524,6 @@ static void msg_dd_done(Model *m, XtkMsg msg) { m->dd_done = msg.i; }
 static void msg_backdrop(Model *m, XtkMsg msg) {
 	if (msg.i < 0 || msg.i > 3) return;
 	m->backdrop = msg.i;
-	gallery_backdrop_save(msg.i);
 }
 
 static GalleryMsgFn const k_msg_fn [] = {

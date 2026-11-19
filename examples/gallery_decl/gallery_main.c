@@ -4,7 +4,6 @@
 
 #include <windows.h>
 
-/* The window is only reachable from FluxAppCfg.on_start, so keep it here. */
 static FluxWindow *g_window;
 
 static void        gallery_on_start(FluxApp *app, void *user) {
@@ -14,8 +13,8 @@ static void        gallery_on_start(FluxApp *app, void *user) {
 
 void gallery_decl_update(void *model, XtkMsg msg) {
 	Model *m = ( Model * ) model;
-	if (msg.tag == MSG_BACKDROP && g_window) flux_window_setbackdrop(g_window, msg.i);
 	gallery_model_update(m, msg);
+	if (msg.tag == MSG_BACKDROP) gallery_backdrop_apply(g_window, m->backdrop);
 }
 
 typedef XtkEl *(*GalleryPageFn)(XtkUi *ui, Model const *m);
@@ -174,6 +173,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	flux_controls_all();
 	Model model;
 	gallery_model_init(&model);
+	model.backdrop = gallery_backdrop_load();
 
 	FluxAppCfg cfg = {
 	  .title    = L"FluXent Gallery (Declarative)",

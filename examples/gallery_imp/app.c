@@ -135,11 +135,7 @@ static void dispatch(GalleryApp *g, XtkMsg msg) {
 	flux_app_redraw(g->flux);
 }
 
-void gallery_post(GalleryApp *g, XtkMsg msg) {
-	/* Window-level side effect, applied immediately rather than on the next frame. */
-	if (msg.tag == MSG_BACKDROP && g->flux) flux_window_setbackdrop(flux_app_window(g->flux), msg.i);
-	dispatch(g, msg);
-}
+void     gallery_post(GalleryApp *g, XtkMsg msg) { dispatch(g, msg); }
 
 uint32_t page_post(void *arg, XtkEvent const *event) {
 	GalleryBind *bind = ( GalleryBind * ) arg;
@@ -467,6 +463,7 @@ static void flush(void *ctx) {
 		GalleryPending *pending = g->pending_head;
 		g->pending_head         = pending->next;
 		gallery_model_update(&g->model, pending->msg);
+		if (pending->msg.tag == MSG_BACKDROP) gallery_backdrop_apply(flux_app_window(g->flux), g->model.backdrop);
 		free(pending->owned);
 		free(pending);
 	}
@@ -509,7 +506,8 @@ static bool shell_build(GalleryApp *g) {
 bool gallery_app_create(GalleryApp *g) {
 	memset(g, 0, sizeof(*g));
 	gallery_model_init(&g->model);
-	g->flux = flux_app_create(&(FluxAppCfg) {
+	g->model.backdrop = gallery_backdrop_load();
+	g->flux           = flux_app_create(&(FluxAppCfg) {
 	  .title    = L"FluXent Gallery (Imperative)",
 	  .width    = 1100,
 	  .height   = 760,

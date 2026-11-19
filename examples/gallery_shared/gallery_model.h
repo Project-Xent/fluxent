@@ -69,9 +69,9 @@ enum
 
 extern XtkNavItemDesc const kNavItems [PAGE_COUNT];
 
-/* Backdrop persistence, shared by both galleries. */
+typedef struct FluxWindow   FluxWindow;
 int                         gallery_backdrop_load(void);
-void                        gallery_backdrop_save(int backdrop);
+void                        gallery_backdrop_apply(FluxWindow *win, int backdrop);
 
 enum
 {

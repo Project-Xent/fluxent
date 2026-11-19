@@ -67,9 +67,6 @@ XentDl *flux_pickercard_record(
 XentDl *flux_teachtip_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
-XentDl *flux_dialog_record(
-  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
-);
 XentDl *flux_flip_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );

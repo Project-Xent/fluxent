@@ -263,7 +263,8 @@ static bool
 reconcile_push_children(ReconcileFrame **stack, uint32_t *top, uint32_t *cap, XentCtx *ctx, XentNodeId parent) {
 	for (XentNodeId child = xent_node_first(ctx, parent); child != XENT_NODE_INVALID;
 	  child               = xent_node_next(ctx, child))
-		if (!reconcile_stack_push(stack, top, cap, (ReconcileFrame) {child, parent})) return false;
+		if (!xent_collapsed(ctx, child) && !reconcile_stack_push(stack, top, cap, (ReconcileFrame) {child, parent}))
+			return false;
 	return true;
 }
 

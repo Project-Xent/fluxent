@@ -90,11 +90,8 @@ static void sync_node(DManipSyncContext const *sync, XentNodeId node, float ax_d
 
 	sync_scroll_node(sync, &state);
 
-	XentNodeId c = xent_node_first(sync->ctx, node);
-	while (c != XENT_NODE_INVALID) {
-		sync_node(sync, c, state.child_ax, state.child_ay);
-		c = xent_node_next(sync->ctx, c);
-	}
+	for (XentNodeId c = xent_node_first(sync->ctx, node); c != XENT_NODE_INVALID; c = xent_node_next(sync->ctx, c))
+		if (!xent_collapsed(sync->ctx, c)) sync_node(sync, c, state.child_ax, state.child_ay);
 }
 
 void flux_dmanip_sync_tree(FluxDManip *dmanip, XentCtx *ctx, FluxStore *store, XentNodeId root, float scale) {

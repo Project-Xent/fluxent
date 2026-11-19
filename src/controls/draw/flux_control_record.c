@@ -261,16 +261,6 @@ XentDl *flux_teachtip_record(
 	return flux_container_record(rc, snap, bounds, state);
 }
 
-XentDl *flux_dialog_record(
-  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
-) {
-	( void ) rc;
-	( void ) snap;
-	( void ) state;
-	FLUX_REC_BEGIN();
-	FLUX_REC_END(flux_rec_fill_rect(b, bounds, flux_color_rgba(0, 0, 0, 0x4d)));
-}
-
 XentDl *flux_flip_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {

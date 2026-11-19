@@ -2,6 +2,15 @@
 
 Entries start at 0.3.1; earlier releases are described by their tags.
 
+## 0.3.4 (unreleased)
+
+- a ContentDialog's control node now stays where the app put it, collapsed,
+  and the dialog is drawn by a separate layer on the overlay that collapses
+  while closed. Closing a dialog used to detach the control node from its
+  parent, so inserting or moving a sibling before it failed the transaction
+  with `XTK_BATCH_ERR_VALIDATION`. Rendering, hit testing, tab order,
+  DirectManipulation and UI Automation skip collapsed subtrees.
+
 ## 0.3.3
 
 - made every control a `FluxControlModule` (`fluxent/flux_controls.h`). A

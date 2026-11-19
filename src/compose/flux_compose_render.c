@@ -293,7 +293,7 @@ static bool compose_stack_push(XentNodeId **stack, uint32_t *top, uint32_t *cap,
 static bool compose_push_children(XentNodeId **stack, uint32_t *top, uint32_t *cap, XentCtx *ctx, XentNodeId parent) {
 	for (XentNodeId child = xent_node_first(ctx, parent); child != XENT_NODE_INVALID;
 	  child               = xent_node_next(ctx, child))
-		if (!compose_stack_push(stack, top, cap, child)) return false;
+		if (!xent_collapsed(ctx, child) && !compose_stack_push(stack, top, cap, child)) return false;
 	return true;
 }
 

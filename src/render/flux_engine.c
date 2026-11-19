@@ -231,6 +231,7 @@ collect_visit_child(FluxEngine *eng, CollectFrame **stack, uint32_t *stack_top, 
 
 	XentNodeId child     = frame->current_child;
 	frame->current_child = xent_node_next(ctx, child);
+	if (xent_collapsed(ctx, child)) return true;
 	if (frame->node != eng->root && flux_node_lifted(eng->store, child)) return true;
 	if (!collect_child_visible(ctx, frame, child)) return true;
 

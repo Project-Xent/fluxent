@@ -381,23 +381,38 @@ static IRawElementProviderFragment *uia_navigate_thumb(FluxUia *self, enum Navig
 	}
 }
 
+static XentNodeId uia_skip(XentCtx const *ctx, XentNodeId n, XentNodeId (*step)(XentCtx const *, XentNodeId)) {
+	while (n != XENT_NODE_INVALID && xent_collapsed(ctx, n)) n = step(ctx, n);
+	return n;
+}
+
+static XentNodeId uia_next(XentCtx const *ctx, XentNodeId n) {
+	return uia_skip(ctx, xent_node_next(ctx, n), xent_node_next);
+}
+
+static XentNodeId uia_prev(XentCtx const *ctx, XentNodeId n) {
+	return uia_skip(ctx, xent_node_prev(ctx, n), xent_node_prev);
+}
+
 static XentNodeId uia_nav_if_not_root(FluxUia *self, XentNodeId (*fn)(XentCtx const *, XentNodeId)) {
 	return self->node == self->info.root ? XENT_NODE_INVALID : fn(self->info.ctx, self->node);
 }
 
 static XentNodeId uia_last_child(XentCtx const *ctx, XentNodeId parent) {
 	XentNodeId target = XENT_NODE_INVALID;
-	for (XentNodeId c = xent_node_first(ctx, parent); c != XENT_NODE_INVALID; c = xent_node_next(ctx, c)) target = c;
+	for (XentNodeId c = xent_node_first(ctx, parent); c != XENT_NODE_INVALID; c = xent_node_next(ctx, c))
+		if (!xent_collapsed(ctx, c)) target = c;
 	return target;
 }
 
 static XentNodeId uia_navigate_target(FluxUia *self, enum NavigateDirection dir) {
 	switch (dir) {
 	case NavigateDirection_Parent          : return uia_nav_if_not_root(self, xent_node_parent);
-	case NavigateDirection_NextSibling     : return uia_nav_if_not_root(self, xent_node_next);
-	case NavigateDirection_PreviousSibling : return uia_nav_if_not_root(self, xent_node_prev);
-	case NavigateDirection_FirstChild      : return xent_node_first(self->info.ctx, self->node);
-	case NavigateDirection_LastChild       : return uia_last_child(self->info.ctx, self->node);
+	case NavigateDirection_NextSibling     : return uia_nav_if_not_root(self, uia_next);
+	case NavigateDirection_PreviousSibling : return uia_nav_if_not_root(self, uia_prev);
+	case NavigateDirection_FirstChild :
+		return uia_skip(self->info.ctx, xent_node_first(self->info.ctx, self->node), xent_node_next);
+	case NavigateDirection_LastChild : return uia_last_child(self->info.ctx, self->node);
 	}
 	return XENT_NODE_INVALID;
 }

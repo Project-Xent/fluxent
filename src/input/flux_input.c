@@ -73,10 +73,8 @@ static bool hit_child_list_append(HitChildList *children, XentNodeId child) {
 static HitChildList hit_collect_children(XentCtx *ctx, XentNodeId node) {
 	HitChildList children = {0};
 	XentNodeId   child    = xent_node_first(ctx, node);
-	while (child != XENT_NODE_INVALID) {
-		if (!hit_child_list_append(&children, child)) break;
-		child = xent_node_next(ctx, child);
-	}
+	for (; child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
+		if (!xent_collapsed(ctx, child) && !hit_child_list_append(&children, child)) break;
 	return children;
 }
 

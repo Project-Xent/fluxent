@@ -14,7 +14,7 @@ static bool input_node_is_visible_focusable(XentCtx *ctx, XentNodeId node) {
 }
 
 static void collect_focusable(XentCtx *ctx, XentNodeId node, XentNodeId *out, uint32_t *count, uint32_t max_count) {
-	if (node == XENT_NODE_INVALID || *count >= max_count) return;
+	if (node == XENT_NODE_INVALID || *count >= max_count || xent_collapsed(ctx, node)) return;
 
 	if (input_node_is_visible_focusable(ctx, node)) {
 		out [*count] = node;
@@ -87,7 +87,8 @@ input_collect_focusable_siblings(XentCtx *ctx, XentNodeId parent, XentNodeId *si
 	uint32_t   count = 0;
 	XentNodeId child = xent_node_first(ctx, parent);
 	while (child != XENT_NODE_INVALID && count < max_count) {
-		if (xent_get_focusable(ctx, child) && xent_sem_enabled(ctx, child)) siblings [count++] = child;
+		if (xent_get_focusable(ctx, child) && xent_sem_enabled(ctx, child) && !xent_collapsed(ctx, child))
+			siblings [count++] = child;
 		child = xent_node_next(ctx, child);
 	}
 	return count;

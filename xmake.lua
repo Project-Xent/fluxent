@@ -105,6 +105,9 @@ local function gui_binary(name, dirs)
         end
         if is_plat("windows") then
             add_ldflags("/SUBSYSTEM:WINDOWS", "/OPT:REF", "/OPT:ICF", { force = true })
+            if is_mode("release") then
+                add_ldflags("/NODEFAULTLIB:libucrt.lib", "/DEFAULTLIB:ucrt.lib", { force = true })
+            end
         end
     target_end()
 end

@@ -85,7 +85,7 @@ struct FluxDManip {
 	IDirectManipulationUpdateManager *update_mgr;
 	DWORD                             ui_thread_id;
 	bool                              activated;
-	int                               active_viewports;
+	bool                              tick_changed;
 };
 
 struct FluxDManipViewport {
@@ -111,8 +111,7 @@ static bool viewport_status_active(DIRECTMANIPULATION_STATUS status) {
 
 static void viewport_set_status(struct FluxDManipViewport *vp, DIRECTMANIPULATION_STATUS s) {
 	if (!vp) return;
-	vp->dm->active_viewports += ( int ) viewport_status_active(s) - ( int ) viewport_status_active(vp->status);
-	vp->status                = s;
+	vp->status = s;
 }
 
 static bool dmanip_is_ui_thread(FluxDManipViewport const *vp) {
@@ -125,6 +124,7 @@ static void viewport_publish(struct FluxDManipViewport *vp, IDirectManipulationC
 	if (FAILED(IDirectManipulationContent_GetContentTransform(content, m, 6))) return;
 	float inv = (vp->dpi_scale > 0.0f) ? (1.0f / vp->dpi_scale) : 1.0f;
 	vp->on_updated(vp->on_updated_ctx, -m [4] * inv, -m [5] * inv);
+	vp->dm->tick_changed = true;
 }
 
 static void viewport_status_changed(
@@ -205,8 +205,11 @@ void flux_dmanip_destroy(FluxDManip *dm) {
 
 bool flux_dmanip_tick(FluxDManip *dm) {
 	if (!dm || !dm->update_mgr) return false;
+	dm->tick_changed = false;
 	IDirectManipulationUpdateManager_Update(dm->update_mgr, NULL);
-	return dm->active_viewports > 0;
+	bool changed     = dm->tick_changed;
+	dm->tick_changed = false;
+	return changed;
 }
 
 #define FLUX_DM_CONFIG_PAN                                   \

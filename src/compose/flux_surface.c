@@ -68,9 +68,13 @@ HRESULT flux_surface_resize(FluxSurface *s, int w, int h) {
 ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, POINT *out_offset) {
 	if (!s || !s->interop) return NULL;
 
+	WG_SizeInt32 size = {0, 0};
+	if (FAILED(wuc_composition_drawing_surface_get__size_int32(s->surface, &size))) return NULL;
+
+	RECT    whole  = {0, 0, size.Width, size.Height};
 	POINT   offset = {0, 0};
 	void   *dc     = NULL;
-	HRESULT hr     = s->interop->lpVtbl->BeginDraw(s->interop, NULL, &IID_ID2D1DeviceContext, &dc, &offset);
+	HRESULT hr     = s->interop->lpVtbl->BeginDraw(s->interop, &whole, &IID_ID2D1DeviceContext, &dc, &offset);
 	if (FAILED(hr)) return NULL;
 
 	s->active_dc = ( ID2D1DeviceContext * ) dc;

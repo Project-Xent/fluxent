@@ -85,8 +85,6 @@ struct FluxDManip {
 	IDirectManipulationUpdateManager *update_mgr;
 	DWORD                             ui_thread_id;
 	bool                              activated;
-	/* Set when a viewport actually published a new scroll position. A tick that publishes nothing is
-	 * not a change: reporting one anyway made the frame loop run at 60 Hz while the window was idle. */
 	bool                              tick_changed;
 };
 

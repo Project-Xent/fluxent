@@ -5,7 +5,6 @@
 #include "fluxent/flux_node_store.h"
 
 typedef struct FluxRenderCtx     FluxRenderCtx;
-typedef struct XtkBackend        XtkBackend;
 typedef struct FluxEngine        FluxEngine;
 
 typedef struct FluxComposeRender FluxComposeRender;

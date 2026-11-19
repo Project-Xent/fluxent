@@ -305,10 +305,6 @@ HRESULT flux_gfx_attach(FluxGfx *gfx, HWND hwnd) {
 
 	char env [4]          = {0};
 	gfx->composition_mode = GetEnvironmentVariableA("FLUX_USE_COMPOSITION", env, sizeof(env)) > 0 && env [0] == '1';
-	/* Which renderer is live is not inferable from the outside, and the two paths look alike, so say
-	 * it once on stderr. Redirected to a file this is the first thing a bug report needs. */
-	fprintf(stderr, "fluxent: renderer=%s\n", gfx->composition_mode ? "composition" : "direct2d");
-	fflush(stderr);
 
 	if (!gfx->compositor) {
 		gfx->compositor = flux_compositor_acquire();

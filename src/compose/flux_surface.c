@@ -68,8 +68,6 @@ HRESULT flux_surface_resize(FluxSurface *s, int w, int h) {
 ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, POINT *out_offset) {
 	if (!s || !s->interop) return NULL;
 
-	/* Commit the whole surface, sized from what the surface reports now (a cached size goes
-	 * stale after Resize and an oversized rectangle fails with E_INVALIDARG). */
 	WG_SizeInt32 size = {0, 0};
 	if (FAILED(wuc_composition_drawing_surface_get__size_int32(s->surface, &size))) return NULL;
 
@@ -81,7 +79,6 @@ ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, POINT *out_offset) {
 
 	s->active_dc = ( ID2D1DeviceContext * ) dc;
 	if (out_offset) *out_offset = offset;
-
 	return s->active_dc;
 }
 

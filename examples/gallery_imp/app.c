@@ -438,6 +438,7 @@ static PageBuildFn const k_pages [PAGE_COUNT] = {
   [PAGE_SPLIT_VIEW]      = page_split_view_build,
   [PAGE_TITLE_BAR]       = page_title_bar_build,
   [PAGE_DRAG_DROP]       = page_drag_drop_build,
+  [PAGE_MATERIALS]       = page_materials_build,
   [PAGE_DIALOG]          = page_dialog_build,
   [PAGE_TEACHING_TIP]    = page_teaching_tip_build,
   [PAGE_SETTINGS]        = page_settings_build,
@@ -462,6 +463,7 @@ static void flush(void *ctx) {
 		GalleryPending *pending = g->pending_head;
 		g->pending_head         = pending->next;
 		gallery_model_update(&g->model, pending->msg);
+		if (pending->msg.tag == MSG_BACKDROP) gallery_backdrop_apply(flux_app_window(g->flux), g->model.backdrop);
 		free(pending->owned);
 		free(pending);
 	}
@@ -504,11 +506,12 @@ static bool shell_build(GalleryApp *g) {
 bool gallery_app_create(GalleryApp *g) {
 	memset(g, 0, sizeof(*g));
 	gallery_model_init(&g->model);
-	g->flux = flux_app_create(&(FluxAppCfg) {
+	g->model.backdrop = gallery_backdrop_load();
+	g->flux           = flux_app_create(&(FluxAppCfg) {
 	  .title    = L"FluXent Gallery (Imperative)",
 	  .width    = 1100,
 	  .height   = 760,
-	  .backdrop = FLUX_BACKDROP_MICA,
+	  .backdrop = ( FluxBackdropType ) g->model.backdrop,
 	});
 	if (!g->flux) return false;
 	g->host = flux_app_attachhost(g->flux);

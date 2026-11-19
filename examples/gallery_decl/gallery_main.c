@@ -1,10 +1,20 @@
 #include "gallery.h"
 
+#include <fluxent/flux_window.h>
+
 #include <windows.h>
+
+static FluxWindow *g_window;
+
+static void        gallery_on_start(FluxApp *app, void *user) {
+	( void ) user;
+	g_window = flux_app_window(app);
+}
 
 void gallery_decl_update(void *model, XtkMsg msg) {
 	Model *m = ( Model * ) model;
 	gallery_model_update(m, msg);
+	if (msg.tag == MSG_BACKDROP) gallery_backdrop_apply(g_window, m->backdrop);
 }
 
 typedef XtkEl *(*GalleryPageFn)(XtkUi *ui, Model const *m);
@@ -88,6 +98,7 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_SPLIT_VIEW]      = page_split_view,
   [PAGE_TITLE_BAR]       = page_title_bar,
   [PAGE_DRAG_DROP]       = page_drag_drop,
+  [PAGE_MATERIALS]       = page_materials,
   [PAGE_MENUS]           = page_menus,
   [PAGE_COMMANDBAR]      = page_commandbar,
   [PAGE_TABVIEW]         = page_tabview,
@@ -162,12 +173,14 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	flux_controls_all();
 	Model model;
 	gallery_model_init(&model);
+	model.backdrop = gallery_backdrop_load();
 
 	FluxAppCfg cfg = {
 	  .title    = L"FluXent Gallery (Declarative)",
 	  .width    = 1100,
 	  .height   = 760,
-	  .backdrop = FLUX_BACKDROP_MICA,
+	  .backdrop = ( FluxBackdropType ) model.backdrop,
+	  .on_start = gallery_on_start,
 	};
 	return flux_run(&cfg, &model, gallery_decl_update, gallery_decl_view);
 }

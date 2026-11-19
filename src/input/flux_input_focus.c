@@ -104,25 +104,36 @@ static bool input_tab_hook(FluxInput *input, XentNodeId node, bool shift, bool e
 	return nd && nd->behavior.on_tab && nd->behavior.on_tab(nd->behavior.on_tab_ctx, shift, entering);
 }
 
+static uint32_t input_sorted_tab_order(FluxInput *input, XentNodeId root, XentNodeId *tab_order) {
+	XentNodeId focusable [512];
+	uint32_t   count = 0;
+	collect_focusable(input->ctx, root, focusable, &count, 512);
+	if (count == 0) return 0;
+
+	uint32_t tab_count = input_collect_tab_order(input->ctx, focusable, count, tab_order);
+	if (tab_count == 0) return 0;
+
+	s_sort_ctx = input->ctx;
+	qsort(tab_order, tab_count, sizeof(XentNodeId), compare_tab_index);
+	s_sort_ctx = NULL;
+	return tab_count;
+}
+
+static bool input_within(XentCtx *ctx, XentNodeId node, XentNodeId root) {
+	for (XentNodeId n = node; n != XENT_NODE_INVALID; n = xent_node_parent(ctx, n))
+		if (n == root) return true;
+	return false;
+}
+
 void flux_input_tab(FluxInput *input, XentNodeId root, bool shift) {
 	if (!input) return;
 	if (input_tab_hook(input, input->focused, shift, false)) return;
 	if (input->modal_root != XENT_NODE_INVALID) root = input->modal_root;
 	if (root == XENT_NODE_INVALID) return;
 
-	XentNodeId focusable [512];
-	uint32_t   count = 0;
-	collect_focusable(input->ctx, root, focusable, &count, 512);
-
-	if (count == 0) return;
-
 	XentNodeId tab_order [512];
-	uint32_t   tab_count = input_collect_tab_order(input->ctx, focusable, count, tab_order);
+	uint32_t   tab_count = input_sorted_tab_order(input, root, tab_order);
 	if (tab_count == 0) return;
-
-	s_sort_ctx = input->ctx;
-	qsort(tab_order, tab_count, sizeof(XentNodeId), compare_tab_index);
-	s_sort_ctx             = NULL;
 
 	int        current_idx = input_find_node_index(tab_order, tab_count, input->focused);
 	int        next_idx    = input_next_tab_index(current_idx, tab_count, shift);
@@ -247,4 +258,19 @@ void flux_input_setfocus(FluxInput *input, XentNodeId node, bool programmatic) {
 	}
 	FluxNodeData *nd = programmatic ? flux_store_find(input->store, node) : NULL;
 	if (nd) nd->state.suppress_focus = 1;
+}
+
+bool flux_input_focuswithin(FluxInput *input, XentNodeId node, bool programmatic) {
+	if (!input || node == XENT_NODE_INVALID || !xent_node_valid(input->ctx, node)) return false;
+	if (input->modal_root != XENT_NODE_INVALID && !input_within(input->ctx, node, input->modal_root)) return false;
+	if (input->focused != XENT_NODE_INVALID && input_within(input->ctx, input->focused, node)) return true;
+
+	XentNodeId target = node;
+	if (!input_node_is_visible_focusable(input->ctx, node)) {
+		XentNodeId tab_order [512];
+		if (input_sorted_tab_order(input, node, tab_order) == 0) return false;
+		target = tab_order [0];
+	}
+	flux_input_setfocus(input, target, programmatic);
+	return true;
 }

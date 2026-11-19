@@ -2,6 +2,17 @@
 
 Entries start at 0.3.1; earlier releases are described by their tags.
 
+## 0.3.4 (unreleased)
+
+- added programmatic focus: `flux_app_setfocus(app, control)` moves keyboard
+  focus to a control after the next layout pass, so a control created in the
+  same transaction can take it, and `flux_app_focus(app)` reads it back. A
+  control that cannot take focus itself (a container, an AutoSuggestBox) hands
+  it to its first focusable descendant in tab order, as WinUI's
+  `Focus(Programmatic)` does; focus already inside the control stays put, and
+  an open modal blocks focus from moving outside it. The input layer gains
+  `flux_input_focuswithin` for the same lookup.
+
 ## 0.3.3
 
 - made every control a `FluxControlModule` (`fluxent/flux_controls.h`). A

@@ -25,8 +25,6 @@ XentCtx                 *flux_host_context(XtkHost *host);
 
 uint32_t                 flux_host_invalidation(XtkHost const *host, XtkCtrl control);
 uint32_t                 flux_host_takeinvalid(XtkHost *host);
-bool                     flux_host_setfocus(XtkHost *host, XtkCtrl control);
-XtkCtrl                  flux_host_focus(XtkHost const *host);
 uint32_t                 flux_host_route(XtkHost *host, XtkEvent *event);
 /** Borrows `userdata` until `flux_host_unsubscribe` or `flux_host_destroy`. */
 XtkSubId

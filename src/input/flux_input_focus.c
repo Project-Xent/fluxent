@@ -119,9 +119,9 @@ static uint32_t input_sorted_tab_order(FluxInput *input, XentNodeId root, XentNo
 	return tab_count;
 }
 
-static bool input_within(XentCtx *ctx, XentNodeId node, XentNodeId root) {
-	for (XentNodeId n = node; n != XENT_NODE_INVALID; n = xent_node_parent(ctx, n))
-		if (n == root) return true;
+bool input_within(XentCtx const *ctx, XentNodeId node, XentNodeId ancestor) {
+	for (; node != XENT_NODE_INVALID; node = xent_node_parent(ctx, node))
+		if (node == ancestor) return true;
 	return false;
 }
 

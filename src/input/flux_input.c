@@ -410,12 +410,6 @@ static void input_activate_node(FluxInput *input, XentNodeId node, FluxNodeData 
 	if (nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
 }
 
-static bool input_within(XentCtx const *ctx, XentNodeId node, XentNodeId ancestor) {
-	for (; node != XENT_NODE_INVALID; node = xent_node_parent(ctx, node))
-		if (node == ancestor) return true;
-	return false;
-}
-
 static void
 input_release_pressed_node(FluxInput *input, XentNodeId node, FluxNodeData *nd, XentNodeId root, float px, float py) {
 	if (!nd) return;

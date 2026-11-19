@@ -129,7 +129,6 @@ void flux_host_publish_invalidations(Prepare *P) {
 }
 
 static void purge_sidecar_node(FluxHostState *R, XtkCtrl control) {
-	if (R->focus == control) R->focus = XTK_CTRL_INVALID;
 	if (R->comp) xtk_comp_dropinst(R->comp, control);
 	flux_host_clear_props(R, control);
 	flux_host_clear_subs(R, control);
@@ -253,7 +252,6 @@ XtkHost *flux_host_create(void) {
 	R->host.impl = R;
 	R->revision  = 1u;
 	R->next_sub  = 0u;
-	R->focus     = XTK_CTRL_INVALID;
 	flux_store_sethost(R->store, &R->host);
 	XtkCtrlDesc const *root_desc = xtk_catalog_control(XTK_CTRL_CONTAINER);
 	if (!root_desc || !flux_host_note_invalidate(R, flux_host_as_control(R->root), root_desc->create_invalidates))
@@ -283,7 +281,6 @@ XtkHost *flux_host_adopt(XentCtx *ctx, FluxStore *store, XentNodeId root) {
 	R->host.vt   = &flux_host_vtable;
 	R->host.impl = R;
 	R->revision  = 1u;
-	R->focus     = XTK_CTRL_INVALID;
 	flux_store_sethost(R->store, &R->host);
 	return &R->host;
 }

@@ -13,6 +13,12 @@ Entries start at 0.3.1; earlier releases are described by their tags.
   an open modal blocks focus from moving outside it. The input layer gains
   `flux_input_focuswithin` for the same lookup.
 
+### Breaking changes
+
+| Change | Migration |
+| --- | --- |
+| `flux_host_setfocus` / `flux_host_focus` removed; they never moved keyboard focus | `flux_app_setfocus` / `flux_app_focus` |
+
 ## 0.3.3
 
 - made every control a `FluxControlModule` (`fluxent/flux_controls.h`). A

@@ -74,12 +74,7 @@ FluxMenu               *flux_app_menu(FluxApp *app);
 
 HWND                    flux_app_hwnd(FluxApp *app);
 
-/**
- * Asks for keyboard focus on `control`, or on its first focusable descendant in tab order when `control`
- * itself cannot take focus (a container, an AutoSuggestBox). Applied after the next layout pass, so a
- * control created in the same transaction can be focused. Window thread only. Returns false when
- * `control` is not live; the request is dropped if nothing in `control` can take focus by then.
- */
+/** Window thread only. Applied after the next layout; falls back to the first focusable descendant in tab order. */
 bool                    flux_app_setfocus(FluxApp *app, XtkCtrl control);
 /** The control that has keyboard focus, or `XTK_CTRL_INVALID`. */
 XtkCtrl                 flux_app_focus(FluxApp *app);

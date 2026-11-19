@@ -211,17 +211,3 @@ void flux_host_unsubscribe(XtkHost *host, XtkSubId id) {
 		return;
 	}
 }
-
-bool flux_host_setfocus(XtkHost *host, XtkCtrl control) {
-	FluxHostState *R = flux_host_state(host);
-	if (!R) return false;
-	if (control != XTK_CTRL_INVALID && !flux_host_is_live(host, control)) return false;
-	if (!flux_host_note_invalidate(R, control, XTK_INVALIDATE_ACCESS | XTK_INVALIDATE_SEMANTICS)) return false;
-	R->focus = control;
-	return true;
-}
-
-XtkCtrl flux_host_focus(XtkHost const *host) {
-	FluxHostState const *R = flux_host_state_c(host);
-	return R ? R->focus : XTK_CTRL_INVALID;
-}

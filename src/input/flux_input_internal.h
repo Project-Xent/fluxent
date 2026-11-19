@@ -99,6 +99,7 @@ void flux_scroll_update_hover(FluxInput *input, XentNodeId hit_node, float px, f
 XentNodeId      input_scrollable_ancestor(FluxInput *input, XentNodeId node);
 
 void            input_node_abs_rect(FluxInput const *input, XentNodeId node, FluxRect *out);
+bool            input_within(XentCtx const *ctx, XentNodeId node, XentNodeId ancestor);
 
 FluxScrollPhase flux_input_scroll_phase(FluxInput const *input);
 

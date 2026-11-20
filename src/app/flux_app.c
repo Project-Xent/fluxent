@@ -189,7 +189,7 @@ static bool app_layout_stack_push(XentNodeId **stack, uint32_t *top, uint32_t *c
 
 static bool app_layout_push_children(XentCtx *ctx, XentNodeId node, XentNodeId **stack, uint32_t *top, uint32_t *cap) {
 	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
-		if (!app_layout_stack_push(stack, top, cap, child)) return false;
+		if (!xent_collapsed(ctx, child) && !app_layout_stack_push(stack, top, cap, child)) return false;
 	return true;
 }
 

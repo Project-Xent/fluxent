@@ -336,25 +336,6 @@ static void retarget_combo(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
 	h->ctx       = ctx;
 }
 
-static void retarget_dialog(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
-	typedef struct {
-		XentNodeId root;
-		XentNodeId card;
-		XentNodeId content;
-		XentNodeId overlay_parent;
-		XentNodeId default_focus;
-		XentCtx   *ctx;
-		FluxStore *store;
-	} DialogHead;
-
-	FluxNodeData *d = flux_store_find(store, dst);
-	if (!d || !d->component_data) return;
-	DialogHead *h = ( DialogHead * ) d->component_data;
-	h->root       = dst;
-	h->ctx        = ctx;
-	h->store      = store;
-}
-
 static void retarget_textbox(XentCtx *ctx, FluxStore *store, XentNodeId dst) { flux_textbox_retarget(ctx, store, dst); }
 
 static void retarget_info_bar(XentCtx *ctx, FluxStore *store, XentNodeId dst) {
@@ -1465,10 +1446,9 @@ MODULE(dialog) = {
   .props    = flux_props_dialog,
   .deps     = dialog_deps,
   .seed     = mount_dialog,
-  .retarget = retarget_dialog,
-  .unmount  = flux_dialog_hide,
+  .retarget = flux_dialog_retarget,
+  .unmount  = flux_dialog_unmount,
   .consumed = dialog_consumed,
-  .record   = flux_dialog_record,
 };
 MODULE(dialogbody) = {.type = FLUX_CONTROL_DIALOG_CONTENT, .record = flux_dialogbody_record};
 MODULE(menubar)    = {

@@ -90,6 +90,9 @@ XentNodeId flux_dialog_init(FluxContentDialogDesc const *info);
 void       flux_dialog_show(FluxStore *store, XentNodeId dialog);
 
 void       flux_dialog_hide(FluxStore *store, XentNodeId dialog);
+/** Closes the dialog and destroys its overlay layer; the host calls it before destroying the node. */
+void       flux_dialog_unmount(FluxStore *store, XentNodeId dialog);
+void       flux_dialog_retarget(XentCtx *ctx, FluxStore *store, XentNodeId dst);
 
 void       flux_dialog_sync_host(FluxStore *store, XentNodeId dialog, bool open);
 void       flux_dialog_configure(

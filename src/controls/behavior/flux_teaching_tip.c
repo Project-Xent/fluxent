@@ -578,7 +578,7 @@ static void tip_apply_scale(FluxTipRuntime *rt) {
 	flux_popup_setscale(rt->popup, rt->cur_sx, rt->cur_sy, cx, rt->scale_cy);
 }
 
-static void tip_anim_finish(FluxTipRuntime *rt) {
+static bool tip_anim_finish(FluxTipRuntime *rt) {
 	bool was_contract = rt->anim_contract;
 	rt->anim_expand   = false;
 	rt->anim_contract = false;
@@ -595,18 +595,18 @@ static void tip_anim_finish(FluxTipRuntime *rt) {
 		flux_popup_dismiss(rt->popup);
 		tip_restore_focus(rt);
 		rt = tip_runtime(store, node);
-		if (!rt) return;
+		if (!rt) return false;
 		tip_repaint_owner(rt);
 		tip_route_close(rt, reason);
 		if (notify) notify(notify_ctx, reason);
 		rt = tip_runtime(store, node);
-		if (!rt) return;
+		if (!rt) return false;
 	}
 
-	if (rt->pending_hide) {
-		rt->pending_hide = false;
-		tip_close(rt, rt->pending_reason);
-	}
+	if (!rt->pending_hide) return false;
+	rt->pending_hide = false;
+	tip_close(rt, rt->pending_reason);
+	return rt->anim_contract;
 }
 
 static bool tip_anim_step(void *ctx, unsigned long now) {
@@ -620,8 +620,7 @@ static bool tip_anim_step(void *ctx, unsigned long now) {
 	tip_apply_scale(rt);
 	tip_repaint_popup(rt);
 	if (t < 1.0f) return true;
-	tip_anim_finish(rt);
-	return false;
+	return tip_anim_finish(rt);
 }
 
 static void tip_anim_start(FluxTipRuntime *rt, bool expand) {

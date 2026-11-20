@@ -899,8 +899,9 @@ bool flux_list_uia_select(FluxStore *store, XentNodeId node, int op) {
 	FluxListViewData *ld  = it->owner;
 	bool              add = op != FLUX_UIA_SEL_REMOVE;
 	if (multi_mode(ld) && op != FLUX_UIA_SEL_SELECT) list_uia_add(ld, it->index, add);
-	else if (add) sel_single(ld, it->index);
-	else if (ld->selected == it->index) list_select_one(ld, -1);
+	if (multi_mode(ld) && op != FLUX_UIA_SEL_SELECT) return true;
+	if (add) sel_single(ld, it->index);
+	if (!add && ld->selected == it->index) list_select_one(ld, -1);
 	return true;
 }
 

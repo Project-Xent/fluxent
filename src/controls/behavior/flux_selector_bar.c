@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_container.h"
 #include "store/flux_node_data.h"
@@ -299,4 +300,12 @@ void flux_selector_set_items(FluxStore *store, XentNodeId bar, XtkSelectorItem c
 	b->selected  = -1;
 	b->anim_item = -1;
 	if (selected >= 0 && selected < count) sb_select(b, selected, false);
+}
+
+bool flux_selector_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd
+	    && nd->component_type == FLUX_CONTROL_SELECTOR_BAR_ITEM
+	    && nd->component_data
+	    && (( FluxSelectorBarItemData const * ) nd->component_data)->selected;
 }

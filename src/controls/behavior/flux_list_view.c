@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_list_internal.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
@@ -878,4 +879,31 @@ bool flux_list_sync_layout(struct FluxNodeData *nd) {
 	flux_list_set_realized(ld->store, ld->root, ld->realized_first, ld->realized_last, ld->cols);
 	flux_list_flow_sync(ld);
 	return true;
+}
+
+bool flux_list_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxListItemData const *it = item_data(store, node);
+	return it && it->owner && !it->header && it->index >= 0 && list_row_selected(it->owner, it->index);
+}
+
+static void list_uia_add(FluxListViewData *ld, int index, bool add) {
+	if (add == flux_ranges_contains(ld, index)) return;
+	if (add) flux_ranges_add(ld, index, index);
+	else flux_ranges_remove(ld, index);
+	flux_list_report(ld, index);
+}
+
+bool flux_list_uia_select(FluxStore *store, XentNodeId node, int op) {
+	FluxListItemData const *it = item_data(store, node);
+	if (!it || !it->owner || it->header || it->index < 0 || it->owner->sel_mode == XTK_LIST_SELECT_NONE) return false;
+	FluxListViewData *ld = it->owner;
+	if (op == FLUX_UIA_SEL_SELECT || (op == FLUX_UIA_SEL_ADD && !multi_mode(ld))) sel_single(ld, it->index);
+	else if (multi_mode(ld)) list_uia_add(ld, it->index, op == FLUX_UIA_SEL_ADD);
+	else if (ld->selected == it->index) list_select_one(ld, -1);
+	return true;
+}
+
+unsigned flux_list_uia_mode(FluxStore *store, XentNodeId node) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld && multi_mode(ld) ? FLUX_UIA_SEL_MULTIPLE : 0u;
 }

@@ -761,3 +761,26 @@ void flux_tree_uia_toggle(FluxStore *store, XentNodeId node) {
 	FluxTreeItemData *it = tree_item_data(store, node);
 	if (it) tree_toggle_expand(it->owner, it->flat_index);
 }
+
+bool flux_tree_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	return it && it->owner->nodes [it->owner->flat [it->flat_index]].sel_state == FLUX_TREE_SEL_SELECTED;
+}
+
+bool flux_tree_uia_select(FluxStore *store, XentNodeId node, int op) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (!it || it->owner->sel_mode == XTK_TREE_SELECT_NONE) return false;
+	FluxTreeViewData *d    = it->owner;
+	bool              want = op != FLUX_UIA_SEL_REMOVE;
+	if (!tree_multi(d)) {
+		if (want) tree_select_single(d, it->flat_index);
+		return want;
+	}
+	if (flux_tree_uia_selected(store, node) != want) tree_toggle_check(d, it->flat_index);
+	return true;
+}
+
+unsigned flux_tree_uia_mode(FluxStore *store, XentNodeId node) {
+	FluxTreeViewData *d = tree_data(store, node);
+	return d && tree_multi(d) ? FLUX_UIA_SEL_MULTIPLE : 0u;
+}

@@ -42,5 +42,6 @@ bool     flux_tree_uia_selected(FluxStore *store, XentNodeId node);
 bool     flux_tree_uia_select(FluxStore *store, XentNodeId node, int op);
 unsigned flux_tree_uia_mode(FluxStore *store, XentNodeId node);
 bool     flux_selector_uia_selected(FluxStore *store, XentNodeId node);
+bool     flux_looping_uia_selected(FluxStore *store, XentNodeId node);
 
 #endif

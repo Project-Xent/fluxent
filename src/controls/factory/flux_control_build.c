@@ -1170,7 +1170,6 @@ static FluxUiaHooks const uia_titlebar             = {.role = FLUX_UIA_TITLEBAR,
 static FluxUiaHooks const uia_tooltip              = {.role = FLUX_UIA_TOOLTIP, .patterns = 0};
 static FluxUiaHooks const uia_window               = {.role = FLUX_UIA_WINDOW, .patterns = 0};
 static FluxUiaHooks const uia_scroll_pane          = {.role = FLUX_UIA_PANE, .patterns = FLUX_UIA_P_SCROLL};
-static FluxUiaHooks const uia_listitem_scroll      = {.role = FLUX_UIA_LISTITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
 static FluxUiaHooks const uia_dataitem_scroll      = {.role = FLUX_UIA_DATAITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
 static FluxUiaHooks const uia_expander             = {
   .role          = FLUX_UIA_BUTTON,
@@ -1238,6 +1237,12 @@ static FluxUiaHooks const uia_navitem_sel = {
 static FluxUiaHooks const uia_selector_sel = {.role = FLUX_UIA_LIST, .patterns = FLUX_UIA_P_SELECTION};
 static FluxUiaHooks const uia_selectoritem_sel
   = {.role = FLUX_UIA_LISTITEM, .patterns = FLUX_UIA_P_SELECTION_ITEM, .selected = flux_selector_uia_selected};
+static FluxUiaHooks const uia_looping_sel
+  = {.role = FLUX_UIA_LIST, .patterns = FLUX_UIA_P_SELECTION, .select_mode = uia_mode_required};
+static FluxUiaHooks const uia_loopitem_sel = {
+  .role     = FLUX_UIA_LISTITEM,
+  .patterns = FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_SELECTION_ITEM,
+  .selected = flux_looping_uia_selected};
 static FluxUiaHooks const uia_combo = {
   .role          = FLUX_UIA_COMBOBOX,
   .patterns      = FLUX_UIA_P_VALUE | FLUX_UIA_P_EXPAND,
@@ -1856,12 +1861,12 @@ MODULE(looping) = {
   .seed     = mount_looping,
   .retarget = retarget_looping,
   .overlay  = flux_looping_record,
-  .uia      = &uia_list};
+  .uia      = &uia_looping_sel};
 MODULE(loopitem) = {
   .type     = FLUX_CONTROL_LOOPING_ITEM,
   .snapshot = flux_snap_looping_item,
   .record   = flux_looping_item_record,
-  .uia      = &uia_listitem_scroll};
+  .uia      = &uia_loopitem_sel};
 MODULE(datepicker) = {
   .type     = FLUX_CONTROL_DATE_PICKER,
   .snapshot = flux_snap_picker,

@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_repeat_timer.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_container.h"
@@ -643,4 +644,12 @@ void flux_looping_item_place(
 	xent_seth(ld->ctx, item, ld->item_height);
 	if (width > 0.0f) xent_setw(ld->ctx, item, width);
 	else xent_setwpct(ld->ctx, item, 1.0f);
+}
+
+bool flux_looping_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd
+	    && nd->component_type == FLUX_CONTROL_LOOPING_ITEM
+	    && nd->component_data
+	    && (( FluxLoopingItemData const * ) nd->component_data)->selected;
 }

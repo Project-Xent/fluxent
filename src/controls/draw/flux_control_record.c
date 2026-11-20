@@ -1,3 +1,4 @@
+#include "controls/draw/flux_teachtip_internal.h"
 #include "controls/draw/flux_control_draw.h"
 #include "controls/draw/flux_control_record_internal.h"
 #include "fluxent/flux_text.h"
@@ -260,7 +261,8 @@ XentDl *flux_scroll_record(
 XentDl *flux_teachtip_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	return flux_container_record(rc, snap, bounds, state);
+	FluxTeachingTipPaintInfo const *paint = snap->u.teach_tip.paint;
+	return paint ? flux_teachtip_record_surface(rc, paint) : flux_container_record(rc, snap, bounds, state);
 }
 
 XentDl *flux_flip_record(

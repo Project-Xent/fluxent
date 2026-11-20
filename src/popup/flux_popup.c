@@ -44,6 +44,7 @@ struct FluxPopup {
 	XentNodeId            content_root;
 	FluxPopupTree        *tree;
 	bool                  tree_busy;
+	float                 tree_sx, tree_sy, tree_cx, tree_cy;
 	bool                  rtl;
 
 	FluxRect              anchor;
@@ -157,6 +158,8 @@ FluxPopup *flux_popup_create(FluxWindow *owner) {
 	popup->content_h          = 100.0f;
 	popup->placement          = FLUX_PLACEMENT_BOTTOM;
 	popup->content_root       = XENT_NODE_INVALID;
+	popup->tree_sx            = 1.0f;
+	popup->tree_sy            = 1.0f;
 
 	popup->popup_hwnd         = CreateWindowExW(
 	  WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP, POPUP_CLASS_NAME, L"",
@@ -919,8 +922,17 @@ static void popup_paint_tree(FluxPopup *popup) {
 	ID2D1DeviceContext *d2d = flux_gfx_d2d(popup->graphics);
 	popup->tree_busy        = false;
 	if (d2d && popup_ensure_record_brush(popup, d2d)) {
-		FluxRenderCtx rc = {.d2d = d2d, .brush = popup->record_brush};
+		FluxRenderCtx     rc = {.d2d = d2d, .brush = popup->record_brush};
+		D2D1_MATRIX_3X2_F saved;
+		ID2D1RenderTarget_GetTransform(( ID2D1RenderTarget * ) d2d, &saved);
+		D2D1_MATRIX_3X2_F scaled = saved;
+		scaled._11               = popup->tree_sx * saved._11;
+		scaled._22               = popup->tree_sy * saved._22;
+		scaled._31               = popup->tree_cx * (1.0f - popup->tree_sx) * saved._11 + saved._31;
+		scaled._32               = popup->tree_cy * (1.0f - popup->tree_sy) * saved._22 + saved._32;
+		ID2D1RenderTarget_SetTransform(( ID2D1RenderTarget * ) d2d, &scaled);
 		popup->tree_busy = flux_popup_tree_paint(popup->tree, popup, &rc);
+		ID2D1RenderTarget_SetTransform(( ID2D1RenderTarget * ) d2d, &saved);
 	}
 	if (popup->tree_busy && popup->is_visible) flux_anim_register(&popup->tree_busy, popup_tree_step);
 	else flux_anim_unregister(&popup->tree_busy);
@@ -1102,4 +1114,12 @@ bool flux_popup_sethost(FluxPopup *popup, FluxInput *input, XentNodeId owner) {
 	if (nd) nd->uia_popup = popup->content_root;
 	flux_popup_onmouse(popup, popup_host_mouse, NULL);
 	return true;
+}
+
+void flux_popup_setscale(FluxPopup *popup, float sx, float sy, float cx, float cy) {
+	if (!popup) return;
+	popup->tree_sx = sx;
+	popup->tree_sy = sy;
+	popup->tree_cx = cx;
+	popup->tree_cy = cy;
 }

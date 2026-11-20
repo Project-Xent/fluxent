@@ -357,6 +357,10 @@ typedef struct FluxListSnapshot {
 	FluxRect rect;
 } FluxListSnapshot;
 
+typedef struct FluxTeachTipSnapshot {
+	void const *paint;
+} FluxTeachTipSnapshot;
+
 typedef struct FluxRenderSnap {
 	uint64_t        id;
 	FluxControlType type;
@@ -414,6 +418,7 @@ typedef struct FluxRenderSnap {
 		FluxAppBarSnapshot       app_bar;
 		FluxCmdBarSnapshot       cmd_bar;
 		FluxListSnapshot         list;
+		FluxTeachTipSnapshot     teach_tip;
 	} u;
 } FluxRenderSnap;
 
@@ -425,6 +430,7 @@ typedef struct FluxSnapCtx {
 } FluxSnapCtx;
 
 void flux_snap_breadcrumb_item(FluxSnapCtx const *ctx);
+void flux_snap_teachtip(FluxSnapCtx const *ctx);
 void flux_snap_button(FluxSnapCtx const *ctx);
 void flux_snap_calendar(FluxSnapCtx const *ctx);
 void flux_snap_checkbox_like(FluxSnapCtx const *ctx);

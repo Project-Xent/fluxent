@@ -11,6 +11,12 @@
 #include "controls/data/flux_teaching_tip_data.h"
 #include "controls/draw/flux_teachtip_internal.h"
 #include "controls/factory/flux_init_popup.h"
+#include "controls/factory/flux_init_basic.h"
+#include "controls/data/flux_button_data.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_module.h"
+#include "popup/flux_popup_tree.h"
+#include "render/flux_render_snapshot.h"
 #include "render/flux_icon.h"
 #include "fluxent/flux_host.h"
 #include "fluxent/flux_input.h"
@@ -60,8 +66,11 @@ typedef struct FluxTipRuntime {
 	FluxRect                   action_rect;
 	FluxRect                   close_rect;
 	FluxRect                   x_rect;
-	int                        hot_zone;
-	int                        pressed_zone;
+	FluxRect                   title_rect;
+	FluxRect                   subtitle_rect;
+	XentNodeId                 surface;
+	XentNodeId                 parts [5];
+	FluxTeachingTipPaintInfo   paint;
 
 	bool                       anim_expand;
 	bool                       anim_contract;
@@ -156,15 +165,18 @@ static void tip_layout(FluxTipRuntime *rt) {
 	float                      text_w
 	  = inner_w - (m->icon_glyph ? TIP_ICON_SIZE + TIP_ICON_GAP : 0.0f) - (tip_shows_x(m) ? TIP_X_RESERVE : 0.0f);
 
-	float title_h    = flux_teachtip_text_height(rt->text, m->title, true, text_w);
-	float subtitle_h = flux_teachtip_text_height(rt->text, m->subtitle, false, text_w);
-	float body_h     = flux_maxf(title_h + subtitle_h, m->icon_glyph ? TIP_ICON_SIZE : 0.0f);
+	float title_h     = flux_teachtip_text_height(rt->text, m->title, true, text_w);
+	float subtitle_h  = flux_teachtip_text_height(rt->text, m->subtitle, false, text_w);
+	float body_h      = flux_maxf(title_h + subtitle_h, m->icon_glyph ? TIP_ICON_SIZE : 0.0f);
 
-	rt->action_rect  = (FluxRect) {0};
-	rt->close_rect   = (FluxRect) {0};
-	rt->x_rect       = (FluxRect) {0};
+	rt->action_rect   = (FluxRect) {0};
+	rt->close_rect    = (FluxRect) {0};
+	rt->x_rect        = (FluxRect) {0};
+	float text_x      = TIP_PAD + (m->icon_glyph ? TIP_ICON_SIZE + TIP_ICON_GAP : 0.0f);
+	rt->title_rect    = title_h > 0.0f ? (FluxRect) {text_x, TIP_PAD, text_w, title_h} : (FluxRect) {0};
+	rt->subtitle_rect = subtitle_h > 0.0f ? (FluxRect) {text_x, TIP_PAD + title_h, text_w, subtitle_h} : (FluxRect) {0};
 
-	float card_h     = TIP_PAD + body_h + TIP_PAD;
+	float card_h      = TIP_PAD + body_h + TIP_PAD;
 	if (tip_has_action(m) || tip_has_close(m)) {
 		float btn_y = TIP_PAD + body_h + TIP_BTN_TOP;
 		card_h      = btn_y + TIP_BTN_H + TIP_PAD;
@@ -176,8 +188,8 @@ static void tip_layout(FluxTipRuntime *rt) {
 	rt->tip_w          = TIP_CARD_W + 2.0f * TIP_TAIL_BAND;
 	rt->tip_h          = card_h + 2.0f * TIP_TAIL_BAND;
 
-	FluxRect *rects [] = {&rt->action_rect, &rt->close_rect, &rt->x_rect};
-	for (int i = 0; i < 3; i++) {
+	FluxRect *rects [] = {&rt->action_rect, &rt->close_rect, &rt->x_rect, &rt->title_rect, &rt->subtitle_rect};
+	for (int i = 0; i < 5; i++) {
 		if (rects [i]->w <= 0.0f) continue;
 		rects [i]->x += TIP_TAIL_BAND;
 		rects [i]->y += TIP_TAIL_BAND;
@@ -477,6 +489,34 @@ static FluxRect tip_window_rect_px(FluxTipRuntime const *rt) {
 	return (FluxRect) {( float ) tl.x, ( float ) tl.y, ( float ) (rc.right - rc.left), ( float ) (rc.bottom - rc.top)};
 }
 
+static void               tip_uia_close(FluxStore *store, XentNodeId node);
+static FluxUiaHooks const tip_window_uia;
+static FluxUiaHooks const tip_pane_uia;
+
+static void               tip_place(FluxTipRuntime *rt, XentNodeId node, FluxRect r) {
+	bool shown = r.w > 0.0f && r.h > 0.0f;
+	xent_setcollapsed(rt->ctx, node, !shown);
+	if (!shown) return;
+	xent_setpos(rt->ctx, node, (XentPoint) {r.x, r.y});
+	xent_setsize(rt->ctx, node, (XentSize) {r.w, r.h});
+}
+
+static void tip_place_parts(FluxTipRuntime *rt) {
+	FluxTeachingTipData const *m = &rt->model;
+	flux_prop_text_content(rt->store, rt->parts [0], m->title ? m->title : "");
+	flux_prop_text_content(rt->store, rt->parts [1], m->subtitle ? m->subtitle : "");
+	flux_prop_button_label(rt->store, rt->parts [2], m->action_text ? m->action_text : "");
+	flux_prop_button_style(rt->store, rt->parts [2], m->action_accent ? FLUX_BUTTON_ACCENT : FLUX_BUTTON_STANDARD);
+	flux_prop_button_label(rt->store, rt->parts [3], m->close_text ? m->close_text : "");
+	FluxRect const rects [5] = {rt->title_rect, rt->subtitle_rect, rt->action_rect, rt->close_rect, rt->x_rect};
+	for (int i = 0; i < 5; i++) tip_place(rt, rt->parts [i], rects [i]);
+	xent_setpos(rt->ctx, rt->surface, (XentPoint) {0.0f, 0.0f});
+	xent_setsize(rt->ctx, rt->surface, (XentSize) {rt->tip_w, rt->tip_h});
+	xent_layout(rt->ctx, rt->surface, rt->tip_w, rt->tip_h);
+	FluxNodeData *nd = flux_store_find(rt->store, rt->surface);
+	if (nd) nd->uia = m->light_dismiss ? &tip_window_uia : &tip_pane_uia;
+}
+
 static bool tip_position(FluxTipRuntime *rt) {
 	float    scale                    = tip_owner_scale(rt);
 	TipGeom  g                        = {0};
@@ -515,6 +555,7 @@ static bool tip_position(FluxTipRuntime *rt) {
 	rt->scale_cy        = sc.y;
 	if (rtl) tip_logical_tail(rt);
 
+	tip_place_parts(rt);
 	flux_popup_setsize(rt->popup, rt->tip_w, rt->tip_h);
 	flux_popup_setrtl(rt->popup, rtl);
 	FluxRect anchor = {origin.x * scale, origin.y * scale, 0.0f, 0.0f};
@@ -528,12 +569,18 @@ static void tip_restore_focus(FluxTipRuntime *rt) {
 		flux_input_setfocus(rt->input, rt->prev_focus, false);
 }
 
+static void tip_apply_scale(FluxTipRuntime *rt) {
+	float cx = flux_popup_rtl(rt->popup) ? rt->tip_w - rt->scale_cx : rt->scale_cx;
+	flux_popup_setscale(rt->popup, rt->cur_sx, rt->cur_sy, cx, rt->scale_cy);
+}
+
 static void tip_anim_finish(FluxTipRuntime *rt) {
 	bool was_contract = rt->anim_contract;
 	rt->anim_expand   = false;
 	rt->anim_contract = false;
 	rt->cur_sx        = 1.0f;
 	rt->cur_sy        = 1.0f;
+	tip_apply_scale(rt);
 
 	if (was_contract) {
 		FluxStore                 *store                                         = rt->store;
@@ -566,6 +613,7 @@ static bool tip_anim_step(void *ctx, unsigned long now) {
 	  = rt->anim_expand ? flux_cubic_bezier(t, 0.1f, 0.9f, 0.2f, 1.0f) : flux_cubic_bezier(t, 0.7f, 0.0f, 1.0f, 0.5f);
 	rt->cur_sx = rt->from_sx + (rt->to_sx - rt->from_sx) * eased;
 	rt->cur_sy = rt->from_sy + (rt->to_sy - rt->from_sy) * eased;
+	tip_apply_scale(rt);
 	tip_repaint_popup(rt);
 	if (t < 1.0f) return true;
 	tip_anim_finish(rt);
@@ -590,6 +638,7 @@ static void tip_anim_start(FluxTipRuntime *rt, bool expand) {
 	}
 	rt->cur_sx = rt->from_sx;
 	rt->cur_sy = rt->from_sy;
+	tip_apply_scale(rt);
 	flux_anim_register(rt, tip_anim_step);
 }
 
@@ -610,9 +659,7 @@ static void tip_open(FluxTipRuntime *rt) {
 		return;
 	}
 
-	rt->model.open   = true;
-	rt->hot_zone     = FLUX_TIP_ZONE_NONE;
-	rt->pressed_zone = FLUX_TIP_ZONE_NONE;
+	rt->model.open = true;
 	if (rt->model.light_dismiss && rt->input) {
 		FluxStore *store = rt->store;
 		XentNodeId node  = rt->node;
@@ -660,49 +707,13 @@ static void tip_dismissed(void *ctx) {
 	if (notify) notify(notify_ctx, FLUX_TIP_CLOSE_LIGHT_DISMISS);
 }
 
-static bool tip_rect_has(FluxRect const *r, float x, float y) {
-	return r->w > 0.0f && x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
-}
-
-static int tip_zone_at(FluxTipRuntime const *rt, float x, float y) {
-	if (tip_rect_has(&rt->x_rect, x, y)) return FLUX_TIP_ZONE_X;
-	if (tip_rect_has(&rt->action_rect, x, y)) return FLUX_TIP_ZONE_ACTION;
-	if (tip_rect_has(&rt->close_rect, x, y)) return FLUX_TIP_ZONE_CLOSE;
-	return FLUX_TIP_ZONE_NONE;
-}
-
-static void tip_activate_zone(FluxTipRuntime *rt, int zone) {
-	if (zone == FLUX_TIP_ZONE_ACTION) {
-		tip_route(rt, XTK_EVENT_INVOKE, (XtkEventPayload) {0}, XTK_EVENT_CAUSE_USER);
-		if (rt->model.on_action) rt->model.on_action(rt->model.action_ctx);
-		return;
-	}
-	tip_close(rt, FLUX_TIP_CLOSE_BUTTON);
-}
-
-static void tip_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y) {
-	( void ) popup;
+static void tip_action_click(void *ctx) {
 	FluxTipRuntime *rt = ( FluxTipRuntime * ) ctx;
-	if (!rt) return;
-	int zone = (event == FLUX_POPUP_MOUSE_LEAVE) ? FLUX_TIP_ZONE_NONE : tip_zone_at(rt, x, y);
-
-	if (event == FLUX_POPUP_MOUSE_DOWN) {
-		rt->pressed_zone = zone;
-		tip_repaint_popup(rt);
-		return;
-	}
-	if (event == FLUX_POPUP_MOUSE_UP) {
-		int pressed      = rt->pressed_zone;
-		rt->pressed_zone = FLUX_TIP_ZONE_NONE;
-		tip_repaint_popup(rt);
-		if (zone != FLUX_TIP_ZONE_NONE && zone == pressed) tip_activate_zone(rt, zone);
-		return;
-	}
-	if (zone != rt->hot_zone) {
-		rt->hot_zone = zone;
-		tip_repaint_popup(rt);
-	}
+	tip_route(rt, XTK_EVENT_INVOKE, (XtkEventPayload) {0}, XTK_EVENT_CAUSE_USER);
+	if (rt->model.on_action) rt->model.on_action(rt->model.action_ctx);
 }
+
+static void tip_close_click(void *ctx) { tip_close(( FluxTipRuntime * ) ctx, FLUX_TIP_CLOSE_BUTTON); }
 
 static bool tip_on_key(void *ctx, FluxKey key, bool down) {
 	FluxTipRuntime *rt = ( FluxTipRuntime * ) ctx;
@@ -718,41 +729,24 @@ static bool tip_on_key(void *ctx, FluxKey key, bool down) {
 	return false;
 }
 
-static XentDl *tip_record(void *ctx, FluxPopup const *popup) {
-	FluxTipRuntime        *rt      = ( FluxTipRuntime * ) ctx;
+void flux_snap_teachtip(FluxSnapCtx const *ctx) {
+	FluxTipRuntime *rt           = ( FluxTipRuntime * ) ctx->data;
+	ctx->snap->u.teach_tip.paint = NULL;
+	if (!rt || ctx->node != rt->surface) return;
 	FluxThemeColors const *theme   = NULL;
 	bool                   is_dark = false;
 	tip_resolve_theme(rt, &theme, &is_dark);
-
-	FluxRenderCtx rc = {
-	  .text    = rt->text,
-	  .theme   = theme,
-	  .is_dark = is_dark,
-	};
-
 	FluxColor bg = theme->solid_background_tertiary;
-	if (rt->model.light_dismiss) {
-		if (is_dark) bg = flux_color_rgb(0x2c, 0x2c, 0x2c);
-		bg = flux_popup_acrylictint(popup, bg);
-	}
-
-	FluxTeachingTipPaintInfo info = {
-	  .model        = &rt->model,
-	  .tip_w        = rt->tip_w,
-	  .tip_h        = rt->tip_h,
-	  .tail_edge    = rt->tail_edge,
-	  .tail_center  = rt->tail_center,
-	  .background   = bg,
-	  .scale_x      = rt->cur_sx,
-	  .scale_y      = rt->cur_sy,
-	  .scale_cx     = rt->scale_cx,
-	  .scale_cy     = rt->scale_cy,
-	  .hot_zone     = rt->hot_zone,
-	  .pressed_zone = rt->pressed_zone,
-	  .action_rect  = rt->action_rect,
-	  .close_rect   = rt->close_rect,
-	  .x_rect       = rt->x_rect};
-	return flux_teachtip_record_surface(&rc, &info);
+	if (rt->model.light_dismiss)
+		bg = flux_popup_acrylictint(rt->popup, is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : bg);
+	rt->paint = (FluxTeachingTipPaintInfo) {
+	  .model       = &rt->model,
+	  .tip_w       = rt->tip_w,
+	  .tip_h       = rt->tip_h,
+	  .tail_edge   = rt->tail_edge,
+	  .tail_center = rt->tail_center,
+	  .background  = bg};
+	ctx->snap->u.teach_tip.paint = &rt->paint;
 }
 
 static void tip_destroy(void *component_data) {
@@ -764,6 +758,7 @@ static void tip_destroy(void *component_data) {
 	flux_str_free(rt->model.action_text);
 	flux_str_free(rt->model.close_text);
 	if (rt->popup) flux_popup_destroy(rt->popup);
+	if (rt->surface) xent_node_destroy(rt->ctx, rt->surface);
 	free(rt);
 }
 
@@ -797,6 +792,58 @@ static void tip_init_runtime(FluxTipRuntime *rt, XentNodeId node, FluxTeachingTi
 	rt->prev_focus             = XENT_NODE_INVALID;
 }
 
+static void tip_uia_close(FluxStore *store, XentNodeId node) {
+	FluxNodeData const *nd = flux_store_find(store, node);
+	if (nd && nd->component_data) tip_close(( FluxTipRuntime * ) nd->component_data, FLUX_TIP_CLOSE_PROGRAMMATIC);
+}
+
+static FluxUiaHooks const tip_window_uia
+  = {.role = FLUX_UIA_WINDOW, .patterns = FLUX_UIA_P_WINDOW, .close = tip_uia_close, .modal = true};
+static FluxUiaHooks const tip_pane_uia = {.role = FLUX_UIA_PANE, .patterns = FLUX_UIA_P_WINDOW, .close = tip_uia_close};
+
+static void               tip_press_noop(void *ctx, float x, float y, int clicks) {
+	( void ) ctx;
+	( void ) x;
+	( void ) y;
+	( void ) clicks;
+}
+
+static XentNodeId tip_text_part(FluxTipRuntime *rt, bool title) {
+	XentNodeId n = flux_text_init(&(FluxTextDesc) {
+	  .ctx = rt->ctx, .store = rt->store, .parent = rt->surface, .content = "", .font_size = 14.0f, .text = rt->text});
+	if (n == XENT_NODE_INVALID) return n;
+	flux_prop_text_wrap(rt->store, n, true);
+	flux_prop_text_weight(rt->store, n, title ? FLUX_FONT_SEMI_BOLD : FLUX_FONT_REGULAR);
+	return n;
+}
+
+static XentNodeId tip_button_part(FluxTipRuntime *rt, void (*click)(void *), char const *icon) {
+	XentNodeId n = flux_button_init(&(FluxButtonDesc) {
+	  .ctx = rt->ctx, .store = rt->store, .parent = rt->surface, .on_click = click, .userdata = rt});
+	if (n == XENT_NODE_INVALID || !icon) return n;
+	flux_prop_button_style(rt->store, n, FLUX_BUTTON_SUBTLE);
+	flux_prop_button_icon(rt->store, n, icon);
+	return n;
+}
+
+static bool tip_build_content(FluxTipRuntime *rt) {
+	rt->surface      = flux_factory_create_node(rt->ctx, rt->store, XENT_NODE_INVALID, FLUX_CONTROL_TEACHING_TIP);
+	FluxNodeData *nd = rt->surface ? flux_store_find(rt->store, rt->surface) : NULL;
+	if (!nd) return false;
+	xent_setproto(rt->ctx, rt->surface, XENT_PROTOCOL_ABSOLUTE);
+	nd->component_data           = &rt->model;
+	nd->behavior.on_pointer_down = tip_press_noop;
+	rt->parts [0]                = tip_text_part(rt, true);
+	rt->parts [1]                = tip_text_part(rt, false);
+	rt->parts [2]                = tip_button_part(rt, tip_action_click, NULL);
+	rt->parts [3]                = tip_button_part(rt, tip_close_click, NULL);
+	rt->parts [4]                = tip_button_part(rt, tip_close_click, "Cancel");
+	for (int i = 0; i < 5; i++)
+		if (rt->parts [i] == XENT_NODE_INVALID) return false;
+	return flux_popup_setcontent(rt->popup, rt->ctx, rt->store, rt->surface)
+	    && (!rt->input || flux_popup_sethost(rt->popup, rt->input, rt->node));
+}
+
 XentNodeId flux_teachtip_init(FluxTeachingTipDesc const *info) {
 	if (!info || !info->ctx || !info->store || !info->window) return XENT_NODE_INVALID;
 
@@ -814,9 +861,11 @@ XentNodeId flux_teachtip_init(FluxTeachingTipDesc const *info) {
 	rt->popup = flux_popup_create(info->window);
 	if (rt->popup) {
 		flux_popup_setanim(rt->popup, FLUX_POPUP_ANIM_NONE);
-		flux_popup_onrecord(rt->popup, tip_record, rt, rt->text);
-		flux_popup_onmouse(rt->popup, tip_mouse, rt);
 		flux_popup_ondismiss(rt->popup, tip_dismissed, rt);
+	}
+	if (rt->popup && !tip_build_content(rt)) {
+		flux_popup_destroy(rt->popup);
+		rt->popup = NULL;
 	}
 
 	nd->component_data         = &rt->model;

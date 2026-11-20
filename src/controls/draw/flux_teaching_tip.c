@@ -16,10 +16,6 @@
 #define TT_HIGHLIGHT_IN 7.0f
 #define TT_TEXT_FONT    14.0f
 #define TT_ICON_SIZE    16.0f
-#define TT_X_SIZE       40.0f
-#define TT_X_FONT       16.0f
-#define TT_BTN_CORNER   4.0f
-#define TT_X_GLYPH      L"\xE711"
 
 static FluxColor tt_border_color(void) { return flux_color_rgba(0x75, 0x75, 0x75, 0x66); }
 
@@ -122,80 +118,19 @@ static bool tt_rec_highlight(XentDlBuilder *b, FluxTeachingTipPaintInfo const *i
 	return ok;
 }
 
-static bool tt_rec_footer_button(
-  XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *r, char const *label, bool accent, bool hot, bool pressed
-) {
-	FluxColor fill, fg;
-	if (accent) {
-		fill = pressed ? t->accent_tertiary : (hot ? t->accent_secondary : t->accent_default);
-		fg   = pressed ? t->text_on_accent_secondary : t->text_on_accent_primary;
-	}
-	else {
-		fill = pressed ? t->ctrl_fill_tertiary : (hot ? t->ctrl_fill_secondary : t->ctrl_fill_default);
-		fg   = pressed ? t->text_secondary : t->text_primary;
-	}
-	bool ok = flux_rec_fill_rounded(b, r, TT_BTN_CORNER, fill);
-	if (ok && !accent) {
-		float    half  = TT_BORDER * 0.5f;
-		FluxRect inset = {r->x + half, r->y + half, r->w - half * 2.0f, r->h - half * 2.0f};
-		ok             = flux_rec_stroke_rounded(b, &inset, TT_BTN_CORNER, t->ctrl_stroke_default, TT_BORDER);
-	}
-	if (!ok || !label || !label [0]) return ok;
-	XentTextStyle style = {.font_size = TT_TEXT_FONT, .font_weight = FLUX_FONT_REGULAR, .h_align = 1u, .v_align = 1u};
-	return flux_rec_text_ex(b, r, label, &style, fg);
-}
-
-static bool tt_rec_x_button(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *r, bool hot, bool pressed) {
-	bool ok = true;
-	if (pressed) ok = flux_rec_fill_rounded(b, r, TT_BTN_CORNER, t->subtle_fill_tertiary);
-	else if (hot) ok = flux_rec_fill_rounded(b, r, TT_BTN_CORNER, t->subtle_fill_secondary);
-	return ok && flux_rec_glyph_wc(b, r, TT_X_GLYPH, TT_X_FONT, pressed ? t->text_secondary : t->text_primary);
-}
-
 static bool
-tt_rec_texts(XentDlBuilder *b, FluxRenderCtx const *rc, FluxTeachingTipPaintInfo const *info, FluxRect const *card) {
-	FluxThemeColors const     *t      = flux_rec_theme(rc);
-	FluxTeachingTipData const *m      = info->model;
-	float                      text_x = card->x + TT_PAD;
-	bool                       ok     = true;
-	if (m->icon_glyph) {
-		FluxRect icon_box   = {text_x, card->y + TT_PAD, TT_ICON_SIZE, TT_ICON_SIZE};
-		wchar_t  glyph [2]  = {( wchar_t ) m->icon_glyph, 0};
-		ok                  = flux_rec_glyph_wc(b, &icon_box, glyph, TT_ICON_SIZE, t->text_primary);
-		text_x             += TT_ICON_SIZE + 12.0f;
-	}
-	float text_w = card->x + card->w - TT_PAD - text_x - (info->x_rect.w > 0.0f ? 28.0f : 0.0f);
-	if (!ok || text_w <= 0.0f || !rc->text) return ok;
-
-	float y = card->y + TT_PAD;
-	if (m->title && m->title [0]) {
-		float         h = flux_teachtip_text_height(rc->text, m->title, true, text_w);
-		FluxRect      r = {text_x, y, text_w, h};
-		XentTextStyle style
-		  = {.font_size = TT_TEXT_FONT, .font_weight = FLUX_FONT_SEMI_BOLD, .flags = XENT_DL_TEXT_WRAP};
-		ok  = flux_rec_text_ex(b, &r, m->title, &style, t->text_primary);
-		y  += h;
-	}
-	if (ok && m->subtitle && m->subtitle [0]) {
-		float         h     = flux_teachtip_text_height(rc->text, m->subtitle, false, text_w);
-		FluxRect      r     = {text_x, y, text_w, h};
-		XentTextStyle style = {.font_size = TT_TEXT_FONT, .font_weight = FLUX_FONT_REGULAR, .flags = XENT_DL_TEXT_WRAP};
-		ok                  = flux_rec_text_ex(b, &r, m->subtitle, &style, t->text_primary);
-	}
-	return ok;
+tt_rec_icon(XentDlBuilder *b, FluxRenderCtx const *rc, FluxTeachingTipPaintInfo const *info, FluxRect const *card) {
+	if (!info->model->icon_glyph) return true;
+	FluxRect icon_box  = {card->x + TT_PAD, card->y + TT_PAD, TT_ICON_SIZE, TT_ICON_SIZE};
+	wchar_t  glyph [2] = {( wchar_t ) info->model->icon_glyph, 0};
+	return flux_rec_glyph_wc(b, &icon_box, glyph, TT_ICON_SIZE, flux_rec_theme(rc)->text_primary);
 }
 
 static XentDl *tt_record(FluxRenderCtx const *rc, FluxTeachingTipPaintInfo const *info) {
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
-	FluxThemeColors const *t = flux_rec_theme(rc);
 	FluxRect card = {TT_TAIL_BAND, TT_TAIL_BAND, info->tip_w - 2.0f * TT_TAIL_BAND, info->tip_h - 2.0f * TT_TAIL_BAND};
-
-	XentAffine2 scale = {
-	  info->scale_x, 0.0f, info->scale_cx * (1.0f - info->scale_x), 0.0f, info->scale_y,
-	  info->scale_cy * (1.0f - info->scale_y)};
-	bool ok = xent_dl_pushtransform(b, scale);
-	if (ok) ok = flux_rec_fill_rounded(b, &card, TT_CORNER, info->background);
+	bool     ok   = flux_rec_fill_rounded(b, &card, TT_CORNER, info->background);
 	if (ok) {
 		float    half  = TT_BORDER * 0.5f;
 		FluxRect inset = {card.x + half, card.y + half, card.w - half * 2.0f, card.h - half * 2.0f};
@@ -203,22 +138,7 @@ static XentDl *tt_record(FluxRenderCtx const *rc, FluxTeachingTipPaintInfo const
 	}
 	if (ok) ok = tt_rec_tail(b, info, info->background);
 	if (ok) ok = tt_rec_highlight(b, info, &card, rc->is_dark);
-	if (ok) ok = tt_rec_texts(b, rc, info, &card);
-	if (ok && info->action_rect.w > 0.0f)
-		ok = tt_rec_footer_button(
-		  b, t, &info->action_rect, info->model->action_text, info->model->action_accent,
-		  info->hot_zone == FLUX_TIP_ZONE_ACTION, info->pressed_zone == FLUX_TIP_ZONE_ACTION
-		);
-	if (ok && info->close_rect.w > 0.0f)
-		ok = tt_rec_footer_button(
-		  b, t, &info->close_rect, info->model->close_text, false, info->hot_zone == FLUX_TIP_ZONE_CLOSE,
-		  info->pressed_zone == FLUX_TIP_ZONE_CLOSE
-		);
-	if (ok && info->x_rect.w > 0.0f)
-		ok = tt_rec_x_button(
-		  b, t, &info->x_rect, info->hot_zone == FLUX_TIP_ZONE_X, info->pressed_zone == FLUX_TIP_ZONE_X
-		);
-	ok = xent_dl_poptransform(b) && ok;
+	if (ok) ok = tt_rec_icon(b, rc, info, &card);
 	return flux_rec_finish(b, ok);
 }
 

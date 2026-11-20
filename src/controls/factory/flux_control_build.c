@@ -1150,7 +1150,6 @@ static FluxUiaHooks const uia_button_toggle        = {.role = FLUX_UIA_BUTTON, .
 static FluxUiaHooks const uia_calendar             = {.role = FLUX_UIA_CALENDAR, .patterns = 0};
 static FluxUiaHooks const uia_checkbox_toggle      = {.role = FLUX_UIA_CHECKBOX, .patterns = FLUX_UIA_P_TOGGLE};
 static FluxUiaHooks const uia_custom               = {.role = FLUX_UIA_CUSTOM, .patterns = 0};
-static FluxUiaHooks const uia_dataitem             = {.role = FLUX_UIA_DATAITEM, .patterns = 0};
 static FluxUiaHooks const uia_group                = {.role = FLUX_UIA_GROUP, .patterns = 0};
 static FluxUiaHooks const uia_header               = {.role = FLUX_UIA_HEADER, .patterns = 0};
 static FluxUiaHooks const uia_headeritem           = {.role = FLUX_UIA_HEADERITEM, .patterns = 0};
@@ -1171,13 +1170,16 @@ static FluxUiaHooks const uia_splitbutton_invoke   = {.role = FLUX_UIA_SPLITBUTT
 static FluxUiaHooks const uia_splitbutton_toggle   = {.role = FLUX_UIA_SPLITBUTTON, .patterns = FLUX_UIA_P_TOGGLE};
 static FluxUiaHooks const uia_statusbar            = {.role = FLUX_UIA_STATUSBAR, .patterns = 0};
 static FluxUiaHooks const uia_tab                  = {.role = FLUX_UIA_TAB, .patterns = 0};
-static FluxUiaHooks const uia_tabitem              = {.role = FLUX_UIA_TABITEM, .patterns = 0};
 static FluxUiaHooks const uia_text                 = {.role = FLUX_UIA_TEXT, .patterns = 0};
 static FluxUiaHooks const uia_titlebar             = {.role = FLUX_UIA_TITLEBAR, .patterns = 0};
 static FluxUiaHooks const uia_tooltip              = {.role = FLUX_UIA_TOOLTIP, .patterns = 0};
 static FluxUiaHooks const uia_tree                 = {.role = FLUX_UIA_TREE, .patterns = 0};
-static FluxUiaHooks const uia_treeitem             = {.role = FLUX_UIA_TREEITEM, .patterns = 0};
 static FluxUiaHooks const uia_window               = {.role = FLUX_UIA_WINDOW, .patterns = 0};
+static FluxUiaHooks const uia_scroll_pane          = {.role = FLUX_UIA_PANE, .patterns = FLUX_UIA_P_SCROLL};
+static FluxUiaHooks const uia_listitem_scroll      = {.role = FLUX_UIA_LISTITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
+static FluxUiaHooks const uia_treeitem_scroll      = {.role = FLUX_UIA_TREEITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
+static FluxUiaHooks const uia_tabitem_scroll       = {.role = FLUX_UIA_TABITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
+static FluxUiaHooks const uia_dataitem_scroll      = {.role = FLUX_UIA_DATAITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
 static FluxUiaHooks const uia_combo                = {
   .role = FLUX_UIA_COMBOBOX, .patterns = FLUX_UIA_P_VALUE, .text = flux_combo_text, .set_text = flux_prop_combo_text};
 static FluxUiaHooks const uia_picker
@@ -1347,7 +1349,7 @@ MODULE(scroll) = {
   .retarget = retarget_scroll,
   .record   = flux_scroll_record,
   .overlay  = flux_scroll_overlay_record,
-  .uia      = &uia_pane};
+  .uia      = &uia_scroll_pane};
 static FluxTreeHooks const tree_image = {.frame = flux_image_sync};
 MODULE(image)                         = {
   .type     = FLUX_CONTROL_IMAGE,
@@ -1556,7 +1558,7 @@ MODULE(tabitem) = {
   .type     = FLUX_CONTROL_TAB_VIEW_ITEM,
   .snapshot = flux_snap_tab_view_item,
   .record   = flux_tabitem_record,
-  .uia      = &uia_tabitem};
+  .uia      = &uia_tabitem_scroll};
 MODULE(listitem) = {
   .type     = FLUX_CONTROL_LIST_ITEM,
   .snapshot = flux_snap_list_item,
@@ -1564,7 +1566,7 @@ MODULE(listitem) = {
   .props    = flux_props_listitem,
   .seed     = seed_list_item,
   .record   = flux_listitem_record,
-  .uia      = &uia_listitem};
+  .uia      = &uia_listitem_scroll};
 MODULE(listbox) = {
   .type     = FLUX_CONTROL_LIST_BOX,
   .tree     = &tree_list,
@@ -1710,7 +1712,7 @@ MODULE(treeitem) = {
   .snapshot = flux_snap_tree_item,
   .props    = flux_props_treeitem,
   .record   = flux_treeitem_record,
-  .uia      = &uia_treeitem};
+  .uia      = &uia_treeitem_scroll};
 MODULE(refresh) = {
   .type     = FLUX_CONTROL_REFRESH,
   .snapshot = flux_snap_refresh,
@@ -1796,7 +1798,7 @@ MODULE(loopitem) = {
   .type     = FLUX_CONTROL_LOOPING_ITEM,
   .snapshot = flux_snap_looping_item,
   .record   = flux_looping_item_record,
-  .uia      = &uia_listitem};
+  .uia      = &uia_listitem_scroll};
 MODULE(datepicker) = {
   .type     = FLUX_CONTROL_DATE_PICKER,
   .snapshot = flux_snap_picker,
@@ -1836,7 +1838,7 @@ MODULE(calendar) = {
   .retarget = flux_calendar_retarget,
   .record   = flux_calendar_record,
   .uia      = &uia_calendar};
-MODULE(calday)      = {.type = FLUX_CONTROL_CALENDAR_DAY, .uia = &uia_dataitem};
+MODULE(calday)      = {.type = FLUX_CONTROL_CALENDAR_DAY, .uia = &uia_dataitem_scroll};
 MODULE(colorpicker) = {
   .type     = FLUX_CONTROL_COLOR_PICKER,
   .snapshot = flux_snap_colorpicker,

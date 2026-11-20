@@ -48,6 +48,8 @@ enum
 	FLUX_UIA_P_RANGE          = 1u << 2,
 	FLUX_UIA_P_VALUE          = 1u << 3,
 	FLUX_UIA_P_SELECTION_ITEM = 1u << 4,
+	FLUX_UIA_P_SCROLL         = 1u << 5,
+	FLUX_UIA_P_SCROLL_ITEM    = 1u << 6,
 };
 
 #endif

@@ -9,6 +9,7 @@ typedef struct FluxPickerFlyoutDesc {
 	FluxInput  *input;
 	FluxWindow *window;
 	XentNodeId  overlay;
+	XentNodeId  owner;
 	float       width;
 	bool        time;
 	void        (*on_accept)(void *ctx);

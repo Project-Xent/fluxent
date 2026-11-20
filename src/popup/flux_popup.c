@@ -7,6 +7,8 @@
 #include "render/flux_fluent.h"
 #include "render/flux_render_internal.h"
 #include "render/flux_scroll_geom.h"
+#include "store/flux_node_data.h"
+#include "fluxent/flux_input.h"
 
 #ifndef COBJMACROS
   #define COBJMACROS
@@ -61,6 +63,9 @@ struct FluxPopup {
 	void                 *record_ctx;
 	FluxText             *record_text;
 	ID2D1SolidColorBrush *record_brush;
+
+	FluxInput            *host_input;
+	XentNodeId            host_owner;
 
 	FluxPopupMouseFn      mouse_cb;
 	void                 *mouse_ctx;
@@ -184,6 +189,15 @@ FluxPopup *flux_popup_create(FluxWindow *owner) {
 	return popup;
 }
 
+static void popup_host_detach(FluxPopup *popup) {
+	if (!popup->host_input) return;
+	FluxNodeData *root  = flux_store_find(popup->store, popup->content_root);
+	FluxNodeData *owner = flux_store_find(popup->store, popup->host_owner);
+	if (root) root->popup = NULL;
+	if (owner && owner->uia_popup == popup->content_root) owner->uia_popup = XENT_NODE_INVALID;
+	popup->host_input = NULL;
+}
+
 void flux_popup_destroy(FluxPopup *popup) {
 	if (!popup) return;
 	popup_registry_remove(popup);
@@ -193,6 +207,7 @@ void flux_popup_destroy(FluxPopup *popup) {
 		SetWindowLongPtrW(popup->popup_hwnd, GWLP_USERDATA, 0);
 		DestroyWindow(popup->popup_hwnd);
 	}
+	popup_host_detach(popup);
 	flux_popup_tree_destroy(popup->tree);
 	if (popup->record_brush) ID2D1SolidColorBrush_Release(popup->record_brush);
 	if (popup->graphics) flux_gfx_destroy(popup->graphics);
@@ -1037,4 +1052,54 @@ static LRESULT CALLBACK popup_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
 	if (popup_handle_system_message(&message, &result)) return result;
 
 	return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void popup_host_button(FluxPopup *popup, FluxPointerEvent *ev, bool down) {
+	ev->kind           = down ? FLUX_POINTER_DOWN : FLUX_POINTER_UP;
+	ev->changed_button = FLUX_POINTER_BUTTON_LEFT;
+	ev->buttons        = down ? FLUX_POINTER_BUTTON_LEFT : 0;
+	if (down) SetCapture(popup->popup_hwnd);
+	else if (GetCapture() == popup->popup_hwnd) ReleaseCapture();
+}
+
+static void popup_host_wheel(FluxPopup *popup, FluxPointerEvent *ev, float delta) {
+	POINT pt;
+	GetCursorPos(&pt);
+	FluxPoint origin = flux_popup_contentorigin(popup);
+	ev->kind         = FLUX_POINTER_WHEEL;
+	ev->wheel_dy     = delta / FLUX_SCROLLBAR_SMALL_CHANGE;
+	ev->y            = (( float ) pt.y - origin.y) / popup_window_scale(popup->popup_hwnd);
+}
+
+static void popup_host_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y) {
+	( void ) ctx;
+	if (!popup->is_visible || !popup->host_input) return;
+	FluxPointerEvent ev = {
+	  .x      = x,
+	  .y      = y,
+	  .kind   = FLUX_POINTER_MOVE,
+	  .device = popup->last_input_touch ? FLUX_POINTER_TOUCH : FLUX_POINTER_MOUSE};
+	switch (event) {
+	case FLUX_POPUP_MOUSE_DOWN  : popup_host_button(popup, &ev, true); break;
+	case FLUX_POPUP_MOUSE_UP    : popup_host_button(popup, &ev, false); break;
+	case FLUX_POPUP_MOUSE_WHEEL : popup_host_wheel(popup, &ev, y); break;
+	case FLUX_POPUP_MOUSE_LEAVE : ev.x = ev.y = -1.0f; break;
+	default : ev.buttons = GetKeyState(VK_LBUTTON) < 0 || popup->last_input_touch ? FLUX_POINTER_BUTTON_LEFT : 0; break;
+	}
+	flux_input_dispatch(popup->host_input, popup->content_root, &ev);
+	InvalidateRect(popup->popup_hwnd, NULL, FALSE);
+}
+
+bool flux_popup_sethost(FluxPopup *popup, FluxInput *input, XentNodeId owner) {
+	FluxNodeData *root = popup && popup->tree && input ? flux_store_find(popup->store, popup->content_root) : NULL;
+	if (!root) return false;
+	popup_host_detach(popup);
+	FluxNodeData *nd  = flux_store_find(popup->store, owner);
+	popup->host_input = input;
+	popup->host_owner = owner;
+	root->popup       = popup;
+	root->uia_owner   = nd ? owner : XENT_NODE_INVALID;
+	if (nd) nd->uia_popup = popup->content_root;
+	flux_popup_onmouse(popup, popup_host_mouse, NULL);
+	return true;
 }

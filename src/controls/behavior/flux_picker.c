@@ -48,6 +48,7 @@ static bool picker_build_flyout(FluxPickerData *pd) {
 	  .input      = pd->input,
 	  .window     = pd->window,
 	  .overlay    = pd->overlay,
+	  .owner      = pd->root,
 	  .width      = pd->ops->width,
 	  .time       = pd->ops->width == FLUX_TIME_PICKER_W,
 	  .on_accept  = picker_flyout_accept,

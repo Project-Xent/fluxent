@@ -9,6 +9,7 @@
 #include "controls/data/flux_textbox_data.h"
 #include "render/flux_slider_geom.h"
 #include "fluxent/flux_control_type.h"
+#include <fluxent/flux_popup.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -385,6 +386,17 @@ static void uia_sub_rect(FluxUia const *self, XentRect *rect) {
 		rect->x = 2.0f * node.x + node.w - rect->x - rect->w;
 }
 
+static bool uia_popup_origin(FluxUia const *self, POINT *origin) {
+	for (XentNodeId n = self->node; n != XENT_NODE_INVALID; n = xent_node_parent(self->info.ctx, n)) {
+		FluxNodeData const *nd = flux_store_find(self->info.store, n);
+		if (!nd || !nd->popup) continue;
+		FluxPoint at = flux_popup_contentorigin(nd->popup);
+		*origin      = (POINT) {( LONG ) at.x, ( LONG ) at.y};
+		return true;
+	}
+	return false;
+}
+
 static HRESULT STDMETHODCALLTYPE f_get_bounds(IRawElementProviderFragment *p, struct UiaRect *out) {
 	FluxUia *self = SELF_FRAG(p);
 	if (!out) return E_POINTER;
@@ -393,7 +405,7 @@ static HRESULT STDMETHODCALLTYPE f_get_bounds(IRawElementProviderFragment *p, st
 	if (self->sub >= 0) uia_sub_rect(self, &rect);
 	float scale  = ( float ) GetDpiForWindow(self->info.hwnd) / 96.0f;
 	POINT origin = {0, 0};
-	ClientToScreen(self->info.hwnd, &origin);
+	if (!uia_popup_origin(self, &origin)) ClientToScreen(self->info.hwnd, &origin);
 	out->left   = origin.x + rect.x * scale;
 	out->top    = origin.y + rect.y * scale;
 	out->width  = rect.w * scale;

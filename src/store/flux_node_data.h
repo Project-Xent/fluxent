@@ -75,6 +75,9 @@ typedef struct FluxNodeData {
 	FluxControlType            component_type;
 	void                      *component_data;
 	struct FluxUiaHooks const *uia;
+	struct FluxPopup          *popup;
+	XentNodeId                 uia_popup;
+	XentNodeId                 uia_owner;
 	void                       (*destroy_component_data)(void *component_data);
 
 	float                      hover_local_x;

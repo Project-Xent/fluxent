@@ -7,6 +7,7 @@
 #include "fluxent/flux_window.h"
 #include "render/flux_picker_geom.h"
 #include "store/flux_node_data.h"
+#include "popup/flux_popup_tree.h"
 
 #include <stdlib.h>
 #include <math.h>
@@ -121,54 +122,14 @@ static bool pfly_build(FluxPickerFlyout *fly) {
 
 static void pfly_popup_dismiss(void *ctx) { pfly_close(( FluxPickerFlyout * ) ctx, false); }
 
-static void pfly_mouse_button(FluxPopup *popup, FluxPointerEvent *ev, bool down) {
-	HWND hwnd          = flux_popup_hwnd(popup);
-	ev->kind           = down ? FLUX_POINTER_DOWN : FLUX_POINTER_UP;
-	ev->changed_button = FLUX_POINTER_BUTTON_LEFT;
-	ev->buttons        = down ? FLUX_POINTER_BUTTON_LEFT : 0;
-	if (down) SetCapture(hwnd);
-	else if (GetCapture() == hwnd) ReleaseCapture();
-}
-
-static void pfly_mouse_wheel(FluxPickerFlyout *fly, FluxPopup *popup, FluxPointerEvent *ev, float delta) {
-	POINT pt;
-	GetCursorPos(&pt);
-	FluxPoint origin = flux_popup_contentorigin(popup);
-	float     scale  = flux_window_dpi(fly->desc.window).dpi_y / FLUX_DPI_BASE;
-	ev->kind         = FLUX_POINTER_WHEEL;
-	ev->wheel_dy     = delta / 48.0f;
-	ev->y            = (( float ) pt.y - origin.y) / scale;
-}
-
-static void pfly_popup_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y) {
-	FluxPickerFlyout *fly = ctx;
-	if (!fly->shown) return;
-	FluxPointerEvent ev = {
-	  .x      = x,
-	  .y      = y,
-	  .kind   = FLUX_POINTER_MOVE,
-	  .device = flux_popup_lasttouch(popup) ? FLUX_POINTER_TOUCH : FLUX_POINTER_MOUSE};
-	switch (event) {
-	case FLUX_POPUP_MOUSE_DOWN  : pfly_mouse_button(popup, &ev, true); break;
-	case FLUX_POPUP_MOUSE_UP    : pfly_mouse_button(popup, &ev, false); break;
-	case FLUX_POPUP_MOUSE_WHEEL : pfly_mouse_wheel(fly, popup, &ev, y); break;
-	case FLUX_POPUP_MOUSE_LEAVE : ev.x = ev.y = -1.0f; break;
-	default :
-		ev.buttons = GetKeyState(VK_LBUTTON) < 0 || flux_popup_lasttouch(popup) ? FLUX_POINTER_BUTTON_LEFT : 0;
-		break;
-	}
-	flux_input_dispatch(fly->desc.input, fly->card, &ev);
-	InvalidateRect(flux_popup_hwnd(popup), NULL, FALSE);
-}
-
 static bool pfly_build_popup(FluxPickerFlyout *fly) {
 	fly->popup = flux_popup_create(fly->desc.window);
 	if (!fly->popup) return false;
 	flux_popup_setshadow(fly->popup, true, FLUX_PFLY_RADIUS);
 	flux_popup_setanim(fly->popup, FLUX_POPUP_ANIM_PICKER);
 	flux_popup_ondismiss(fly->popup, pfly_popup_dismiss, fly);
-	flux_popup_onmouse(fly->popup, pfly_popup_mouse, fly);
-	return flux_popup_setcontent(fly->popup, fly->desc.ctx, fly->desc.store, fly->card);
+	return flux_popup_setcontent(fly->popup, fly->desc.ctx, fly->desc.store, fly->card)
+	    && flux_popup_sethost(fly->popup, fly->desc.input, fly->desc.owner);
 }
 
 FluxPickerFlyout *flux_pflyout_create(FluxPickerFlyoutDesc const *desc) {

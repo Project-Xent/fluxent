@@ -123,12 +123,13 @@ static FluxUiaControlInfo uia_control_info(FluxUia const *self) {
 	if (uia_range_slider(self)) return (FluxUiaControlInfo) {FLUX_UIA_GROUP, 0};
 	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
 	if (!h || h->role <= 0) return (FluxUiaControlInfo) {FLUX_UIA_CUSTOM, 0};
-	return (FluxUiaControlInfo) {h->role, h->patterns};
+	return (FluxUiaControlInfo) {h->role, flux_uia_patterns(&self->info, self->node)};
 }
 
 unsigned flux_uia_patterns(FluxUiaContext const *info, XentNodeId node) {
 	FluxUiaHooks const *h = flux_module_uia(info->store, node);
-	return h ? h->patterns : 0u;
+	if (!h) return 0u;
+	return h->live ? h->patterns & h->live(info->store, node) : h->patterns;
 }
 
 static void *uia_pattern_iface(FluxUia *self, REFIID riid) {

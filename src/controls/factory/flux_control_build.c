@@ -1243,6 +1243,8 @@ static FluxUiaHooks const uia_loopitem_sel = {
   .role     = FLUX_UIA_LISTITEM,
   .patterns = FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_SELECTION_ITEM,
   .selected = flux_looping_uia_selected};
+static FluxUiaHooks const uia_splitpane
+  = {.role = FLUX_UIA_WINDOW, .patterns = FLUX_UIA_P_WINDOW, .live = flux_splitpane_uia_live, .modal = true};
 static FluxUiaHooks const uia_combo = {
   .role          = FLUX_UIA_COMBOBOX,
   .patterns      = FLUX_UIA_P_VALUE | FLUX_UIA_P_EXPAND,
@@ -1826,7 +1828,7 @@ MODULE(splitpane) = {
   .snapshot = flux_snap_split_pane,
   .layout   = layout_flex_column,
   .record   = flux_splitpane_record,
-  .uia      = &uia_pane};
+  .uia      = &uia_splitpane};
 MODULE(splitbody) = {
   .type   = FLUX_CONTROL_SPLIT_VIEW_CONTENT,
   .layout = layout_flex_column,

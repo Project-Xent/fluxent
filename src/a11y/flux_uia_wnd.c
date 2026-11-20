@@ -33,8 +33,7 @@ static HRESULT STDMETHODCALLTYPE wnd_set_state(IWindowProvider *p, enum WindowVi
 static HRESULT STDMETHODCALLTYPE wnd_close(IWindowProvider *p) {
 	FluxUia            *self = NULL;
 	FluxUiaHooks const *h    = uia_window_hooks(p, &self);
-	if (!h || !h->close) return UIA_E_INVALIDOPERATION;
-	h->close(self->info.store, self->node);
+	if (h && h->close) h->close(self->info.store, self->node);
 	return S_OK;
 }
 
@@ -74,7 +73,7 @@ static HRESULT STDMETHODCALLTYPE wnd_get_state(IWindowProvider *p, enum WindowVi
 static HRESULT STDMETHODCALLTYPE wnd_get_interaction(IWindowProvider *p, enum WindowInteractionState *out) {
 	( void ) p;
 	if (!out) return E_POINTER;
-	*out = WindowInteractionState_ReadyForUserInteraction;
+	*out = WindowInteractionState_Running;
 	return S_OK;
 }
 

@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_init_container.h"
@@ -112,6 +113,7 @@ split_layout_pane(XentCtx *ctx, FluxSplitViewData *d, XentNodeId pane, SplitGeom
 	FluxSplitPaneData *pd = split_pane_data(d, pane);
 	if (!pd) return;
 	pd->overlay   = g->overlay;
+	pd->open      = d->pane_open;
 	pd->placement = d->placement;
 	pd->divider   = g->pane_w > 0.5f;
 }
@@ -144,4 +146,10 @@ void flux_splitview_configure(
 	d->placement    = ( uint8_t ) placement;
 	if (open_len > 0.0f) d->open_len = open_len;
 	if (compact_len > 0.0f) d->compact_len = compact_len;
+}
+
+unsigned flux_splitpane_uia_live(FluxStore *store, XentNodeId node) {
+	FluxNodeData            *nd = flux_store_find(store, node);
+	FluxSplitPaneData const *pd = nd && nd->component_type == FLUX_CONTROL_SPLIT_VIEW_PANE ? nd->component_data : NULL;
+	return pd && pd->open && pd->overlay ? ~0u : 0u;
 }

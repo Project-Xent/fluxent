@@ -40,6 +40,7 @@ typedef struct FluxSplitViewData {
 
 typedef struct FluxSplitPaneData {
 	bool    overlay;
+	bool    open;
 	uint8_t placement;
 	bool    divider;
 } FluxSplitPaneData;

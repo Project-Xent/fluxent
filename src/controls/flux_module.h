@@ -67,6 +67,7 @@ typedef struct FluxUiaHooks {
 	bool        (*select)(FluxStore *store, XentNodeId node, int op);
 	unsigned    (*select_mode)(FluxStore *store, XentNodeId node);
 	void        (*close)(FluxStore *store, XentNodeId node);
+	unsigned    (*live)(FluxStore *store, XentNodeId node);
 	bool        modal;
 	char const *(*text)(FluxStore *store, XentNodeId node);
 	void        (*set_text)(FluxStore *store, XentNodeId node, char const *text);

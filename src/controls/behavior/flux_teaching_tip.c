@@ -441,6 +441,33 @@ static FluxPoint tip_scale_center_for(FluxTipRuntime const *rt, FluxTeachingTipP
 	}
 }
 
+static FluxTeachingTipPlacement tip_flow_placement(FluxTeachingTipPlacement p) {
+	static FluxTeachingTipPlacement const mirrored [] = {
+	  [FLUX_TIP_PLACE_AUTO]         = FLUX_TIP_PLACE_AUTO,
+	  [FLUX_TIP_PLACE_TOP]          = FLUX_TIP_PLACE_TOP,
+	  [FLUX_TIP_PLACE_BOTTOM]       = FLUX_TIP_PLACE_BOTTOM,
+	  [FLUX_TIP_PLACE_LEFT]         = FLUX_TIP_PLACE_RIGHT,
+	  [FLUX_TIP_PLACE_RIGHT]        = FLUX_TIP_PLACE_LEFT,
+	  [FLUX_TIP_PLACE_TOP_RIGHT]    = FLUX_TIP_PLACE_TOP_LEFT,
+	  [FLUX_TIP_PLACE_TOP_LEFT]     = FLUX_TIP_PLACE_TOP_RIGHT,
+	  [FLUX_TIP_PLACE_BOTTOM_RIGHT] = FLUX_TIP_PLACE_BOTTOM_LEFT,
+	  [FLUX_TIP_PLACE_BOTTOM_LEFT]  = FLUX_TIP_PLACE_BOTTOM_RIGHT,
+	  [FLUX_TIP_PLACE_LEFT_TOP]     = FLUX_TIP_PLACE_RIGHT_TOP,
+	  [FLUX_TIP_PLACE_LEFT_BOTTOM]  = FLUX_TIP_PLACE_RIGHT_BOTTOM,
+	  [FLUX_TIP_PLACE_RIGHT_TOP]    = FLUX_TIP_PLACE_LEFT_TOP,
+	  [FLUX_TIP_PLACE_RIGHT_BOTTOM] = FLUX_TIP_PLACE_LEFT_BOTTOM,
+	  [FLUX_TIP_PLACE_CENTER]       = FLUX_TIP_PLACE_CENTER,
+	};
+	return ( unsigned ) p < sizeof(mirrored) / sizeof(mirrored [0]) ? mirrored [p] : p;
+}
+
+static void tip_logical_tail(FluxTipRuntime *rt) {
+	if (rt->tail_edge == FLUX_TIP_TAIL_EDGE_LEFT) rt->tail_edge = FLUX_TIP_TAIL_EDGE_RIGHT;
+	else if (rt->tail_edge == FLUX_TIP_TAIL_EDGE_RIGHT) rt->tail_edge = FLUX_TIP_TAIL_EDGE_LEFT;
+	else rt->tail_center = rt->tip_w - rt->tail_center;
+	rt->scale_cx = rt->tip_w - rt->scale_cx;
+}
+
 static FluxRect tip_window_rect_px(FluxTipRuntime const *rt) {
 	HWND hwnd = flux_window_hwnd(rt->window);
 	RECT rc   = {0};
@@ -460,13 +487,15 @@ static bool tip_position(FluxTipRuntime *rt) {
 	g.margin                          = rt->model.placement_margin;
 
 	bool                     targeted = !rt->model.untargeted && rt->target != XENT_NODE_INVALID;
-	FluxTeachingTipPlacement eff      = rt->model.preferred;
+	bool                     rtl      = xent_resolved_dir(rt->ctx, rt->node) == XENT_DIRECTION_RTL;
+	FluxTeachingTipPlacement pref     = rtl ? tip_flow_placement(rt->model.preferred) : rt->model.preferred;
+	FluxTeachingTipPlacement eff      = pref;
 	FluxPoint                origin;
 
 	if (targeted) {
 		FluxRect a = flux_binding_screen_anchor(rt->window, rt->ctx, rt->store, rt->target);
 		g.tgt      = (FluxRect) {a.x / scale, a.y / scale, a.w / scale, a.h / scale};
-		eff        = tip_solve(&g, rt->model.preferred);
+		eff        = tip_solve(&g, pref);
 		if (eff == FLUX_TIP_PLACE_AUTO) return false;
 		origin = tip_origin_targeted(&g, eff);
 	}
@@ -484,8 +513,10 @@ static bool tip_position(FluxTipRuntime *rt) {
 	FluxPoint sc        = tip_scale_center_for(rt, eff, tail);
 	rt->scale_cx        = sc.x;
 	rt->scale_cy        = sc.y;
+	if (rtl) tip_logical_tail(rt);
 
 	flux_popup_setsize(rt->popup, rt->tip_w, rt->tip_h);
+	flux_popup_setrtl(rt->popup, rtl);
 	FluxRect anchor = {origin.x * scale, origin.y * scale, 0.0f, 0.0f};
 	flux_popup_show(rt->popup, anchor, FLUX_PLACEMENT_BOTTOM);
 	return true;

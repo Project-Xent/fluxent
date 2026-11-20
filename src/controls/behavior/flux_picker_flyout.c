@@ -288,6 +288,10 @@ static FluxRect pfly_place(FluxPickerFlyout *fly, FluxRect const *target) {
 	return (FluxRect) {x, y, 0.0f, 0.0f};
 }
 
+void flux_pflyout_setrtl(FluxPickerFlyout *fly, bool rtl) {
+	if (fly) flux_popup_setrtl(fly->popup, rtl);
+}
+
 void flux_pflyout_show(FluxPickerFlyout *fly, FluxRect const *target) {
 	if (!fly || fly->shown || fly->geom.columns == 0) return;
 	FluxRect anchor = pfly_place(fly, target);

@@ -35,6 +35,7 @@ void flux_tooltip_hover(FluxTooltip *tt, XentNodeId hovered, FluxNodeData const 
 void flux_tooltip_dismiss(FluxTooltip *tt);
 
 void flux_tooltip_showat(FluxTooltip *tt, char const *text, FluxRect anchor, FluxPlacement placement);
+void flux_tooltip_setrtl(FluxTooltip *tt, bool rtl);
 
 bool flux_tooltip_visible(FluxTooltip const *tt);
 

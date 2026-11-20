@@ -281,6 +281,7 @@ static void app_sync_auto_tooltip(FluxApp *app) {
 	POINT pt    = {( LONG ) ((r.x + local.x) * scale), ( LONG ) ((r.y + local.y) * scale)};
 	ClientToScreen(flux_window_hwnd(app->window), &pt);
 	FluxRect anchor = {( float ) pt.x, ( float ) pt.y, local.w * scale, local.h * scale};
+	flux_tooltip_setrtl(app->tooltip, xent_resolved_dir(app_ctx(app), node) == XENT_DIRECTION_RTL);
 	flux_tooltip_showat(app->tooltip, text, anchor, placement);
 	app->auto_tip_open = true;
 }
@@ -410,6 +411,8 @@ static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool i
 		screen_bounds.y = ( float ) pt.y;
 		screen_bounds.h = FLUX_APP_TOOLTIP_ANCHOR_H;
 	}
+	if (hovered != XENT_NODE_INVALID)
+		flux_tooltip_setrtl(app->tooltip, xent_resolved_dir(app_ctx(app), hovered) == XENT_DIRECTION_RTL);
 	flux_tooltip_hover(app->tooltip, hovered, hover_nd, &screen_bounds);
 }
 

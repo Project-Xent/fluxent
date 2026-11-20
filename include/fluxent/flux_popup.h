@@ -31,6 +31,9 @@ void                      flux_popup_destroy(FluxPopup *popup);
 bool flux_popup_setcontent(FluxPopup *popup, XentCtx *ctx, FluxStore *store, XentNodeId content_root);
 
 void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement);
+/** RTL swaps left and right placements and mirrors recorded content and pointer x. A zero-size anchor stays the popup's top-left corner. */
+void flux_popup_setrtl(FluxPopup *popup, bool rtl);
+bool flux_popup_rtl(FluxPopup const *popup);
 
 typedef enum FluxPopupAnimStyle
 {

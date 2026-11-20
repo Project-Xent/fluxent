@@ -69,6 +69,7 @@ typedef struct MenuTextDraw {
 	uint8_t         align;
 	uint8_t         valign;
 	bool            icon_font;
+	bool            mirrorable;
 } MenuTextDraw;
 
 typedef struct MenuLabelSpan {
@@ -147,7 +148,8 @@ static bool rec_menu_text(MenuRecContext const *dc, MenuTextDraw const *draw) {
 	  .font_weight = FLUX_FONT_REGULAR,
 	  .h_align     = draw->align,
 	  .v_align     = draw->valign,
-	  .flags       = draw->icon_font ? XENT_DL_TEXT_ICON : 0u,
+	  .flags
+	  = ( uint8_t ) ((draw->icon_font ? XENT_DL_TEXT_ICON : 0u) | (draw->mirrorable ? XENT_DL_TEXT_MIRRORABLE : 0u)),
 	  .font_family = draw->icon_font ? flux_icon_font_family() : NULL,
 	};
 	return flux_rec_text_ex(dc->b, draw->box, draw->text, &style, draw->color);
@@ -280,7 +282,7 @@ static float menu_rec_trailing(
 	if (it->type == FLUX_MENU_ITEM_SUBMENU) {
 		FluxRect     chev_box = {label_right - FLUX_MENU_ITEM_CHEVRON_SIZE, ir->y, FLUX_MENU_ITEM_CHEVRON_SIZE, ir->h};
 		MenuTextDraw draw
-		  = {GLYPH_CHEVRON_R, &chev_box, FLUX_MENU_ITEM_CHEVRON_SIZE, palette->fg_chevron, 1u, 1u, true};
+		  = {GLYPH_CHEVRON_R, &chev_box, FLUX_MENU_ITEM_CHEVRON_SIZE, palette->fg_chevron, 1u, 1u, true, true};
 		*ok          = *ok && rec_menu_text(dc, &draw);
 		label_right -= FLUX_MENU_ITEM_CHEVRON_SIZE + FLUX_MENU_ITEM_CHEVRON_GAP;
 	}
@@ -395,6 +397,7 @@ void menu_paint(void *ctx, FluxPopup *popup) {
 	MenuPresenterLayout     layout = menu_presenter_layout(m);
 	FluxPopupMenuTransition tr     = flux_popup_menutransition(popup, layout.bounds.h);
 	XentDl                 *list   = menu_record(m, &layout, &c, &tr);
+	if (list && flux_popup_rtl(popup)) xent_dl_mirror(list, m->total_w);
 	if (list) {
 		flux_xtk_replay_rc(&rc, list);
 		xent_dl_free(list);

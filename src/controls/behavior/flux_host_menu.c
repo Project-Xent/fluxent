@@ -47,6 +47,7 @@ static void                  menu_item_invoke(void *ctx) {
 static void menu_fly_show(FluxHostMenuFlyData *fly, FluxMenuInputKind input) {
 	if (!fly || !fly->menu || flux_menu_visible(fly->menu)) return;
 	FluxRect anchor = flux_binding_screen_anchor(fly->window, fly->ctx, fly->store, fly->parent);
+	flux_menu_setrtl(fly->menu, xent_resolved_dir(fly->ctx, fly->parent) == XENT_DIRECTION_RTL);
 	flux_menu_showinput(fly->menu, anchor, FLUX_PLACEMENT_BOTTOM, input);
 }
 

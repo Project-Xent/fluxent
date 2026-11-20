@@ -168,11 +168,12 @@ void flux_cmdbar_ovf_show(FluxCmdBarData *b) {
 	float    h      = b->nrows ? b->ovf_view : 1.0f;
 	float    dx     = ovf_offset(b, local.x, ( float ) client.right / scale);
 	float    dy     = b->open_up ? b->closed_h - b->content_h - h : b->content_h;
+	bool     rtl    = xent_resolved_dir(b->ctx, b->node) == XENT_DIRECTION_RTL;
+	float    x      = rtl ? anchor.x + anchor.w - w * scale : anchor.x + dx * scale;
 	flux_popup_setsize(b->popup, w, h);
 	flux_popup_setdismissoutside(b->popup, !b->sticky);
-	flux_popup_show(
-	  b->popup, (FluxRect) {anchor.x + dx * scale, anchor.y + dy * scale, 0.0f, 0.0f}, FLUX_PLACEMENT_BOTTOM
-	);
+	flux_popup_setrtl(b->popup, rtl);
+	flux_popup_show(b->popup, (FluxRect) {x, anchor.y + dy * scale, 0.0f, 0.0f}, FLUX_PLACEMENT_BOTTOM);
 }
 
 static FluxColor row_fg(FluxThemeColors const *t, bool enabled, bool pressed) {

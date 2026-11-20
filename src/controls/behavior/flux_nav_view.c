@@ -479,6 +479,7 @@ static void nav_show_child_flyout(FluxNavViewData *d, int parent) {
 	d->items [parent].expanded = true;
 	d->flyout_parent           = parent;
 	FluxRect anchor            = flux_binding_screen_anchor(d->window, d->ctx, d->store, d->items [parent].node);
+	flux_menu_setrtl(d->child_flyout, xent_resolved_dir(d->ctx, d->items [parent].node) == XENT_DIRECTION_RTL);
 	flux_menu_show(d->child_flyout, anchor, d->mode == FLUX_NAV_TOP ? FLUX_PLACEMENT_BOTTOM : FLUX_PLACEMENT_RIGHT);
 	nav_repaint(d);
 }

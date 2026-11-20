@@ -161,6 +161,7 @@ static void bc_open_flyout(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
 		);
 	}
 	FluxRect anchor = flux_binding_screen_anchor(d->window, d->ctx, d->store, it->node);
+	flux_menu_setrtl(d->flyout, xent_resolved_dir(d->ctx, it->node) == XENT_DIRECTION_RTL);
 	flux_menu_showinput(d->flyout, anchor, FLUX_PLACEMENT_BOTTOM, input);
 }
 

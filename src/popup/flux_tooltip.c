@@ -299,10 +299,15 @@ static void tooltip_paint(void *ctx, FluxPopup *popup) {
 	FluxRect      bounds     = {0.0f, 0.0f, popup_size.w, popup_size.h};
 	FluxRenderCtx rc         = tooltip_render_context(tt, d2d);
 	XentDl       *list       = tooltip_record(tt, &bounds, bg, border, text_color);
+	if (list && flux_popup_rtl(popup)) xent_dl_mirror(list, popup_size.w);
 	if (list) {
 		flux_xtk_replay_rc(&rc, list);
 		xent_dl_free(list);
 	}
+}
+
+void flux_tooltip_setrtl(FluxTooltip *tt, bool rtl) {
+	if (tt) flux_popup_setrtl(tt->popup, rtl);
 }
 
 void flux_tooltip_showat(FluxTooltip *tt, char const *text, FluxRect anchor, FluxPlacement placement) {

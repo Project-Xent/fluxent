@@ -165,6 +165,7 @@ static void menu_open_child_popup(FluxMenu *m, FluxMenu *child, StoredItem const
 	child->open_submenu_index = -1;
 	child->keyboard_index     = focus_first ? first_enabled(child) : -1;
 
+	flux_popup_setrtl(child->popup, flux_popup_rtl(m->popup));
 	flux_popup_show(child->popup, anchor, FLUX_PLACEMENT_RIGHT);
 	invalidate(m);
 	invalidate(child);
@@ -465,6 +466,10 @@ void flux_menu_showinput(FluxMenu *m, FluxRect anchor, FluxPlacement placement, 
 }
 
 void flux_menu_dismiss(FluxMenu *m) { _dismiss_internal(m, true); }
+
+void flux_menu_setrtl(FluxMenu *m, bool rtl) {
+	if (m) flux_popup_setrtl(m->popup, rtl);
+}
 
 void flux_menu_dismissall(FluxMenu *m) {
 	FluxMenu *root = root_of(m);

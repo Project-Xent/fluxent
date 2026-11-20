@@ -42,6 +42,7 @@ struct FluxPopup {
 	XentNodeId            content_root;
 	FluxPopupTree        *tree;
 	bool                  tree_busy;
+	bool                  rtl;
 
 	FluxRect              anchor;
 	FluxPlacement         placement;
@@ -207,8 +208,17 @@ bool flux_popup_setcontent(FluxPopup *popup, XentCtx *ctx, FluxStore *store, Xen
 	popup->ctx          = ctx;
 	popup->store        = store;
 	popup->content_root = content_root;
+	xent_setdir(ctx, content_root, popup->rtl ? XENT_DIRECTION_RTL : XENT_DIRECTION_LTR);
 	return true;
 }
+
+void flux_popup_setrtl(FluxPopup *popup, bool rtl) {
+	if (!popup) return;
+	popup->rtl = rtl;
+	if (popup->tree) xent_setdir(popup->ctx, popup->content_root, rtl ? XENT_DIRECTION_RTL : XENT_DIRECTION_LTR);
+}
+
+bool flux_popup_rtl(FluxPopup const *popup) { return popup && popup->rtl; }
 
 void flux_popup_setsize(FluxPopup *popup, float width, float height) {
 	if (!popup) return;
@@ -256,8 +266,11 @@ static void popup_clamp_content_height(FluxPopup const *popup, RECT const *work,
 
 static bool          popup_anchor_is_control(FluxRect const *anchor) { return anchor->w > 0.5f || anchor->h > 0.5f; }
 
-static FluxPlacement popup_effective_placement(FluxPlacement placement) {
-	return placement == FLUX_PLACEMENT_AUTO ? FLUX_PLACEMENT_BOTTOM : placement;
+static FluxPlacement popup_effective_placement(FluxPlacement placement, bool rtl) {
+	if (placement == FLUX_PLACEMENT_AUTO) return FLUX_PLACEMENT_BOTTOM;
+	if (rtl && placement == FLUX_PLACEMENT_LEFT) return FLUX_PLACEMENT_RIGHT;
+	if (rtl && placement == FLUX_PLACEMENT_RIGHT) return FLUX_PLACEMENT_LEFT;
+	return placement;
 }
 
 static FluxPlacement popup_flip_placement(FluxPlacement placement) {
@@ -469,15 +482,22 @@ static void popup_position(FluxPopup *popup) {
 	RECT          work      = popup_owner_work_rect(popup);
 	int           x         = 0;
 	int           y         = 0;
-	FluxPlacement placement = popup_effective_placement(popup->placement);
+	FluxPlacement placement = popup_effective_placement(popup->placement, popup->rtl);
 
 	popup_clamp_content_height(popup, &work, scale, &ah);
 
-	int                 pw = ( int ) (aw * scale + 0.5f);
-	int                 ph = ( int ) (ah * scale + 0.5f);
+	int                 pw     = ( int ) (aw * scale + 0.5f);
+	int                 ph     = ( int ) (ah * scale + 0.5f);
 
-	PopupPositionParams params
-	  = {.anchor = &popup->anchor, .placement = placement, .aw = aw, .ah = ah, .scale = scale, .pw = pw, .ph = ph};
+	PopupPositionParams params = {
+	  .anchor    = &popup->anchor,
+	  .placement = placement,
+	  .aw        = aw,
+	  .ah        = ah,
+	  .scale     = scale,
+	  .pw        = pw,
+	  .ph        = ph,
+	};
 
 	popup_compute_position(&params, &x, &y);
 	if (popup_needs_flip(&params, &work, x, y)) {
@@ -797,6 +817,10 @@ static void popup_begin_mouse_tracking(HWND hwnd, FluxPopup *popup) {
 	popup->mouse_tracking = true;
 }
 
+static float popup_logical_x(FluxPopup const *popup, float x) {
+	return popup->rtl && !popup->tree ? popup->content_w - x : x;
+}
+
 static LRESULT popup_on_mouse_event(PopupWindowMessage const *m, FluxPopupMouseEvent ev) {
 	FluxPopup *popup = m->popup;
 	if (!popup || !popup->mouse_cb) return 0;
@@ -810,7 +834,7 @@ static LRESULT popup_on_mouse_event(PopupWindowMessage const *m, FluxPopupMouseE
 	PopupInsets in  = popup_insets(popup);
 	point.x        -= in.l;
 	if (ev != FLUX_POPUP_MOUSE_WHEEL) point.y -= in.t;
-	popup->mouse_cb(popup->mouse_ctx, popup, ev, point.x, point.y);
+	popup->mouse_cb(popup->mouse_ctx, popup, ev, popup_logical_x(popup, point.x), point.y);
 	return 0;
 }
 
@@ -829,7 +853,9 @@ static bool popup_on_pointer(PopupWindowMessage const *m) {
 	float       scale       = popup_window_scale(m->hwnd);
 	PopupInsets in          = popup_insets(popup);
 	popup->last_input_touch = true;
-	popup->mouse_cb(popup->mouse_ctx, popup, ev, ( float ) pt.x / scale - in.l, ( float ) pt.y / scale - in.t);
+	popup->mouse_cb(
+	  popup->mouse_ctx, popup, ev, popup_logical_x(popup, ( float ) pt.x / scale - in.l), ( float ) pt.y / scale - in.t
+	);
 	return true;
 }
 
@@ -855,6 +881,7 @@ static void popup_replay_record(FluxPopup *popup) {
 	if (!d2d || !popup_ensure_record_brush(popup, d2d)) return;
 	XentDl *list = popup->record_cb(popup->record_ctx, popup);
 	if (!list) return;
+	if (popup->rtl) xent_dl_mirror(list, popup->content_w);
 	FluxRenderCtx rc = {
 	  .d2d   = d2d,
 	  .brush = popup->record_brush,

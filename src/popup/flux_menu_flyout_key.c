@@ -73,6 +73,8 @@ static bool menu_handle_left_key(FluxMenu *m) {
 
 bool flux_menu_onkey(FluxMenu *m, FluxKey key) {
 	if (!m || !flux_popup_visible(m->popup)) return false;
+	if (flux_popup_rtl(m->popup) && (key == FLUX_KEY_LEFT || key == FLUX_KEY_RIGHT))
+		key = key == FLUX_KEY_LEFT ? FLUX_KEY_RIGHT : FLUX_KEY_LEFT;
 
 	static MenuKeyBinding const bindings [] = {
 	  {FLUX_KEY_DOWN,   menu_handle_down_key    },

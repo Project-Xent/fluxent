@@ -417,7 +417,8 @@ static void combo_show_centered(FluxComboRuntime *rt, FluxRect anchor) {
 	flux_popup_setsize(rt->popup, rt->width, rt->height);
 	double box_mid = cb_y + anchor.h / s * 0.5;
 	flux_popup_setsplit(rt->popup, ( float ) (anchor.h / s), ( float ) (box_mid - (y + h * 0.5)));
-	FluxRect at = {anchor.x, ( float ) (mi.rcWork.top + y * s), 0.0f, 0.0f};
+	float    x  = flux_popup_rtl(rt->popup) ? anchor.x + anchor.w - ( float ) (rt->width * s) : anchor.x;
+	FluxRect at = {x, ( float ) (mi.rcWork.top + y * s), 0.0f, 0.0f};
 	flux_popup_show(rt->popup, at, FLUX_PLACEMENT_BOTTOM);
 }
 
@@ -446,6 +447,7 @@ static void combo_open(FluxComboRuntime *rt) {
 	rt->highlight   = combo_open_highlight(rt);
 	rt->scroll_y    = 0.0f;
 	FluxRect anchor = flux_binding_screen_anchor(rt->window, rt->ctx, rt->store, rt->node);
+	flux_popup_setrtl(rt->popup, xent_resolved_dir(rt->ctx, rt->node) == XENT_DIRECTION_RTL);
 	if (!rt->model.editable && rt->model.item_count > 0 && rt->window) combo_show_centered(rt, anchor);
 	else {
 		combo_ensure_visible(rt, rt->highlight);

@@ -101,6 +101,7 @@ void                     flux_menu_clear(FluxMenu *menu);
 int                      flux_menu_nitem(FluxMenu const *menu);
 
 void                     flux_menu_show(FluxMenu *menu, FluxRect anchor, FluxPlacement placement);
+void                     flux_menu_setrtl(FluxMenu *menu, bool rtl);
 
 void      flux_menu_showinput(FluxMenu *menu, FluxRect anchor, FluxPlacement placement, FluxMenuInputKind input_kind);
 

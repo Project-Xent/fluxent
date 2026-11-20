@@ -28,6 +28,7 @@ typedef struct FluxPickerColumnSpec {
 
 FluxPickerFlyout *flux_pflyout_create(FluxPickerFlyoutDesc const *desc);
 void              flux_pflyout_destroy(FluxPickerFlyout *fly);
+void              flux_pflyout_setrtl(FluxPickerFlyout *fly, bool rtl);
 
 int               flux_pflyout_addcolumn(FluxPickerFlyout *fly, FluxPickerColumnSpec const *spec);
 

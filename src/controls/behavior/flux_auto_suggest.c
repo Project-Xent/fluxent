@@ -340,6 +340,7 @@ static void asb_open_if_ready(FluxAsbRuntime *rt) {
 	rt->open         = true;
 	FluxRect anchor  = flux_binding_screen_anchor(rt->window, rt->ctx, rt->store, rt->root);
 	anchor.h        += ASB_GAP;
+	flux_popup_setrtl(rt->popup, xent_resolved_dir(rt->ctx, rt->root) == XENT_DIRECTION_RTL);
 	flux_popup_show(rt->popup, anchor, FLUX_PLACEMENT_BOTTOM);
 }
 

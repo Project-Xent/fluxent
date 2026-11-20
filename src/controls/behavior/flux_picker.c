@@ -67,6 +67,7 @@ static void picker_open(FluxPickerData *pd) {
 	FluxRect box    = flux_binding_window_rect(pd->ctx, pd->store, pd->root);
 	FluxRect target = {box.x, box.y + picker_header_h(pd), box.w, pd->button_h};
 	pd->open        = true;
+	flux_pflyout_setrtl(pd->flyout, xent_resolved_dir(pd->ctx, pd->root) == XENT_DIRECTION_RTL);
 	flux_pflyout_show(pd->flyout, &target);
 }
 

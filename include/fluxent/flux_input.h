@@ -57,6 +57,8 @@ bool                      flux_input_buttonkey(FluxInput *input, FluxKey key, bo
 void                      flux_input_escape(FluxInput *input);
 
 void                      flux_input_setfocus(FluxInput *input, XentNodeId node, bool programmatic);
+/** Keeps focus already inside `node`; false when nothing in it can take focus or a modal excludes it. Reads layout. */
+bool                      flux_input_focuswithin(FluxInput *input, XentNodeId node, bool programmatic);
 
 void                      flux_input_dropnode(FluxInput *input, XentNodeId node);
 

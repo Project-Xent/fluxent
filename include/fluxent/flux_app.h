@@ -74,6 +74,11 @@ FluxMenu               *flux_app_menu(FluxApp *app);
 
 HWND                    flux_app_hwnd(FluxApp *app);
 
+/** Window thread only. Applied after the next layout; falls back to the first focusable descendant in tab order. */
+bool                    flux_app_setfocus(FluxApp *app, XtkCtrl control);
+/** The control that has keyboard focus, or `XTK_CTRL_INVALID`. */
+XtkCtrl                 flux_app_focus(FluxApp *app);
+
 /** Borrows `ctx` until `fn` runs on the window thread. */
 bool                    flux_app_invoke(FluxApp *app, void (*fn)(void *ctx), void *ctx);
 XtkPostStatus           flux_app_post(FluxApp *app, XtkMsg msg);

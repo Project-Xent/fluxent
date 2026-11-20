@@ -4,12 +4,26 @@ Entries start at 0.3.1; earlier releases are described by their tags.
 
 ## 0.3.4 (unreleased)
 
+- added programmatic focus: `flux_app_setfocus(app, control)` moves keyboard
+  focus to a control after the next layout pass, so a control created in the
+  same transaction can take it, and `flux_app_focus(app)` reads it back. A
+  control that cannot take focus itself (a container, an AutoSuggestBox) hands
+  it to its first focusable descendant in tab order, as WinUI's
+  `Focus(Programmatic)` does; focus already inside the control stays put, and
+  an open modal blocks focus from moving outside it. The input layer gains
+  `flux_input_focuswithin` for the same lookup;
 - a ContentDialog's control node now stays where the app put it, collapsed,
   and the dialog is drawn by a separate layer on the overlay that collapses
   while closed. Closing a dialog used to detach the control node from its
   parent, so inserting or moving a sibling before it failed the transaction
   with `XTK_BATCH_ERR_VALIDATION`. Rendering, hit testing, tab order,
   DirectManipulation and UI Automation skip collapsed subtrees.
+
+### Breaking changes
+
+| Change | Migration |
+| --- | --- |
+| `flux_host_setfocus` / `flux_host_focus` removed; they never moved keyboard focus | `flux_app_setfocus` / `flux_app_focus` |
 
 ## 0.3.3
 

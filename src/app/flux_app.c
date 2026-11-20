@@ -70,6 +70,7 @@ struct FluxApp {
 
 	void                     (*frame_cb)(void *ctx);
 	void                    *frame_cb_ctx;
+	XtkCtrl                  focus_request;
 	XentNodeId              *deferred;
 	uint32_t                 deferred_count;
 	uint32_t                 deferred_cap;
@@ -221,6 +222,11 @@ static void app_prepare_layout_tree(FluxApp *app, FluxDpi dpi) {
 	app_sync_layout_controls(app, ctx, store, root);
 	xent_layout(ctx, root, dips.w, dips.h);
 	if (app->dmanip) flux_dmanip_sync_tree(app->dmanip, ctx, store, root, scale);
+	if (app->focus_request != XTK_CTRL_INVALID) {
+		XentNodeId target  = ( XentNodeId ) app->focus_request;
+		app->focus_request = XTK_CTRL_INVALID;
+		( void ) flux_input_focuswithin(app->input, target, true);
+	}
 	XentNodeId           focus = flux_input_focus(app->input);
 	FluxTreeHooks const *t     = flux_module_tree(store, focus);
 	if (t && t->focus) t->focus(store, focus);
@@ -775,7 +781,21 @@ FluxMenu *flux_app_menu(FluxApp *app) { return app && app->window ? flux_menu_ac
 
 HWND      flux_app_hwnd(FluxApp *app) { return app && app->window ? flux_window_hwnd(app->window) : NULL; }
 
-void      flux_app_sethost(FluxApp *app, XtkHost *host, XtkBackend *backend) {
+bool      flux_app_setfocus(FluxApp *app, XtkCtrl control) {
+	XentCtx *ctx = app_ctx(app);
+	if (!ctx || !app->input || control == XTK_CTRL_INVALID || !xent_node_valid(ctx, ( XentNodeId ) control))
+		return false;
+	app->focus_request = control;
+	flux_app_redraw(app);
+	return true;
+}
+
+XtkCtrl flux_app_focus(FluxApp *app) {
+	XentNodeId node = app ? flux_input_focus(app->input) : XENT_NODE_INVALID;
+	return node == XENT_NODE_INVALID ? XTK_CTRL_INVALID : ( XtkCtrl ) node;
+}
+
+void flux_app_sethost(FluxApp *app, XtkHost *host, XtkBackend *backend) {
 	if (!app) return;
 	flux_host_bindapp(host, app);
 	app->host        = host;

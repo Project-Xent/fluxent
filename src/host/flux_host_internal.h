@@ -47,7 +47,6 @@ typedef struct FluxHostState {
 	uint32_t      *invalidate;
 	uint32_t       invalidate_cap;
 	uint32_t       pending_invalidation;
-	XtkCtrl        focus;
 	PropEntry     *props;
 	uint32_t       prop_count;
 	uint32_t       prop_cap;

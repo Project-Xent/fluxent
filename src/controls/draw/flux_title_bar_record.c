@@ -16,7 +16,7 @@ static bool titlebar_button(
 		                       : flux_color_rgba(0, 0, 0, 0);
 		if (flux_color_af(fill) > 0.0f && !flux_rec_fill_rounded(b, r, 4.0f, fill)) return false;
 	}
-	return flux_rec_glyph_wc(b, r, glyph, 16.0f, enabled ? t->text_primary : t->text_disabled);
+	return flux_rec_arrow_wc(b, r, glyph, 16.0f, enabled ? t->text_primary : t->text_disabled);
 }
 
 static bool titlebar_nav_button(

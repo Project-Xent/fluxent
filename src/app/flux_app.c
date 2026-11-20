@@ -276,6 +276,7 @@ static void app_sync_auto_tooltip(FluxApp *app) {
 	}
 	XentRect r = {0};
 	xent_layout_rect(app_ctx(app), node, &r);
+	if (xent_resolved_dir(app_ctx(app), node) == XENT_DIRECTION_RTL) local.x = r.w - local.x - local.w;
 	float scale = flux_window_dpi(app->window).dpi_x / FLUX_DPI_BASE;
 	POINT pt    = {( LONG ) ((r.x + local.x) * scale), ( LONG ) ((r.y + local.y) * scale)};
 	ClientToScreen(flux_window_hwnd(app->window), &pt);
@@ -518,8 +519,16 @@ static bool app_handle_activation_key(FluxApp *app, FluxKey key) {
 	return true;
 }
 
+static FluxKey app_flow_key(FluxApp *app, FluxKey key) {
+	if (key != FLUX_KEY_LEFT && key != FLUX_KEY_RIGHT) return key;
+	XentNodeId focus = flux_input_focus(app->input);
+	if (focus == XENT_NODE_INVALID || xent_resolved_dir(app_ctx(app), focus) != XENT_DIRECTION_RTL) return key;
+	return key == FLUX_KEY_LEFT ? FLUX_KEY_RIGHT : FLUX_KEY_LEFT;
+}
+
 static bool app_handle_key_command(FluxApp *app, FluxKey key) {
 	if (app_handle_active_menu_key(app, key)) return true;
+	key = app_flow_key(app, key);
 	if (key == FLUX_KEY_TAB) {
 		flux_input_tab(app->input, app_root(app), flux_key_held(FLUX_KEY_SHIFT));
 		return true;
@@ -540,7 +549,7 @@ static void app_key(void *ctx, FluxKey key, bool down) {
 
 	if (down && app->tooltip) flux_tooltip_dismiss(app->tooltip);
 	if (down) app_handle_key_command(app, key);
-	else if (!flux_input_buttonkey(app->input, key, false)) flux_input_keyup(app->input, key);
+	else if (!flux_input_buttonkey(app->input, key, false)) flux_input_keyup(app->input, app_flow_key(app, key));
 	flux_app_redraw(app);
 }
 

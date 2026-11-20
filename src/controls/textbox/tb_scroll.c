@@ -243,6 +243,10 @@ static float tb_measure_active_text_width(FluxTextBoxInputData *tb, FluxText *tr
 	return size.w;
 }
 
+static bool tb_rtl(FluxTextBoxInputData const *tb) {
+	return tb->ctx && xent_resolved_dir(tb->ctx, tb->node) == XENT_DIRECTION_RTL;
+}
+
 FluxTextStyle tb_make_style(FluxTextBoxInputData const *tb) {
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
@@ -252,6 +256,7 @@ FluxTextStyle tb_make_style(FluxTextBoxInputData const *tb) {
 	ts.text_align  = FLUX_TEXT_LEFT;
 	ts.vert_align  = tb->base.multiline ? FLUX_TEXT_TOP : FLUX_TEXT_VCENTER;
 	ts.word_wrap   = tb->base.multiline;
+	ts.rtl         = tb_rtl(tb);
 	return ts;
 }
 
@@ -294,7 +299,10 @@ void tb_update_scroll(FluxTextBoxInputData *tb) {
 	TbImeCaret    caret = {0.0f, 0.0f, 0.0f};
 	if (!tb_measure_active_caret(tb, tr, &ts, tb_layout_width(tb, visible_w), &caret)) return;
 
-	if (!tb->base.multiline) tb_scroll_axis_into_view(caret.x, caret.x, visible_w, &tb->base.scroll_offset_x);
+	if (!tb->base.multiline) {
+		float logical = tb_rtl(tb) ? tb_layout_width(tb, visible_w) - caret.x : caret.x;
+		tb_scroll_axis_into_view(logical, logical, visible_w, &tb->base.scroll_offset_x);
+	}
 	else {
 		float visible_h = tb_visible_text_height(tb, &rect);
 		if (visible_h > 0.0f)
@@ -375,10 +383,11 @@ void tb_update_ime_position(FluxTextBoxInputData *tb) {
 	bool       ok       = tb_measure_active_caret(tb, tr, &ts, tb_layout_width(tb, visible_w), &measured);
 	if (!ok) return;
 
-	float   cx      = rect.x + FLUX_TEXTBOX_PAD_L + measured.x - tb->base.scroll_offset_x;
-	float   cy      = rect.y + FLUX_TEXTBOX_PAD_T + measured.y - tb->base.scroll_offset_y;
-	float   ch      = measured.h > 0.0f ? measured.h : (ts.font_size > 0.0f ? ts.font_size : 14.0f) * 1.2f;
-	FluxDpi dpi     = flux_window_dpi(window);
+	float   lx  = FLUX_TEXTBOX_PAD_L - tb->base.scroll_offset_x;
+	float   cx  = rect.x + (tb_rtl(tb) ? rect.w - lx - tb_layout_width(tb, visible_w) + measured.x : lx + measured.x);
+	float   cy  = rect.y + FLUX_TEXTBOX_PAD_T + measured.y - tb->base.scroll_offset_y;
+	float   ch  = measured.h > 0.0f ? measured.h : (ts.font_size > 0.0f ? ts.font_size : 14.0f) * 1.2f;
+	FluxDpi dpi = flux_window_dpi(window);
 	float   x_scale = dpi.dpi_x / FLUX_DPI_BASE;
 	float   y_scale = dpi.dpi_y / FLUX_DPI_BASE;
 

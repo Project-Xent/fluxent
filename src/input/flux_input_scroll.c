@@ -94,6 +94,18 @@ static void input_apply_parent_scroll_offset(FluxInput const *input, XentNodeId 
 	*oy -= flux_scroll_off_y(sd);
 }
 
+FluxPoint input_local(XentCtx const *ctx, XentNodeId node, FluxRect const *bounds, float px, float py) {
+	float x = px - bounds->x;
+	if (xent_resolved_dir(ctx, node) == XENT_DIRECTION_RTL) x = bounds->w - x;
+	return (FluxPoint) {x, py - bounds->y};
+}
+
+FluxPoint input_hit_point(XentCtx const *ctx, FluxHitResult const *hit) {
+	float x = hit->local.x;
+	if (xent_resolved_dir(ctx, hit->node) == XENT_DIRECTION_RTL) x = hit->bounds.w - x;
+	return (FluxPoint) {hit->bounds.x + x, hit->bounds.y + hit->local.y};
+}
+
 void input_node_abs_rect(FluxInput const *input, XentNodeId node, FluxRect *out) {
 	XentRect lr = {0};
 	xent_layout_rect(input->ctx, node, &lr);
@@ -652,8 +664,9 @@ static void input_set_scroll_hover_node(FluxInput *input, XentNodeId node, float
 	FluxRect bounds;
 	input_node_abs_rect(input, node, &bounds);
 	sd->mouse_over    = 1;
-	sd->mouse_local_x = px - bounds.x;
-	sd->mouse_local_y = py - bounds.y;
+	FluxPoint local   = input_local(input->ctx, node, &bounds, px, py);
+	sd->mouse_local_x = local.x;
+	sd->mouse_local_y = local.y;
 }
 
 void flux_scroll_update_hover(FluxInput *input, XentNodeId hit_node, float px, float py) {

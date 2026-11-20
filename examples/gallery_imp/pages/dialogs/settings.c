@@ -16,6 +16,9 @@ bool page_settings_build(PageBuild *b) {
 		b->app, "Following the system theme: %s (set at startup).", flux_theme_systemdark() ? "Dark" : "Light"
 	  )
 	);
+	XtkNodeRef flow
+	  = section(b, parent, "Layout direction", "Mirrors the whole window, as an Arabic or Hebrew UI would.");
+	page_checkbox(b, flow, "Right to left", b->app->model.rtl, MSG_RTL);
 	XtkNodeRef about
 	  = section(b, parent, "About", "FluXent Gallery — fluxent 0.3.1, imperative transactions over retained controls.");
 	xtk_link_create(

@@ -48,6 +48,7 @@ typedef struct FluxTextStyle {
 	FluxTextVAlign     vert_align;
 	FluxColor          color;
 	bool               word_wrap;
+	bool               rtl;
 	XentTextRun const *runs;
 	uint32_t           run_count;
 	XentTextTrim       trim;

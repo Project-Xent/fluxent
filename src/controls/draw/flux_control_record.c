@@ -33,6 +33,7 @@ static FluxTextStyle text_hit_style(FluxRenderSnap const *snap) {
 	ts.text_align  = snap->u.text.text_alignment;
 	ts.vert_align  = snap->u.text.text_vert_alignment;
 	ts.word_wrap   = snap->u.text.word_wrap;
+	ts.rtl         = snap->rtl;
 	ts.trim        = snap->u.text.trim;
 	ts.max_lines   = snap->u.text.max_lines;
 	return ts;
@@ -61,7 +62,8 @@ static bool text_draw_selection(
 	FluxColor sel = flux_rec_theme(rc)->accent_default;
 	sel.rgba      = (sel.rgba & 0xffffff00u) | 0x66u;
 	for (uint32_t i = 0; i < n; i++) {
-		FluxRect sr = {bounds->x + rects [i].x, bounds->y + rects [i].y, rects [i].w, rects [i].h};
+		float    x  = snap->rtl ? bounds->w - rects [i].x - rects [i].w : rects [i].x;
+		FluxRect sr = {bounds->x + x, bounds->y + rects [i].y, rects [i].w, rects [i].h};
 		if (!flux_rec_fill_rect(b, &sr, sel)) return false;
 	}
 	return true;

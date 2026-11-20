@@ -145,13 +145,12 @@ static FluxHitResult hit_test_recursive(InputHitQuery const *query) {
 
 	if (children.count == 0 && !hit_node_interactive(query->ctx, query->node, nd)) return (FluxHitResult) {0};
 
-	float ax = rect.x - node_offset.x;
-	float ay = rect.y - node_offset.y;
+	FluxRect bounds = {rect.x - node_offset.x, rect.y - node_offset.y, rect.w, rect.h};
 	return (FluxHitResult) {
 	  .node   = query->node,
 	  .data   = nd,
-	  .bounds = {ax, ay, rect.w, rect.h},
-	  .local  = {query->point.x - ax, query->point.y - ay},
+	  .bounds = bounds,
+	  .local  = input_local(query->ctx, query->node, &bounds, query->point.x, query->point.y),
 	};
 }
 
@@ -175,18 +174,14 @@ static FluxHitResult input_rebase_hit(FluxInput *input, FluxHitResult const *hit
 	XentRect from = {0}, to = {0};
 	xent_layout_rect(input->ctx, hit->node, &from);
 	xent_layout_rect(input->ctx, node, &to);
-	float dx = to.x - from.x, dy = to.y - from.y;
+	FluxRect  bounds = {hit->bounds.x + to.x - from.x, hit->bounds.y + to.y - from.y, to.w, to.h};
+	FluxPoint p      = input_hit_point(input->ctx, hit);
 	return (FluxHitResult) {
-	  .node   = node,
-	  .data   = nd,
-	  .bounds = {hit->bounds.x + dx, hit->bounds.y + dy, to.w, to.h},
-	  .local  = {hit->local.x - dx, hit->local.y - dy},
-	};
+	  .node = node, .data = nd, .bounds = bounds, .local = input_local(input->ctx, node, &bounds, p.x, p.y)};
 }
 
 static FluxHitResult input_resolve_chrome(FluxInput *input, FluxHitResult const *hit) {
-	float px = hit->bounds.x + hit->local.x;
-	float py = hit->bounds.y + hit->local.y;
+	FluxPoint p = input_hit_point(input->ctx, hit);
 	for (XentNodeId node = xent_node_parent(input->ctx, hit->node); node != XENT_NODE_INVALID;
 	  node               = xent_node_parent(input->ctx, node))
 	{
@@ -194,10 +189,9 @@ static FluxHitResult input_resolve_chrome(FluxInput *input, FluxHitResult const 
 		if (!nd || !nd->behavior.chrome_hit) continue;
 		FluxRect b = {0};
 		input_node_abs_rect(input, node, &b);
-		if (!nd->behavior.chrome_hit(nd->behavior.chrome_hit_ctx, px - b.x, py - b.y)) continue;
-		return (FluxHitResult) {
-		  .node = node, .data = nd, .bounds = b, .local = {px - b.x, py - b.y}
-        };
+		FluxPoint local = input_local(input->ctx, node, &b, p.x, p.y);
+		if (!nd->behavior.chrome_hit(nd->behavior.chrome_hit_ctx, local.x, local.y)) continue;
+		return (FluxHitResult) {.node = node, .data = nd, .bounds = b, .local = local};
 	}
 	return (FluxHitResult) {0};
 }
@@ -265,9 +259,8 @@ static void input_forward_pressed_move(FluxInput *input, float px, float py) {
 	FluxNodeData *nd = flux_store_find(input->store, input->pressed);
 	if (!nd || !nd->behavior.on_pointer_move) return;
 
-	float local_x = px - input->pressed_bounds.x;
-	float local_y = py - input->pressed_bounds.y;
-	nd->behavior.on_pointer_move(nd->behavior.on_pointer_move_ctx, local_x, local_y);
+	FluxPoint local = input_local(input->ctx, input->pressed, &input->pressed_bounds, px, py);
+	nd->behavior.on_pointer_move(nd->behavior.on_pointer_move_ctx, local.x, local.y);
 }
 
 static bool input_press_number_box_spin(FluxInput *input, FluxHitResult const *hit) {
@@ -447,11 +440,11 @@ static FluxPoint input_context_local_point(FluxInput *input, FluxHitResult const
 	XentRect node_layout = {0};
 	xent_layout_rect(input->ctx, hit->node, &hit_layout);
 	xent_layout_rect(input->ctx, node, &node_layout);
-
-	return (FluxPoint) {
-	  .x = hit->local.x + hit_layout.x - node_layout.x,
-	  .y = hit->local.y + hit_layout.y - node_layout.y,
-	};
+	FluxRect bounds = {
+	  hit->bounds.x + node_layout.x - hit_layout.x, hit->bounds.y + node_layout.y - hit_layout.y, node_layout.w,
+	  node_layout.h};
+	FluxPoint p = input_hit_point(input->ctx, hit);
+	return input_local(input->ctx, node, &bounds, p.x, p.y);
 }
 
 static bool input_dispatch_context_menu_node(FluxInput *input, FluxHitResult const *hit, XentNodeId node) {

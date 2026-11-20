@@ -454,6 +454,18 @@ static void rebuild_page(GalleryApp *g) {
 	g->rebuilding = false;
 }
 
+static void apply_flow(GalleryApp *g) {
+	XtkTxn txn;
+	if (!xtk_txn_begin(&g->scene, &txn)) return;
+	XentDirection dir = g->model.rtl ? XENT_DIRECTION_RTL : XENT_DIRECTION_LTR;
+	xtk_txn_set(
+	  &txn, xtk_ref_existing(xtk_scene_root(&g->scene)), XTK_PROP_FLOW_DIRECTION,
+	  (XtkValue) {.kind = XTK_VALUE_ENUM, .u.u32 = ( uint32_t ) dir}, (XtkChangeStamp) {0}
+	);
+	XtkBatchResult *result = xtk_txn_commit(&txn, NULL);
+	if (result) xtk_batchresult_destroy(result);
+}
+
 static void flush(void *ctx) {
 	GalleryApp *g = ( GalleryApp * ) ctx;
 	if (!g->pending_head || g->rebuilding) return;
@@ -464,6 +476,7 @@ static void flush(void *ctx) {
 		g->pending_head         = pending->next;
 		gallery_model_update(&g->model, pending->msg);
 		if (pending->msg.tag == MSG_BACKDROP) gallery_backdrop_apply(flux_app_window(g->flux), g->model.backdrop);
+		if (pending->msg.tag == MSG_RTL) apply_flow(g);
 		free(pending->owned);
 		free(pending);
 	}

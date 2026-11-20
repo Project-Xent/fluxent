@@ -100,7 +100,7 @@ static bool rec_button(ScrollRec const *dc, FluxRect const *r, wchar_t const *gl
 	if (pressed) ok = flux_rec_fill_rect(dc->b, r, with_alpha_mul(dc->colors.btn_press_bg, dc->expanded));
 	else if (hovered) ok = flux_rec_fill_rect(dc->b, r, with_alpha_mul(dc->colors.btn_hover_bg, dc->expanded));
 	FluxColor arrow = pressed ? dc->colors.arrow_press : dc->colors.arrow;
-	return ok && flux_rec_glyph_wc(dc->b, r, glyph, 8.0f, with_alpha_mul(arrow, dc->expanded));
+	return ok && flux_rec_arrow_wc(dc->b, r, glyph, 8.0f, with_alpha_mul(arrow, dc->expanded));
 }
 
 static void scroll_apply_mini_padding(FluxRect *thumb, FluxRect const *base, bool vertical, float expanded) {
@@ -300,7 +300,7 @@ static bool scroll_bar_rec_button(ScrollBarRec const *dc, FluxRect const *r, wch
 	if (r->w <= 0.5f || r->h <= 0.5f) return true;
 	bool      active = pressed || scroll_bar_hovers(dc, r);
 	FluxColor arrow  = active ? dc->palette.arrow_active : dc->palette.arrow;
-	return flux_rec_glyph_wc(dc->b, r, glyph, 8.0f, with_alpha_mul(arrow, dc->expanded));
+	return flux_rec_arrow_wc(dc->b, r, glyph, 8.0f, with_alpha_mul(arrow, dc->expanded));
 }
 
 static bool scroll_bar_rec_thumb(ScrollBarRec const *dc) {

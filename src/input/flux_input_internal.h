@@ -100,6 +100,8 @@ XentNodeId      input_scrollable_ancestor(FluxInput *input, XentNodeId node);
 
 void            input_node_abs_rect(FluxInput const *input, XentNodeId node, FluxRect *out);
 bool            input_within(XentCtx const *ctx, XentNodeId node, XentNodeId ancestor);
+FluxPoint       input_local(XentCtx const *ctx, XentNodeId node, FluxRect const *bounds, float px, float py);
+FluxPoint       input_hit_point(XentCtx const *ctx, FluxHitResult const *hit);
 
 FluxScrollPhase flux_input_scroll_phase(FluxInput const *input);
 

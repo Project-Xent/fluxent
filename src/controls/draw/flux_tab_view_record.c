@@ -42,7 +42,7 @@ static bool tab_rec_aux(
 	}
 	FluxColor      fg = state->enabled ? t->text_secondary : t->text_disabled;
 	wchar_t const *g  = kind == FLUX_TAB_KIND_SCROLL_DEC ? L"\xEDD9" : L"\xEDDA";
-	return flux_rec_glyph_wc(b, box, g, FLUX_TAB_SCROLL_FONT, fg);
+	return flux_rec_arrow_wc(b, box, g, FLUX_TAB_SCROLL_FONT, fg);
 }
 
 static bool tab_rec_item_fill(

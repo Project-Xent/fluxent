@@ -15,6 +15,7 @@ static FluxTextStyle text_select_style(FluxTextData const *td) {
 	ts.text_align  = td->alignment;
 	ts.vert_align  = td->vertical_alignment;
 	ts.word_wrap   = td->wrap;
+	ts.rtl         = td->ctx && xent_resolved_dir(td->ctx, td->node) == XENT_DIRECTION_RTL;
 	ts.trim        = td->trim;
 	ts.max_lines   = td->max_lines;
 	return ts;
@@ -32,7 +33,7 @@ static uint32_t text_select_offset_at(FluxTextData *td, float local_x, float loc
 	uint32_t             len   = ( uint32_t ) strlen(td->content);
 	FluxTextHitTestQuery query = {
 	  {td->text, td->content, &ts, rect.w},
-      local_x, local_y
+      ts.rtl ? rect.w - local_x : local_x, local_y
     };
 	return flux_utf16_to_utf8_offset(td->content, len, ( uint32_t ) flux_text_hittest(&query));
 }

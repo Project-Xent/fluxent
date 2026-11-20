@@ -17,11 +17,11 @@ static D2D1_MATRIX_3X2_F paint_mul(D2D1_MATRIX_3X2_F const *a, D2D1_MATRIX_3X2_F
 }
 
 static void
-paint_replay_translated(XtkBackend *backend, FluxRenderCtx const *rc, XentDl const *list, float ox, float oy) {
+paint_replay_translated(XtkBackend *backend, FluxRenderCtx const *rc, XentDl const *list, FluxRect const *at) {
 	D2D1_MATRIX_3X2_F saved;
 	ID2D1RenderTarget_GetTransform(FLUX_RT(rc), &saved);
 
-	D2D1_MATRIX_3X2_F translate = {1.0f, 0.0f, 0.0f, 1.0f, ox, oy};
+	D2D1_MATRIX_3X2_F translate = {1.0f, 0.0f, 0.0f, 1.0f, at->x, at->y};
 	D2D1_MATRIX_3X2_F combined  = paint_mul(&translate, &saved);
 	ID2D1RenderTarget_SetTransform(FLUX_RT(rc), &combined);
 
@@ -44,11 +44,12 @@ void flux_display_paint_main(
 	if (module && module->record) {
 		FluxRect local = {0.0f, 0.0f, bounds->w, bounds->h};
 		XentDl  *list  = module->record(rc, snap, &local, state);
+		if (snap->rtl) xent_dl_mirror(list, bounds->w);
 		flux_node_adoptdl(store, ( XentNodeId ) snap->id, list);
 	}
 
 	XentDl const *list = flux_node_dl(store, ( XentNodeId ) snap->id);
-	if (list) paint_replay_translated(backend, rc, list, bounds->x, bounds->y);
+	if (list) paint_replay_translated(backend, rc, list, bounds);
 }
 
 void flux_display_paint_overlay(
@@ -62,6 +63,7 @@ void flux_display_paint_overlay(
 
 	FluxRect local = {0.0f, 0.0f, bounds->w, bounds->h};
 	XentDl  *list  = module->overlay(rc, snap, &local, state);
-	if (list) paint_replay_translated(backend, rc, list, bounds->x, bounds->y);
+	if (snap->rtl) xent_dl_mirror(list, bounds->w);
+	if (list) paint_replay_translated(backend, rc, list, bounds);
 	if (list) xent_dl_free(list);
 }

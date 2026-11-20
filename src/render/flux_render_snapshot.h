@@ -367,6 +367,7 @@ typedef struct FluxRenderSnap {
 	float           border_width;
 	float           opacity;
 	float           font_size;
+	bool            rtl;
 
 	float           hover_local_x;
 	float           hover_local_y;

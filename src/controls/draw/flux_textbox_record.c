@@ -102,7 +102,16 @@ static void tb_prepare_content(TextboxComposedContent *out, FluxRenderSnap const
 	out->has_text = out->content && out->content [0];
 }
 
-static void          tb_free_content(TextboxComposedContent *content) { free(content->heap); }
+static void  tb_free_content(TextboxComposedContent *content) { free(content->heap); }
+
+static float snap_layout_w(FluxRenderSnap const *snap, FluxRect const *text_area) {
+	return text_area->w + snap->u.textbox.edit.scroll_offset_x;
+}
+
+static float snap_text_x(FluxRenderSnap const *snap, FluxRect const *text_area, float x, float w) {
+	float origin = text_area->x - snap->u.textbox.edit.scroll_offset_x;
+	return snap->rtl ? origin + snap_layout_w(snap, text_area) - x - w : origin + x;
+}
 
 static FluxTextStyle tb_hit_style(FluxRenderSnap const *snap) {
 	FluxTextStyle hit;
@@ -111,6 +120,7 @@ static FluxTextStyle tb_hit_style(FluxRenderSnap const *snap) {
 	hit.font_size   = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
 	hit.vert_align  = FLUX_TEXT_TOP;
 	hit.word_wrap   = snap->u.textbox.edit.multiline;
+	hit.rtl         = snap->rtl;
 	return hit;
 }
 
@@ -180,7 +190,7 @@ static bool tb_draw_selection(
 	FluxTextStyle          hit = tb_hit_style(snap);
 	FluxRect               rects [16];
 	FluxTextSelectionQuery q = {
-	  {rc->text, content->content, &hit, text_area->w},
+	  {rc->text, content->content, &hit, snap_layout_w(snap, text_area)},
       sel_s, sel_e, rects, 16
     };
 	uint32_t               n = flux_text_selection(&q);
@@ -190,7 +200,7 @@ static bool tb_draw_selection(
 	sel.rgba      = (sel.rgba & 0xffffff00u) | 0x66u;
 	for (uint32_t i = 0; i < n; i++) {
 		FluxRect sr = {
-		  text_area->x + rects [i].x - snap->u.textbox.edit.scroll_offset_x,
+		  snap_text_x(snap, text_area, rects [i].x, rects [i].w),
 		  text_area->y + rects [i].y - snap->u.textbox.edit.scroll_offset_y, rects [i].w, rects [i].h};
 		if (!flux_rec_fill_rect(b, &sr, sel)) return false;
 	}
@@ -207,14 +217,15 @@ static bool tb_draw_composition_underline(
 	FluxTextStyle          hit      = tb_hit_style(snap);
 	FluxRect               rects [16];
 	FluxTextSelectionQuery q = {
-	  {rc->text, content->content, &hit, text_area->w},
-      content->composition_start_u16, comp_end, rects, 16
+	  {rc->text, content->content, &hit, snap_layout_w(snap, text_area)},
+      content->composition_start_u16, comp_end,
+	  rects, 16
     };
 	uint32_t               n  = flux_text_selection(&q);
 	FluxThemeColors const *t  = flux_rec_theme(rc);
 	FluxColor              ul = state->enabled ? t->text_primary : t->text_disabled;
 	for (uint32_t i = 0; i < n; i++) {
-		float lx0 = text_area->x + rects [i].x - snap->u.textbox.edit.scroll_offset_x;
+		float lx0 = snap_text_x(snap, text_area, rects [i].x, rects [i].w);
 		float ly  = text_area->y + rects [i].y + rects [i].h - snap->u.textbox.edit.scroll_offset_y;
 		float lx1 = lx0 + rects [i].w;
 		if (!flux_rec_line_h(b, lx0, lx1, ly - 0.5f, 1.0f, ul)) return false;
@@ -294,7 +305,7 @@ static bool tb_draw_caret(
 	if (content->has_text) {
 		FluxTextStyle      hit   = tb_hit_style(snap);
 		FluxTextCaretQuery query = {
-		  {rc->text, content->content, &hit, text_area->w},
+		  {rc->text, content->content, &hit, snap_layout_w(snap, text_area)},
           caret_u16
         };
 		FluxRect caret = flux_text_caret(&query);
@@ -303,10 +314,10 @@ static bool tb_draw_caret(
 		caret_y_local = caret.y;
 	}
 
-	float caret_y = content->has_text ? text_area->y + caret_y_local - snap->u.textbox.edit.scroll_offset_y
-	                                  : text_area->y + (text_area->h - caret_h) * 0.5f;
-	float caret_x = tb_clamp_caret_x(text_area, text_area->x + caret_x_local - snap->u.textbox.edit.scroll_offset_x);
-	FluxThemeColors const *t       = flux_rec_theme(rc);
+	float caret_y            = content->has_text ? text_area->y + caret_y_local - snap->u.textbox.edit.scroll_offset_y
+	                                             : text_area->y + (text_area->h - caret_h) * 0.5f;
+	float caret_x            = tb_clamp_caret_x(text_area, snap_text_x(snap, text_area, caret_x_local, 1.0f));
+	FluxThemeColors const *t = flux_rec_theme(rc);
 	FluxRect               caret_r = {caret_x, caret_y, 1.0f, caret_h};
 	return flux_rec_fill_rect(b, &caret_r, t->text_primary);
 }
@@ -332,7 +343,7 @@ static bool tb_draw_content(
 	if (ok && content.has_text) {
 		FluxRect draw = {
 		  text_area->x - snap->u.textbox.edit.scroll_offset_x, text_area->y - snap->u.textbox.edit.scroll_offset_y,
-		  text_area->w + snap->u.textbox.edit.scroll_offset_x, text_area->h + snap->u.textbox.edit.scroll_offset_y};
+		  snap_layout_w(snap, text_area), text_area->h + snap->u.textbox.edit.scroll_offset_y};
 		FluxColor fg = state->enabled ? t->text_primary : t->text_disabled;
 		if (flux_color_af(snap->u.textbox.text_color) > 0.0f) fg = snap->u.textbox.text_color;
 		ok = flux_rec_text_ex(b, &draw, content.content, &style, fg);

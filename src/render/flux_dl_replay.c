@@ -81,13 +81,24 @@ static void xtk_draw_text(FluxBackendXtkState *S, XentDl const *list, XentDlCmd 
 	style.text_align  = ( FluxTextAlign ) cmd->u.text.h_align;
 	style.vert_align  = ( FluxTextVAlign ) cmd->u.text.v_align;
 	style.word_wrap   = (cmd->u.text.flags & XENT_DL_TEXT_WRAP) != 0u;
+	style.rtl         = (cmd->u.text.flags & XENT_DL_TEXT_RTL) != 0u;
 	style.max_lines   = cmd->u.text.max_lines;
 	style.trim        = ( XentTextTrim ) cmd->u.text.trim;
 	style.color       = xtk_color_to_flux(cmd->u.text.color);
 	if (cmd->u.text.font_len > 0u)
 		style.font_family = xent_dl_text(list, cmd->u.text.font_offset, cmd->u.text.font_len);
 	else if (cmd->u.text.flags & XENT_DL_TEXT_ICON) style.font_family = flux_icon_font_family();
+	if (!(cmd->u.text.flags & XENT_DL_TEXT_FLIP)) {
+		flux_text_draw(S->rc->text, FLUX_RT(S->rc), text, &bounds, &style);
+		return;
+	}
+	D2D1_MATRIX_3X2_F t;
+	ID2D1RenderTarget_GetTransform(FLUX_RT(S->rc), &t);
+	float             cx2     = 2.0f * bounds.x + bounds.w;
+	D2D1_MATRIX_3X2_F flipped = {-t._11, -t._12, t._21, t._22, cx2 * t._11 + t._31, cx2 * t._12 + t._32};
+	ID2D1RenderTarget_SetTransform(FLUX_RT(S->rc), &flipped);
 	flux_text_draw(S->rc->text, FLUX_RT(S->rc), text, &bounds, &style);
+	ID2D1RenderTarget_SetTransform(FLUX_RT(S->rc), &t);
 }
 
 static bool xtk_fill_triangle(FluxBackendXtkState *S, XentDlCmd const *cmd) {

@@ -131,6 +131,14 @@ HANDLER(prop_align_self) {
 	return xent_setself(R->ctx, node, ( XentFlexAlign ) v->u.u32);
 }
 
+HANDLER(prop_flow) {
+	( void ) control;
+	XentDirection dir = ( XentDirection ) v->u.u32;
+	if (node == R->root && R->env.overlay != XENT_NODE_INVALID && !xent_setdir(R->ctx, R->env.overlay, dir))
+		return false;
+	return xent_setdir(R->ctx, node, dir);
+}
+
 HANDLER(prop_margin) {
 	( void ) v;
 	XentInsets insets = {
@@ -1415,6 +1423,7 @@ static FluxPropHandler const core_props [] = {
   ON(GROW, F32, prop_grow),
   ON(SHRINK, F32, prop_shrink),
   ON(ALIGN_SELF, ENUM, prop_align_self),
+  ON(FLOW_DIRECTION, ENUM, prop_flow),
   ON(MARGIN_LEFT, F32, prop_margin),
   ON(MARGIN_TOP, F32, prop_margin),
   ON(MARGIN_RIGHT, F32, prop_margin),

@@ -25,6 +25,7 @@ typedef struct FluxFormatCacheKey {
 	int      text_align;
 	int      vert_align;
 	int      word_wrap;
+	int      rtl;
 } FluxFormatCacheKey;
 
 typedef struct FluxFormatCacheEntry {

@@ -302,9 +302,10 @@ tb_hit_test_byte_pos(FluxTextBoxInputData *tb, FluxText *tr, FluxControlType ct,
 	char const   *hit_text  = content;
 	if (use_mask) hit_text = tb_password_mask_text(tb, mask_buf, &mask_heap);
 
-	FluxTextHitTestQuery query = {
-	  {tr, hit_text, &ts, tb_layout_width(tb, max_w)},
-      text_x, tb->base.multiline ? text_y : 0.0f
+	float                layout_w = tb_layout_width(tb, max_w);
+	FluxTextHitTestQuery query    = {
+	  {tr, hit_text, &ts, layout_w},
+      ts.rtl ? layout_w - text_x : text_x, tb->base.multiline ? text_y : 0.0f
     };
 	int u16_pos = flux_text_hittest(&query);
 	if (!use_mask) return flux_utf16_to_utf8_offset(content, tb->buf_len, ( uint32_t ) u16_pos);

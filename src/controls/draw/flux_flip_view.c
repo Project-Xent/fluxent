@@ -20,7 +20,7 @@ static bool flip_rec_button(
 		box.w *= 0.875f;
 		box.h *= 0.875f;
 	}
-	return ok && flux_rec_glyph_wc(b, &box, glyph, 8.0f, fg);
+	return ok && flux_rec_arrow_wc(b, &box, glyph, 8.0f, fg);
 }
 
 static bool flip_hit(FluxRenderSnap const *snap, FluxRect const *bounds, FluxRect const *r) {

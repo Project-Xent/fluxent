@@ -121,7 +121,7 @@ bool flux_rec_text_ex(XentDlBuilder *b, FluxRect const *r, char const *txt, Xent
 	return xent_dl_drawtextstyle(b, flux_rec_xrect(r), txt, style, flux_rec_xcolor(c));
 }
 
-bool flux_rec_glyph_wc(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, float size, FluxColor c) {
+static bool rec_glyph(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, float size, FluxColor c, uint8_t flags) {
 	if (!wc || !wc [0]) return true;
 	char utf8 [8];
 	flux_icon_to_utf8(wc, utf8, sizeof(utf8));
@@ -130,10 +130,18 @@ bool flux_rec_glyph_wc(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, f
 	  .font_weight = 400u,
 	  .h_align     = 1u,
 	  .v_align     = 1u,
-	  .flags       = XENT_DL_TEXT_ICON,
+	  .flags       = ( uint8_t ) (XENT_DL_TEXT_ICON | flags),
 	  .font_family = flux_icon_font_family(),
 	};
 	return flux_rec_text_ex(b, r, utf8, &style, c);
+}
+
+bool flux_rec_glyph_wc(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, float size, FluxColor c) {
+	return rec_glyph(b, r, wc, size, c, 0u);
+}
+
+bool flux_rec_arrow_wc(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, float size, FluxColor c) {
+	return rec_glyph(b, r, wc, size, c, XENT_DL_TEXT_MIRRORABLE);
 }
 
 bool flux_rec_fill_triangle(XentDlBuilder *b, float x0, float y0, float x1, float y1, float x2, float y2, FluxColor c) {

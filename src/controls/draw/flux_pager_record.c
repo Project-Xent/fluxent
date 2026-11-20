@@ -15,7 +15,7 @@ static bool rec_pager_nav_glyph(
   FluxThemeColors const *t
 ) {
 	if (enabled && !pager_cell_fill(b, r, hover, press, t)) return false;
-	return flux_rec_glyph_wc(b, r, glyph, 16.0f, enabled ? t->text_primary : t->text_disabled);
+	return flux_rec_arrow_wc(b, r, glyph, 16.0f, enabled ? t->text_primary : t->text_disabled);
 }
 
 static bool pager_draw_text(XentDlBuilder *b, FluxRect const *r, FluxPagerSnapshot const *p, FluxThemeColors const *t) {
@@ -108,9 +108,9 @@ static bool pips_draw_caret(
 	                                  : t->ctrl_strong_fill_default;
 	if (pressed) {
 		FluxRect s = {r->x + r->w * 0.0625f, r->y + r->h * 0.0625f, r->w * 0.875f, r->h * 0.875f};
-		return flux_rec_glyph_wc(b, &s, glyph, 8.0f, fg);
+		return flux_rec_arrow_wc(b, &s, glyph, 8.0f, fg);
 	}
-	return flux_rec_glyph_wc(b, r, glyph, 8.0f, fg);
+	return flux_rec_arrow_wc(b, r, glyph, 8.0f, fg);
 }
 
 bool flux_rec_build_pips(

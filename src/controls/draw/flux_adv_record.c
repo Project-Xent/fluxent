@@ -513,7 +513,10 @@ bool flux_rec_build_breadcrumb(
 	}
 	if (ok && bc->show_chevron) {
 		FluxRect cell = {bounds->x + content_w, bounds->y, bounds->w - content_w, bounds->h};
-		ok = flux_rec_glyph_wc(b, &cell, FLUX_BREADCRUMB_CHEVRON_LTR, FLUX_BREADCRUMB_CHEVRON_FONT, t->text_primary);
+		ok            = flux_rec_glyph_wc(
+		  b, &cell, snap->rtl ? FLUX_BREADCRUMB_CHEVRON_RTL : FLUX_BREADCRUMB_CHEVRON_LTR, FLUX_BREADCRUMB_CHEVRON_FONT,
+		  t->text_primary
+		);
 	}
 	if (ok && state->focused && state->enabled)
 		ok = flux_rec_focus_rect(b, flux_rec_theme(rc), &content, FLUX_CORNER_RADIUS);

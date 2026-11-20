@@ -169,6 +169,7 @@ enum
 	MSG_DD_TEXT,
 	MSG_DD_DONE,
 	MSG_BACKDROP,
+	MSG_RTL,
 	MSG_COUNT,
 };
 
@@ -180,6 +181,7 @@ enum
 typedef struct Model {
 	int      page;
 	int      backdrop;
+	bool     rtl;
 	int      clicks;
 	bool     button_disabled;
 	bool     check_a;

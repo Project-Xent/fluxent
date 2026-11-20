@@ -46,6 +46,7 @@ static IDWriteTextFormat *create_styled_format(FluxText *tr, FluxTextStyle const
 	IDWriteTextFormat_SetTextAlignment(fmt, to_dw_align(s->text_align));
 	IDWriteTextFormat_SetParagraphAlignment(fmt, to_dw_para(s->vert_align));
 	if (!s->word_wrap) IDWriteTextFormat_SetWordWrapping(fmt, DWRITE_WORD_WRAPPING_NO_WRAP);
+	if (s->rtl) IDWriteTextFormat_SetReadingDirection(fmt, DWRITE_READING_DIRECTION_RIGHT_TO_LEFT);
 
 	return fmt;
 }
@@ -58,6 +59,7 @@ static FluxFormatCacheKey make_format_key(FluxTextStyle const *s) {
 	k.text_align  = ( int ) s->text_align;
 	k.vert_align  = ( int ) s->vert_align;
 	k.word_wrap   = s->word_wrap ? 1 : 0;
+	k.rtl         = s->rtl ? 1 : 0;
 	return k;
 }
 

@@ -526,6 +526,8 @@ static void msg_backdrop(Model *m, XtkMsg msg) {
 	m->backdrop = msg.i;
 }
 
+static void               msg_rtl(Model *m, XtkMsg msg) { m->rtl = msg.b; }
+
 static GalleryMsgFn const k_msg_fn [] = {
   [MSG_NAV]                = msg_nav,
   [MSG_CLICK]              = msg_click,
@@ -620,6 +622,7 @@ static GalleryMsgFn const k_msg_fn [] = {
   [MSG_DD_TEXT]            = msg_dd_drop,
   [MSG_DD_DONE]            = msg_dd_done,
   [MSG_BACKDROP]           = msg_backdrop,
+  [MSG_RTL]                = msg_rtl,
 };
 
 void gallery_model_update(Model *m, XtkMsg msg) {

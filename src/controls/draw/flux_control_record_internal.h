@@ -29,6 +29,7 @@ bool flux_rec_fill_shape(XentDlBuilder *b, XentResourceId shape, FluxRect const 
 bool flux_rec_text(XentDlBuilder *b, FluxRect const *r, char const *txt, float size, uint16_t weight, FluxColor c);
 bool flux_rec_text_ex(XentDlBuilder *b, FluxRect const *r, char const *txt, XentTextStyle const *style, FluxColor c);
 bool flux_rec_glyph_wc(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, float size, FluxColor c);
+bool flux_rec_arrow_wc(XentDlBuilder *b, FluxRect const *r, wchar_t const *wc, float size, FluxColor c);
 bool flux_rec_fill_triangle(XentDlBuilder *b, float x0, float y0, float x1, float y1, float x2, float y2, FluxColor c);
 bool flux_rec_filltop(XentDlBuilder *b, FluxRect const *r, float radius, FluxColor c);
 bool flux_rec_fillbot(XentDlBuilder *b, FluxRect const *r, float radius, FluxColor c);

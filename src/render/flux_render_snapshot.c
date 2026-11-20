@@ -30,6 +30,7 @@ static void snapshot_base(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId n
 	memset(snap, 0, sizeof(*snap));
 	snap->id   = ( uint64_t ) node;
 	snap->type = nd ? nd->component_type : FLUX_CONTROL_CONTAINER;
+	snap->rtl  = xent_resolved_dir(ctx, node) == XENT_DIRECTION_RTL;
 	if (!nd) return;
 
 	snap->background    = nd->visuals.background;

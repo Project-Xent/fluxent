@@ -29,6 +29,7 @@ typedef struct FluxUia {
 	IScrollProviderVtbl const                 *lpVtblScroll;
 	IScrollItemProviderVtbl const             *lpVtblScrollItem;
 	IExpandCollapseProviderVtbl const         *lpVtblExpand;
+	ISelectionProviderVtbl const              *lpVtblSelectionC;
 	LONG                                       ref;
 	FluxUiaContext                             info;
 	XentNodeId                                 node;
@@ -37,6 +38,9 @@ typedef struct FluxUia {
 
 #define FLUX_UIA_SELF(p, field) (( FluxUia * ) (( char * ) (p) - offsetof(FluxUia, field)))
 
+FluxUia                                 *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node);
+HRESULT                                  flux_uia_activate(FluxUia *self);
+unsigned                                 flux_uia_patterns(FluxUiaContext const *info, XentNodeId node);
 HRESULT                                  flux_uia_qi(FluxUia *self, REFIID riid, void **ppv);
 ULONG                                    flux_uia_addref(FluxUia *self);
 ULONG                                    flux_uia_release(FluxUia *self);
@@ -44,5 +48,7 @@ ULONG                                    flux_uia_release(FluxUia *self);
 extern IScrollProviderVtbl const         flux_uia_scroll_vtbl;
 extern IScrollItemProviderVtbl const     flux_uia_scrollitem_vtbl;
 extern IExpandCollapseProviderVtbl const flux_uia_expand_vtbl;
+extern ISelectionProviderVtbl const      flux_uia_selection_vtbl;
+extern ISelectionItemProviderVtbl const  flux_uia_selitem_vtbl;
 
 #endif

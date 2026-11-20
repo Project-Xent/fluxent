@@ -1149,7 +1149,6 @@ static FluxUiaHooks const uia_button_invoke        = {.role = FLUX_UIA_BUTTON, .
 static FluxUiaHooks const uia_button_toggle        = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_TOGGLE};
 static FluxUiaHooks const uia_calendar             = {.role = FLUX_UIA_CALENDAR, .patterns = 0};
 static FluxUiaHooks const uia_checkbox_toggle      = {.role = FLUX_UIA_CHECKBOX, .patterns = FLUX_UIA_P_TOGGLE};
-static FluxUiaHooks const uia_custom               = {.role = FLUX_UIA_CUSTOM, .patterns = 0};
 static FluxUiaHooks const uia_group                = {.role = FLUX_UIA_GROUP, .patterns = 0};
 static FluxUiaHooks const uia_header               = {.role = FLUX_UIA_HEADER, .patterns = 0};
 static FluxUiaHooks const uia_headeritem           = {.role = FLUX_UIA_HEADERITEM, .patterns = 0};
@@ -1157,7 +1156,6 @@ static FluxUiaHooks const uia_hidden               = {.role = FLUX_UIA_HIDDEN, .
 static FluxUiaHooks const uia_hyperlink_invoke     = {.role = FLUX_UIA_HYPERLINK, .patterns = FLUX_UIA_P_INVOKE};
 static FluxUiaHooks const uia_image                = {.role = FLUX_UIA_IMAGE, .patterns = 0};
 static FluxUiaHooks const uia_list                 = {.role = FLUX_UIA_LIST, .patterns = 0};
-static FluxUiaHooks const uia_listitem             = {.role = FLUX_UIA_LISTITEM, .patterns = 0};
 static FluxUiaHooks const uia_menu                 = {.role = FLUX_UIA_MENU, .patterns = 0};
 static FluxUiaHooks const uia_menubar              = {.role = FLUX_UIA_MENUBAR, .patterns = 0};
 static FluxUiaHooks const uia_pane                 = {.role = FLUX_UIA_PANE, .patterns = 0};
@@ -1170,11 +1168,9 @@ static FluxUiaHooks const uia_tab                  = {.role = FLUX_UIA_TAB, .pat
 static FluxUiaHooks const uia_text                 = {.role = FLUX_UIA_TEXT, .patterns = 0};
 static FluxUiaHooks const uia_titlebar             = {.role = FLUX_UIA_TITLEBAR, .patterns = 0};
 static FluxUiaHooks const uia_tooltip              = {.role = FLUX_UIA_TOOLTIP, .patterns = 0};
-static FluxUiaHooks const uia_tree                 = {.role = FLUX_UIA_TREE, .patterns = 0};
 static FluxUiaHooks const uia_window               = {.role = FLUX_UIA_WINDOW, .patterns = 0};
 static FluxUiaHooks const uia_scroll_pane          = {.role = FLUX_UIA_PANE, .patterns = FLUX_UIA_P_SCROLL};
 static FluxUiaHooks const uia_listitem_scroll      = {.role = FLUX_UIA_LISTITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
-static FluxUiaHooks const uia_tabitem_scroll       = {.role = FLUX_UIA_TABITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
 static FluxUiaHooks const uia_dataitem_scroll      = {.role = FLUX_UIA_DATAITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
 static FluxUiaHooks const uia_expander             = {
   .role          = FLUX_UIA_BUTTON,
@@ -1201,21 +1197,47 @@ static FluxUiaHooks const uia_menubaritem = {
   .patterns      = FLUX_UIA_P_INVOKE | FLUX_UIA_P_EXPAND,
   .expand        = flux_menubar_uia_expand,
   .toggle_expand = flux_menubar_uia_toggle};
-static FluxUiaHooks const uia_treeitem_expand = {
-  .role          = FLUX_UIA_TREEITEM,
-  .patterns      = FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_EXPAND,
-  .expand        = flux_tree_uia_expand,
-  .toggle_expand = flux_tree_uia_toggle};
-static FluxUiaHooks const uia_navitem = {
-  .role          = FLUX_UIA_LISTITEM,
-  .patterns      = FLUX_UIA_P_EXPAND,
-  .expand        = flux_nav_uia_expand,
-  .toggle_expand = flux_nav_uia_toggle};
 static FluxUiaHooks const uia_commandbar = {
   .role          = FLUX_UIA_APPBAR,
   .patterns      = FLUX_UIA_P_EXPAND,
   .expand        = flux_cmdbar_uia_expand,
   .toggle_expand = flux_cmdbar_uia_toggle};
+
+static unsigned uia_mode_required(FluxStore *store, XentNodeId node) {
+	( void ) store;
+	( void ) node;
+	return FLUX_UIA_SEL_REQUIRED;
+}
+
+static FluxUiaHooks const uia_list_sel
+  = {.role = FLUX_UIA_LIST, .patterns = FLUX_UIA_P_SELECTION, .select_mode = flux_list_uia_mode};
+static FluxUiaHooks const uia_listitem_sel = {
+  .role     = FLUX_UIA_LISTITEM,
+  .patterns = FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_SELECTION_ITEM,
+  .selected = flux_list_uia_selected,
+  .select   = flux_list_uia_select};
+static FluxUiaHooks const uia_tree_sel
+  = {.role = FLUX_UIA_TREE, .patterns = FLUX_UIA_P_SELECTION, .select_mode = flux_tree_uia_mode};
+static FluxUiaHooks const uia_treeitem_sel = {
+  .role          = FLUX_UIA_TREEITEM,
+  .patterns      = FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_EXPAND | FLUX_UIA_P_SELECTION_ITEM,
+  .expand        = flux_tree_uia_expand,
+  .toggle_expand = flux_tree_uia_toggle,
+  .selected      = flux_tree_uia_selected,
+  .select        = flux_tree_uia_select};
+static FluxUiaHooks const uia_tabs_sel
+  = {.role = FLUX_UIA_TAB, .patterns = FLUX_UIA_P_SELECTION, .select_mode = uia_mode_required};
+static FluxUiaHooks const uia_tabitem_sel
+  = {.role = FLUX_UIA_TABITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_SELECTION_ITEM};
+static FluxUiaHooks const uia_nav_sel     = {.role = FLUX_UIA_CUSTOM, .patterns = FLUX_UIA_P_SELECTION};
+static FluxUiaHooks const uia_navitem_sel = {
+  .role          = FLUX_UIA_LISTITEM,
+  .patterns      = FLUX_UIA_P_EXPAND | FLUX_UIA_P_SELECTION_ITEM,
+  .expand        = flux_nav_uia_expand,
+  .toggle_expand = flux_nav_uia_toggle};
+static FluxUiaHooks const uia_selector_sel = {.role = FLUX_UIA_LIST, .patterns = FLUX_UIA_P_SELECTION};
+static FluxUiaHooks const uia_selectoritem_sel
+  = {.role = FLUX_UIA_LISTITEM, .patterns = FLUX_UIA_P_SELECTION_ITEM, .selected = flux_selector_uia_selected};
 static FluxUiaHooks const uia_combo = {
   .role          = FLUX_UIA_COMBOBOX,
   .patterns      = FLUX_UIA_P_VALUE | FLUX_UIA_P_EXPAND,
@@ -1418,7 +1440,7 @@ MODULE(list) = {
   .snapshot = flux_snap_list,
   .overlay  = flux_list_overlay_record,
   .record   = flux_container_record,
-  .uia      = &uia_list};
+  .uia      = &uia_list_sel};
 MODULE(tab)  = {.type = FLUX_CONTROL_TAB, .record = flux_container_record, .uia = &uia_tab};
 MODULE(card) = {.type = FLUX_CONTROL_CARD, .layout = layout_card, .record = flux_card_record, .uia = &uia_group};
 MODULE(divider)
@@ -1579,12 +1601,12 @@ MODULE(nav) = {
   .consumed = nav_consumed,
   .record   = flux_nav_record,
   .overlay  = flux_nav_overlay_record,
-  .uia      = &uia_custom};
+  .uia      = &uia_nav_sel};
 MODULE(navitem) = {
   .type     = FLUX_CONTROL_NAV_VIEW_ITEM,
   .snapshot = flux_snap_nav_view_item,
   .record   = flux_navitem_record,
-  .uia      = &uia_navitem};
+  .uia      = &uia_navitem_sel};
 MODULE(tabs) = {
   .type     = FLUX_CONTROL_TAB_VIEW,
   .tree     = &tree_tabs,
@@ -1594,12 +1616,12 @@ MODULE(tabs) = {
   .retarget = retarget_tab,
   .consumed = tabs_consumed,
   .record   = flux_tabs_record,
-  .uia      = &uia_tab};
+  .uia      = &uia_tabs_sel};
 MODULE(tabitem) = {
   .type     = FLUX_CONTROL_TAB_VIEW_ITEM,
   .snapshot = flux_snap_tab_view_item,
   .record   = flux_tabitem_record,
-  .uia      = &uia_tabitem_scroll};
+  .uia      = &uia_tabitem_sel};
 MODULE(listitem) = {
   .type     = FLUX_CONTROL_LIST_ITEM,
   .snapshot = flux_snap_list_item,
@@ -1607,7 +1629,7 @@ MODULE(listitem) = {
   .props    = flux_props_listitem,
   .seed     = seed_list_item,
   .record   = flux_listitem_record,
-  .uia      = &uia_listitem_scroll};
+  .uia      = &uia_listitem_sel};
 MODULE(listbox) = {
   .type     = FLUX_CONTROL_LIST_BOX,
   .tree     = &tree_list,
@@ -1618,7 +1640,7 @@ MODULE(listbox) = {
   .snapshot = flux_snap_list,
   .overlay  = flux_list_overlay_record,
   .record   = flux_listbox_record,
-  .uia      = &uia_list};
+  .uia      = &uia_list_sel};
 MODULE(gridview) = {
   .type     = FLUX_CONTROL_GRID_VIEW,
   .tree     = &tree_list,
@@ -1629,7 +1651,7 @@ MODULE(gridview) = {
   .snapshot = flux_snap_list,
   .overlay  = flux_list_overlay_record,
   .record   = flux_container_record,
-  .uia      = &uia_list};
+  .uia      = &uia_list_sel};
 MODULE(repeater) = {
   .type     = FLUX_CONTROL_ITEMS_REPEATER,
   .tree     = &tree_list,
@@ -1651,7 +1673,7 @@ MODULE(itemsview) = {
   .snapshot = flux_snap_list,
   .overlay  = flux_list_overlay_record,
   .record   = flux_container_record,
-  .uia      = &uia_list};
+  .uia      = &uia_list_sel};
 MODULE(flip) = {
   .type     = FLUX_CONTROL_FLIP_VIEW,
   .snapshot = flux_snap_flip_view,
@@ -1714,12 +1736,12 @@ MODULE(selector) = {
   .seed     = seed_selector,
   .retarget = retarget_selector,
   .record   = flux_container_record,
-  .uia      = &uia_list};
+  .uia      = &uia_selector_sel};
 MODULE(selectoritem) = {
   .type     = FLUX_CONTROL_SELECTOR_BAR_ITEM,
   .snapshot = flux_snap_selector_item,
   .record   = flux_selectoritem_record,
-  .uia      = &uia_listitem};
+  .uia      = &uia_selectoritem_sel};
 MODULE(breadcrumb) = {
   .type     = FLUX_CONTROL_BREADCRUMB_BAR,
   .tree     = &tree_breadcrumb,
@@ -1747,13 +1769,13 @@ MODULE(tree) = {
   .seed     = seed_tree,
   .retarget = retarget_tree,
   .record   = flux_container_record,
-  .uia      = &uia_tree};
+  .uia      = &uia_tree_sel};
 MODULE(treeitem) = {
   .type     = FLUX_CONTROL_TREE_ITEM,
   .snapshot = flux_snap_tree_item,
   .props    = flux_props_treeitem,
   .record   = flux_treeitem_record,
-  .uia      = &uia_treeitem_expand};
+  .uia      = &uia_treeitem_sel};
 MODULE(refresh) = {
   .type     = FLUX_CONTROL_REFRESH,
   .snapshot = flux_snap_refresh,

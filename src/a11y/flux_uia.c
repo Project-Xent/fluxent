@@ -63,19 +63,21 @@ static const GUID Flux_IID_ScrollItem = {
 static const GUID Flux_IID_ExpandCollapse = {
   0xd847d3a5, 0xcab0, 0x4a98, {0x8c, 0x32, 0xec, 0xb4, 0x5c, 0x59, 0xad, 0x24}
 };
+static const GUID Flux_IID_Selection = {
+  0xfb8b03af, 0x3bdf, 0x48d4, {0xbd, 0x36, 0x1a, 0x65, 0x79, 0x3b, 0xe1, 0x68}
+};
 static const GUID Flux_IID_SelectionItem = {
   0x2acad808, 0xb2d4, 0x452d, {0xa4, 0x07, 0x91, 0xff, 0x1a, 0xd1, 0x67, 0xb2}
 };
 
 
-#define SELF_SIMPLE(p)    FLUX_UIA_SELF(p, lpVtblSimple)
-#define SELF_FRAG(p)      FLUX_UIA_SELF(p, lpVtblFragment)
-#define SELF_ROOT(p)      FLUX_UIA_SELF(p, lpVtblRoot)
-#define SELF_INVOKE(p)    FLUX_UIA_SELF(p, lpVtblInvoke)
-#define SELF_TOGGLE(p)    FLUX_UIA_SELF(p, lpVtblToggle)
-#define SELF_RANGE(p)     FLUX_UIA_SELF(p, lpVtblRange)
-#define SELF_VALUE(p)     FLUX_UIA_SELF(p, lpVtblValue)
-#define SELF_SELECTION(p) FLUX_UIA_SELF(p, lpVtblSelection)
+#define SELF_SIMPLE(p) FLUX_UIA_SELF(p, lpVtblSimple)
+#define SELF_FRAG(p)   FLUX_UIA_SELF(p, lpVtblFragment)
+#define SELF_ROOT(p)   FLUX_UIA_SELF(p, lpVtblRoot)
+#define SELF_INVOKE(p) FLUX_UIA_SELF(p, lpVtblInvoke)
+#define SELF_TOGGLE(p) FLUX_UIA_SELF(p, lpVtblToggle)
+#define SELF_RANGE(p)  FLUX_UIA_SELF(p, lpVtblRange)
+#define SELF_VALUE(p)  FLUX_UIA_SELF(p, lpVtblValue)
 
 typedef struct FluxUiaControlInfo {
 	int      control_type;
@@ -98,9 +100,8 @@ static UiaPatternSlot const kUiaPatterns [] = {
   {FLUX_UIA_P_SCROLL,         10004, &Flux_IID_Scroll,         offsetof(FluxUia, lpVtblScroll)    },
   {FLUX_UIA_P_SCROLL_ITEM,    10017, &Flux_IID_ScrollItem,     offsetof(FluxUia, lpVtblScrollItem)},
   {FLUX_UIA_P_EXPAND,         10005, &Flux_IID_ExpandCollapse, offsetof(FluxUia, lpVtblExpand)    },
+  {FLUX_UIA_P_SELECTION,      10001, &Flux_IID_Selection,      offsetof(FluxUia, lpVtblSelectionC)},
 };
-
-static FluxUia      *uia_alloc(FluxUiaContext const *info, XentNodeId node);
 
 static FluxNodeData *uia_node_data(FluxUia const *self) {
 	return self->info.store ? flux_store_find(self->info.store, self->node) : NULL;
@@ -119,6 +120,11 @@ static FluxUiaControlInfo uia_control_info(FluxUia const *self) {
 	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
 	if (!h || h->role <= 0) return (FluxUiaControlInfo) {FLUX_UIA_CUSTOM, 0};
 	return (FluxUiaControlInfo) {h->role, h->patterns};
+}
+
+unsigned flux_uia_patterns(FluxUiaContext const *info, XentNodeId node) {
+	FluxUiaHooks const *h = flux_module_uia(info->store, node);
+	return h ? h->patterns : 0u;
 }
 
 static void *uia_pattern_iface(FluxUia *self, REFIID riid) {
@@ -277,12 +283,12 @@ static ULONG STDMETHODCALLTYPE      f_release(IRawElementProviderFragment *p) { 
 
 static IRawElementProviderFragment *uia_wrap(FluxUia *self, XentNodeId node) {
 	if (node == XENT_NODE_INVALID) return NULL;
-	FluxUia *p = uia_alloc(&self->info, node);
+	FluxUia *p = flux_uia_alloc(&self->info, node);
 	return p ? ( IRawElementProviderFragment * ) &p->lpVtblFragment : NULL;
 }
 
 static IRawElementProviderFragment *uia_wrap_thumb(FluxUia *self, int thumb) {
-	FluxUia *p = uia_alloc(&self->info, self->node);
+	FluxUia *p = flux_uia_alloc(&self->info, self->node);
 	if (!p) return NULL;
 	p->thumb = thumb;
 	return ( IRawElementProviderFragment * ) &p->lpVtblFragment;
@@ -389,7 +395,7 @@ static HRESULT STDMETHODCALLTYPE f_get_fragment_root(
 ) {
 	FluxUia *self = SELF_FRAG(p);
 	if (!out) return E_POINTER;
-	FluxUia *r = uia_alloc(&self->info, self->info.root);
+	FluxUia *r = flux_uia_alloc(&self->info, self->info.root);
 	if (!r) return E_OUTOFMEMORY;
 	*out = ( IRawElementProviderFragmentRoot * ) &r->lpVtblRoot;
 	return S_OK;
@@ -477,7 +483,7 @@ static IRawElementProviderFragmentRootVtbl const g_root_vtbl = {
   r_get_focus,
 };
 
-static HRESULT uia_invoke_behavior(FluxUia *self) {
+HRESULT flux_uia_activate(FluxUia *self) {
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 	XtkHost *host = flux_store_host(self->info.store);
 	if (!host) return UIA_E_INVALIDOPERATION;
@@ -500,7 +506,7 @@ static ULONG STDMETHODCALLTYPE   inv_release(IInvokeProvider *p) { return flux_u
 
 static HRESULT STDMETHODCALLTYPE inv_invoke(IInvokeProvider *p) {
 	FluxUia *self = SELF_INVOKE(p);
-	HRESULT  hr   = uia_invoke_behavior(self);
+	HRESULT  hr   = flux_uia_activate(self);
 	if (SUCCEEDED(hr)) uia_raise_self_event(self, FLUX_UIA_EVENT_INVOKED);
 	return hr;
 }
@@ -515,7 +521,7 @@ static ULONG STDMETHODCALLTYPE   tog_addref(IToggleProvider *p) { return flux_ui
 
 static ULONG STDMETHODCALLTYPE   tog_release(IToggleProvider *p) { return flux_uia_release(SELF_TOGGLE(p)); }
 
-static HRESULT STDMETHODCALLTYPE tog_toggle(IToggleProvider *p) { return uia_invoke_behavior(SELF_TOGGLE(p)); }
+static HRESULT STDMETHODCALLTYPE tog_toggle(IToggleProvider *p) { return flux_uia_activate(SELF_TOGGLE(p)); }
 
 static HRESULT STDMETHODCALLTYPE tog_get_state(IToggleProvider *p, enum ToggleState *out) {
 	FluxUia *self = SELF_TOGGLE(p);
@@ -676,51 +682,7 @@ static IValueProviderVtbl const g_value_vtbl = {
   val_get_readonly,
 };
 
-static HRESULT STDMETHODCALLTYPE sel_qi(ISelectionItemProvider *p, REFIID riid, void **ppv) {
-	return flux_uia_qi(SELF_SELECTION(p), riid, ppv);
-}
-
-static ULONG STDMETHODCALLTYPE   sel_addref(ISelectionItemProvider *p) { return flux_uia_addref(SELF_SELECTION(p)); }
-
-static ULONG STDMETHODCALLTYPE   sel_release(ISelectionItemProvider *p) { return flux_uia_release(SELF_SELECTION(p)); }
-
-static HRESULT STDMETHODCALLTYPE sel_select(ISelectionItemProvider *p) {
-	return uia_invoke_behavior(SELF_SELECTION(p));
-}
-
-static HRESULT STDMETHODCALLTYPE sel_add(ISelectionItemProvider *p) { return uia_invoke_behavior(SELF_SELECTION(p)); }
-
-static HRESULT STDMETHODCALLTYPE sel_remove(ISelectionItemProvider *p) {
-	( void ) p;
-	return UIA_E_INVALIDOPERATION;
-}
-
-static HRESULT STDMETHODCALLTYPE sel_is_selected(ISelectionItemProvider *p, BOOL *out) {
-	FluxUia *self = SELF_SELECTION(p);
-	if (!out) return E_POINTER;
-	*out = xent_sem_selected(self->info.ctx, self->node) ? TRUE : FALSE;
-	return S_OK;
-}
-
-static HRESULT STDMETHODCALLTYPE sel_container(ISelectionItemProvider *p, IRawElementProviderSimple **out) {
-	( void ) p;
-	if (!out) return E_POINTER;
-	*out = NULL;
-	return S_OK;
-}
-
-static ISelectionItemProviderVtbl const g_selection_vtbl = {
-  sel_qi,
-  sel_addref,
-  sel_release,
-  sel_select,
-  sel_add,
-  sel_remove,
-  sel_is_selected,
-  sel_container,
-};
-
-static FluxUia *uia_alloc(FluxUiaContext const *info, XentNodeId node) {
+FluxUia *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	FluxUia *p = ( FluxUia * ) calloc(1, sizeof(*p));
 	if (!p) return NULL;
 	p->lpVtblSimple     = &g_simple_vtbl;
@@ -730,7 +692,8 @@ static FluxUia *uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	p->lpVtblToggle     = &g_toggle_vtbl;
 	p->lpVtblRange      = &g_range_vtbl;
 	p->lpVtblValue      = &g_value_vtbl;
-	p->lpVtblSelection  = &g_selection_vtbl;
+	p->lpVtblSelection  = &flux_uia_selitem_vtbl;
+	p->lpVtblSelectionC = &flux_uia_selection_vtbl;
 	p->lpVtblScroll     = &flux_uia_scroll_vtbl;
 	p->lpVtblScrollItem = &flux_uia_scrollitem_vtbl;
 	p->lpVtblExpand     = &flux_uia_expand_vtbl;
@@ -743,13 +706,13 @@ static FluxUia *uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 
 void *flux_uia_provider_create(FluxUiaContext const *info) {
 	if (!info || !info->ctx || info->root == XENT_NODE_INVALID) return NULL;
-	FluxUia *p = uia_alloc(info, info->root);
+	FluxUia *p = flux_uia_alloc(info, info->root);
 	return p ? &p->lpVtblSimple : NULL;
 }
 
 void flux_uia_raisefocus(FluxUiaContext const *info, XentNodeId node) {
 	if (!info || !info->ctx || node == XENT_NODE_INVALID || !UiaClientsAreListening()) return;
-	FluxUia *p = uia_alloc(info, flux_uia_visible(info, node));
+	FluxUia *p = flux_uia_alloc(info, flux_uia_visible(info, node));
 	if (!p) return;
 	UiaRaiseAutomationEvent(( IRawElementProviderSimple * ) &p->lpVtblSimple, FLUX_UIA_EVENT_FOCUS_CHANGED);
 	(( IUnknown * ) &p->lpVtblSimple)->lpVtbl->Release(( IUnknown * ) &p->lpVtblSimple);

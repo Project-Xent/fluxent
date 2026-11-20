@@ -59,6 +59,8 @@ typedef struct FluxInputHooks {
 } FluxInputHooks;
 
 typedef struct FluxUiaHooks {
+	int         role;
+	unsigned    patterns;
 	char const *(*text)(FluxStore *store, XentNodeId node);
 	void        (*set_text)(FluxStore *store, XentNodeId node, char const *text);
 	void        (*set_range)(FluxStore *store, XentNodeId node, double value);

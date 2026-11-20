@@ -22,6 +22,7 @@ typedef struct DManipNodeState {
 static void dmanip_on_update(void *ctx, float sx, float sy) {
 	FluxScrollData *sd = ( FluxScrollData * ) ctx;
 	if (!sd) return;
+	if (sd->rtl) sx = -sx;
 	bool changed = sd->scroll_x != sx || sd->scroll_y != sy;
 	sd->scroll_x = sx;
 	sd->scroll_y = sy;
@@ -58,10 +59,10 @@ static void sync_scroll_viewport(DManipSyncContext const *sync, FluxScrollData *
 	flux_dmanip_vp_setaxes(vp, cw > pw, ch > ph);
 	if (cw < pw) cw = pw;
 	if (ch < ph) ch = ph;
-	flux_dmanip_vp_setsize(vp, cw, ch);
+	flux_dmanip_vp_setcontent(vp, sd->rtl ? pw - cw : 0, cw, ch);
 	flux_dmanip_vp_setsnapy(vp, sd->snap_y * sync->scale);
 
-	flux_dmanip_vp_sync(vp, sd->scroll_x, sd->scroll_y);
+	flux_dmanip_vp_sync(vp, sd->rtl ? -sd->scroll_x : sd->scroll_x, sd->scroll_y);
 }
 
 static void sync_scroll_node(DManipSyncContext const *sync, DManipNodeState *state) {
@@ -118,7 +119,7 @@ bool flux_dmanip_pan_handoff(FluxDManip *dmanip, FluxInput *input, FluxStore *st
 	FluxDManipViewport *vp = dmanip_viewport_for_input_pan(input, store, &sd);
 	if (!vp) return false;
 
-	flux_dmanip_vp_sync(vp, sd->scroll_x, sd->scroll_y);
+	flux_dmanip_vp_sync(vp, sd->rtl ? -sd->scroll_x : sd->scroll_x, sd->scroll_y);
 	if (FAILED(flux_dmanip_vp_setcontact(vp, pointer_id))) return false;
 
 	flux_input_clearpan(input);
@@ -130,7 +131,7 @@ bool flux_dmanip_contact(FluxStore *store, XentNodeId node, uint32_t pointer_id)
 	FluxScrollData     *sd = nd && nd->component_type == FLUX_CONTROL_SCROLL ? nd->component_data : NULL;
 	FluxDManipViewport *vp = sd ? ( FluxDManipViewport * ) sd->dmanip_viewport : NULL;
 	if (!vp) return false;
-	flux_dmanip_vp_sync(vp, sd->scroll_x, sd->scroll_y);
+	flux_dmanip_vp_sync(vp, sd->rtl ? -sd->scroll_x : sd->scroll_x, sd->scroll_y);
 	return SUCCEEDED(flux_dmanip_vp_setcontact(vp, pointer_id));
 }
 

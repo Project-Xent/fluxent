@@ -191,7 +191,7 @@ static void autoscroll(FluxColHeaderData const *h, float x) {
 	xent_layout_rect(h->ctx, scroll, &sr);
 	xent_layout_rect(h->ctx, h->node, &hr);
 	float max = sd->content_w - sr.w;
-	float at  = hr.x + x - sr.x - sd->scroll_x;
+	float at  = flux_scroll_start(sd, &hr, &sr) + x - sd->scroll_x;
 	float dx  = at < FLUX_COL_SCROLL_MARGIN        ? -FLUX_COL_SCROLL_STEP
 	          : at > sr.w - FLUX_COL_SCROLL_MARGIN ? FLUX_COL_SCROLL_STEP
 	                                               : 0.0f;

@@ -89,7 +89,7 @@ static void sb_reveal(FluxSelectorBarData *b, int index) {
 	    || !xent_layout_rect(b->ctx, b->viewport, &viewport)
 	    || !xent_layout_rect(b->ctx, b->items [index], &item))
 		return;
-	float left  = item.x - viewport.x;
+	float left  = flux_scroll_start(scroll, &item, &viewport);
 	float right = left + item.w;
 	float next  = scroll->scroll_x;
 	if (left < next) next = left;

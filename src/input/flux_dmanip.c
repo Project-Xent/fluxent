@@ -96,6 +96,7 @@ struct FluxDManipViewport {
 	DWORD                            handler_cookie;
 	bool                             enabled;
 	DIRECTMANIPULATION_STATUS        status;
+	int                              content_x;
 	int                              content_w;
 	int                              content_h;
 	float                            dpi_scale;
@@ -320,11 +321,12 @@ void flux_dmanip_vp_setrect(FluxDManipViewport *vp, int x, int y, int w, int h) 
 	}
 }
 
-void flux_dmanip_vp_setsize(FluxDManipViewport *vp, int w, int h) {
+void flux_dmanip_vp_setcontent(FluxDManipViewport *vp, int x, int w, int h) {
 	if (!vp || !vp->primary || w <= 0 || h <= 0) return;
-	if (w == vp->content_w && h == vp->content_h) return;
-	RECT r = {0, 0, w, h};
+	if (x == vp->content_x && w == vp->content_w && h == vp->content_h) return;
+	RECT r = {x, 0, x + w, h};
 	if (SUCCEEDED(IDirectManipulationContent_SetContentRect(vp->primary, &r))) {
+		vp->content_x = x;
 		vp->content_w = w;
 		vp->content_h = h;
 	}

@@ -339,7 +339,7 @@ bool input_drive_refresh_pull(FluxInput *input, float px, float py) {
 	if (!sd) return pull->active;
 	float max_x = 0.0f, max_y = 0.0f;
 	input_scroll_limits(input, pull->scroll, sd, &max_x, &max_y);
-	float new_sx = pull->origin_sx - (px - pull->start_x);
+	float new_sx = pull->origin_sx - (sd->rtl ? pull->start_x - px : px - pull->start_x);
 	float new_sy = pull->origin_sy - (py - pull->start_y);
 	bool  active = input_refresh_pull(input, pull->refresh, new_sx, new_sy, max_x, max_y);
 	if (!pull->active && !active) return false;
@@ -380,7 +380,7 @@ bool input_drive_touch_pan(FluxInput *input, float px, float py) {
 	float max_x = 0.0f, max_y = 0.0f;
 	input_scroll_limits(input, input->touch.target, sd, &max_x, &max_y);
 
-	float      new_sx  = input->touch.origin_sx - (px - input->touch.start_x);
+	float      new_sx  = input->touch.origin_sx - (sd->rtl ? input->touch.start_x - px : px - input->touch.start_x);
 	float      new_sy  = input->touch.origin_sy - (py - input->touch.start_y);
 
 	XentNodeId refresh = input_refresh_root_for_scroll(input, input->touch.target);
@@ -640,9 +640,12 @@ bool input_route_scroll_node(FluxInput *input, XentNodeId node, float *remaining
 	XentRect rect = {0};
 	xent_layout_rect(input->ctx, node, &rect);
 
-	bool      retarget = smooth && sd->wheel_active;
-	FluxPoint next     = {retarget ? sd->wheel_target_x : sd->scroll_x, retarget ? sd->wheel_target_y : sd->scroll_y};
-	bool      moved    = input_consume_scroll_axis(&next.x, remaining_x, input_scroll_axis_max(sd->content_w, rect.w));
+	bool      retarget  = smooth && sd->wheel_active;
+	FluxPoint next      = {retarget ? sd->wheel_target_x : sd->scroll_x, retarget ? sd->wheel_target_y : sd->scroll_y};
+	float     sign      = sd->rtl ? -1.0f : 1.0f;
+	*remaining_x       *= sign;
+	bool moved          = input_consume_scroll_axis(&next.x, remaining_x, input_scroll_axis_max(sd->content_w, rect.w));
+	*remaining_x       *= sign;
 	moved = input_consume_scroll_axis(&next.y, remaining_y, input_scroll_axis_max(sd->content_h, rect.h)) || moved;
 	input_scroll_apply(input, sd, next, moved, smooth);
 	return *remaining_x == 0.0f && *remaining_y == 0.0f;

@@ -41,6 +41,7 @@ typedef struct FluxScrollData {
 	float              max_x;
 	float              max_y;
 
+	uint8_t            rtl;
 	uint8_t            mouse_over;
 	float              mouse_local_x;
 	float              mouse_local_y;
@@ -56,7 +57,13 @@ typedef struct FluxScrollData {
 	void              *on_offset_changed_ctx;
 } FluxScrollData;
 
-static float inline flux_scroll_off_x(FluxScrollData const *sd) { return sd->scroll_x - sd->origin_x; }
+static float inline flux_scroll_off_x(FluxScrollData const *sd) {
+	return sd->rtl ? sd->origin_x - sd->scroll_x : sd->scroll_x - sd->origin_x;
+}
+
+static float inline flux_scroll_start(FluxScrollData const *sd, XentRect const *child, XentRect const *viewport) {
+	return sd->rtl ? viewport->x + viewport->w - child->x - child->w : child->x - viewport->x;
+}
 
 static float inline flux_scroll_off_y(FluxScrollData const *sd) { return sd->scroll_y - sd->origin_y; }
 

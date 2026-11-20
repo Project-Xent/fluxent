@@ -22,7 +22,7 @@ void                              flux_dmanip_viewport_destroy(FluxDManipViewpor
 
 void                              flux_dmanip_vp_setrect(FluxDManipViewport *vp, int x, int y, int w, int h);
 
-void                              flux_dmanip_vp_setsize(FluxDManipViewport *vp, int w, int h);
+void                              flux_dmanip_vp_setcontent(FluxDManipViewport *vp, int x, int w, int h);
 void                              flux_dmanip_vp_setaxes(FluxDManipViewport *vp, bool x, bool y);
 
 void                              flux_dmanip_vp_setdpi(FluxDManipViewport *vp, float scale);
@@ -33,6 +33,7 @@ HRESULT                           flux_dmanip_vp_setcontact(FluxDManipViewport *
 
 void flux_dmanip_vp_onchange(FluxDManipViewport *vp, FluxDManipContentUpdatedFn cb, void *ctx);
 
+/** `scroll_x` is physical: negative when RTL content sits left of the viewport. */
 void flux_dmanip_vp_sync(FluxDManipViewport *vp, float scroll_x, float scroll_y);
 
 #endif

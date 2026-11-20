@@ -11,13 +11,15 @@
 
 void flux_scroll_measure(XentCtx const *ctx, XentNodeId node, FluxScrollData *sd) {
 	XentRect rect = {0}, cr = {0};
+	if (sd) sd->rtl = xent_resolved_dir(ctx, node) == XENT_DIRECTION_RTL;
 	if (!sd || sd->content_manual || !xent_layout_rect(ctx, node, &rect)) return;
 	float max_r = 0.0f, max_b = 0.0f;
 	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
 	{
 		if (!xent_layout_rect(ctx, child, &cr)) continue;
-		max_r = fmaxf(max_r, cr.x + cr.w - rect.x);
-		max_b = fmaxf(max_b, cr.y + cr.h - rect.y);
+		XentRect origin = {rect.x, rect.y, rect.w, 0.0f};
+		max_r           = fmaxf(max_r, flux_scroll_start(sd, &cr, &origin) + cr.w);
+		max_b           = fmaxf(max_b, cr.y + cr.h - rect.y);
 	}
 	XentResolvedInsets pad = {0};
 	xent_resolved_p(ctx, node, XENT_AXIS_VERTICAL, &pad);

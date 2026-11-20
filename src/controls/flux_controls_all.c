@@ -88,6 +88,7 @@ void flux_controls_all(void) {
 	  &flux_ctrl_cmdmore,
 	  &flux_ctrl_colbutton,
 	  &flux_ctrl_groupheader,
+	  &flux_ctrl_comboitem,
 	};
 	for (unsigned i = 0; i < sizeof(all) / sizeof(all [0]); i++) flux_controls_use(all [i]);
 }

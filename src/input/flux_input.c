@@ -368,8 +368,16 @@ static void input_focus_node(FluxInput *input, XentNodeId node) {
 	if (nd->behavior.on_focus) nd->behavior.on_focus(nd->behavior.on_focus_ctx);
 }
 
+static bool input_focus_passive(FluxInput const *input, XentNodeId node) {
+	for (; node != XENT_NODE_INVALID; node = xent_node_parent(input->ctx, node)) {
+		FluxNodeData const *nd = flux_store_find(input->store, node);
+		if (nd && nd->focus_passive) return true;
+	}
+	return false;
+}
+
 static void input_update_focus_from_hit(FluxInput *input, XentNodeId node) {
-	if (node == input->focused) return;
+	if (node == input->focused || input_focus_passive(input, node)) return;
 
 	input_blur_focused(input);
 	input_focus_node(input, node);

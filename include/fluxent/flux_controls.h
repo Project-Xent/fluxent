@@ -92,5 +92,6 @@ extern FluxControlModule const   flux_ctrl_appbarsep;
 extern FluxControlModule const   flux_ctrl_cmdmore;
 extern FluxControlModule const   flux_ctrl_colbutton;
 extern FluxControlModule const   flux_ctrl_groupheader;
+extern FluxControlModule const   flux_ctrl_comboitem;
 
 #endif

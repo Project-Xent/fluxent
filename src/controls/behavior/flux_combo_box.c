@@ -15,6 +15,10 @@
 #include "controls/data/flux_textbox_data.h"
 #include "controls/factory/flux_init_popup.h"
 #include "controls/factory/flux_init_textbox.h"
+#include "controls/factory/flux_init_container.h"
+#include "controls/data/flux_scroll_data.h"
+#include "popup/flux_popup_tree.h"
+#include "render/flux_render_snapshot.h"
 #include "fluxent/flux_input.h"
 #include "fluxent/flux_popup.h"
 #include "fluxent/flux_window.h"
@@ -39,7 +43,14 @@
 #define CB_CORNER           8.0f
 #define CB_BORDER           1.0f
 
-typedef struct FluxComboRuntime {
+typedef struct FluxComboRuntime FluxComboRuntime;
+
+typedef struct FluxComboItem {
+	FluxComboRuntime *rt;
+	int               index;
+} FluxComboItem;
+
+struct FluxComboRuntime {
 	FluxComboBoxData model;
 	FluxStore       *store;
 	XentNodeId       node;
@@ -49,26 +60,13 @@ typedef struct FluxComboRuntime {
 	FluxTheme       *theme;
 	FluxPopup       *popup;
 	int              highlight;
-	int              hover_index;
 	bool             kb_focus;
 	DWORD            press_tick;
-	float            bar_hover_x;
-	float            bar_hover_y;
-	float            bar_expand;
-	DWORD            bar_tick;
-	bool             bar_drag;
-	float            bar_drag_y;
-	float            bar_drag_scroll;
 	int              selection_at_open;
-	int              pressed_index;
 	float            width;
 	float            height;
-	float            scroll_y;
 	float            content_h;
 	float            row_h;
-	bool             panning;
-	float            press_y;
-	float            pan_start_scroll;
 
 	wchar_t          search [64];
 	int              search_len;
@@ -99,7 +97,12 @@ typedef struct FluxComboRuntime {
 	bool             restore_set;
 	bool             search_set;
 	bool             overlay_down;
-} FluxComboRuntime;
+	XentNodeId       list_root;
+	XentNodeId       list_scroll;
+	XentNodeId      *rows;
+	FluxComboItem   *row_data;
+	int              row_count;
+};
 
 #define CB_TOUCH_PAN_SLOP 10.0f
 
@@ -127,24 +130,25 @@ static float combo_max_scroll(FluxComboRuntime const *rt) {
 	return flux_maxf(0.0f, rt->content_h - combo_viewport_h(rt));
 }
 
-static void combo_clamp_scroll(FluxComboRuntime *rt) {
-	rt->scroll_y = flux_clampf(rt->scroll_y, 0.0f, combo_max_scroll(rt));
+static FluxScrollData *combo_scroll(FluxComboRuntime const *rt) {
+	FluxNodeData *nd = rt->list_scroll ? flux_store_find(rt->store, rt->list_scroll) : NULL;
+	return nd ? ( FluxScrollData * ) nd->component_data : NULL;
+}
+
+static void combo_scroll_to(FluxComboRuntime *rt, float y) {
+	FluxScrollData *sd = combo_scroll(rt);
+	if (!sd) return;
+	sd->scroll_y   = flux_clampf(y, 0.0f, combo_max_scroll(rt));
+	sd->reported_y = sd->scroll_y;
 }
 
 static void combo_ensure_visible(FluxComboRuntime *rt, int i) {
-	if (i < 0) return;
+	FluxScrollData *sd = combo_scroll(rt);
+	if (i < 0 || !sd) return;
 	float top = ( float ) i * rt->row_h;
 	float vp  = combo_viewport_h(rt);
-	if (top < rt->scroll_y) rt->scroll_y = top;
-	else if (top + rt->row_h > rt->scroll_y + vp) rt->scroll_y = top + rt->row_h - vp;
-	combo_clamp_scroll(rt);
-}
-
-static int combo_item_at(FluxComboRuntime const *rt, float y) {
-	float start = CB_BORDER + CB_CONTENT_MARGIN_Y;
-	if (y < start || y > start + combo_viewport_h(rt)) return -1;
-	int i = ( int ) ((y - start + rt->scroll_y) / rt->row_h);
-	return (i >= 0 && i < rt->model.item_count) ? i : -1;
+	if (top < sd->scroll_y) combo_scroll_to(rt, top);
+	else if (top + rt->row_h > sd->scroll_y + vp) combo_scroll_to(rt, top + rt->row_h - vp);
 }
 
 static FluxColor combo_item_fill(FluxThemeColors const *t, bool selected, bool hot, bool pressed) {
@@ -165,101 +169,51 @@ static bool combo_rec_item_label(
 	return flux_rec_text_ex(b, &tr, label, &style, pressed ? t->text_secondary : t->text_primary);
 }
 
-static void combo_repaint_popup(FluxComboRuntime *rt);
-
 #define CB_PILL_SQUASH_MS 167.0f
 
-static float combo_pill_scale(FluxComboRuntime const *rt, bool pressed) {
+static float combo_pill_scale(uint32_t press_tick, bool pressed) {
 	if (!pressed) return 1.0f;
-	float t = ( float ) (flux_anim_now() - rt->press_tick) / CB_PILL_SQUASH_MS;
+	float t = ( float ) (( uint32_t ) flux_anim_now() - press_tick) / CB_PILL_SQUASH_MS;
 	return 1.0f - 0.375f * flux_cubic_bezier(t > 1.0f ? 1.0f : t, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
-static bool combo_pill_step(void *ctx, unsigned long now) {
-	FluxComboRuntime *rt = ( FluxComboRuntime * ) ctx;
-	combo_repaint_popup(rt);
-	return rt->pressed_index >= 0 && ( float ) (( DWORD ) now - rt->press_tick) < CB_PILL_SQUASH_MS;
-}
-
-static bool combo_rec_item(XentDlBuilder *b, FluxComboRuntime const *rt, FluxThemeColors const *t, int i) {
-	float    row  = CB_BORDER + CB_CONTENT_MARGIN_Y + ( float ) i * rt->row_h - rt->scroll_y;
-	FluxRect item = {
-	  CB_BORDER + CB_ITEM_MARGIN_X, row + CB_ITEM_MARGIN_Y, rt->width - 2.0f * (CB_BORDER + CB_ITEM_MARGIN_X),
-	  rt->row_h - 2.0f * CB_ITEM_MARGIN_Y};
-
-	bool      selected = i == rt->model.selected_index;
-	bool      pressed  = i == rt->pressed_index;
-	FluxColor fill     = combo_item_fill(t, selected, i == rt->hover_index, pressed);
-	bool      ok       = true;
-	if (flux_color_af(fill) > 0.0f) ok = flux_rec_fill_rounded(b, &item, CB_ITEM_CORNER, fill);
-	if (ok && selected) {
-		float    h    = CB_PILL_H * combo_pill_scale(rt, pressed);
+XentDl *flux_comboitem_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	XentDlBuilder *b = xent_dl_begin();
+	if (!b) return NULL;
+	FluxThemeColors const       *t    = flux_rec_theme(rc);
+	FluxComboItemSnapshot const *s    = &snap->u.combo_item;
+	bool                         down = state && state->pressed;
+	FluxRect                     item = {
+	  bounds->x + CB_ITEM_MARGIN_X, bounds->y + CB_ITEM_MARGIN_Y, bounds->w - 2.0f * CB_ITEM_MARGIN_X,
+	  bounds->h - 2.0f * CB_ITEM_MARGIN_Y};
+	FluxColor fill = combo_item_fill(t, s->selected, state && state->hovered, down);
+	bool      ok   = flux_color_af(fill) <= 0.0f || flux_rec_fill_rounded(b, &item, CB_ITEM_CORNER, fill);
+	if (ok && s->selected) {
+		float    h    = CB_PILL_H * combo_pill_scale(s->press_tick, down);
 		FluxRect pill = {item.x, item.y + (item.h - h) * 0.5f, CB_PILL_W, h};
 		ok            = flux_rec_fill_rounded(b, &pill, CB_PILL_CORNER, t->accent_default);
 	}
-	ok = ok && combo_rec_item_label(b, t, &item, rt->model.items [i], pressed);
-	if (ok && rt->kb_focus && i == rt->highlight) ok = flux_rec_focus_rect(b, t, &item, CB_ITEM_CORNER);
-	return ok;
-}
-
-static FluxRect combo_bar_rect(FluxComboRuntime const *rt) {
-	return (FluxRect) {
-	  rt->width - CB_BORDER - FLUX_SCROLLBAR_SIZE, CB_BORDER, FLUX_SCROLLBAR_SIZE, rt->height - 2.0f * CB_BORDER};
-}
-
-static FluxScrollBarModel combo_bar_model(FluxComboRuntime const *rt) {
-	return (FluxScrollBarModel) {0.0f, combo_max_scroll(rt), rt->scroll_y, combo_viewport_h(rt), true};
-}
-
-static bool combo_rec_scrollbar(XentDlBuilder *b, FluxComboRuntime const *rt, FluxThemeColors const *t, float vp) {
-	( void ) vp;
-	if (combo_max_scroll(rt) <= 0.0f) return true;
-	FluxRect           bar   = combo_bar_rect(rt);
-	FluxScrollBarModel model = combo_bar_model(rt);
-	return flux_rec_scrollbar_mouse(b, t, &bar, &model, rt->bar_hover_x, rt->bar_hover_y, rt->bar_expand);
-}
-
-static bool combo_record_chrome(XentDlBuilder *b, FluxComboRuntime const *rt, FluxColor bg, FluxColor border) {
-	FluxRect bounds = {0.0f, 0.0f, rt->width, rt->height};
-	if (!flux_rec_fill_rounded(b, &bounds, CB_CORNER, bg)) return false;
-	float    half  = CB_BORDER * 0.5f;
-	FluxRect inset = {bounds.x + half, bounds.y + half, bounds.w - half * 2.0f, bounds.h - half * 2.0f};
-	return flux_rec_stroke_rounded(b, &inset, CB_CORNER, border, CB_BORDER);
-}
-
-static bool combo_record_rows(XentDlBuilder *b, FluxComboRuntime const *rt, FluxThemeColors const *theme, float vp) {
-	FluxRect view = {CB_BORDER, CB_BORDER + CB_CONTENT_MARGIN_Y, rt->width - 2.0f * CB_BORDER, vp};
-	if (!xent_dl_pushcliprect(b, flux_rec_xrect(&view))) return false;
-	int first = rt->row_h > 0.0f ? ( int ) (rt->scroll_y / rt->row_h) : 0;
-	int last  = rt->row_h > 0.0f ? ( int ) ((rt->scroll_y + vp) / rt->row_h) + 1 : rt->model.item_count - 1;
-	if (first < 0) first = 0;
-	if (last > rt->model.item_count - 1) last = rt->model.item_count - 1;
-	bool ok = true;
-	for (int i = first; ok && i <= last; i++) ok = combo_rec_item(b, rt, theme, i);
-	return xent_dl_popclip(b) && ok;
-}
-
-static XentDl *
-combo_record_popup(FluxComboRuntime const *rt, FluxThemeColors const *theme, FluxColor bg, FluxColor border) {
-	XentDlBuilder *b = xent_dl_begin();
-	if (!b) return NULL;
-	float vp = combo_viewport_h(rt);
-	bool  ok = combo_record_chrome(b, rt, bg, border);
-	if (ok) ok = combo_record_rows(b, rt, theme, vp);
-	if (ok) ok = combo_rec_scrollbar(b, rt, theme, vp);
+	ok = ok && combo_rec_item_label(b, t, &item, s->label, down);
+	if (ok && s->focus) ok = flux_rec_focus_rect(b, t, &item, CB_ITEM_CORNER);
 	return flux_rec_finish(b, ok);
 }
 
-static XentDl *combo_record(void *ctx, FluxPopup const *popup) {
-	FluxComboRuntime      *rt      = ( FluxComboRuntime * ) ctx;
-	FluxThemeColors const *theme   = NULL;
-	bool                   is_dark = false;
-	combo_resolve_theme(rt, &theme, &is_dark);
+static FluxComboItem const *combo_item_of(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->component_type == FLUX_CONTROL_COMBO_ITEM ? ( FluxComboItem const * ) nd->component_data : NULL;
+}
 
-	FluxColor bg     = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
-	FluxColor border = is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
-	bg               = flux_popup_acrylictint(popup, bg);
-	return combo_record_popup(rt, theme, bg, border);
+void flux_snap_comboitem(FluxSnapCtx const *ctx) {
+	FluxComboItem const    *it = ( FluxComboItem const * ) ctx->data;
+	FluxComboRuntime const *rt = it ? it->rt : NULL;
+	bool                    ok = rt && it->index < rt->model.item_count;
+	ctx->snap->u.combo_item    = (FluxComboItemSnapshot) {
+	  .label      = ok ? rt->model.items [it->index] : NULL,
+	  .selected   = ok && it->index == rt->model.selected_index,
+	  .focus      = ok && rt->kb_focus && it->index == rt->highlight,
+	  .press_tick = ok ? ( uint32_t ) rt->press_tick : 0u};
 }
 
 static void combo_repaint_popup(FluxComboRuntime *rt) {
@@ -339,6 +293,8 @@ static float combo_dropdown_width(FluxComboRuntime const *rt, float base_w) {
 }
 
 static int  combo_open_highlight(FluxComboRuntime const *rt);
+static void combo_list_layout(FluxComboRuntime *rt);
+static void combo_rows_sync(FluxComboRuntime *rt);
 static void combo_apply_min_width(FluxComboRuntime *rt);
 
 typedef struct ComboLayout {
@@ -413,9 +369,10 @@ static void combo_show_centered(FluxComboRuntime *rt, FluxRect anchor) {
 	double h = l.below - l.above + 2.0 * CB_BORDER;
 	double y = l.above - CB_BORDER;
 	if (y + h > win_h) y = fmax(y - (y + h - win_h), 0.0);
-	rt->height   = ( float ) h;
-	rt->scroll_y = ( float ) (l.ia + 1) * rt->row_h;
+	rt->height = ( float ) h;
 	flux_popup_setsize(rt->popup, rt->width, rt->height);
+	combo_list_layout(rt);
+	combo_scroll_to(rt, ( float ) (l.ia + 1) * rt->row_h);
 	double box_mid = cb_y + anchor.h / s * 0.5;
 	flux_popup_setsplit(rt->popup, ( float ) (anchor.h / s), ( float ) (box_mid - (y + h * 0.5)));
 	float    x  = flux_popup_rtl(rt->popup) ? anchor.x + anchor.w - ( float ) (rt->width * s) : anchor.x;
@@ -435,6 +392,8 @@ static void combo_open(FluxComboRuntime *rt) {
 	rt->height          = combo_dropdown_height(rt->model.item_count, rt->row_h);
 	rt->content_h       = ( float ) rt->model.item_count * rt->row_h;
 	flux_popup_setsize(rt->popup, rt->width, rt->height);
+	if (rt->row_count != rt->model.item_count) combo_rows_sync(rt);
+	combo_list_layout(rt);
 
 	rt->selection_at_open = rt->model.selected_index;
 	bool select_first     = !rt->model.editable && rt->selection_at_open < 0 && rt->model.item_count > 0;
@@ -442,11 +401,10 @@ static void combo_open(FluxComboRuntime *rt) {
 		rt->model.selected_index = 0;
 		combo_update_layout_text(rt);
 	}
-	rt->model.open  = true;
-	rt->kb_focus    = false;
-	rt->hover_index = -1;
-	rt->highlight   = combo_open_highlight(rt);
-	rt->scroll_y    = 0.0f;
+	rt->model.open = true;
+	rt->kb_focus   = false;
+	rt->highlight  = combo_open_highlight(rt);
+	combo_scroll_to(rt, 0.0f);
 	FluxRect anchor = flux_binding_screen_anchor(rt->window, rt->ctx, rt->store, rt->node);
 	flux_popup_setrtl(rt->popup, xent_resolved_dir(rt->ctx, rt->node) == XENT_DIRECTION_RTL);
 	if (!rt->model.editable && rt->model.item_count > 0 && rt->window) combo_show_centered(rt, anchor);
@@ -479,156 +437,91 @@ static void combo_on_click(void *ctx) {
 	if (!rt->model.editable || combo_hit_overlay(rt)) combo_toggle(rt);
 }
 
-static bool combo_touch_pan(FluxComboRuntime *rt, FluxPopup *popup, float y) {
-	if (rt->pressed_index < 0 && !rt->panning) return false;
-	if (!flux_popup_lasttouch(popup)) return false;
-	if (!rt->panning) {
-		if (fabsf(y - rt->press_y) < CB_TOUCH_PAN_SLOP) return false;
-		rt->panning       = true;
-		rt->pressed_index = -1;
-		rt->highlight     = -1;
-	}
-	rt->scroll_y = rt->pan_start_scroll + (rt->press_y - y);
-	combo_clamp_scroll(rt);
+static bool combo_pill_step(void *ctx, unsigned long now) {
+	FluxComboRuntime *rt = ( FluxComboRuntime * ) ctx;
 	combo_repaint_popup(rt);
+	return ( float ) (( DWORD ) now - rt->press_tick) < CB_PILL_SQUASH_MS;
+}
+
+static void combo_row_down(void *ctx, float x, float y, int clicks) {
+	( void ) x;
+	( void ) y;
+	( void ) clicks;
+	FluxComboItem const *it = ( FluxComboItem const * ) ctx;
+	it->rt->press_tick      = flux_anim_now();
+	it->rt->kb_focus        = false;
+	if (it->index == it->rt->model.selected_index) flux_anim_register(it->rt, combo_pill_step);
+}
+
+static void combo_row_click(void *ctx) {
+	FluxComboItem const *it = ( FluxComboItem const * ) ctx;
+	combo_commit(it->rt, it->index);
+}
+
+static void combo_rows_clear(FluxComboRuntime *rt) {
+	for (int i = 0; i < rt->row_count; i++) xent_node_destroy(rt->ctx, rt->rows [i]);
+	free(rt->rows);
+	free(rt->row_data);
+	rt->rows      = NULL;
+	rt->row_data  = NULL;
+	rt->row_count = 0;
+}
+
+static bool combo_row_make(FluxComboRuntime *rt, int i) {
+	XentNodeId    n  = flux_factory_create_node(rt->ctx, rt->store, rt->list_scroll, FLUX_CONTROL_COMBO_ITEM);
+	FluxNodeData *nd = n ? flux_store_find(rt->store, n) : NULL;
+	if (!nd) return false;
+	rt->rows [i]                     = n;
+	rt->row_data [i]                 = (FluxComboItem) {rt, i};
+	nd->component_data               = &rt->row_data [i];
+	nd->behavior.on_click            = combo_row_click;
+	nd->behavior.on_click_ctx        = &rt->row_data [i];
+	nd->behavior.on_pointer_down     = combo_row_down;
+	nd->behavior.on_pointer_down_ctx = &rt->row_data [i];
+	xent_sem_setlabel(rt->ctx, n, rt->model.items [i]);
 	return true;
 }
 
-static void combo_mouse_down(FluxComboRuntime *rt, float y) {
-	rt->pressed_index    = combo_item_at(rt, y);
-	rt->panning          = false;
-	rt->press_y          = y;
-	rt->pan_start_scroll = rt->scroll_y;
-	rt->press_tick       = flux_anim_now();
-	rt->kb_focus         = false;
-	if (rt->pressed_index >= 0 && rt->pressed_index == rt->model.selected_index)
-		flux_anim_register(rt, combo_pill_step);
-	combo_repaint_popup(rt);
+static void combo_rows_sync(FluxComboRuntime *rt) {
+	combo_rows_clear(rt);
+	int n        = rt->model.item_count;
+	rt->rows     = n > 0 ? ( XentNodeId * ) calloc(( size_t ) n, sizeof(*rt->rows)) : NULL;
+	rt->row_data = n > 0 ? ( FluxComboItem * ) calloc(( size_t ) n, sizeof(*rt->row_data)) : NULL;
+	if (n > 0 && (!rt->rows || !rt->row_data)) n = 0;
+	for (int i = 0; i < n && combo_row_make(rt, i); i++) rt->row_count = i + 1;
 }
 
-static void combo_mouse_up(FluxComboRuntime *rt, float y) {
-	int  idx          = combo_item_at(rt, y);
-	bool commit       = !rt->panning && idx >= 0 && idx == rt->pressed_index;
-	rt->pressed_index = -1;
-	rt->panning       = false;
-	combo_repaint_popup(rt);
-	if (commit) combo_commit(rt, idx);
-}
-
-static void combo_mouse_wheel(FluxComboRuntime *rt, float dy) {
-	rt->scroll_y -= dy;
-	combo_clamp_scroll(rt);
-	combo_repaint_popup(rt);
-}
-
-static void combo_repaint_popup(FluxComboRuntime *rt);
-
-static bool combo_bar_step(void *ctx, unsigned long now) {
-	FluxComboRuntime *rt      = ( FluxComboRuntime * ) ctx;
-	float             target  = (rt->bar_hover_x >= 0.0f || rt->bar_drag) ? 1.0f : 0.0f;
-	float             dt      = ( float ) (( DWORD ) now - rt->bar_tick) / 1000.0f;
-	rt->bar_tick              = ( DWORD ) now;
-	rt->bar_expand           += (target - rt->bar_expand) * (1.0f - expf(-dt * 16.0f));
-	if (fabsf(target - rt->bar_expand) < 0.001f) rt->bar_expand = target;
-	combo_repaint_popup(rt);
-	return rt->bar_expand != target;
-}
-
-static bool combo_bar_track(FluxComboRuntime *rt, float x, float y) {
-	FluxRect bar    = combo_bar_rect(rt);
-	bool     on     = combo_max_scroll(rt) > 0.0f && flux_rect_contains(&bar, x, y);
-	float    prev   = rt->bar_hover_x;
-	rt->bar_hover_x = on ? x - bar.x : -1.0f;
-	rt->bar_hover_y = on ? y - bar.y : -1.0f;
-	if ((prev >= 0.0f) != on) {
-		rt->bar_tick = flux_anim_now();
-		flux_anim_register(rt, combo_bar_step);
+static void combo_list_layout(FluxComboRuntime *rt) {
+	FluxThemeColors const *theme   = NULL;
+	bool                   is_dark = false;
+	combo_resolve_theme(rt, &theme, &is_dark);
+	FluxNodeData *root = flux_store_find(rt->store, rt->list_root);
+	if (root) {
+		FluxColor bg                = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
+		root->visuals.background    = flux_popup_acrylictint(rt->popup, bg);
+		root->visuals.border_color  = is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
+		root->visuals.border_width  = CB_BORDER;
+		root->visuals.corner_radius = CB_CORNER;
 	}
-	return on;
+	for (int i = 0; i < rt->row_count; i++) xent_setsize(rt->ctx, rt->rows [i], (XentSize) {NAN, rt->row_h});
+	xent_setpos(rt->ctx, rt->list_scroll, (XentPoint) {CB_BORDER, CB_BORDER + CB_CONTENT_MARGIN_Y});
+	xent_setsize(rt->ctx, rt->list_scroll, (XentSize) {rt->width - 2.0f * CB_BORDER, combo_viewport_h(rt)});
+	xent_setpos(rt->ctx, rt->list_root, (XentPoint) {0.0f, 0.0f});
+	xent_setsize(rt->ctx, rt->list_root, (XentSize) {rt->width, rt->height});
+	xent_layout(rt->ctx, rt->list_root, rt->width, rt->height);
 }
 
-static void combo_bar_press(FluxComboRuntime *rt, float x, float y) {
-	FluxRect           bar   = combo_bar_rect(rt);
-	FluxScrollBarModel model = combo_bar_model(rt);
-	FluxScrollBarParts parts = {0};
-	flux_scroll_bar_parts(&parts, &bar, &model, 1.0f);
-	if (flux_rect_contains(&parts.thumb, x, y)) {
-		rt->bar_drag        = true;
-		rt->bar_drag_y      = y;
-		rt->bar_drag_scroll = rt->scroll_y;
-		return;
-	}
-	float page = combo_viewport_h(rt);
-
-	struct {
-		FluxRect const *r;
-		float           delta;
-	} const zones [] = {
-	  {&parts.dec_btn,   -16.0f},
-      {&parts.inc_btn,   16.0f },
-      {&parts.large_dec, -page },
-      {&parts.large_inc, page  }
-    };
-
-	for (size_t i = 0; i < sizeof(zones) / sizeof(zones [0]); ++i)
-		if (flux_rect_contains(zones [i].r, x, y)) rt->scroll_y += zones [i].delta;
-	combo_clamp_scroll(rt);
-	combo_repaint_popup(rt);
-}
-
-static void combo_bar_drag(FluxComboRuntime *rt, float y) {
-	FluxRect           bar   = combo_bar_rect(rt);
-	FluxScrollBarModel model = combo_bar_model(rt);
-	FluxScrollBarParts parts = {0};
-	flux_scroll_bar_parts(&parts, &bar, &model, 1.0f);
-	float travel = parts.track.h - parts.thumb.h;
-	if (travel <= 0.0f) return;
-	rt->scroll_y = rt->bar_drag_scroll + (y - rt->bar_drag_y) * combo_max_scroll(rt) / travel;
-	combo_clamp_scroll(rt);
-	combo_repaint_popup(rt);
-}
-
-static void combo_mouse_hover(FluxComboRuntime *rt, FluxPopupMouseEvent event, float y) {
-	int hot = (event == FLUX_POPUP_MOUSE_LEAVE) ? -1 : combo_item_at(rt, y);
-	if (hot == rt->hover_index) return;
-	rt->hover_index = hot;
-	combo_repaint_popup(rt);
-}
-
-static bool combo_bar_mouse(FluxComboRuntime *rt, FluxPopupMouseEvent event, float x, float y) {
-	if (event == FLUX_POPUP_MOUSE_WHEEL) return false;
-	if (event == FLUX_POPUP_MOUSE_UP && rt->bar_drag) {
-		rt->bar_drag = false;
-		flux_anim_register(rt, combo_bar_step);
-		return true;
-	}
-	if (event == FLUX_POPUP_MOUSE_MOVE && rt->bar_drag) {
-		combo_bar_drag(rt, y);
-		return true;
-	}
-	bool on = combo_bar_track(rt, event == FLUX_POPUP_MOUSE_LEAVE ? -1.0f : x, y);
-	if (on && event == FLUX_POPUP_MOUSE_DOWN) combo_bar_press(rt, x, y);
-	if (on) combo_mouse_hover(rt, FLUX_POPUP_MOUSE_LEAVE, y);
-	return on && event != FLUX_POPUP_MOUSE_LEAVE;
-}
-
-static void combo_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y) {
-	FluxComboRuntime *rt = ( FluxComboRuntime * ) ctx;
-	if (!rt || combo_bar_mouse(rt, event, x, y)) return;
-	if (event == FLUX_POPUP_MOUSE_DOWN) {
-		combo_mouse_down(rt, y);
-		return;
-	}
-	if (event == FLUX_POPUP_MOUSE_UP) {
-		combo_mouse_up(rt, y);
-		return;
-	}
-	if (event == FLUX_POPUP_MOUSE_WHEEL) {
-		combo_mouse_wheel(rt, y);
-		return;
-	}
-	if (event == FLUX_POPUP_MOUSE_MOVE && combo_touch_pan(rt, popup, y)) return;
-	combo_mouse_hover(rt, event, y);
+static bool combo_list_build(FluxComboRuntime *rt) {
+	rt->list_root = flux_factory_create_node(rt->ctx, rt->store, XENT_NODE_INVALID, FLUX_CONTROL_CONTAINER);
+	if (!rt->list_root) return false;
+	xent_setproto(rt->ctx, rt->list_root, XENT_PROTOCOL_ABSOLUTE);
+	FluxNodeData *root = flux_store_find(rt->store, rt->list_root);
+	if (root) root->focus_passive = true;
+	rt->list_scroll
+	  = flux_scroll_init(&(FluxContainerDesc) {.ctx = rt->ctx, .store = rt->store, .parent = rt->list_root});
+	return rt->list_scroll
+	    && flux_popup_setcontent(rt->popup, rt->ctx, rt->store, rt->list_root)
+	    && (!rt->input || flux_popup_sethost(rt->popup, rt->input, rt->node));
 }
 
 static void combo_jump_selection(FluxComboRuntime *rt, int index) {
@@ -1166,6 +1059,8 @@ static void combo_destroy(void *component_data) {
 	flux_str_free(rt->custom_value);
 	flux_str_free(rt->restore_custom);
 	if (rt->popup) flux_popup_destroy(rt->popup);
+	combo_rows_clear(rt);
+	if (rt->list_root) xent_node_destroy(rt->ctx, rt->list_root);
 	free(rt);
 }
 
@@ -1250,7 +1145,7 @@ void flux_prop_combo_items(FluxStore *store, XentNodeId id, char const *const *i
 	if (rt->model.selected_index >= rt->model.item_count) rt->model.selected_index = -1;
 	if (rt->highlight >= rt->model.item_count) rt->highlight = -1;
 	rt->content_h = ( float ) rt->model.item_count * rt->row_h;
-	combo_clamp_scroll(rt);
+	combo_rows_sync(rt);
 	combo_update_layout_text(rt);
 	combo_apply_min_width(rt);
 }
@@ -1288,10 +1183,6 @@ XentNodeId flux_combo_init(FluxComboBoxDesc const *info) {
 	rt->text                 = info->text;
 	rt->theme                = info->theme;
 	rt->highlight            = -1;
-	rt->hover_index          = -1;
-	rt->bar_hover_x          = -1.0f;
-	rt->bar_hover_y          = -1.0f;
-	rt->pressed_index        = -1;
 	rt->app                  = info->app;
 	rt->input                = info->input;
 	rt->editor               = XENT_NODE_INVALID;
@@ -1300,11 +1191,14 @@ XentNodeId flux_combo_init(FluxComboBoxDesc const *info) {
 	if (rt->popup) {
 		flux_popup_setdismissoutside(rt->popup, true);
 		flux_popup_setanim(rt->popup, FLUX_POPUP_ANIM_SPLIT);
-		flux_popup_onrecord(rt->popup, combo_record, rt, rt->text);
 		flux_popup_setshadow(rt->popup, true, CB_CORNER);
-		flux_popup_onmouse(rt->popup, combo_mouse, rt);
 		flux_popup_ondismiss(rt->popup, combo_dismissed, rt);
 	}
+	if (rt->popup && !combo_list_build(rt)) {
+		flux_popup_destroy(rt->popup);
+		rt->popup = NULL;
+	}
+	if (rt->popup) combo_rows_sync(rt);
 
 	nd->component_data         = &rt->model;
 	nd->destroy_component_data = combo_destroy;
@@ -1346,4 +1240,22 @@ int flux_combo_uia_expand(FluxStore *store, XentNodeId node) {
 void flux_combo_uia_toggle(FluxStore *store, XentNodeId node) {
 	FluxComboRuntime *rt = combo_runtime(store, node);
 	if (rt) combo_toggle(rt);
+}
+
+bool flux_comboitem_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxComboItem const *it = combo_item_of(store, node);
+	return it && it->index == it->rt->model.selected_index;
+}
+
+bool flux_comboitem_uia_select(FluxStore *store, XentNodeId node, int op) {
+	FluxComboItem const *it = combo_item_of(store, node);
+	if (!it || op == FLUX_UIA_SEL_REMOVE) return it && it->index != it->rt->model.selected_index;
+	FluxComboRuntime *rt = it->rt;
+	if (it->index == rt->model.selected_index) return true;
+	combo_set_selected(rt, it->index);
+	combo_update_layout_text(rt);
+	combo_repaint_owner(rt);
+	combo_repaint_popup(rt);
+	combo_notify(rt, it->index);
+	return true;
 }

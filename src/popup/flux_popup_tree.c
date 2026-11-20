@@ -2,6 +2,7 @@
 #include "controls/flux_module.h"
 #include "runtime/flux_time.h"
 #include "store/flux_node_data.h"
+#include "controls/data/flux_scroll_data.h"
 
 #include <dwmapi.h>
 #include <stdlib.h>
@@ -46,12 +47,20 @@ FluxPopupTree *flux_popup_tree_create(FluxWindow *owner, XentCtx *ctx, FluxStore
 	return tree;
 }
 
+static bool popup_tree_wheeling(FluxNodeData const *nd) {
+	return nd
+	    && nd->component_type == FLUX_CONTROL_SCROLL
+	    && nd->component_data
+	    && (( FluxScrollData const * ) nd->component_data)->wheel_active;
+}
+
 static bool popup_tree_sync(FluxPopupTree *tree, XentNodeId node) {
-	FluxNodeData            *nd = flux_store_find(tree->store, node);
-	FluxControlModule const *m
-	  = nd && nd->component_type == FLUX_CONTROL_LOOPING_SELECTOR ? flux_module_get(nd->component_type) : NULL;
-	bool busy
-	  = m && m->tree && m->tree->frame && (m->tree->frame(tree->ctx, tree->store, node, nd) & FLUX_FRAME_REDRAW);
+	FluxNodeData *nd = flux_store_find(tree->store, node);
+	bool          synced
+	  = nd && (nd->component_type == FLUX_CONTROL_LOOPING_SELECTOR || nd->component_type == FLUX_CONTROL_SCROLL);
+	FluxControlModule const *m = synced ? flux_module_get(nd->component_type) : NULL;
+	uint32_t frame             = m && m->tree && m->tree->frame ? m->tree->frame(tree->ctx, tree->store, node, nd) : 0u;
+	bool     busy              = (frame & FLUX_FRAME_REDRAW) || popup_tree_wheeling(nd);
 	for (XentNodeId child = xent_node_first(tree->ctx, node); child != XENT_NODE_INVALID;
 	  child               = xent_node_next(tree->ctx, child))
 		busy |= popup_tree_sync(tree, child);

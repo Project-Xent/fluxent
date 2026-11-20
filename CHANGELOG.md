@@ -17,7 +17,21 @@ Entries start at 0.3.1; earlier releases are described by their tags.
   while closed. Closing a dialog used to detach the control node from its
   parent, so inserting or moving a sibling before it failed the transaction
   with `XTK_BATCH_ERR_VALIDATION`. Rendering, hit testing, tab order,
-  DirectManipulation and UI Automation skip collapsed subtrees.
+  DirectManipulation and UI Automation skip collapsed subtrees;
+- added right-to-left UI. `XTK_PROP_FLOW_DIRECTION` on a node mirrors its
+  subtree; on the host root it also sets the overlay's direction. Controls draw
+  in LTR and their display lists are mirrored, pointer coordinates reach them
+  mirrored, and Left / Right keys swap while focus is in an RTL control. Text
+  uses DirectWrite's RTL reading direction, including TextBox and TextBlock
+  hit testing, selection and IME placement. As in WinUI, the arrows of
+  FlipView, PagerControl, PipsPager, the scroll bars, TabView scrolling, the
+  title bar and submenus flip, BreadcrumbBar switches to its RTL chevron, and
+  TreeView's chevron does not flip. Popups, menus and tooltips take their
+  owner's direction (`flux_popup_setrtl`, `flux_menu_setrtl`,
+  `flux_tooltip_setrtl`): left and right placements swap, submenus open to the
+  left, and TeachingTip mirrors its placement as WinUI does. Horizontal
+  scrolling starts at the right, and the title bar's window regions mirror.
+  Composition mode's horizontal scrolling stays LTR.
 
 ### Breaking changes
 

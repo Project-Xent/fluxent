@@ -159,24 +159,28 @@ static void tip_layout_buttons(FluxTipRuntime *rt, float inner_w, float btn_y) {
 	else if (close) rt->close_rect = (FluxRect) {TIP_PAD, btn_y, inner_w, TIP_BTN_H};
 }
 
+static void tip_layout_texts(FluxTipRuntime *rt, float text_w, float title_h, float subtitle_h) {
+	float x           = TIP_PAD + (rt->model.icon_glyph ? TIP_ICON_SIZE + TIP_ICON_GAP : 0.0f);
+	rt->title_rect    = (FluxRect) {x, TIP_PAD, title_h > 0.0f ? text_w : 0.0f, title_h};
+	rt->subtitle_rect = (FluxRect) {x, TIP_PAD + title_h, subtitle_h > 0.0f ? text_w : 0.0f, subtitle_h};
+}
+
 static void tip_layout(FluxTipRuntime *rt) {
 	FluxTeachingTipData const *m       = &rt->model;
 	float                      inner_w = TIP_CARD_W - 2.0f * TIP_PAD;
 	float                      text_w
 	  = inner_w - (m->icon_glyph ? TIP_ICON_SIZE + TIP_ICON_GAP : 0.0f) - (tip_shows_x(m) ? TIP_X_RESERVE : 0.0f);
 
-	float title_h     = flux_teachtip_text_height(rt->text, m->title, true, text_w);
-	float subtitle_h  = flux_teachtip_text_height(rt->text, m->subtitle, false, text_w);
-	float body_h      = flux_maxf(title_h + subtitle_h, m->icon_glyph ? TIP_ICON_SIZE : 0.0f);
+	float title_h    = flux_teachtip_text_height(rt->text, m->title, true, text_w);
+	float subtitle_h = flux_teachtip_text_height(rt->text, m->subtitle, false, text_w);
+	float body_h     = flux_maxf(title_h + subtitle_h, m->icon_glyph ? TIP_ICON_SIZE : 0.0f);
 
-	rt->action_rect   = (FluxRect) {0};
-	rt->close_rect    = (FluxRect) {0};
-	rt->x_rect        = (FluxRect) {0};
-	float text_x      = TIP_PAD + (m->icon_glyph ? TIP_ICON_SIZE + TIP_ICON_GAP : 0.0f);
-	rt->title_rect    = title_h > 0.0f ? (FluxRect) {text_x, TIP_PAD, text_w, title_h} : (FluxRect) {0};
-	rt->subtitle_rect = subtitle_h > 0.0f ? (FluxRect) {text_x, TIP_PAD + title_h, text_w, subtitle_h} : (FluxRect) {0};
+	rt->action_rect  = (FluxRect) {0};
+	rt->close_rect   = (FluxRect) {0};
+	rt->x_rect       = (FluxRect) {0};
+	tip_layout_texts(rt, text_w, title_h, subtitle_h);
 
-	float card_h      = TIP_PAD + body_h + TIP_PAD;
+	float card_h = TIP_PAD + body_h + TIP_PAD;
 	if (tip_has_action(m) || tip_has_close(m)) {
 		float btn_y = TIP_PAD + body_h + TIP_BTN_TOP;
 		card_h      = btn_y + TIP_BTN_H + TIP_PAD;

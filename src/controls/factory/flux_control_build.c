@@ -1264,6 +1264,11 @@ static FluxUiaHooks const uia_calendar = {
   .patterns    = FLUX_UIA_P_SELECTION,
   .select_mode = flux_calendar_uia_mode,
   .sub         = &uia_calendar_cells};
+static FluxUiaHooks const uia_suggestitem = {
+  .role     = FLUX_UIA_LISTITEM,
+  .patterns = FLUX_UIA_P_SELECTION_ITEM | FLUX_UIA_P_SCROLL_ITEM,
+  .selected = flux_suggestitem_uia_selected,
+  .select   = flux_suggestitem_uia_select};
 static FluxUiaHooks const uia_comboitem = {
   .role     = FLUX_UIA_LISTITEM,
   .patterns = FLUX_UIA_P_SELECTION_ITEM | FLUX_UIA_P_SCROLL_ITEM,
@@ -1342,7 +1347,7 @@ CONSUMES(
 DEPS(list, &flux_ctrl_scroll, &flux_ctrl_listitem, &flux_ctrl_groupheader);
 DEPS(tree, &flux_ctrl_list, &flux_ctrl_treeitem);
 DEPS(combo, &flux_ctrl_textbox, &flux_ctrl_scroll, &flux_ctrl_comboitem);
-DEPS(suggest, &flux_ctrl_textbox, &flux_ctrl_button);
+DEPS(suggest, &flux_ctrl_textbox, &flux_ctrl_button, &flux_ctrl_scroll, &flux_ctrl_suggestitem);
 DEPS(expander, &flux_ctrl_exphead, &flux_ctrl_expbody, &flux_ctrl_text);
 DEPS(dialog, &flux_ctrl_dialogbody, &flux_ctrl_card, &flux_ctrl_button, &flux_ctrl_text);
 DEPS(menubar, &flux_ctrl_menuitem);
@@ -2011,6 +2016,11 @@ MODULE(comboitem) = {
   .snapshot = flux_snap_comboitem,
   .record   = flux_comboitem_record,
   .uia      = &uia_comboitem};
+MODULE(suggestitem) = {
+  .type     = FLUX_CONTROL_SUGGEST_ITEM,
+  .snapshot = flux_snap_suggestitem,
+  .record   = flux_suggestitem_record,
+  .uia      = &uia_suggestitem};
 MODULE(groupheader) = {
   .type   = FLUX_CONTROL_GROUP_HEADER,
   .tree   = &tree_listitem,

@@ -121,6 +121,9 @@ XentDl *flux_list_overlay_record(
 XentDl *flux_comboitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
+XentDl *flux_suggestitem_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
 XentDl *flux_groupheader_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );

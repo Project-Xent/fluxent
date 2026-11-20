@@ -14,6 +14,13 @@
 #include "controls/factory/flux_init_basic.h"
 #include "controls/factory/flux_init_popup.h"
 #include "controls/factory/flux_init_textbox.h"
+#include "controls/factory/flux_init_container.h"
+#include "controls/data/flux_scroll_data.h"
+#include "controls/draw/flux_control_draw.h"
+#include "controls/flux_control_uia.h"
+#include "popup/flux_popup_tree.h"
+#include "render/flux_render_snapshot.h"
+#include "fluxent/flux_app.h"
 #include "fluxent/flux_popup.h"
 #include "fluxent/flux_window.h"
 
@@ -31,7 +38,14 @@
 #define ASB_TEXT_PAD_L 16.0f
 #define ASB_TEXT_PAD_R 12.0f
 
-typedef struct FluxAsbRuntime {
+typedef struct FluxAsbRuntime FluxAsbRuntime;
+
+typedef struct FluxAsbItem {
+	FluxAsbRuntime *rt;
+	int             index;
+} FluxAsbItem;
+
+struct FluxAsbRuntime {
 	FluxStore   *store;
 	XentCtx     *ctx;
 	XentNodeId   root;
@@ -45,9 +59,7 @@ typedef struct FluxAsbRuntime {
 	char const **items;
 	int          count;
 	int          highlight;
-	int          hover;
-	int          pressed;
-	float        width, height, scroll_y;
+	float        width, height;
 	float        scroll_from, scroll_to;
 	DWORD        scroll_anim_start;
 	bool         open;
@@ -66,7 +78,13 @@ typedef struct FluxAsbRuntime {
 	void        *text_ctx;
 	void        *query_ctx;
 	void        *chosen_ctx;
-} FluxAsbRuntime;
+	FluxInput   *input;
+	XentNodeId   list_root;
+	XentNodeId   list_scroll;
+	XentNodeId  *rows;
+	FluxAsbItem *row_data;
+	int          row_count;
+};
 
 static FluxAsbRuntime *asb_runtime(FluxStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_store_find(store, id);
@@ -150,11 +168,28 @@ static void asb_write_box(FluxAsbRuntime *rt, char const *text) {
 	rt->ignore_text = false;
 }
 
-static float asb_viewport_h(FluxAsbRuntime const *rt) { return rt->height - 2.0f * (ASB_BORDER + ASB_PAD_Y); }
+static float           asb_viewport_h(FluxAsbRuntime const *rt) { return rt->height - 2.0f * (ASB_BORDER + ASB_PAD_Y); }
 
-static void  asb_repaint(FluxAsbRuntime *rt);
+static void            asb_repaint(FluxAsbRuntime *rt);
 
-static bool  asb_scroll_step(void *ctx, unsigned long now) {
+static FluxScrollData *asb_scroll(FluxAsbRuntime const *rt) {
+	FluxNodeData *nd = rt->list_scroll ? flux_store_find(rt->store, rt->list_scroll) : NULL;
+	return nd ? ( FluxScrollData * ) nd->component_data : NULL;
+}
+
+static float asb_scroll_y(FluxAsbRuntime const *rt) {
+	FluxScrollData const *sd = asb_scroll(rt);
+	return sd ? sd->scroll_y : 0.0f;
+}
+
+static void asb_scroll_set(FluxAsbRuntime *rt, float y) {
+	FluxScrollData *sd = asb_scroll(rt);
+	if (!sd) return;
+	sd->scroll_y   = y;
+	sd->reported_y = y;
+}
+
+static bool asb_scroll_step(void *ctx, unsigned long now) {
 	FluxAsbRuntime *rt = ( FluxAsbRuntime * ) ctx;
 	if (!rt->scroll_anim_start || !rt->open) {
 		rt->scroll_anim_start = 0;
@@ -162,12 +197,12 @@ static bool  asb_scroll_step(void *ctx, unsigned long now) {
 	}
 	float t = ( float ) (( DWORD ) now - rt->scroll_anim_start) / 250.0f;
 	if (t >= 1.0f) {
-		rt->scroll_y          = rt->scroll_to;
+		asb_scroll_set(rt, rt->scroll_to);
 		rt->scroll_anim_start = 0;
 	}
 	else {
-		float e      = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
-		rt->scroll_y = rt->scroll_from + (rt->scroll_to - rt->scroll_from) * e;
+		float e = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+		asb_scroll_set(rt, rt->scroll_from + (rt->scroll_to - rt->scroll_from) * e);
 	}
 	asb_repaint(rt);
 	return rt->scroll_anim_start != 0;
@@ -175,22 +210,17 @@ static bool  asb_scroll_step(void *ctx, unsigned long now) {
 
 static void asb_ensure_visible(FluxAsbRuntime *rt, int i) {
 	if (i < 0) return;
-	float current = rt->scroll_anim_start ? rt->scroll_to : rt->scroll_y;
+	float current = rt->scroll_anim_start ? rt->scroll_to : asb_scroll_y(rt);
 	float top = ( float ) i * ASB_ROW_H, vp = asb_viewport_h(rt);
 	float target = current;
 	if (top < current) target = top;
 	else if (top + ASB_ROW_H > current + vp) target = top + ASB_ROW_H - vp;
 	if (target == current) return;
 
-	rt->scroll_from       = rt->scroll_y;
+	rt->scroll_from       = asb_scroll_y(rt);
 	rt->scroll_to         = target;
 	rt->scroll_anim_start = flux_anim_now();
 	flux_anim_register(rt, asb_scroll_step);
-}
-
-static int asb_item_at(FluxAsbRuntime const *rt, float y) {
-	int i = ( int ) ((y - ASB_BORDER - ASB_PAD_Y + rt->scroll_y) / ASB_ROW_H);
-	return i >= 0 && i < rt->count ? i : -1;
 }
 
 static FluxColor asb_fade(FluxColor c, float f) {
@@ -224,32 +254,6 @@ static bool asb_rows_anim_step(void *ctx, unsigned long now) {
 	return true;
 }
 
-static bool asb_rec_row(
-  XentDlBuilder *b, FluxAsbRuntime const *rt, FluxThemeColors const *t, FluxRect const *view, int i, float row_alpha
-) {
-	float    y        = view->y + ( float ) i * ASB_ROW_H - rt->scroll_y;
-	FluxRect row      = {view->x + 4.0f, y + 2.0f, view->w - 8.0f, ASB_ROW_H - 4.0f};
-	bool     ok       = true;
-
-	bool     selected = i == rt->highlight;
-	bool     hot      = i == rt->hover;
-	if (selected || hot) {
-		FluxColor fill = (rt->pressed == i || (selected && hot)) ? t->subtle_fill_tertiary : t->subtle_fill_secondary;
-		ok             = flux_rec_fill_rounded(b, &row, 4.0f, asb_fade(fill, row_alpha));
-	}
-	if (ok && selected) {
-		float    pill_h = 16.0f;
-		FluxRect pill   = {row.x, y + (ASB_ROW_H - pill_h) * 0.5f, 3.0f, pill_h};
-		ok              = flux_rec_fill_rounded(b, &pill, 1.5f, asb_fade(t->accent_default, row_alpha));
-	}
-	if (!ok || !rt->items [i]) return ok;
-	FluxRect tr = {view->x + ASB_TEXT_PAD_L, y, view->w - ASB_TEXT_PAD_L - ASB_TEXT_PAD_R, ASB_ROW_H};
-	if (tr.w <= 0.0f) return ok;
-	XentTextStyle style
-	  = {.font_size = FLUX_FONT_SIZE_DEFAULT, .font_weight = FLUX_FONT_REGULAR, .h_align = 0u, .v_align = 1u};
-	return flux_rec_text_ex(b, &tr, rt->items [i], &style, asb_fade(t->text_primary, row_alpha));
-}
-
 static void asb_popin_params(FluxAsbRuntime const *rt, float *row_alpha, float *slide) {
 	*row_alpha = 1.0f;
 	*slide     = 0.0f;
@@ -262,55 +266,129 @@ static void asb_popin_params(FluxAsbRuntime const *rt, float *row_alpha, float *
 	if (t < 1.0f) *slide = (1.0f - flux_cubic_bezier(t, 0.1f, 0.9f, 0.2f, 1.0f)) * ASB_POPIN_OFFSET;
 }
 
-static XentDl *asb_record_popup(FluxAsbRuntime const *rt, FluxThemeColors const *t, FluxColor bg) {
+XentDl *flux_suggestitem_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
-	FluxRect bounds = {0.0f, 0.0f, rt->width, rt->height};
-	bool     ok     = flux_rec_fill_rounded(b, &bounds, ASB_CORNER, bg);
-	float    half   = ASB_BORDER * 0.5f;
-	FluxRect inset  = {bounds.x + half, bounds.y + half, bounds.w - ASB_BORDER, bounds.h - ASB_BORDER};
-	if (ok) ok = flux_rec_stroke_rounded(b, &inset, ASB_CORNER, t->flyout_border, ASB_BORDER);
-
-	float    vp      = asb_viewport_h(rt);
-	FluxRect view    = {ASB_BORDER, ASB_BORDER + ASB_PAD_Y, rt->width - 2.0f * ASB_BORDER, vp};
-	bool     clipped = false;
-	if (ok) {
-		ok      = xent_dl_pushcliprect(b, flux_rec_xrect(&view));
-		clipped = ok;
+	FluxThemeColors const         *t    = flux_rec_theme(rc);
+	FluxSuggestItemSnapshot const *s    = &snap->u.suggest_item;
+	bool                           hot  = state && state->hovered;
+	bool                           down = state && state->pressed;
+	float                          y    = bounds->y + s->slide;
+	FluxRect                       row  = {bounds->x + 4.0f, y + 2.0f, bounds->w - 8.0f, bounds->h - 4.0f};
+	bool                           ok   = true;
+	FluxColor fill = (down || (s->highlight && hot)) ? t->subtle_fill_tertiary : t->subtle_fill_secondary;
+	if (s->highlight || hot) ok = flux_rec_fill_rounded(b, &row, 4.0f, asb_fade(fill, s->alpha));
+	if (ok && s->highlight) {
+		FluxRect pill = {row.x, y + (bounds->h - 16.0f) * 0.5f, 3.0f, 16.0f};
+		ok            = flux_rec_fill_rounded(b, &pill, 1.5f, asb_fade(t->accent_default, s->alpha));
 	}
-
-	float row_alpha = 1.0f, slide = 0.0f;
-	asb_popin_params(rt, &row_alpha, &slide);
-	bool slid = false;
-	if (ok && slide != 0.0f) {
-		ok   = xent_dl_pushtransform(b, xent_affine_translate(0.0f, slide));
-		slid = ok;
+	FluxRect tr = {bounds->x + ASB_TEXT_PAD_L, y, bounds->w - ASB_TEXT_PAD_L - ASB_TEXT_PAD_R, bounds->h};
+	if (ok && s->label && tr.w > 0.0f) {
+		XentTextStyle style
+		  = {.font_size = FLUX_FONT_SIZE_DEFAULT, .font_weight = FLUX_FONT_REGULAR, .h_align = 0u, .v_align = 1u};
+		ok = flux_rec_text_ex(b, &tr, s->label, &style, asb_fade(t->text_primary, s->alpha));
 	}
-
-	int first = ( int ) (rt->scroll_y / ASB_ROW_H);
-	int last  = ( int ) ((rt->scroll_y + vp) / ASB_ROW_H) + 1;
-	if (first < 0) first = 0;
-	if (last > rt->count - 1) last = rt->count - 1;
-	for (int i = first; ok && i <= last; i++) ok = asb_rec_row(b, rt, t, &view, i, row_alpha);
-
-	if (slid) ok = xent_dl_poptransform(b) && ok;
-	if (clipped) ok = xent_dl_popclip(b) && ok;
 	return flux_rec_finish(b, ok);
 }
 
-static XentDl *asb_record(void *ctx, FluxPopup const *popup) {
-	FluxAsbRuntime        *rt = ( FluxAsbRuntime * ) ctx;
-	FluxThemeColors const *t  = rt->theme ? flux_theme_colors(rt->theme) : flux_theme_defaults();
-	FluxColor              bg = flux_popup_acrylictint(popup, t->flyout_background);
-	return asb_record_popup(rt, t, bg);
+static FluxAsbItem const *asb_item_of(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->component_type == FLUX_CONTROL_SUGGEST_ITEM ? ( FluxAsbItem const * ) nd->component_data : NULL;
+}
+
+void flux_snap_suggestitem(FluxSnapCtx const *ctx) {
+	FluxAsbItem const    *it    = ( FluxAsbItem const * ) ctx->data;
+	FluxAsbRuntime const *rt    = it ? it->rt : NULL;
+	bool                  ok    = rt && it->index < rt->count;
+	float                 alpha = 1.0f, slide = 0.0f;
+	if (rt) asb_popin_params(rt, &alpha, &slide);
+	ctx->snap->u.suggest_item = (FluxSuggestItemSnapshot) {
+	  .label     = ok ? rt->items [it->index] : NULL,
+	  .highlight = ok && it->index == rt->highlight,
+	  .alpha     = alpha,
+	  .slide     = slide};
 }
 
 static void asb_close(FluxAsbRuntime *rt) {
 	if (!rt->open) return;
 	rt->open      = false;
 	rt->highlight = -1;
-	rt->hover     = -1;
 	flux_popup_dismiss(rt->popup);
+}
+
+static void asb_choose(FluxAsbRuntime *rt, int i) {
+	asb_write_box(rt, rt->items [i]);
+	char *text = flux_str_dup(asb_box_text(rt));
+	asb_close(rt);
+	asb_notify_chosen_query(rt, text, i);
+	flux_str_free(text);
+}
+
+static void asb_row_click(void *ctx) {
+	FluxAsbItem const *it = ( FluxAsbItem const * ) ctx;
+	if (it->index < it->rt->count) asb_choose(it->rt, it->index);
+}
+
+static void asb_rows_clear(FluxAsbRuntime *rt) {
+	for (int i = 0; i < rt->row_count; i++) xent_node_destroy(rt->ctx, rt->rows [i]);
+	free(rt->rows);
+	free(rt->row_data);
+	rt->rows      = NULL;
+	rt->row_data  = NULL;
+	rt->row_count = 0;
+}
+
+static bool asb_row_make(FluxAsbRuntime *rt, int i) {
+	XentNodeId    n  = flux_factory_create_node(rt->ctx, rt->store, rt->list_scroll, FLUX_CONTROL_SUGGEST_ITEM);
+	FluxNodeData *nd = n ? flux_store_find(rt->store, n) : NULL;
+	if (!nd) return false;
+	rt->rows [i]              = n;
+	rt->row_data [i]          = (FluxAsbItem) {rt, i};
+	nd->component_data        = &rt->row_data [i];
+	nd->behavior.on_click     = asb_row_click;
+	nd->behavior.on_click_ctx = &rt->row_data [i];
+	xent_sem_setlabel(rt->ctx, n, rt->items [i]);
+	return true;
+}
+
+static void asb_rows_sync(FluxAsbRuntime *rt) {
+	asb_rows_clear(rt);
+	int n        = rt->list_scroll ? rt->count : 0;
+	rt->rows     = n > 0 ? ( XentNodeId * ) calloc(( size_t ) n, sizeof(*rt->rows)) : NULL;
+	rt->row_data = n > 0 ? ( FluxAsbItem * ) calloc(( size_t ) n, sizeof(*rt->row_data)) : NULL;
+	if (n > 0 && (!rt->rows || !rt->row_data)) n = 0;
+	for (int i = 0; i < n && asb_row_make(rt, i); i++) rt->row_count = i + 1;
+}
+
+static void asb_list_layout(FluxAsbRuntime *rt) {
+	FluxThemeColors const *t    = rt->theme ? flux_theme_colors(rt->theme) : flux_theme_defaults();
+	FluxNodeData          *root = flux_store_find(rt->store, rt->list_root);
+	if (!root) return;
+	root->visuals.background    = flux_popup_acrylictint(rt->popup, t->flyout_background);
+	root->visuals.border_color  = t->flyout_border;
+	root->visuals.border_width  = ASB_BORDER;
+	root->visuals.corner_radius = ASB_CORNER;
+	for (int i = 0; i < rt->row_count; i++) xent_setsize(rt->ctx, rt->rows [i], (XentSize) {NAN, ASB_ROW_H});
+	xent_setpos(rt->ctx, rt->list_scroll, (XentPoint) {ASB_BORDER, ASB_BORDER + ASB_PAD_Y});
+	xent_setsize(rt->ctx, rt->list_scroll, (XentSize) {rt->width - 2.0f * ASB_BORDER, asb_viewport_h(rt)});
+	xent_setpos(rt->ctx, rt->list_root, (XentPoint) {0.0f, 0.0f});
+	xent_setsize(rt->ctx, rt->list_root, (XentSize) {rt->width, rt->height});
+	xent_layout(rt->ctx, rt->list_root, rt->width, rt->height);
+}
+
+static bool asb_list_build(FluxAsbRuntime *rt) {
+	rt->list_root      = flux_factory_create_node(rt->ctx, rt->store, XENT_NODE_INVALID, FLUX_CONTROL_CONTAINER);
+	FluxNodeData *root = rt->list_root ? flux_store_find(rt->store, rt->list_root) : NULL;
+	if (!root) return false;
+	root->focus_passive = true;
+	xent_setproto(rt->ctx, rt->list_root, XENT_PROTOCOL_ABSOLUTE);
+	rt->list_scroll
+	  = flux_scroll_init(&(FluxContainerDesc) {.ctx = rt->ctx, .store = rt->store, .parent = rt->list_root});
+	return rt->list_scroll
+	    && flux_popup_setcontent(rt->popup, rt->ctx, rt->store, rt->list_root)
+	    && (!rt->input || flux_popup_sethost(rt->popup, rt->input, rt->root));
 }
 
 static void asb_open_if_ready(FluxAsbRuntime *rt) {
@@ -326,8 +404,10 @@ static void asb_open_if_ready(FluxAsbRuntime *rt) {
 	float body = ( float ) rt->count * ASB_ROW_H + 2.0f * (ASB_BORDER + ASB_PAD_Y);
 	rt->height = body < ASB_MAX_H ? body : ASB_MAX_H;
 	flux_popup_setsize(rt->popup, rt->width, rt->height);
+	if (rt->row_count != rt->count) asb_rows_sync(rt);
+	asb_list_layout(rt);
 
-	rt->scroll_y          = 0.0f;
+	asb_scroll_set(rt, 0.0f);
 	rt->scroll_anim_start = 0;
 	if (rt->open) {
 		flux_popup_reposition(rt->popup);
@@ -421,50 +501,6 @@ static void asb_blur(void *ctx) {
 	asb_close(rt);
 }
 
-static void asb_mouse_set_hover(FluxAsbRuntime *rt, int i) {
-	if (i == rt->hover) return;
-	rt->hover = i;
-	asb_repaint(rt);
-}
-
-static void asb_mouse_up(FluxAsbRuntime *rt, int i) {
-	int pressed = rt->pressed;
-	rt->pressed = -1;
-	if (i < 0 || i != pressed) return;
-	asb_write_box(rt, rt->items [i]);
-	char *text = flux_str_dup(asb_box_text(rt));
-	asb_close(rt);
-	asb_notify_chosen_query(rt, text, i);
-	flux_str_free(text);
-}
-
-static void asb_mouse_wheel(FluxAsbRuntime *rt, float dy) {
-	float max_scroll = ( float ) rt->count * ASB_ROW_H - asb_viewport_h(rt);
-	if (max_scroll <= 0.0f) return;
-	rt->scroll_anim_start  = 0;
-	rt->scroll_y          -= dy;
-	if (rt->scroll_y < 0.0f) rt->scroll_y = 0.0f;
-	if (rt->scroll_y > max_scroll) rt->scroll_y = max_scroll;
-	asb_repaint(rt);
-}
-
-static void asb_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y) {
-	( void ) x;
-	FluxAsbRuntime *rt = ( FluxAsbRuntime * ) ctx;
-	int             i  = asb_item_at(rt, y);
-	switch (event) {
-	case FLUX_POPUP_MOUSE_MOVE : asb_mouse_set_hover(rt, i); break;
-	case FLUX_POPUP_MOUSE_DOWN : rt->pressed = i; break;
-	case FLUX_POPUP_MOUSE_UP   : asb_mouse_up(rt, i); break;
-	case FLUX_POPUP_MOUSE_LEAVE :
-		rt->pressed = -1;
-		asb_mouse_set_hover(rt, -1);
-		break;
-	case FLUX_POPUP_MOUSE_WHEEL : asb_mouse_wheel(rt, y); break;
-	default                     : break;
-	}
-}
-
 static void asb_dismissed(void *ctx) {
 	FluxAsbRuntime *rt = ( FluxAsbRuntime * ) ctx;
 	rt->open           = false;
@@ -479,6 +515,8 @@ static void asb_destroy(void *component_data) {
 	free(( void * ) rt->items);
 	flux_str_free(rt->user_text);
 	if (rt->popup) flux_popup_destroy(rt->popup);
+	asb_rows_clear(rt);
+	if (rt->list_root) xent_node_destroy(rt->ctx, rt->list_root);
 	free(rt);
 }
 
@@ -522,8 +560,7 @@ XentNodeId flux_suggest_init(FluxAutoSuggestDesc const *info) {
 	rt->text       = info->text;
 	rt->theme      = info->theme;
 	rt->highlight  = -1;
-	rt->hover      = -1;
-	rt->pressed    = -1;
+	rt->input      = flux_app_input(info->app);
 	rt->on_text    = info->on_text;
 	rt->on_query   = info->on_query;
 	rt->on_chosen  = info->on_chosen;
@@ -558,9 +595,11 @@ XentNodeId flux_suggest_init(FluxAutoSuggestDesc const *info) {
 	if (rt->popup) {
 		flux_popup_setdismissoutside(rt->popup, true);
 		flux_popup_setanim(rt->popup, FLUX_POPUP_ANIM_FLYOUT);
-		flux_popup_onrecord(rt->popup, asb_record, rt, rt->text);
-		flux_popup_onmouse(rt->popup, asb_mouse, rt);
 		flux_popup_ondismiss(rt->popup, asb_dismissed, rt);
+	}
+	if (rt->popup && !asb_list_build(rt)) {
+		flux_popup_destroy(rt->popup);
+		rt->popup = NULL;
 	}
 
 	nd->component_data         = rt;
@@ -600,7 +639,7 @@ void flux_suggest_set_suggestions(FluxStore *store, XentNodeId asb, char const *
 	rt->items = copy;
 	rt->count = normalized_count;
 	if (rt->highlight >= rt->count) rt->highlight = -1;
-	rt->hover = -1;
+	asb_rows_sync(rt);
 
 	asb_open_if_ready(rt);
 	if (rt->open) asb_repaint(rt);
@@ -638,4 +677,22 @@ void flux_suggest_set_query_icon(FluxStore *store, XentNodeId asb, char const *i
 	}
 	if (rt->button == XENT_NODE_INVALID) asb_make_query_button(rt, icon);
 	else flux_prop_button_icon(store, rt->button, icon);
+}
+
+bool flux_suggestitem_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxAsbItem const *it = asb_item_of(store, node);
+	return it && it->index == it->rt->highlight;
+}
+
+bool flux_suggestitem_uia_select(FluxStore *store, XentNodeId node, int op) {
+	FluxAsbItem const *it = asb_item_of(store, node);
+	if (!it || op == FLUX_UIA_SEL_REMOVE) return it && it->index != it->rt->highlight;
+	FluxAsbRuntime *rt = it->rt;
+	if (it->index == rt->highlight || it->index >= rt->count) return true;
+	rt->highlight = it->index;
+	asb_write_box(rt, rt->items [it->index]);
+	asb_ensure_visible(rt, it->index);
+	asb_repaint(rt);
+	asb_notify_chosen(rt, it->index);
+	return true;
 }

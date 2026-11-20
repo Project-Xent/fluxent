@@ -63,5 +63,7 @@ bool     flux_calendar_uia_select(FluxStore *store, XentNodeId node, int sub, in
 unsigned flux_calendar_uia_mode(FluxStore *store, XentNodeId node);
 bool     flux_comboitem_uia_selected(FluxStore *store, XentNodeId node);
 bool     flux_comboitem_uia_select(FluxStore *store, XentNodeId node, int op);
+bool     flux_suggestitem_uia_selected(FluxStore *store, XentNodeId node);
+bool     flux_suggestitem_uia_select(FluxStore *store, XentNodeId node, int op);
 
 #endif

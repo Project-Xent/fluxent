@@ -7,18 +7,25 @@
 
 #include <stdlib.h>
 
+typedef struct UiaItem {
+	XentNodeId node;
+	int        sub;
+} UiaItem;
+
 typedef struct UiaNodeList {
-	XentNodeId *items;
-	uint32_t    count;
-	uint32_t    cap;
+	UiaItem *items;
+	uint32_t count;
+	uint32_t cap;
 } UiaNodeList;
 
-static bool uia_item_selected(FluxUiaContext const *info, XentNodeId node) {
+static bool uia_item_selected(FluxUiaContext const *info, XentNodeId node, int sub) {
 	FluxUiaHooks const *h = flux_module_uia(info->store, node);
+	if (sub >= 0) return h && h->sub && h->sub->selected && h->sub->selected(info->store, node, sub);
 	return h && h->selected ? h->selected(info->store, node) : xent_sem_selected(info->ctx, node);
 }
 
-static XentNodeId uia_container_of(FluxUiaContext const *info, XentNodeId node) {
+static XentNodeId uia_container_of(FluxUiaContext const *info, XentNodeId node, int sub) {
+	if (sub >= 0 && (flux_uia_patterns(info, node) & FLUX_UIA_P_SELECTION)) return node;
 	XentNodeId p = node;
 	while (p != XENT_NODE_INVALID && p != info->root) {
 		p = flux_uia_parent(info, p);
@@ -27,17 +34,23 @@ static XentNodeId uia_container_of(FluxUiaContext const *info, XentNodeId node) 
 	return XENT_NODE_INVALID;
 }
 
-static IRawElementProviderSimple *uia_simple(FluxUiaContext const *info, XentNodeId node) {
-	FluxUia *p = node == XENT_NODE_INVALID ? NULL : flux_uia_alloc(info, node);
+static IRawElementProviderSimple *uia_simple(FluxUiaContext const *info, XentNodeId node, int sub) {
+	FluxUia *p = node == XENT_NODE_INVALID ? NULL : flux_uia_alloc_sub(info, node, sub);
 	return p ? ( IRawElementProviderSimple * ) &p->lpVtblSimple : NULL;
+}
+
+static HRESULT uia_sub_select(FluxUia *self, FluxUiaHooks const *h, int op) {
+	FluxUiaSub const *s = h ? h->sub : NULL;
+	return s && s->select && s->select(self->info.store, self->node, self->sub, op) ? S_OK : UIA_E_INVALIDOPERATION;
 }
 
 static HRESULT uia_select_op(ISelectionItemProvider *p, int op) {
 	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblSelection);
 	FluxUiaHooks const *h    = flux_module_uia(self->info.store, self->node);
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
+	if (self->sub >= 0) return uia_sub_select(self, h, op);
 	if (h && h->select) return h->select(self->info.store, self->node, op) ? S_OK : UIA_E_INVALIDOPERATION;
-	bool selected = uia_item_selected(&self->info, self->node);
+	bool selected = uia_item_selected(&self->info, self->node, -1);
 	if (op == FLUX_UIA_SEL_REMOVE) return selected ? UIA_E_INVALIDOPERATION : S_OK;
 	return selected && op == FLUX_UIA_SEL_ADD ? S_OK : flux_uia_activate(self);
 }
@@ -63,14 +76,15 @@ static HRESULT STDMETHODCALLTYPE si_remove(ISelectionItemProvider *p) { return u
 static HRESULT STDMETHODCALLTYPE si_is_selected(ISelectionItemProvider *p, BOOL *out) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblSelection);
 	if (!out) return E_POINTER;
-	*out = uia_item_selected(&self->info, self->node);
+	*out = uia_item_selected(&self->info, self->node, self->sub);
 	return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE si_container(ISelectionItemProvider *p, IRawElementProviderSimple **out) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblSelection);
 	if (!out) return E_POINTER;
-	*out = uia_simple(&self->info, uia_container_of(&self->info, self->node));
+	XentNodeId owner = uia_container_of(&self->info, self->node, self->sub);
+	*out             = uia_simple(&self->info, owner, -1);
 	return S_OK;
 }
 
@@ -85,22 +99,32 @@ ISelectionItemProviderVtbl const flux_uia_selitem_vtbl = {
   si_container,
 };
 
-static bool uia_list_push(UiaNodeList *list, XentNodeId node) {
+static bool uia_list_push(UiaNodeList *list, XentNodeId node, int sub) {
 	if (list->count == list->cap) {
-		uint32_t    cap  = list->cap ? list->cap * 2u : 16u;
-		XentNodeId *grow = ( XentNodeId * ) realloc(list->items, sizeof(*grow) * cap);
+		uint32_t cap  = list->cap ? list->cap * 2u : 16u;
+		UiaItem *grow = ( UiaItem * ) realloc(list->items, sizeof(*grow) * cap);
 		if (!grow) return false;
 		list->items = grow;
 		list->cap   = cap;
 	}
-	list->items [list->count++] = node;
+	list->items [list->count++] = (UiaItem) {node, sub};
 	return true;
 }
 
+static void uia_collect_subs(FluxUiaContext const *info, XentNodeId node, UiaNodeList *out) {
+	FluxUiaHooks const *h     = flux_module_uia(info->store, node);
+	int                 first = 0, last = -1;
+	if (!h || !h->sub || !h->sub->span || !h->sub->span(info->store, node, &first, &last)) return;
+	for (int i = first; i <= last; i++)
+		if (uia_item_selected(info, node, i) && !uia_list_push(out, node, i)) return;
+}
+
 static void uia_collect(FluxUiaContext const *info, XentNodeId parent, UiaNodeList *out) {
+	uia_collect_subs(info, parent, out);
 	for (XentNodeId c = flux_uia_first(info, parent); c != XENT_NODE_INVALID; c = flux_uia_next(info, c)) {
 		unsigned patterns = flux_uia_patterns(info, c);
-		if ((patterns & FLUX_UIA_P_SELECTION_ITEM) && uia_item_selected(info, c) && !uia_list_push(out, c)) return;
+		if ((patterns & FLUX_UIA_P_SELECTION_ITEM) && uia_item_selected(info, c, -1) && !uia_list_push(out, c, -1))
+			return;
 		if (!(patterns & FLUX_UIA_P_SELECTION)) uia_collect(info, c, out);
 	}
 }
@@ -124,7 +148,7 @@ static HRESULT STDMETHODCALLTYPE sc_get_selection(ISelectionProvider *p, SAFEARR
 	uia_collect(&self->info, self->node, &list);
 	*out = SafeArrayCreateVector(VT_UNKNOWN, 0, list.count);
 	for (LONG i = 0; *out && i < ( LONG ) list.count; i++) {
-		IRawElementProviderSimple *item = uia_simple(&self->info, list.items [i]);
+		IRawElementProviderSimple *item = uia_simple(&self->info, list.items [i].node, list.items [i].sub);
 		if (!item) continue;
 		SafeArrayPutElement(*out, &i, ( IUnknown * ) item);
 		item->lpVtbl->Release(item);

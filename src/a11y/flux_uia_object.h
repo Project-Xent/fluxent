@@ -34,7 +34,7 @@ typedef struct FluxUia {
 	LONG                                       ref;
 	FluxUiaContext                             info;
 	XentNodeId                                 node;
-	int                                        thumb;
+	int                                        sub;
 } FluxUia;
 
 #define FLUX_UIA_SELF(p, field) (( FluxUia * ) (( char * ) (p) - offsetof(FluxUia, field)))
@@ -42,6 +42,7 @@ typedef struct FluxUia {
 FluxUia                                 *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node);
 HRESULT                                  flux_uia_activate(FluxUia *self);
 unsigned                                 flux_uia_patterns(FluxUiaContext const *info, XentNodeId node);
+FluxUia                                 *flux_uia_alloc_sub(FluxUiaContext const *info, XentNodeId node, int sub);
 HRESULT                                  flux_uia_qi(FluxUia *self, REFIID riid, void **ppv);
 ULONG                                    flux_uia_addref(FluxUia *self);
 ULONG                                    flux_uia_release(FluxUia *self);

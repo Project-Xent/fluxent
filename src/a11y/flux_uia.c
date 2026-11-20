@@ -118,8 +118,25 @@ static FluxSliderData const *uia_range_slider(FluxUia const *self) {
 	return sd->is_range ? sd : NULL;
 }
 
+static FluxUiaSub const *uia_sub(FluxUia const *self) {
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
+	return h ? h->sub : NULL;
+}
+
+static bool uia_sub_span(FluxUia const *self, int *first, int *last) {
+	FluxUiaSub const *s = uia_sub(self);
+	return s && s->span && s->span(self->info.store, self->node, first, last) && *first <= *last;
+}
+
+static FluxUiaControlInfo uia_sub_info(FluxUia const *self) {
+	FluxUiaSub const  *s    = uia_sub(self);
+	FluxUiaControlInfo info = {FLUX_UIA_CUSTOM, 0u};
+	if (s && s->kind) info.control_type = s->kind(self->info.store, self->node, self->sub, &info.patterns);
+	return info;
+}
+
 static FluxUiaControlInfo uia_control_info(FluxUia const *self) {
-	if (self->thumb >= 0) return (FluxUiaControlInfo) {FLUX_UIA_SLIDER, FLUX_UIA_P_RANGE};
+	if (self->sub >= 0) return uia_sub_info(self);
 	if (uia_range_slider(self)) return (FluxUiaControlInfo) {FLUX_UIA_GROUP, 0};
 	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
 	if (!h || h->role <= 0) return (FluxUiaControlInfo) {FLUX_UIA_CUSTOM, 0};
@@ -214,12 +231,8 @@ static void variant_set_i4(VARIANT *out, int value) {
 static bool uia_has_focus(FluxUia *self) {
 	FluxNodeData *nd = uia_node_data(self);
 	if (!nd || !nd->state.focused || GetFocus() != self->info.hwnd) return false;
-	FluxSliderData const *range = self->thumb >= 0 ? uia_range_slider(self) : NULL;
-	return self->thumb < 0 || (range && range->active_thumb == self->thumb);
-}
-
-static int uia_automation_id(FluxUia const *self) {
-	return self->thumb < 0 ? ( int ) self->node : -(( int ) self->node * 2 + self->thumb + 1);
+	FluxUiaSub const *s = self->sub >= 0 ? uia_sub(self) : NULL;
+	return self->sub < 0 || (s && s->focused && s->focused(self->info.store, self->node, self->sub));
 }
 
 static bool uia_in_control_view(FluxUia const *self) {
@@ -231,9 +244,11 @@ static bool uia_in_control_view(FluxUia const *self) {
 
 static bool s_get_scalar_property(FluxUia *self, FluxUiaControlInfo info, PROPERTYID id, VARIANT *out) {
 	switch (id) {
-	case FLUX_UIA_PROP_CONTROL_TYPE  : variant_set_i4(out, info.control_type); return true;
-	case FLUX_UIA_PROP_AUTOMATION_ID : variant_set_i4(out, uia_automation_id(self)); return true;
-	case FLUX_UIA_PROP_IS_ENABLED    : variant_set_bool(out, xent_sem_enabled(self->info.ctx, self->node)); return true;
+	case FLUX_UIA_PROP_CONTROL_TYPE : variant_set_i4(out, info.control_type); return true;
+	case FLUX_UIA_PROP_AUTOMATION_ID :
+		if (self->sub < 0) variant_set_i4(out, ( int ) self->node);
+		return true;
+	case FLUX_UIA_PROP_IS_ENABLED : variant_set_bool(out, xent_sem_enabled(self->info.ctx, self->node)); return true;
 	case FLUX_UIA_PROP_IS_CONTROL_ELEMENT    :
 	case FLUX_UIA_PROP_IS_CONTENT_ELEMENT    : variant_set_bool(out, uia_in_control_view(self)); return true;
 	case FLUX_UIA_PROP_IS_KEYBOARD_FOCUSABLE : variant_set_bool(out, info.control_type != FLUX_UIA_GROUP); return true;
@@ -251,8 +266,10 @@ static HRESULT STDMETHODCALLTYPE s_get_property(IRawElementProviderSimple *p, PR
 	if (s_get_scalar_property(self, info, id, out)) return S_OK;
 	if (id != FLUX_UIA_PROP_NAME) return S_OK;
 
-	char const *thumb_names [2] = {"Range start", "Range end"};
-	BSTR name = utf8_to_bstr(self->thumb >= 0 ? thumb_names [self->thumb] : xent_sem_label(self->info.ctx, self->node));
+	char              text [128] = {0};
+	FluxUiaSub const *s          = self->sub >= 0 ? uia_sub(self) : NULL;
+	if (s && s->name) s->name(self->info.store, self->node, self->sub, text, sizeof(text));
+	BSTR name = utf8_to_bstr(self->sub >= 0 ? text : xent_sem_label(self->info.ctx, self->node));
 	if (name) {
 		out->vt      = VT_BSTR;
 		out->bstrVal = name;
@@ -292,19 +309,26 @@ static IRawElementProviderFragment *uia_wrap(FluxUia *self, XentNodeId node) {
 	return p ? ( IRawElementProviderFragment * ) &p->lpVtblFragment : NULL;
 }
 
-static IRawElementProviderFragment *uia_wrap_thumb(FluxUia *self, int thumb) {
-	FluxUia *p = flux_uia_alloc(&self->info, self->node);
-	if (!p) return NULL;
-	p->thumb = thumb;
-	return ( IRawElementProviderFragment * ) &p->lpVtblFragment;
+FluxUia *flux_uia_alloc_sub(FluxUiaContext const *info, XentNodeId node, int sub) {
+	FluxUia *p = flux_uia_alloc(info, node);
+	if (p) p->sub = sub;
+	return p;
 }
 
-static IRawElementProviderFragment *uia_navigate_thumb(FluxUia *self, enum NavigateDirection dir) {
+static IRawElementProviderFragment *uia_wrap_sub(FluxUia *self, int sub) {
+	FluxUia *p = flux_uia_alloc_sub(&self->info, self->node, sub);
+	return p ? ( IRawElementProviderFragment * ) &p->lpVtblFragment : NULL;
+}
+
+static IRawElementProviderFragment *uia_navigate_sub(FluxUia *self, enum NavigateDirection dir) {
+	int  first = 0, last = -1;
+	bool span = uia_sub_span(self, &first, &last);
 	switch (dir) {
-	case NavigateDirection_Parent          : return uia_wrap(self, self->node);
-	case NavigateDirection_NextSibling     : return self->thumb == 0 ? uia_wrap_thumb(self, 1) : NULL;
-	case NavigateDirection_PreviousSibling : return self->thumb == 1 ? uia_wrap_thumb(self, 0) : NULL;
-	default                                : return NULL;
+	case NavigateDirection_Parent      : return uia_wrap(self, self->node);
+	case NavigateDirection_NextSibling : return span && self->sub < last ? uia_wrap_sub(self, self->sub + 1) : NULL;
+	case NavigateDirection_PreviousSibling :
+		return span && self->sub > first ? uia_wrap_sub(self, self->sub - 1) : NULL;
+	default : return NULL;
 	}
 }
 
@@ -322,10 +346,11 @@ static XentNodeId uia_navigate_target(FluxUia *self, enum NavigateDirection dir)
 }
 
 static IRawElementProviderFragment *uia_navigate(FluxUia *self, enum NavigateDirection dir) {
-	if (self->thumb >= 0) return uia_navigate_thumb(self, dir);
-	bool range = uia_range_slider(self) != NULL;
-	if (range && dir == NavigateDirection_FirstChild) return uia_wrap_thumb(self, 0);
-	if (range && dir == NavigateDirection_LastChild) return uia_wrap_thumb(self, 1);
+	if (self->sub >= 0) return uia_navigate_sub(self, dir);
+	int  first = 0, last = -1;
+	bool span = uia_sub_span(self, &first, &last);
+	if (span && dir == NavigateDirection_FirstChild) return uia_wrap_sub(self, first);
+	if (span && dir == NavigateDirection_LastChild) return uia_wrap_sub(self, last);
 	return uia_wrap(self, uia_navigate_target(self, dir));
 }
 
@@ -341,28 +366,21 @@ static HRESULT STDMETHODCALLTYPE f_get_runtime_id(IRawElementProviderFragment *p
 	FluxUia *self = SELF_FRAG(p);
 	if (!out) return E_POINTER;
 	*out          = NULL;
-	SAFEARRAY *sa = SafeArrayCreateVector(VT_I4, 0, self->thumb >= 0 ? 3 : 2);
+	SAFEARRAY *sa = SafeArrayCreateVector(VT_I4, 0, self->sub >= 0 ? 3 : 2);
 	if (!sa) return E_OUTOFMEMORY;
 	LONG idx0 = 0, idx1 = 1, idx2 = 2;
-	int  append = FLUX_UIA_APPEND_RUNTIME_ID, id = ( int ) self->node, thumb = self->thumb + 1;
+	int  append = FLUX_UIA_APPEND_RUNTIME_ID, id = ( int ) self->node, sub = self->sub + 1;
 	SafeArrayPutElement(sa, &idx0, &append);
 	SafeArrayPutElement(sa, &idx1, &id);
-	if (self->thumb >= 0) SafeArrayPutElement(sa, &idx2, &thumb);
+	if (self->sub >= 0) SafeArrayPutElement(sa, &idx2, &sub);
 	*out = sa;
 	return S_OK;
 }
 
-static void uia_thumb_rect(FluxUia const *self, XentRect *rect) {
-	FluxSliderData const *sd = uia_range_slider(self);
-	if (!sd) return;
-	FluxSliderLine line  = flux_slider_line(rect->x, rect->y, rect->w, rect->h, sd->vertical);
-	float          range = sd->max_value - sd->min_value;
-	float          at    = range > 0.0f ? (sd->range_value [self->thumb] - sd->min_value) / range : 0.0f;
-	float          along = flux_slider_along(&line, at);
-	float          r     = FLUX_SLIDER_THUMB_OUTER;
-	XentRect       node  = *rect;
-	*rect                = sd->vertical ? (XentRect) {line.cross - r, along - r, r * 2.0f, r * 2.0f}
-	                                    : (XentRect) {along - r, line.cross - r, r * 2.0f, r * 2.0f};
+static void uia_sub_rect(FluxUia const *self, XentRect *rect) {
+	FluxUiaSub const *s    = uia_sub(self);
+	XentRect          node = *rect;
+	if (!s || !s->rect || !s->rect(self->info.store, self->node, self->sub, rect)) return;
 	if (xent_resolved_dir(self->info.ctx, self->node) == XENT_DIRECTION_RTL)
 		rect->x = 2.0f * node.x + node.w - rect->x - rect->w;
 }
@@ -372,7 +390,7 @@ static HRESULT STDMETHODCALLTYPE f_get_bounds(IRawElementProviderFragment *p, st
 	if (!out) return E_POINTER;
 	XentRect rect = {0};
 	xent_layout_rect(self->info.ctx, self->node, &rect);
-	if (self->thumb >= 0) uia_thumb_rect(self, &rect);
+	if (self->sub >= 0) uia_sub_rect(self, &rect);
 	float scale  = ( float ) GetDpiForWindow(self->info.hwnd) / 96.0f;
 	POINT origin = {0, 0};
 	ClientToScreen(self->info.hwnd, &origin);
@@ -468,15 +486,24 @@ static XentNodeId uia_find_focused(FluxUia *self, XentNodeId node) {
 	return XENT_NODE_INVALID;
 }
 
+static int uia_focused_sub(FluxUia const *self) {
+	FluxUiaSub const *s     = uia_sub(self);
+	int               first = 0, last = -1;
+	if (!s || !s->focused || !uia_sub_span(self, &first, &last)) return -1;
+	for (int i = first; i <= last; i++)
+		if (s->focused(self->info.store, self->node, i)) return i;
+	return -1;
+}
+
 static HRESULT STDMETHODCALLTYPE r_get_focus(IRawElementProviderFragmentRoot *p, IRawElementProviderFragment **out) {
 	FluxUia *self = SELF_ROOT(p);
 	if (!out) return E_POINTER;
-	XentNodeId focused          = uia_find_focused(self, self->info.root);
-	FluxUia    probe            = *self;
-	probe.node                  = focused;
-	probe.thumb                 = -1;
-	FluxSliderData const *range = focused == XENT_NODE_INVALID ? NULL : uia_range_slider(&probe);
-	*out                        = range ? uia_wrap_thumb(&probe, range->active_thumb) : uia_wrap(self, focused);
+	XentNodeId focused = uia_find_focused(self, self->info.root);
+	FluxUia    probe   = *self;
+	probe.node         = focused;
+	probe.sub          = -1;
+	int sub            = focused == XENT_NODE_INVALID ? -1 : uia_focused_sub(&probe);
+	*out               = sub >= 0 ? uia_wrap_sub(&probe, sub) : uia_wrap(self, focused);
 	return S_OK;
 }
 
@@ -505,13 +532,19 @@ static HRESULT STDMETHODCALLTYPE inv_qi(IInvokeProvider *p, REFIID riid, void **
 	return flux_uia_qi(SELF_INVOKE(p), riid, ppv);
 }
 
-static ULONG STDMETHODCALLTYPE   inv_addref(IInvokeProvider *p) { return flux_uia_addref(SELF_INVOKE(p)); }
+static ULONG STDMETHODCALLTYPE inv_addref(IInvokeProvider *p) { return flux_uia_addref(SELF_INVOKE(p)); }
 
-static ULONG STDMETHODCALLTYPE   inv_release(IInvokeProvider *p) { return flux_uia_release(SELF_INVOKE(p)); }
+static ULONG STDMETHODCALLTYPE inv_release(IInvokeProvider *p) { return flux_uia_release(SELF_INVOKE(p)); }
+
+static HRESULT                 uia_sub_invoke(FluxUia *self) {
+	FluxUiaSub const *s = uia_sub(self);
+	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
+	return s && s->invoke && s->invoke(self->info.store, self->node, self->sub) ? S_OK : UIA_E_INVALIDOPERATION;
+}
 
 static HRESULT STDMETHODCALLTYPE inv_invoke(IInvokeProvider *p) {
 	FluxUia *self = SELF_INVOKE(p);
-	HRESULT  hr   = flux_uia_activate(self);
+	HRESULT  hr   = self->sub >= 0 ? uia_sub_invoke(self) : flux_uia_activate(self);
 	if (SUCCEEDED(hr)) uia_raise_self_event(self, FLUX_UIA_EVENT_INVOKED);
 	return hr;
 }
@@ -557,8 +590,8 @@ static HRESULT STDMETHODCALLTYPE rng_set_value(IRangeValueProvider *p, double va
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 
 	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
-	if (self->thumb >= 0)
-		return h && h->set_thumb && h->set_thumb(self->info.store, self->node, self->thumb, ( float ) value)
+	if (self->sub >= 0)
+		return h && h->set_thumb && h->set_thumb(self->info.store, self->node, self->sub, ( float ) value)
 		       ? S_OK
 		       : UIA_E_INVALIDOPERATION;
 	if (h && h->set_range) h->set_range(self->info.store, self->node, value);
@@ -570,8 +603,8 @@ static HRESULT rng_get_component(IRangeValueProvider *p, double *out, int compon
 	if (!out) return E_POINTER;
 	float               vals [3] = {0.0f, 0.0f, 0.0f};
 	FluxUiaHooks const *h        = flux_module_uia(self->info.store, self->node);
-	if (self->thumb >= 0 && h && h->thumb)
-		h->thumb(self->info.store, self->node, self->thumb, &vals [0], &vals [1], &vals [2]);
+	if (self->sub >= 0 && h && h->thumb)
+		h->thumb(self->info.store, self->node, self->sub, &vals [0], &vals [1], &vals [2]);
 	else xent_sem_value(self->info.ctx, self->node, &vals [0], &vals [1], &vals [2]);
 	*out = vals [component];
 	return S_OK;
@@ -706,7 +739,7 @@ FluxUia *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	p->ref              = 1;
 	p->info             = *info;
 	p->node             = node;
-	p->thumb            = -1;
+	p->sub              = -1;
 	return p;
 }
 

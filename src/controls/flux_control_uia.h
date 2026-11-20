@@ -4,6 +4,7 @@
 #include "fluxent/flux_node_store.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 
 enum
 {
@@ -44,5 +45,21 @@ unsigned flux_tree_uia_mode(FluxStore *store, XentNodeId node);
 bool     flux_selector_uia_selected(FluxStore *store, XentNodeId node);
 bool     flux_looping_uia_selected(FluxStore *store, XentNodeId node);
 unsigned flux_splitpane_uia_live(FluxStore *store, XentNodeId node);
+
+int      flux_slider_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns);
+bool     flux_slider_uia_span(FluxStore *store, XentNodeId node, int *first, int *last);
+bool     flux_slider_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect *rect);
+void     flux_slider_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size);
+bool     flux_slider_uia_focused(FluxStore *store, XentNodeId node, int sub);
+
+int      flux_calendar_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns);
+bool     flux_calendar_uia_span(FluxStore *store, XentNodeId node, int *first, int *last);
+bool     flux_calendar_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect *rect);
+void     flux_calendar_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size);
+bool     flux_calendar_uia_focused(FluxStore *store, XentNodeId node, int sub);
+bool     flux_calendar_uia_invoke(FluxStore *store, XentNodeId node, int sub);
+bool     flux_calendar_uia_selected(FluxStore *store, XentNodeId node, int sub);
+bool     flux_calendar_uia_select(FluxStore *store, XentNodeId node, int sub, int op);
+unsigned flux_calendar_uia_mode(FluxStore *store, XentNodeId node);
 
 #endif

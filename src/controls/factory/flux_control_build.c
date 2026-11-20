@@ -1147,7 +1147,6 @@ static void range_slider(FluxStore *store, XentNodeId node, double value) {
 
 static FluxUiaHooks const uia_button_invoke        = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_INVOKE};
 static FluxUiaHooks const uia_button_toggle        = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_TOGGLE};
-static FluxUiaHooks const uia_calendar             = {.role = FLUX_UIA_CALENDAR, .patterns = 0};
 static FluxUiaHooks const uia_checkbox_toggle      = {.role = FLUX_UIA_CHECKBOX, .patterns = FLUX_UIA_P_TOGGLE};
 static FluxUiaHooks const uia_group                = {.role = FLUX_UIA_GROUP, .patterns = 0};
 static FluxUiaHooks const uia_header               = {.role = FLUX_UIA_HEADER, .patterns = 0};
@@ -1245,6 +1244,26 @@ static FluxUiaHooks const uia_loopitem_sel = {
   .selected = flux_looping_uia_selected};
 static FluxUiaHooks const uia_splitpane
   = {.role = FLUX_UIA_WINDOW, .patterns = FLUX_UIA_P_WINDOW, .live = flux_splitpane_uia_live, .modal = true};
+static FluxUiaSub const uia_slider_thumbs = {
+  .kind    = flux_slider_uia_kind,
+  .span    = flux_slider_uia_span,
+  .rect    = flux_slider_uia_rect,
+  .name    = flux_slider_uia_name,
+  .focused = flux_slider_uia_focused};
+static FluxUiaSub const uia_calendar_cells = {
+  .kind     = flux_calendar_uia_kind,
+  .span     = flux_calendar_uia_span,
+  .rect     = flux_calendar_uia_rect,
+  .name     = flux_calendar_uia_name,
+  .focused  = flux_calendar_uia_focused,
+  .invoke   = flux_calendar_uia_invoke,
+  .selected = flux_calendar_uia_selected,
+  .select   = flux_calendar_uia_select};
+static FluxUiaHooks const uia_calendar = {
+  .role        = FLUX_UIA_CALENDAR,
+  .patterns    = FLUX_UIA_P_SELECTION,
+  .select_mode = flux_calendar_uia_mode,
+  .sub         = &uia_calendar_cells};
 static FluxUiaHooks const uia_combo = {
   .role          = FLUX_UIA_COMBOBOX,
   .patterns      = FLUX_UIA_P_VALUE | FLUX_UIA_P_EXPAND,
@@ -1267,7 +1286,8 @@ static FluxUiaHooks const uia_slider = {
   .patterns  = FLUX_UIA_P_RANGE,
   .set_range = range_slider,
   .thumb     = flux_slider_thumb,
-  .set_thumb = flux_slider_userthumb};
+  .set_thumb = flux_slider_userthumb,
+  .sub       = &uia_slider_thumbs};
 
 #define MODULE(name)        FluxControlModule const flux_ctrl_##name
 #define CONSUMES(name, ...) static XtkPropertyId const name##_consumed [] = {__VA_ARGS__, XTK_PROP_ID_INVALID}

@@ -2,6 +2,7 @@
   #define COBJMACROS
 #endif
 
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "bridge/flux_internal.h"
@@ -1335,4 +1336,14 @@ bool flux_combo_handle_wheel(FluxStore *store, XentNodeId id, float delta) {
 	if (!focused || !xent_sem_enabled(rt->ctx, id)) return false;
 	if (!rt->model.open && delta != 0.0f) combo_step_selection(rt, delta < 0.0f ? +1 : -1);
 	return true;
+}
+
+int flux_combo_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxComboRuntime *rt = combo_runtime(store, node);
+	return rt && rt->model.open ? 1 : 0;
+}
+
+void flux_combo_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxComboRuntime *rt = combo_runtime(store, node);
+	if (rt) combo_toggle(rt);
 }

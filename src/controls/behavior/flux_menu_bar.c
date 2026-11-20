@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
@@ -221,4 +222,20 @@ FluxMenu *flux_menubar_add_menu(FluxStore *store, XentNodeId bar, char const *ti
 bool flux_menubar_add_menu_ref(FluxStore *store, XentNodeId bar, char const *title, FluxMenu *flyout) {
 	FluxMenuBarData *d = menu_bar_data(store, bar);
 	return d && menu_bar_add(d, title, flyout, false);
+}
+
+static FluxMenuBarItem *menubar_item(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->behavior.on_click == menu_bar_item_click ? ( FluxMenuBarItem * ) nd->behavior.on_click_ctx : NULL;
+}
+
+int flux_menubar_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxMenuBarItem *it = menubar_item(store, node);
+	if (!it || !it->flyout) return 3;
+	return it->bar->open_index == it->index ? 1 : 0;
+}
+
+void flux_menubar_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxMenuBarItem *it = menubar_item(store, node);
+	if (it && it->flyout) menu_bar_item_click(it);
 }

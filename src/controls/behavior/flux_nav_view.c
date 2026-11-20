@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
@@ -864,4 +865,24 @@ void flux_nav_set_selected(FluxStore *store, XentNodeId nav, int index) {
 XentNodeId flux_nav_content_node(FluxStore *store, XentNodeId nav) {
 	FluxNavViewData *d = nav_data(store, nav);
 	return d ? d->content : XENT_NODE_INVALID;
+}
+
+static FluxNavViewItem *nav_item_of(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->behavior.on_click == nav_item_click ? ( FluxNavViewItem * ) nd->behavior.on_click_ctx : NULL;
+}
+
+int flux_nav_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxNavViewItem *it = nav_item_of(store, node);
+	if (!it || !it->has_children) return 3;
+	return it->expanded ? 1 : 0;
+}
+
+void flux_nav_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxNavViewItem *it = nav_item_of(store, node);
+	if (!it || !it->has_children) return;
+	FluxNavViewData *d = it->nav;
+	if (nav_children_inline(d)) nav_toggle_expand(d, it->index);
+	else if (it->expanded && d->child_flyout) flux_menu_dismiss(d->child_flyout);
+	else nav_show_child_flyout(d, it->index);
 }

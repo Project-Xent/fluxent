@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_host_menu.h"
 
 #include "bridge/flux_internal.h"
@@ -252,4 +253,22 @@ void flux_host_menu_sync_bar(FluxStore *store, XentNodeId node) {
 		FluxHostMenuFlyData *fly = menu_fly_data(store, child);
 		if (fly) flux_menubar_add_menu_ref(store, node, fly->title ? fly->title : "", fly->menu);
 	}
+}
+
+static FluxHostMenuFlyData *dropdown_fly(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->behavior.on_click == menu_fly_click ? ( FluxHostMenuFlyData * ) nd->behavior.on_click_ctx : NULL;
+}
+
+int flux_dropdown_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxHostMenuFlyData *fly = dropdown_fly(store, node);
+	if (!fly || !fly->menu) return 3;
+	return flux_menu_visible(fly->menu) ? 1 : 0;
+}
+
+void flux_dropdown_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxHostMenuFlyData *fly = dropdown_fly(store, node);
+	if (!fly || !fly->menu) return;
+	if (flux_menu_visible(fly->menu)) flux_menu_dismiss(fly->menu);
+	else menu_fly_show(fly, FLUX_MENU_INPUT_KEYBOARD);
 }

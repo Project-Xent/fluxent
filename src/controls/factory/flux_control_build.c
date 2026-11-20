@@ -1,4 +1,5 @@
 #include "a11y/flux_uia_ids.h"
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_control_build.h"
 #include "controls/flux_module.h"
 #include "controls/flux_module_props.h"
@@ -1144,7 +1145,6 @@ static void range_slider(FluxStore *store, XentNodeId node, double value) {
 	flux_prop_slider_value(store, node, ( float ) value);
 }
 
-static FluxUiaHooks const uia_appbar               = {.role = FLUX_UIA_APPBAR, .patterns = 0};
 static FluxUiaHooks const uia_button_invoke        = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_INVOKE};
 static FluxUiaHooks const uia_button_toggle        = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_TOGGLE};
 static FluxUiaHooks const uia_calendar             = {.role = FLUX_UIA_CALENDAR, .patterns = 0};
@@ -1160,14 +1160,11 @@ static FluxUiaHooks const uia_list                 = {.role = FLUX_UIA_LIST, .pa
 static FluxUiaHooks const uia_listitem             = {.role = FLUX_UIA_LISTITEM, .patterns = 0};
 static FluxUiaHooks const uia_menu                 = {.role = FLUX_UIA_MENU, .patterns = 0};
 static FluxUiaHooks const uia_menubar              = {.role = FLUX_UIA_MENUBAR, .patterns = 0};
-static FluxUiaHooks const uia_menuitem_invoke      = {.role = FLUX_UIA_MENUITEM, .patterns = FLUX_UIA_P_INVOKE};
 static FluxUiaHooks const uia_pane                 = {.role = FLUX_UIA_PANE, .patterns = 0};
 static FluxUiaHooks const uia_progressbar_range    = {.role = FLUX_UIA_PROGRESSBAR, .patterns = FLUX_UIA_P_RANGE};
 static FluxUiaHooks const uia_radio_selection_item = {.role = FLUX_UIA_RADIO, .patterns = FLUX_UIA_P_SELECTION_ITEM};
 static FluxUiaHooks const uia_separator            = {.role = FLUX_UIA_SEPARATOR, .patterns = 0};
 static FluxUiaHooks const uia_slider_role          = {.role = FLUX_UIA_SLIDER, .patterns = 0};
-static FluxUiaHooks const uia_splitbutton_invoke   = {.role = FLUX_UIA_SPLITBUTTON, .patterns = FLUX_UIA_P_INVOKE};
-static FluxUiaHooks const uia_splitbutton_toggle   = {.role = FLUX_UIA_SPLITBUTTON, .patterns = FLUX_UIA_P_TOGGLE};
 static FluxUiaHooks const uia_statusbar            = {.role = FLUX_UIA_STATUSBAR, .patterns = 0};
 static FluxUiaHooks const uia_tab                  = {.role = FLUX_UIA_TAB, .patterns = 0};
 static FluxUiaHooks const uia_text                 = {.role = FLUX_UIA_TEXT, .patterns = 0};
@@ -1177,11 +1174,55 @@ static FluxUiaHooks const uia_tree                 = {.role = FLUX_UIA_TREE, .pa
 static FluxUiaHooks const uia_window               = {.role = FLUX_UIA_WINDOW, .patterns = 0};
 static FluxUiaHooks const uia_scroll_pane          = {.role = FLUX_UIA_PANE, .patterns = FLUX_UIA_P_SCROLL};
 static FluxUiaHooks const uia_listitem_scroll      = {.role = FLUX_UIA_LISTITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
-static FluxUiaHooks const uia_treeitem_scroll      = {.role = FLUX_UIA_TREEITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
 static FluxUiaHooks const uia_tabitem_scroll       = {.role = FLUX_UIA_TABITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
 static FluxUiaHooks const uia_dataitem_scroll      = {.role = FLUX_UIA_DATAITEM, .patterns = FLUX_UIA_P_SCROLL_ITEM};
-static FluxUiaHooks const uia_combo                = {
-  .role = FLUX_UIA_COMBOBOX, .patterns = FLUX_UIA_P_VALUE, .text = flux_combo_text, .set_text = flux_prop_combo_text};
+static FluxUiaHooks const uia_expander             = {
+  .role          = FLUX_UIA_BUTTON,
+  .patterns      = FLUX_UIA_P_EXPAND,
+  .expand        = flux_expander_uia_expand,
+  .toggle_expand = flux_expander_uia_toggle};
+static FluxUiaHooks const uia_dropdown = {
+  .role          = FLUX_UIA_BUTTON,
+  .patterns      = FLUX_UIA_P_INVOKE | FLUX_UIA_P_EXPAND,
+  .expand        = flux_dropdown_uia_expand,
+  .toggle_expand = flux_dropdown_uia_toggle};
+static FluxUiaHooks const uia_split = {
+  .role          = FLUX_UIA_SPLITBUTTON,
+  .patterns      = FLUX_UIA_P_INVOKE | FLUX_UIA_P_EXPAND,
+  .expand        = flux_split_uia_expand,
+  .toggle_expand = flux_split_uia_toggle};
+static FluxUiaHooks const uia_togglesplit = {
+  .role          = FLUX_UIA_SPLITBUTTON,
+  .patterns      = FLUX_UIA_P_TOGGLE | FLUX_UIA_P_EXPAND,
+  .expand        = flux_split_uia_expand,
+  .toggle_expand = flux_split_uia_toggle};
+static FluxUiaHooks const uia_menubaritem = {
+  .role          = FLUX_UIA_MENUITEM,
+  .patterns      = FLUX_UIA_P_INVOKE | FLUX_UIA_P_EXPAND,
+  .expand        = flux_menubar_uia_expand,
+  .toggle_expand = flux_menubar_uia_toggle};
+static FluxUiaHooks const uia_treeitem_expand = {
+  .role          = FLUX_UIA_TREEITEM,
+  .patterns      = FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_EXPAND,
+  .expand        = flux_tree_uia_expand,
+  .toggle_expand = flux_tree_uia_toggle};
+static FluxUiaHooks const uia_navitem = {
+  .role          = FLUX_UIA_LISTITEM,
+  .patterns      = FLUX_UIA_P_EXPAND,
+  .expand        = flux_nav_uia_expand,
+  .toggle_expand = flux_nav_uia_toggle};
+static FluxUiaHooks const uia_commandbar = {
+  .role          = FLUX_UIA_APPBAR,
+  .patterns      = FLUX_UIA_P_EXPAND,
+  .expand        = flux_cmdbar_uia_expand,
+  .toggle_expand = flux_cmdbar_uia_toggle};
+static FluxUiaHooks const uia_combo = {
+  .role          = FLUX_UIA_COMBOBOX,
+  .patterns      = FLUX_UIA_P_VALUE | FLUX_UIA_P_EXPAND,
+  .expand        = flux_combo_uia_expand,
+  .toggle_expand = flux_combo_uia_toggle,
+  .text          = flux_combo_text,
+  .set_text      = flux_prop_combo_text};
 static FluxUiaHooks const uia_picker
   = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_INVOKE | FLUX_UIA_P_VALUE, .text = flux_picker_valuetext};
 static FluxUiaHooks const uia_textbox
@@ -1455,7 +1496,7 @@ MODULE(dropdown) = {
   .retarget = retarget_dropdown,
   .consumed = labelicon_consumed,
   .record   = flux_dropdown_record,
-  .uia      = &uia_button_invoke};
+  .uia      = &uia_dropdown};
 MODULE(split) = {
   .type     = FLUX_CONTROL_SPLIT_BUTTON,
   .snapshot = flux_snap_button,
@@ -1464,7 +1505,7 @@ MODULE(split) = {
   .retarget = retarget_split,
   .consumed = labelicon_consumed,
   .record   = flux_split_record,
-  .uia      = &uia_splitbutton_invoke};
+  .uia      = &uia_split};
 MODULE(combo) = {
   .type     = FLUX_CONTROL_COMBO_BOX,
   .snapshot = flux_snap_combo_box,
@@ -1485,7 +1526,7 @@ MODULE(expander) = {
   .seed     = mount_expander,
   .retarget = retarget_expander,
   .consumed = expander_consumed,
-  .uia      = &uia_button_invoke};
+  .uia      = &uia_expander};
 MODULE(exphead) = {
   .type     = FLUX_CONTROL_EXPANDER_HEADER,
   .snapshot = flux_snap_expander_header,
@@ -1526,7 +1567,7 @@ MODULE(menuitem) = {
   .props    = flux_props_menuitem,
   .shell    = shell_menuitem,
   .record   = flux_menuitem_record,
-  .uia      = &uia_menuitem_invoke};
+  .uia      = &uia_menubaritem};
 MODULE(nav) = {
   .type     = FLUX_CONTROL_NAV_VIEW,
   .snapshot = flux_snap_nav_view,
@@ -1543,7 +1584,7 @@ MODULE(navitem) = {
   .type     = FLUX_CONTROL_NAV_VIEW_ITEM,
   .snapshot = flux_snap_nav_view_item,
   .record   = flux_navitem_record,
-  .uia      = &uia_listitem};
+  .uia      = &uia_navitem};
 MODULE(tabs) = {
   .type     = FLUX_CONTROL_TAB_VIEW,
   .tree     = &tree_tabs,
@@ -1647,7 +1688,7 @@ MODULE(togglesplit) = {
   .retarget = retarget_split,
   .consumed = togglesplit_consumed,
   .record   = flux_split_record,
-  .uia      = &uia_splitbutton_toggle};
+  .uia      = &uia_togglesplit};
 MODULE(radiogroup) = {
   .type     = FLUX_CONTROL_RADIO_BUTTONS,
   .tree     = &tree_radiogroup,
@@ -1712,7 +1753,7 @@ MODULE(treeitem) = {
   .snapshot = flux_snap_tree_item,
   .props    = flux_props_treeitem,
   .record   = flux_treeitem_record,
-  .uia      = &uia_treeitem_scroll};
+  .uia      = &uia_treeitem_expand};
 MODULE(refresh) = {
   .type     = FLUX_CONTROL_REFRESH,
   .snapshot = flux_snap_refresh,
@@ -1878,7 +1919,7 @@ MODULE(commandbar) = {
   .seed     = seed_commandbar,
   .retarget = flux_cmdbar_retarget,
   .record   = flux_cmdbar_record,
-  .uia      = &uia_appbar};
+  .uia      = &uia_commandbar};
 MODULE(appbarbutton) = {
   .type     = FLUX_CONTROL_APPBARBUTTON,
   .props    = flux_props_appbar,

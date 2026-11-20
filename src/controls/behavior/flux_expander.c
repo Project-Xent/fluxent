@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_expander_internal.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_factory.h"
@@ -247,3 +248,10 @@ void flux_prop_expander_content_height(FluxStore *store, XentNodeId id, float he
 	d->content_height = height > 0.0f ? height : NAN;
 	xent_seth(d->ctx, d->content, d->content_height);
 }
+
+int flux_expander_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxExpanderData *d = expander_data(store, node);
+	return d && d->expanded ? 1 : 0;
+}
+
+void flux_expander_uia_toggle(FluxStore *store, XentNodeId node) { expander_toggle(expander_data(store, node)); }

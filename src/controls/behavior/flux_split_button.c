@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
@@ -258,4 +259,27 @@ void flux_split_clear_menu(FluxStore *store, XentNodeId id, FluxMenu *menu) {
 	if (!nd || nd->behavior.on_pointer_down != split_on_pointer_down) return;
 	FluxSplitButtonBinding *b = ( FluxSplitButtonBinding * ) nd->behavior.on_pointer_down_ctx;
 	if (b && b->menu == menu) b->menu = NULL;
+}
+
+static FluxSplitButtonBinding *split_binding(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->component_data ? &(( FluxSplitButtonState * ) nd->component_data)->binding : NULL;
+}
+
+static bool split_open(FluxSplitButtonBinding const *b) {
+	return (b->menu && flux_menu_visible(b->menu)) || (b->flyout && flux_flyout_visible(b->flyout));
+}
+
+int flux_split_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxSplitButtonBinding *b = split_binding(store, node);
+	if (!b || (!b->menu && !b->flyout)) return 3;
+	return split_open(b) ? 1 : 0;
+}
+
+void flux_split_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxSplitButtonBinding *b = split_binding(store, node);
+	if (!b) return;
+	if (!split_open(b)) split_toggle_flyout(b, FLUX_MENU_INPUT_KEYBOARD);
+	else if (b->menu) flux_menu_dismiss(b->menu);
+	else flux_flyout_dismiss(b->flyout);
 }

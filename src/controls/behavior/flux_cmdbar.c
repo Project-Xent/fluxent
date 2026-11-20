@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_cmdbar_internal.h"
 #include "controls/factory/flux_control_build.h"
 #include "controls/factory/flux_factory.h"
@@ -879,4 +880,21 @@ void flux_snap_cmdbar(FluxSnapCtx const *ctx) {
 void flux_snap_cmdmore(FluxSnapCtx const *ctx) {
 	FluxCmdBarData const *b = ( FluxCmdBarData const * ) ctx->data;
 	ctx->snap->u.cmd_bar    = (FluxCmdBarSnapshot) {.open = b->open, .more_open = b->open || b->animating};
+}
+
+static FluxCmdBarData *cmdbar_of(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (nd && nd->component_type == FLUX_CONTROL_CMDMORE) return ( FluxCmdBarData * ) nd->behavior.on_click_ctx;
+	return bar_data(store, node);
+}
+
+int flux_cmdbar_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxCmdBarData *b = cmdbar_of(store, node);
+	if (!b || !b->more_shown) return 3;
+	return b->open ? 1 : 0;
+}
+
+void flux_cmdbar_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxCmdBarData *b = cmdbar_of(store, node);
+	if (b && b->more_shown) flux_cmdbar_open(b, !b->open, true, true);
 }

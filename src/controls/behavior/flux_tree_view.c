@@ -1,3 +1,4 @@
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "render/flux_anim.h"
@@ -739,4 +740,24 @@ int flux_tree_flat_node(FluxStore *store, XentNodeId tree, int flat_index) {
 	FluxTreeViewData *d = tree_data(store, tree);
 	if (!d || flat_index < 0 || flat_index >= d->flat_count) return -1;
 	return d->flat [flat_index];
+}
+
+static FluxTreeItemData *tree_item_data(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (!nd || nd->component_type != FLUX_CONTROL_TREE_ITEM) return NULL;
+	FluxTreeItemData *it = ( FluxTreeItemData * ) nd->component_data;
+	return it && it->owner && it->flat_index >= 0 && it->flat_index < it->owner->flat_count ? it : NULL;
+}
+
+int flux_tree_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (!it) return 3;
+	FluxTreeNode const *n = &it->owner->nodes [it->owner->flat [it->flat_index]];
+	if (n->first_child < 0) return 3;
+	return n->expanded ? 1 : 0;
+}
+
+void flux_tree_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (it) tree_toggle_expand(it->owner, it->flat_index);
 }

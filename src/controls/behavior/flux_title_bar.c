@@ -44,6 +44,11 @@ static void titlebar_set_icon(FluxTitleBarData *d, char const *name) {
 	}
 }
 
+static FluxRect titlebar_window_rect(XentRect const *node, FluxRect const *part, bool rtl) {
+	float x = rtl ? node->w - part->x - part->w : part->x;
+	return (FluxRect) {node->x + x, node->y + part->y, part->w, part->h};
+}
+
 static bool tb_in(FluxRect const *r, float x, float y) {
 	return x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
 }
@@ -206,15 +211,16 @@ void flux_titlebar_sync(XentCtx *ctx, XentNodeId node, struct FluxNodeData *nd) 
 	FluxTitleBarLayout l
 	  = flux_titlebar_layout(&local, d->show_back, d->show_pane_toggle, d->icon_glyph [0] != '\0', true);
 
+	bool     rtl = xent_resolved_dir(ctx, node) == XENT_DIRECTION_RTL;
 	FluxRect pass [FLUX_WINDOW_MAX_TITLE_BAR_PASS];
 	int      n = 0;
-	if (l.has_back) pass [n++] = (FluxRect) {r.x + l.back.x, r.y + l.back.y, l.back.w, l.back.h};
-	if (l.has_toggle) pass [n++] = (FluxRect) {r.x + l.toggle.x, r.y + l.toggle.y, l.toggle.w, l.toggle.h};
-	pass [n++] = (FluxRect) {r.x + l.min.x, r.y + l.min.y, l.min.w, l.min.h};
-	pass [n++] = (FluxRect) {r.x + l.max.x, r.y + l.max.y, l.max.w, l.max.h};
-	pass [n++] = (FluxRect) {r.x + l.close.x, r.y + l.close.y, l.close.w, l.close.h};
+	if (l.has_back) pass [n++] = titlebar_window_rect(&r, &l.back, rtl);
+	if (l.has_toggle) pass [n++] = titlebar_window_rect(&r, &l.toggle, rtl);
+	pass [n++] = titlebar_window_rect(&r, &l.min, rtl);
+	pass [n++] = titlebar_window_rect(&r, &l.max, rtl);
+	pass [n++] = titlebar_window_rect(&r, &l.close, rtl);
 	flux_window_settitlebar(d->window, bounds, pass, n);
-	flux_window_setmaxbutton(d->window, (FluxRect) {r.x + l.max.x, r.y + l.max.y, l.max.w, l.max.h});
+	flux_window_setmaxbutton(d->window, titlebar_window_rect(&r, &l.max, rtl));
 }
 
 void flux_titlebar_set_title(FluxStore *store, XentNodeId id, char const *title, char const *subtitle) {

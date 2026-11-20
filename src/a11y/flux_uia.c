@@ -456,8 +456,11 @@ static void uia_thumb_rect(FluxUia const *self, XentRect *rect) {
 	float          at    = range > 0.0f ? (sd->range_value [self->thumb] - sd->min_value) / range : 0.0f;
 	float          along = flux_slider_along(&line, at);
 	float          r     = FLUX_SLIDER_THUMB_OUTER;
+	XentRect       node  = *rect;
 	*rect                = sd->vertical ? (XentRect) {line.cross - r, along - r, r * 2.0f, r * 2.0f}
 	                                    : (XentRect) {along - r, line.cross - r, r * 2.0f, r * 2.0f};
+	if (xent_resolved_dir(self->info.ctx, self->node) == XENT_DIRECTION_RTL)
+		rect->x = 2.0f * node.x + node.w - rect->x - rect->w;
 }
 
 static HRESULT STDMETHODCALLTYPE f_get_bounds(IRawElementProviderFragment *p, struct UiaRect *out) {

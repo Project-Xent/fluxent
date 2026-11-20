@@ -34,6 +34,8 @@ FluxInputHooks const *flux_module_input(FluxStore *store, XentNodeId node) {
 }
 
 FluxUiaHooks const *flux_module_uia(FluxStore *store, XentNodeId node) {
+	FluxNodeData const *nd = flux_store_find(store, node);
+	if (nd && nd->uia) return nd->uia;
 	FluxControlModule const *m = flux_module_of(store, node);
 	return m ? m->uia : NULL;
 }

@@ -66,6 +66,9 @@ static const GUID Flux_IID_ExpandCollapse = {
 static const GUID Flux_IID_Selection = {
   0xfb8b03af, 0x3bdf, 0x48d4, {0xbd, 0x36, 0x1a, 0x65, 0x79, 0x3b, 0xe1, 0x68}
 };
+static const GUID Flux_IID_Window = {
+  0x987df77b, 0xdb06, 0x4d77, {0x8f, 0x8a, 0x86, 0xa9, 0xc3, 0xbb, 0x90, 0xb9}
+};
 static const GUID Flux_IID_SelectionItem = {
   0x2acad808, 0xb2d4, 0x452d, {0xa4, 0x07, 0x91, 0xff, 0x1a, 0xd1, 0x67, 0xb2}
 };
@@ -101,6 +104,7 @@ static UiaPatternSlot const kUiaPatterns [] = {
   {FLUX_UIA_P_SCROLL_ITEM,    10017, &Flux_IID_ScrollItem,     offsetof(FluxUia, lpVtblScrollItem)},
   {FLUX_UIA_P_EXPAND,         10005, &Flux_IID_ExpandCollapse, offsetof(FluxUia, lpVtblExpand)    },
   {FLUX_UIA_P_SELECTION,      10001, &Flux_IID_Selection,      offsetof(FluxUia, lpVtblSelectionC)},
+  {FLUX_UIA_P_WINDOW,         10009, &Flux_IID_Window,         offsetof(FluxUia, lpVtblWindow)    },
 };
 
 static FluxNodeData *uia_node_data(FluxUia const *self) {
@@ -694,6 +698,7 @@ FluxUia *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	p->lpVtblValue      = &g_value_vtbl;
 	p->lpVtblSelection  = &flux_uia_selitem_vtbl;
 	p->lpVtblSelectionC = &flux_uia_selection_vtbl;
+	p->lpVtblWindow     = &flux_uia_window_vtbl;
 	p->lpVtblScroll     = &flux_uia_scroll_vtbl;
 	p->lpVtblScrollItem = &flux_uia_scrollitem_vtbl;
 	p->lpVtblExpand     = &flux_uia_expand_vtbl;

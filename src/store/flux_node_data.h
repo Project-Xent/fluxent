@@ -68,34 +68,35 @@ typedef struct FluxNodeBehavior {
 } FluxNodeBehavior;
 
 typedef struct FluxNodeData {
-	XentNodeId       node_id;
-	FluxNodeVisuals  visuals;
-	FluxNodeState    state;
-	FluxNodeBehavior behavior;
-	FluxControlType  component_type;
-	void            *component_data;
-	void             (*destroy_component_data)(void *component_data);
+	XentNodeId                 node_id;
+	FluxNodeVisuals            visuals;
+	FluxNodeState              state;
+	FluxNodeBehavior           behavior;
+	FluxControlType            component_type;
+	void                      *component_data;
+	struct FluxUiaHooks const *uia;
+	void                       (*destroy_component_data)(void *component_data);
 
-	float            hover_local_x;
-	float            hover_local_y;
+	float                      hover_local_x;
+	float                      hover_local_y;
 
-	char const      *tooltip_text;
-	uint8_t          drop_operation;
-	char const      *drag_text;
-	char const      *drag_files;
+	char const                *tooltip_text;
+	uint8_t                    drop_operation;
+	char const                *drag_text;
+	char const                *drag_files;
 
-	float            render_scale;
-	float            render_opacity;
-	float            render_translate_x;
-	float            render_translate_y;
-	float            render_rotate_x;
-	float            render_rotate_y;
-	bool             render_clip_subtree;
-	float            clip_top;
-	bool             clips_children;
+	float                      render_scale;
+	float                      render_opacity;
+	float                      render_translate_x;
+	float                      render_translate_y;
+	float                      render_rotate_x;
+	float                      render_rotate_y;
+	bool                       render_clip_subtree;
+	float                      clip_top;
+	bool                       clips_children;
 
-	XentDl const    *display_list;
-	bool             display_list_owned;
+	XentDl const              *display_list;
+	bool                       display_list_owned;
 } FluxNodeData;
 
 struct FluxStore;

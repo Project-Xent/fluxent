@@ -30,6 +30,7 @@ typedef struct FluxUia {
 	IScrollItemProviderVtbl const             *lpVtblScrollItem;
 	IExpandCollapseProviderVtbl const         *lpVtblExpand;
 	ISelectionProviderVtbl const              *lpVtblSelectionC;
+	IWindowProviderVtbl const                 *lpVtblWindow;
 	LONG                                       ref;
 	FluxUiaContext                             info;
 	XentNodeId                                 node;
@@ -50,5 +51,6 @@ extern IScrollItemProviderVtbl const     flux_uia_scrollitem_vtbl;
 extern IExpandCollapseProviderVtbl const flux_uia_expand_vtbl;
 extern ISelectionProviderVtbl const      flux_uia_selection_vtbl;
 extern ISelectionItemProviderVtbl const  flux_uia_selitem_vtbl;
+extern IWindowProviderVtbl const         flux_uia_window_vtbl;
 
 #endif

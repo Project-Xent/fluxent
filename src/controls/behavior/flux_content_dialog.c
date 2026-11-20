@@ -1,3 +1,5 @@
+#include "controls/flux_module.h"
+#include "a11y/flux_uia_ids.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
@@ -160,6 +162,15 @@ static void dialog_destroy(void *component_data) {
 	free(rt);
 }
 
+static void dialog_uia_close(FluxStore *store, XentNodeId layer) {
+	FluxNodeData *nd = flux_store_find(store, layer);
+	if (nd && nd->component_data)
+		dialog_close(( FluxDialogRuntime * ) nd->component_data, FLUX_DIALOG_NONE, XTK_EVENT_CAUSE_ACCESSIBILITY);
+}
+
+static FluxUiaHooks const dialog_layer_uia
+  = {.role = FLUX_UIA_WINDOW, .patterns = FLUX_UIA_P_WINDOW, .close = dialog_uia_close, .modal = true};
+
 static XentNodeId dialog_make_layer(FluxContentDialogDesc const *info) {
 	XentNodeId layer = flux_factory_create_node(info->ctx, info->store, info->overlay_parent, FLUX_CONTROL_CONTAINER);
 	if (layer == XENT_NODE_INVALID) return XENT_NODE_INVALID;
@@ -277,7 +288,10 @@ XentNodeId flux_dialog_init(FluxContentDialogDesc const *info) {
 		return root;
 	}
 	dialog_init_runtime(rt, root, info);
-	rt->layer = layer;
+	rt->layer                = layer;
+	FluxNodeData *layer_nd   = flux_store_find(info->store, layer);
+	layer_nd->component_data = rt;
+	layer_nd->uia            = &dialog_layer_uia;
 	xent_setcollapsed(info->ctx, root, true);
 
 	DialogDims d = dialog_dims(info);

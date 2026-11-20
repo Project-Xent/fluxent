@@ -52,6 +52,7 @@ enum
 	FLUX_UIA_P_SCROLL_ITEM    = 1u << 6,
 	FLUX_UIA_P_EXPAND         = 1u << 7,
 	FLUX_UIA_P_SELECTION      = 1u << 8,
+	FLUX_UIA_P_WINDOW         = 1u << 9,
 };
 
 #endif

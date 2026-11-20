@@ -896,9 +896,10 @@ static void list_uia_add(FluxListViewData *ld, int index, bool add) {
 bool flux_list_uia_select(FluxStore *store, XentNodeId node, int op) {
 	FluxListItemData const *it = item_data(store, node);
 	if (!it || !it->owner || it->header || it->index < 0 || it->owner->sel_mode == XTK_LIST_SELECT_NONE) return false;
-	FluxListViewData *ld = it->owner;
-	if (op == FLUX_UIA_SEL_SELECT || (op == FLUX_UIA_SEL_ADD && !multi_mode(ld))) sel_single(ld, it->index);
-	else if (multi_mode(ld)) list_uia_add(ld, it->index, op == FLUX_UIA_SEL_ADD);
+	FluxListViewData *ld  = it->owner;
+	bool              add = op != FLUX_UIA_SEL_REMOVE;
+	if (multi_mode(ld) && op != FLUX_UIA_SEL_SELECT) list_uia_add(ld, it->index, add);
+	else if (add) sel_single(ld, it->index);
 	else if (ld->selected == it->index) list_select_one(ld, -1);
 	return true;
 }

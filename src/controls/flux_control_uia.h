@@ -65,5 +65,6 @@ bool     flux_comboitem_uia_selected(FluxStore *store, XentNodeId node);
 bool     flux_comboitem_uia_select(FluxStore *store, XentNodeId node, int op);
 bool     flux_suggestitem_uia_selected(FluxStore *store, XentNodeId node);
 bool     flux_suggestitem_uia_select(FluxStore *store, XentNodeId node, int op);
+bool     flux_menu_wheel(FluxStore *store, XentNodeId node, float delta, float *remaining);
 
 #endif

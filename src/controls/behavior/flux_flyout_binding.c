@@ -90,6 +90,7 @@ static void menu_flyout_binding_show(FluxContextMenuBinding const *b, FluxMenuIn
 	}
 	FluxRect anchor = flux_binding_screen_anchor(b->window, b->ctx, b->store, b->node);
 	flux_menu_setrtl(b->menu, xent_resolved_dir(b->ctx, b->node) == XENT_DIRECTION_RTL);
+	flux_menu_bind(b->menu, b->store, b->node);
 	flux_menu_showinput(b->menu, anchor, FLUX_PLACEMENT_BOTTOM, kind);
 }
 

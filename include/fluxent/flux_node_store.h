@@ -9,6 +9,7 @@
 typedef struct XtkHost      XtkHost;
 typedef struct FluxNodeData FluxNodeData;
 typedef struct FluxStore    FluxStore;
+typedef struct FluxInput    FluxInput;
 
 XENT_NODISCARD FluxStore   *flux_store_create(uint32_t initial_capacity);
 
@@ -31,6 +32,8 @@ void                        flux_store_ondel(FluxStore *store, FluxNodeRemovedFn
 
 void                        flux_store_sethost(FluxStore *store, XtkHost *host);
 XtkHost                    *flux_store_host(FluxStore const *store);
+void                        flux_store_setinput(FluxStore *store, FluxInput *input);
+FluxInput                  *flux_store_input(FluxStore const *store);
 
 void                        flux_node_setdl(FluxStore *store, XentNodeId node, XentDl const *list);
 void                        flux_node_adoptdl(FluxStore *store, XentNodeId node, XentDl *list);

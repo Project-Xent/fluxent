@@ -36,6 +36,7 @@ static void menu_bar_open(FluxMenuBarItem *it, FluxMenuInputKind input) {
 	it->visual.open = true;
 	FluxRect anchor = flux_binding_screen_anchor(d->window, d->ctx, d->store, it->node);
 	flux_menu_setrtl(it->flyout, xent_resolved_dir(d->ctx, it->node) == XENT_DIRECTION_RTL);
+	flux_menu_bind(it->flyout, d->store, it->node);
 	flux_menu_showinput(it->flyout, anchor, FLUX_PLACEMENT_BOTTOM, input);
 	menu_bar_repaint(d);
 }

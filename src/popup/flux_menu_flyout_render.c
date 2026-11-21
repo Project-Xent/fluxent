@@ -1,8 +1,7 @@
 #include "flux_menu_internal.h"
 #include "controls/draw/flux_control_record_internal.h"
-#include "render/flux_dl_replay.h"
 #include "render/flux_icon.h"
-#include "render/flux_render_internal.h"
+#include "render/flux_render_snapshot.h"
 
 #include <string.h>
 
@@ -32,14 +31,6 @@ typedef struct ResolvedColors {
 	FluxColor focus_inner;
 } ResolvedColors;
 
-typedef struct MenuPresenterLayout {
-	FluxRect bounds;
-	float    content_x0;
-	float    content_y0;
-	float    content_w;
-	float    content_y1;
-} MenuPresenterLayout;
-
 typedef struct MenuItemPalette {
 	FluxColor bg_fill;
 	FluxColor fg_text;
@@ -55,10 +46,9 @@ typedef struct MenuItemState {
 } MenuItemState;
 
 typedef struct MenuRecContext {
-	FluxMenu                  *menu;
-	XentDlBuilder             *b;
-	MenuPresenterLayout const *layout;
-	ResolvedColors const      *colors;
+	FluxMenu             *menu;
+	XentDlBuilder        *b;
+	ResolvedColors const *colors;
 } MenuRecContext;
 
 typedef struct MenuTextDraw {
@@ -82,20 +72,6 @@ static ItemVisualState item_visual_state(StoredItem const *it, MenuItemState con
 	if (state->pressed) return VS_PRESSED;
 	if (state->submenu_open || state->hovered || state->focused_kb) return VS_ACTIVE;
 	return VS_NORMAL;
-}
-
-static void ensure_brush(FluxMenu *m, ID2D1DeviceContext *d2d) {
-	if (m->brush || !d2d) return;
-	D2D1_COLOR_F          black = {0, 0, 0, 1};
-	D2D1_BRUSH_PROPERTIES bp;
-	bp.opacity       = 1.0f;
-	bp.transform._11 = 1;
-	bp.transform._12 = 0;
-	bp.transform._21 = 0;
-	bp.transform._22 = 1;
-	bp.transform._31 = 0;
-	bp.transform._32 = 0;
-	ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &bp, &m->brush);
 }
 
 static void resolve_presenter_colors(ResolvedColors *r, FluxMenu const *m, bool dark) {
@@ -155,53 +131,9 @@ static bool rec_menu_text(MenuRecContext const *dc, MenuTextDraw const *draw) {
 	return flux_rec_text_ex(dc->b, draw->box, draw->text, &style, draw->color);
 }
 
-static FluxRenderCtx
-menu_render_context(FluxMenu *m, ID2D1DeviceContext *d2d, FluxThemeColors const *theme, bool is_dark) {
-	FluxRenderCtx rc;
-	memset(&rc, 0, sizeof(rc));
-	rc.d2d     = d2d;
-	rc.brush   = m->brush;
-	rc.text    = m->text;
-	rc.theme   = theme;
-	rc.dpi     = flux_window_dpi(m->owner);
-	rc.is_dark = is_dark;
-	return rc;
-}
-
-static MenuPresenterLayout menu_presenter_layout(FluxMenu *m) {
-	MenuPresenterLayout layout;
-	layout.bounds     = (FluxRect) {0.0f, 0.0f, m->total_w, m->total_h};
-	layout.content_x0 = FLUX_MENU_PRESENTER_BORDER;
-	layout.content_y0 = FLUX_MENU_PRESENTER_BORDER + FLUX_MENU_PRESENTER_PAD_TOP;
-	layout.content_w  = m->total_w - 2.0f * FLUX_MENU_PRESENTER_BORDER;
-	layout.content_y1 = m->total_h - FLUX_MENU_PRESENTER_BORDER - FLUX_MENU_PRESENTER_PAD_BOTTOM;
-	return layout;
-}
-
-static bool menu_rec_presenter(MenuRecContext const *dc) {
-	bool  ok = flux_rec_fill_rounded(dc->b, &dc->layout->bounds, FLUX_MENU_PRESENTER_CORNER, dc->colors->presenter_bg);
-	float half     = FLUX_MENU_PRESENTER_BORDER * 0.5f;
-	FluxRect inset = {
-	  dc->layout->bounds.x + half, dc->layout->bounds.y + half, dc->layout->bounds.w - half * 2.0f,
-	  dc->layout->bounds.h - half * 2.0f};
-	return ok
-	    && flux_rec_stroke_rounded(
-		  dc->b, &inset, FLUX_MENU_PRESENTER_CORNER, dc->colors->presenter_border, FLUX_MENU_PRESENTER_BORDER
-		);
-}
-
 static bool menu_item_submenu_open(FluxMenu *m, StoredItem const *it, int index) {
 	if (it->type != FLUX_MENU_ITEM_SUBMENU || index != m->open_submenu_index) return false;
 	return m->open_submenu && flux_popup_visible(m->open_submenu->popup);
-}
-
-static FluxRect menu_item_rect(StoredItem const *it, MenuPresenterLayout const *layout) {
-	float slot_top = layout->content_y0 + it->y;
-	float ir_x     = layout->content_x0 + FLUX_MENU_ITEM_MARGIN_H;
-	float ir_y     = slot_top + FLUX_MENU_ITEM_MARGIN_V;
-	float ir_w     = layout->content_w - 2.0f * FLUX_MENU_ITEM_MARGIN_H;
-	float ir_h     = it->h - 2.0f * FLUX_MENU_ITEM_MARGIN_V;
-	return (FluxRect) {ir_x, ir_y, ir_w, ir_h};
 }
 
 static MenuItemPalette
@@ -307,29 +239,30 @@ static bool menu_rec_label_text(
 	return rec_menu_text(dc, &draw);
 }
 
-static bool menu_rec_separator(MenuRecContext const *dc, StoredItem const *it) {
-	float slot_top = dc->layout->content_y0 + it->y;
-	float y_mid    = slot_top + FLUX_MENU_SEP_PAD_TOP + FLUX_MENU_SEP_HEIGHT * 0.5f;
+static bool menu_rec_separator(MenuRecContext const *dc, FluxRect const *slot) {
+	float y_mid = slot->y + FLUX_MENU_SEP_PAD_TOP + FLUX_MENU_SEP_HEIGHT * 0.5f;
 	return xent_dl_strokeline(
-	  dc->b, dc->layout->content_x0, y_mid, dc->layout->content_x0 + dc->layout->content_w, y_mid,
-	  flux_rec_xcolor(dc->colors->separator), FLUX_MENU_SEP_HEIGHT, XENT_STROKE_CAP_FLAT
+	  dc->b, slot->x, y_mid, slot->x + slot->w, y_mid, flux_rec_xcolor(dc->colors->separator), FLUX_MENU_SEP_HEIGHT,
+	  XENT_STROKE_CAP_FLAT
 	);
 }
 
-static MenuItemState menu_item_state(FluxMenu *m, StoredItem const *it, int index) {
+static MenuItemState menu_item_state(FluxMenu *m, StoredItem const *it, int index, bool pressed) {
 	return (MenuItemState) {
-	  .pressed      = index == m->pressed_index,
+	  .pressed      = pressed,
 	  .submenu_open = menu_item_submenu_open(m, it, index),
 	  .hovered      = index == m->hovered_index,
 	  .focused_kb   = index == m->keyboard_index,
 	};
 }
 
-static bool menu_rec_item(MenuRecContext const *dc, int index) {
-	FluxMenu       *m       = dc->menu;
-	StoredItem     *it      = &m->items [index];
-	MenuItemState   state   = menu_item_state(m, it, index);
-	FluxRect        ir      = menu_item_rect(it, dc->layout);
+static bool menu_rec_item(MenuRecContext const *dc, int index, FluxRect const *slot, bool pressed) {
+	FluxMenu     *m     = dc->menu;
+	StoredItem   *it    = &m->items [index];
+	MenuItemState state = menu_item_state(m, it, index, pressed);
+	FluxRect      ir    = {
+	  slot->x + FLUX_MENU_ITEM_MARGIN_H, slot->y + FLUX_MENU_ITEM_MARGIN_V, slot->w - 2.0f * FLUX_MENU_ITEM_MARGIN_H,
+	  slot->h - 2.0f * FLUX_MENU_ITEM_MARGIN_V};
 	MenuItemPalette palette = menu_item_palette(dc->colors, it, &state);
 	float           text_x  = ir.x + FLUX_MENU_ITEM_PAD_LEFT;
 	bool            ok      = true;
@@ -344,62 +277,46 @@ static bool menu_rec_item(MenuRecContext const *dc, int index) {
 	return ok && menu_rec_label_text(dc, it, &ir, palette.fg_text, &span);
 }
 
-static XentDl *menu_record(
-  FluxMenu *m, MenuPresenterLayout const *layout, ResolvedColors const *colors, FluxPopupMenuTransition const *tr
+XentDl *flux_menurow_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
+	( void ) rc;
+	FluxMenu *m     = ( FluxMenu * ) snap->u.menu_part.menu;
+	int       index = snap->u.menu_part.index;
+	if (!m || index < 0 || index >= m->item_count) return NULL;
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
-	MenuRecContext dc = {.menu = m, .b = b, .layout = layout, .colors = colors};
-	bool           ok = true;
-
-	if (tr->active) {
-		XentAffine2 scale
-		  = {1.0f, 0.0f, 0.0f, 0.0f, tr->border_scale_y, tr->border_center_y * (1.0f - tr->border_scale_y)};
-		ok = xent_dl_pushtransform(b, scale);
-	}
-	if (ok) ok = menu_rec_presenter(&dc);
-	if (tr->active) ok = xent_dl_poptransform(b) && ok;
-
-	XentRect clip = {
-	  layout->content_x0, layout->content_y0 + tr->clip_translate_y, layout->content_w,
-	  layout->content_y1 - layout->content_y0};
-	if (ok) ok = xent_dl_pushcliprect(b, clip);
-	if (ok) ok = xent_dl_pushtransform(b, xent_affine_translate(0.0f, tr->content_translate_y - m->scroll_y));
-	for (int i = 0; ok && i < m->item_count; i++) {
-		StoredItem *it = &m->items [i];
-		if (it->type == FLUX_MENU_ITEM_SEPARATOR) ok = menu_rec_separator(&dc, it);
-		else ok = menu_rec_item(&dc, i);
-	}
-	if (ok) ok = xent_dl_poptransform(b);
-	ok = xent_dl_popclip(b) && ok;
+	ResolvedColors c  = resolve_colors(m);
+	MenuRecContext dc = {.menu = m, .b = b, .colors = &c};
+	bool           ok = m->items [index].type == FLUX_MENU_ITEM_SEPARATOR
+	                    ? menu_rec_separator(&dc, bounds)
+	                    : menu_rec_item(&dc, index, bounds, state && state->pressed);
 	return flux_rec_finish(b, ok);
 }
 
-void menu_paint(void *ctx, FluxPopup *popup) {
-	FluxMenu *m = ( FluxMenu * ) ctx;
-	if (!m) return;
-
-	FluxGfx *gfx = flux_popup_gfx(popup);
-	if (!gfx) return;
-	ID2D1DeviceContext *d2d = flux_gfx_d2d(gfx);
-	if (!d2d) return;
-
-	ensure_brush(m, d2d);
-	if (!m->brush) return;
-
-	FluxThemeColors const *theme   = NULL;
-	bool                   is_dark = false;
-	menu_resolve_theme(m, &theme, &is_dark);
-
-	ResolvedColors c               = resolve_colors(m);
-	c.presenter_bg                 = flux_popup_acrylictint(popup, c.presenter_bg);
-	FluxRenderCtx           rc     = menu_render_context(m, d2d, theme, is_dark);
-	MenuPresenterLayout     layout = menu_presenter_layout(m);
-	FluxPopupMenuTransition tr     = flux_popup_menutransition(popup, layout.bounds.h);
-	XentDl                 *list   = menu_record(m, &layout, &c, &tr);
-	if (list && flux_popup_rtl(popup)) xent_dl_mirror(list, m->total_w);
-	if (list) {
-		flux_xtk_replay_rc(&rc, list);
-		xent_dl_free(list);
+XentDl *flux_menupresenter_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	( void ) rc;
+	( void ) state;
+	FluxMenu *m = ( FluxMenu * ) snap->u.menu_part.menu;
+	if (!m) return NULL;
+	XentDlBuilder *b = xent_dl_begin();
+	if (!b) return NULL;
+	ResolvedColors          c  = resolve_colors(m);
+	FluxPopupMenuTransition tr = flux_popup_menutransition(m->popup, bounds->h);
+	c.presenter_bg             = flux_popup_acrylictint(m->popup, c.presenter_bg);
+	bool ok                    = true;
+	if (tr.active) {
+		float       cy    = bounds->y + tr.border_center_y;
+		XentAffine2 scale = {1.0f, 0.0f, 0.0f, 0.0f, tr.border_scale_y, cy * (1.0f - tr.border_scale_y)};
+		ok                = xent_dl_pushtransform(b, scale);
 	}
+	ok          = ok && flux_rec_fill_rounded(b, bounds, FLUX_MENU_PRESENTER_CORNER, c.presenter_bg);
+	float    h  = FLUX_MENU_PRESENTER_BORDER * 0.5f;
+	FluxRect in = {bounds->x + h, bounds->y + h, bounds->w - h * 2.0f, bounds->h - h * 2.0f};
+	ok          = ok
+	           && flux_rec_stroke_rounded(b, &in, FLUX_MENU_PRESENTER_CORNER, c.presenter_border, FLUX_MENU_PRESENTER_BORDER);
+	if (tr.active) ok = xent_dl_poptransform(b) && ok;
+	return flux_rec_finish(b, ok);
 }

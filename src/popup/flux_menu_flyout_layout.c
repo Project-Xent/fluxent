@@ -161,28 +161,3 @@ void menu_measure(FluxMenu *m) {
 	m->total_w = total_w;
 	m->total_h = total_h;
 }
-
-int menu_hit_test(FluxMenu const *m, float px, float py) {
-	if (m->item_count == 0) return -1;
-
-	float band_top = FLUX_MENU_PRESENTER_BORDER + FLUX_MENU_PRESENTER_PAD_TOP;
-	float band_bot = m->total_h - FLUX_MENU_PRESENTER_BORDER - FLUX_MENU_PRESENTER_PAD_BOTTOM;
-	if (py < band_top || py >= band_bot) return -1;
-
-	float local_x   = px - FLUX_MENU_PRESENTER_BORDER;
-	float local_y   = py - band_top + m->scroll_y;
-	float content_w = m->total_w - 2.0f * FLUX_MENU_PRESENTER_BORDER;
-
-	for (int i = 0; i < m->item_count; i++) {
-		StoredItem const *it = &m->items [i];
-		if (local_y < it->y || local_y >= it->y + it->h) continue;
-		if (it->type == FLUX_MENU_ITEM_SEPARATOR) return -1;
-		float ir_left  = FLUX_MENU_ITEM_MARGIN_H;
-		float ir_right = content_w - FLUX_MENU_ITEM_MARGIN_H;
-		float ir_top   = it->y + FLUX_MENU_ITEM_MARGIN_V;
-		float ir_bot   = it->y + it->h - FLUX_MENU_ITEM_MARGIN_V;
-		if (local_x >= ir_left && local_x < ir_right && local_y >= ir_top && local_y < ir_bot) return i;
-		return -1;
-	}
-	return -1;
-}

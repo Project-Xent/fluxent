@@ -3,6 +3,15 @@
 #endif
 
 #include "flux_menu_internal.h"
+
+#define FLUX_MENU_WHEEL_STEP 48.0f
+#include "controls/flux_control_uia.h"
+#include "render/flux_render_snapshot.h"
+#include "popup/flux_popup_tree.h"
+#include "a11y/flux_uia_ids.h"
+#include "store/flux_node_data.h"
+#include "controls/flux_module.h"
+#include "controls/factory/flux_factory.h"
 #include "runtime/flux_str.h"
 
 #include <stdlib.h>
@@ -80,7 +89,6 @@ void _dismiss_internal(FluxMenu *m, bool fire_cb) {
 	flux_popup_dismiss(m->popup);
 
 	m->hovered_index      = -1;
-	m->pressed_index      = -1;
 	m->keyboard_index     = -1;
 	m->open_submenu_index = -1;
 
@@ -129,9 +137,16 @@ static void menu_inherit_child_context(FluxMenu *parent, FluxMenu *child, int id
 	child->scroll_y          = 0.0f;
 }
 
-static void menu_prepare_child_popup(FluxMenu *child) {
+static bool menu_nodes_build(FluxMenu *m, FluxStore *store);
+static void menu_rows_sync(FluxMenu *m);
+
+static void menu_prepare_child_popup(FluxMenu *parent, FluxMenu *child, int idx) {
+	if (!child->presenter && parent->store) menu_nodes_build(child, parent->store);
 	menu_measure(child);
 	flux_popup_setsize(child->popup, child->total_w, child->total_h);
+	menu_rows_sync(child);
+	menu_rows_layout(child);
+	if (child->input && idx < parent->row_count) flux_popup_sethost(child->popup, child->input, parent->rows [idx]);
 }
 
 static FluxRect menu_submenu_anchor(FluxMenu *m, StoredItem const *it) {
@@ -161,7 +176,6 @@ static void menu_open_child_popup(FluxMenu *m, FluxMenu *child, StoredItem const
 	m->open_submenu           = child;
 	m->open_submenu_index     = ( int ) (it - m->items);
 	child->hovered_index      = -1;
-	child->pressed_index      = -1;
 	child->open_submenu_index = -1;
 	child->keyboard_index     = focus_first ? first_enabled(child) : -1;
 
@@ -183,7 +197,7 @@ void open_submenu(FluxMenu *m, int idx, bool focus_first) {
 	FluxMenu *child = it->submenu;
 	menu_inherit_child_context(m, child, idx);
 	menu_measure(m);
-	menu_prepare_child_popup(child);
+	menu_prepare_child_popup(m, child, idx);
 	menu_open_child_popup(m, child, it, focus_first);
 }
 
@@ -229,64 +243,178 @@ static void menu_set_hovered(FluxMenu *m, int idx) {
 	invalidate(m);
 }
 
-static void menu_mouse_move(FluxMenu *m, float x, float y) {
-	int idx = menu_hit_test(m, x, y);
-	menu_set_hovered(m, idx);
-	if (idx < 0) return;
-
-	StoredItem *it = &m->items [idx];
-	if (it->type == FLUX_MENU_ITEM_SUBMENU && it->submenu && it->enabled) {
-		open_submenu(m, idx, false);
+static void menu_row_hover(void *ctx, bool hovered) {
+	MenuRow const *r = ( MenuRow const * ) ctx;
+	FluxMenu      *m = r->menu;
+	if (!hovered) {
+		if (m->hovered_index == r->index) menu_set_hovered(m, -1);
 		return;
 	}
-	if (m->open_submenu_index >= 0 && m->open_submenu_index != idx) close_submenu(m);
+	menu_set_hovered(m, r->index);
+	StoredItem *it = &m->items [r->index];
+	if (it->type == FLUX_MENU_ITEM_SUBMENU && it->submenu && it->enabled) {
+		open_submenu(m, r->index, false);
+		return;
+	}
+	if (m->open_submenu_index >= 0 && m->open_submenu_index != r->index) close_submenu(m);
 }
 
-static void menu_mouse_down(FluxMenu *m, float x, float y) {
-	m->pressed_index = menu_hit_test(m, x, y);
-	invalidate(m);
+static void menu_row_click(void *ctx) {
+	MenuRow const *r = ( MenuRow const * ) ctx;
+	activate_item(r->menu, r->index);
 }
 
-static void menu_mouse_up(FluxMenu *m, float x, float y) {
-	int idx          = menu_hit_test(m, x, y);
-	int pressed      = m->pressed_index;
-	m->pressed_index = -1;
-	invalidate(m);
-	if (idx >= 0 && idx == pressed) activate_item(m, idx);
+static MenuRow const *menu_row_of(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->component_type == FLUX_CONTROL_MENU_ROW ? ( MenuRow const * ) nd->component_data : NULL;
 }
 
-static void menu_mouse_leave(FluxMenu *m) {
-	m->hovered_index = -1;
-	m->pressed_index = -1;
-	invalidate(m);
+static int menu_uia_expand(FluxStore *store, XentNodeId node) {
+	MenuRow const *r = menu_row_of(store, node);
+	return r && r->menu->open_submenu_index == r->index && r->menu->open_submenu ? 1 : 0;
 }
 
-static void menu_mouse_wheel(FluxMenu *m, float dy) {
-	if (m->scroll_max <= 0.0f) return;
+static void menu_uia_toggle(FluxStore *store, XentNodeId node) {
+	MenuRow const *r = menu_row_of(store, node);
+	if (!r) return;
+	if (menu_uia_expand(store, node)) close_submenu(r->menu);
+	else open_submenu(r->menu, r->index, true);
+}
 
-	float new_y = m->scroll_y - dy;
-	if (new_y < 0.0f) new_y = 0.0f;
-	if (new_y > m->scroll_max) new_y = m->scroll_max;
-	if (new_y == m->scroll_y) return;
+static FluxUiaHooks const menu_uia_hidden = {.role = FLUX_UIA_HIDDEN};
+static FluxUiaHooks const menu_uia_item   = {.role = FLUX_UIA_MENUITEM, .patterns = FLUX_UIA_P_INVOKE};
+static FluxUiaHooks const menu_uia_check  = {.role = FLUX_UIA_MENUITEM, .patterns = FLUX_UIA_P_TOGGLE};
+static FluxUiaHooks const menu_uia_sep    = {.role = FLUX_UIA_SEPARATOR};
+static FluxUiaHooks const menu_uia_sub    = {
+  .role          = FLUX_UIA_MENUITEM,
+  .patterns      = FLUX_UIA_P_EXPAND,
+  .expand        = menu_uia_expand,
+  .toggle_expand = menu_uia_toggle};
 
-	m->scroll_y      = new_y;
+static FluxUiaHooks const *menu_row_uia(FluxMenuItemType type) {
+	switch (type) {
+	case FLUX_MENU_ITEM_SEPARATOR : return &menu_uia_sep;
+	case FLUX_MENU_ITEM_TOGGLE    :
+	case FLUX_MENU_ITEM_RADIO     : return &menu_uia_check;
+	case FLUX_MENU_ITEM_SUBMENU   : return &menu_uia_sub;
+	default                       : return &menu_uia_item;
+	}
+}
+
+static XentNodeId menu_part(FluxMenu *m, XentNodeId parent, FluxControlType type) {
+	XentNodeId    n  = flux_factory_create_node(m->ctx, m->store, parent, type);
+	FluxNodeData *nd = n ? flux_store_find(m->store, n) : NULL;
+	if (!nd) return XENT_NODE_INVALID;
+	xent_setproto(m->ctx, n, XENT_PROTOCOL_ABSOLUTE);
+	if (type == FLUX_CONTROL_CONTAINER) nd->uia = &menu_uia_hidden;
+	return n;
+}
+
+static bool menu_nodes_build(FluxMenu *m, FluxStore *store) {
+	m->store           = store;
+	m->ctx             = flux_store_ctx(store);
+	m->input           = flux_store_input(store);
+	m->presenter       = menu_part(m, XENT_NODE_INVALID, FLUX_CONTROL_MENU_PRESENTER);
+	m->shift           = m->presenter ? menu_part(m, m->presenter, FLUX_CONTROL_CONTAINER) : XENT_NODE_INVALID;
+	m->body            = m->shift ? menu_part(m, m->shift, FLUX_CONTROL_CONTAINER) : XENT_NODE_INVALID;
+	FluxNodeData *root = m->presenter ? flux_store_find(store, m->presenter) : NULL;
+	FluxNodeData *body = m->body ? flux_store_find(store, m->body) : NULL;
+	if (!root || !body) return false;
+	root->component_data      = m;
+	root->focus_passive       = true;
+	body->render_clip_subtree = true;
+	return flux_popup_setcontent(m->popup, m->ctx, store, m->presenter);
+}
+
+static void menu_rows_clear(FluxMenu *m) {
+	for (int i = 0; i < m->row_count; i++) xent_node_destroy(m->ctx, m->rows [i]);
+	m->row_count = 0;
+}
+
+static bool menu_row_make(FluxMenu *m, int i) {
+	XentNodeId    n  = flux_factory_create_node(m->ctx, m->store, m->body, FLUX_CONTROL_MENU_ROW);
+	FluxNodeData *nd = n ? flux_store_find(m->store, n) : NULL;
+	if (!nd) return false;
+	StoredItem const *it = &m->items [i];
+	m->rows [i]          = n;
+	m->row_data [i]      = (MenuRow) {m, i};
+	nd->component_data   = &m->row_data [i];
+	nd->uia              = menu_row_uia(it->type);
+	if (it->type == FLUX_MENU_ITEM_SEPARATOR) return true;
+	nd->behavior.on_click             = menu_row_click;
+	nd->behavior.on_click_ctx         = &m->row_data [i];
+	nd->behavior.on_hover_changed     = menu_row_hover;
+	nd->behavior.on_hover_changed_ctx = &m->row_data [i];
+	xent_sem_setlabel(m->ctx, n, it->label);
+	xent_sem_setenabled(m->ctx, n, it->enabled);
+	xent_sem_setchecked(m->ctx, n, it->checked ? 1u : 0u);
+	return true;
+}
+
+static void menu_rows_sync(FluxMenu *m) {
+	if (!m->body) return;
+	menu_rows_clear(m);
+	for (int i = 0; i < m->item_count && menu_row_make(m, i); i++) m->row_count = i + 1;
+}
+
+void menu_rows_layout(FluxMenu *m) {
+	if (!m->presenter) return;
+	float cw = m->total_w - 2.0f * FLUX_MENU_PRESENTER_BORDER;
+	float ch
+	  = m->total_h - 2.0f * FLUX_MENU_PRESENTER_BORDER - FLUX_MENU_PRESENTER_PAD_TOP - FLUX_MENU_PRESENTER_PAD_BOTTOM;
+	for (int i = 0; i < m->row_count; i++) {
+		xent_setpos(m->ctx, m->rows [i], (XentPoint) {0.0f, m->items [i].y - m->scroll_y});
+		xent_setsize(m->ctx, m->rows [i], (XentSize) {cw, m->items [i].h});
+	}
+	xent_setpos(
+	  m->ctx, m->body,
+	  (XentPoint) {FLUX_MENU_PRESENTER_BORDER, FLUX_MENU_PRESENTER_BORDER + FLUX_MENU_PRESENTER_PAD_TOP}
+	);
+	xent_setsize(m->ctx, m->body, (XentSize) {cw, ch > 0.0f ? ch : 0.0f});
+	xent_setpos(m->ctx, m->shift, (XentPoint) {0.0f, 0.0f});
+	xent_setsize(m->ctx, m->shift, (XentSize) {m->total_w, m->total_h});
+	xent_setpos(m->ctx, m->presenter, (XentPoint) {0.0f, 0.0f});
+	xent_setsize(m->ctx, m->presenter, (XentSize) {m->total_w, m->total_h});
+	xent_layout(m->ctx, m->presenter, m->total_w, m->total_h);
+}
+
+void flux_snap_menupresenter(FluxSnapCtx const *ctx) {
+	FluxMenu               *m     = ( FluxMenu * ) ctx->data;
+	FluxPopupMenuTransition tr    = flux_popup_menutransition(m->popup, m->total_h);
+	FluxNodeData           *shift = flux_store_find(m->store, m->shift);
+	FluxNodeData           *body  = flux_store_find(m->store, m->body);
+	if (shift) shift->render_translate_y = tr.clip_translate_y;
+	if (body) body->render_translate_y = tr.content_translate_y - tr.clip_translate_y;
+	if (body) body->clips_children = tr.clip_translate_y == 0.0f && body->render_translate_y == 0.0f;
+	ctx->snap->u.menu_part = (FluxMenuPartSnapshot) {m, -1};
+}
+
+void flux_snap_menurow(FluxSnapCtx const *ctx) {
+	MenuRow const *r       = ( MenuRow const * ) ctx->data;
+	ctx->snap->u.menu_part = (FluxMenuPartSnapshot) {r ? r->menu : NULL, r ? r->index : -1};
+}
+
+bool flux_menu_wheel(FluxStore *store, XentNodeId node, float delta, float *remaining) {
+	( void ) remaining;
+	FluxNodeData *nd = flux_store_find(store, node);
+	FluxMenu     *m  = nd ? ( FluxMenu * ) nd->component_data : NULL;
+	if (!m || m->scroll_max <= 0.0f) return false;
+	float next = m->scroll_y - delta * FLUX_MENU_WHEEL_STEP;
+	next       = next < 0.0f ? 0.0f : (next > m->scroll_max ? m->scroll_max : next);
+	if (next == m->scroll_y) return true;
+	m->scroll_y      = next;
 	m->hovered_index = -1;
 	if (m->open_submenu_index >= 0) close_submenu(m);
+	menu_rows_layout(m);
 	invalidate(m);
+	return true;
 }
 
-static void menu_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent ev, float x, float y) {
-	( void ) popup;
-	FluxMenu *m = ( FluxMenu * ) ctx;
-	if (!m) return;
-
-	switch (ev) {
-	case FLUX_POPUP_MOUSE_MOVE  : menu_mouse_move(m, x, y); return;
-	case FLUX_POPUP_MOUSE_DOWN  : menu_mouse_down(m, x, y); return;
-	case FLUX_POPUP_MOUSE_UP    : menu_mouse_up(m, x, y); return;
-	case FLUX_POPUP_MOUSE_LEAVE : menu_mouse_leave(m); return;
-	case FLUX_POPUP_MOUSE_WHEEL : menu_mouse_wheel(m, y); return;
-	}
+void flux_menu_bind(FluxMenu *m, FluxStore *store, XentNodeId host) {
+	if (!m || !store) return;
+	if (!m->presenter && !menu_nodes_build(m, store)) return;
+	m->host = host;
+	if (m->input) flux_popup_sethost(m->popup, m->input, host);
 }
 
 void menu_resolve_theme(FluxMenu const *m, FluxThemeColors const **out_theme, bool *out_is_dark) {
@@ -315,11 +443,8 @@ FluxMenu *flux_menu_create(FluxWindow *owner) {
 	}
 
 	flux_popup_setdismissoutside(m->popup, true);
-	flux_popup_onpaint(m->popup, menu_paint, m);
-	flux_popup_onmouse(m->popup, menu_mouse, m);
 
 	m->hovered_index      = -1;
-	m->pressed_index      = -1;
 	m->keyboard_index     = -1;
 	m->open_submenu_index = -1;
 	m->parent_item_index  = -1;
@@ -351,11 +476,8 @@ void flux_menu_destroy(FluxMenu *m) {
 		free(m->items [i].radio_group);
 	}
 
-	if (m->brush) {
-		ID2D1SolidColorBrush_Release(m->brush);
-		m->brush = NULL;
-	}
 	if (m->popup) flux_popup_destroy(m->popup);
+	if (m->presenter) xent_node_destroy(m->ctx, m->presenter);
 	free(m);
 }
 
@@ -429,7 +551,6 @@ void flux_menu_clear(FluxMenu *m) {
 	}
 	m->item_count         = 0;
 	m->hovered_index      = -1;
-	m->pressed_index      = -1;
 	m->keyboard_index     = -1;
 	m->open_submenu_index = -1;
 }
@@ -455,10 +576,11 @@ void flux_menu_showinput(FluxMenu *m, FluxRect anchor, FluxPlacement placement, 
 	m->scroll_y = 0.0f;
 	menu_measure(m);
 	flux_popup_setsize(m->popup, m->total_w, m->total_h);
+	menu_rows_sync(m);
+	menu_rows_layout(m);
 
 	m->hovered_index  = -1;
 	m->keyboard_index = (input_kind == FLUX_MENU_INPUT_KEYBOARD) ? first_enabled(m) : -1;
-	m->pressed_index  = -1;
 	close_submenu(m);
 
 	flux_popup_show(m->popup, anchor, placement);
@@ -483,7 +605,6 @@ void flux_menu_dismissall(FluxMenu *m) {
 
 	flux_popup_dismiss(root->popup);
 	root->hovered_index      = -1;
-	root->pressed_index      = -1;
 	root->keyboard_index     = -1;
 	root->open_submenu_index = -1;
 	root->open_submenu       = NULL;

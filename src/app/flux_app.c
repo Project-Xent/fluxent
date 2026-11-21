@@ -601,6 +601,7 @@ static bool app_bind_scene_runtime(FluxApp *app) {
 	app->engine = flux_engine_create(store);
 	if (app->engine) flux_engine_bind(app->engine, app->xtk_backend);
 	app->input = flux_input_create(ctx, store);
+	flux_store_setinput(store, app->input);
 	flux_input_setwindow(app->input, app->window);
 	if (app->input) {
 		FluxDragDropEnv env = {app, app->window, app->input, store, app_root(app)};

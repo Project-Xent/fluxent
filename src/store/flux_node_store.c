@@ -25,6 +25,7 @@ struct FluxStore {
 	FluxNodeRemovedFn removed_fn;
 	void             *removed_userdata;
 	XtkHost          *host;
+	struct FluxInput *input;
 	XentNodeId       *lifted;
 	uint32_t          nlifted;
 	uint32_t          lifted_cap;
@@ -299,7 +300,13 @@ void flux_store_sethost(FluxStore *store, XtkHost *host) {
 
 XtkHost *flux_store_host(FluxStore const *store) { return store ? store->host : NULL; }
 
-void     flux_tree_drop(FluxStore *store, XentNodeId node) {
+void     flux_store_setinput(FluxStore *store, struct FluxInput *input) {
+	if (store) store->input = input;
+}
+
+struct FluxInput *flux_store_input(FluxStore const *store) { return store ? store->input : NULL; }
+
+void              flux_tree_drop(FluxStore *store, XentNodeId node) {
 	XentCtx *ctx = flux_store_ctx(store);
 	if (!ctx || node == XENT_NODE_INVALID) return;
 	xent_node_destroy(ctx, node);

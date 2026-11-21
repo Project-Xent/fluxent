@@ -64,7 +64,6 @@ static bool menu_handle_left_key(FluxMenu *m) {
 	_dismiss_internal(m, false);
 	parent->keyboard_index = pidx;
 	parent->hovered_index  = -1;
-	parent->pressed_index  = -1;
 	invalidate(parent);
 	refresh_active_leaf(root_of(parent));
 	if (dismiss) dismiss(dismiss_ctx);

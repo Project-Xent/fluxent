@@ -2021,6 +2021,15 @@ MODULE(suggestitem) = {
   .snapshot = flux_snap_suggestitem,
   .record   = flux_suggestitem_record,
   .uia      = &uia_suggestitem};
+static FluxInputHooks const input_menupresenter = {.wheel = flux_menu_wheel};
+static FluxUiaHooks const   uia_menupresenter   = {.role = FLUX_UIA_MENU, .patterns = 0};
+MODULE(menupresenter)                           = {
+  .type     = FLUX_CONTROL_MENU_PRESENTER,
+  .snapshot = flux_snap_menupresenter,
+  .input    = &input_menupresenter,
+  .record   = flux_menupresenter_record,
+  .uia      = &uia_menupresenter};
+MODULE(menurow)     = {.type = FLUX_CONTROL_MENU_ROW, .snapshot = flux_snap_menurow, .record = flux_menurow_record};
 MODULE(groupheader) = {
   .type   = FLUX_CONTROL_GROUP_HEADER,
   .tree   = &tree_listitem,

@@ -5,6 +5,8 @@
 #include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
 #include "runtime/flux_str.h"
+#include "a11y/flux_uia.h"
+#include "popup/flux_popup_tree.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +27,7 @@ struct FluxTooltip {
 	UINT_PTR               timer_id;
 	bool                   is_visible;
 	ULONGLONG              last_dismiss_tick;
+	FluxUiaTip            *uia;
 };
 
 static void          tooltip_show(FluxTooltip *tt);
@@ -52,6 +55,8 @@ FluxTooltip         *flux_tooltip_create(FluxWindow *owner) {
 	flux_popup_setdismissoutside(tt->popup, false);
 	flux_popup_onpaint(tt->popup, tooltip_paint, tt);
 	flux_popup_setanim(tt->popup, FLUX_POPUP_ANIM_TOOLTIP);
+	tt->uia = flux_uia_tip_create();
+	if (tt->uia) flux_popup_onobject(tt->popup, flux_uia_tip_object, tt->uia);
 
 	return tt;
 }
@@ -66,6 +71,7 @@ void flux_tooltip_destroy(FluxTooltip *tt) {
 		tt->brush = NULL;
 	}
 	if (tt->popup) flux_popup_destroy(tt->popup);
+	flux_uia_tip_release(tt->uia);
 
 	flux_str_free(tt->tooltip_text);
 	free(tt);
@@ -173,6 +179,12 @@ static FluxSize tooltip_measure_content(FluxTooltip *tt) {
 	return size;
 }
 
+static void tooltip_opened(FluxTooltip *tt) {
+	tt->is_visible = true;
+	flux_uia_tip_update(tt->uia, flux_popup_hwnd(tt->popup), tt->tooltip_text);
+	flux_uia_tip_raise(tt->uia, true);
+}
+
 static void tooltip_show(FluxTooltip *tt) {
 	if (!tt || !tt->tooltip_text || !tt->popup) return;
 
@@ -181,12 +193,13 @@ static void tooltip_show(FluxTooltip *tt) {
 
 	flux_popup_setsize(tt->popup, content_size.w, content_size.h);
 	flux_popup_show(tt->popup, tt->anchor_screen, FLUX_PLACEMENT_BOTTOM);
-	tt->is_visible = true;
+	tooltip_opened(tt);
 }
 
 static void tooltip_hide(FluxTooltip *tt) {
 	if (!tt) return;
 	flux_popup_dismiss(tt->popup);
+	if (tt->is_visible) flux_uia_tip_raise(tt->uia, false);
 	tt->is_visible        = false;
 	tt->last_dismiss_tick = GetTickCount64();
 }
@@ -320,6 +333,6 @@ void flux_tooltip_showat(FluxTooltip *tt, char const *text, FluxRect anchor, Flu
 	if (size.w < 1.0f || size.h < 1.0f) return;
 	flux_popup_setsize(tt->popup, size.w, size.h);
 	flux_popup_show(tt->popup, anchor, placement);
-	tt->is_visible = true;
+	tooltip_opened(tt);
 	flux_popup_reposition(tt->popup);
 }

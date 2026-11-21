@@ -68,6 +68,8 @@ struct FluxPopup {
 	FluxInput            *host_input;
 	XentNodeId            host_owner;
 
+	FluxPopupObjectFn     object_cb;
+	void                 *object_ctx;
 	FluxPopupMouseFn      mouse_cb;
 	void                 *mouse_ctx;
 	bool                  mouse_tracking;
@@ -752,6 +754,12 @@ void flux_popup_onrecord(FluxPopup *popup, FluxPopupRecordFn cb, void *ctx, Flux
 	popup->paint_ctx   = NULL;
 }
 
+void flux_popup_onobject(FluxPopup *popup, FluxPopupObjectFn cb, void *ctx) {
+	if (!popup) return;
+	popup->object_cb  = cb;
+	popup->object_ctx = ctx;
+}
+
 void flux_popup_onmouse(FluxPopup *popup, FluxPopupMouseFn cb, void *ctx) {
 	if (!popup) return;
 	popup->mouse_cb  = cb;
@@ -1044,6 +1052,12 @@ static LRESULT popup_on_hittest(PopupWindowMessage const *m) {
 	return inside ? HTCLIENT : HTTRANSPARENT;
 }
 
+static bool popup_on_object(PopupWindowMessage const *m, LRESULT *result) {
+	if (!m->popup || !m->popup->object_cb) return false;
+	*result = m->popup->object_cb(m->popup->object_ctx, m->hwnd, m->wp, m->lp);
+	return *result != 0;
+}
+
 static bool popup_handle_system_message(PopupWindowMessage const *m, LRESULT *result) {
 	switch (m->msg) {
 	case WM_PAINT         : *result = popup_on_paint(m->hwnd, m->popup); return true;
@@ -1051,6 +1065,7 @@ static bool popup_handle_system_message(PopupWindowMessage const *m, LRESULT *re
 	case WM_MOUSEACTIVATE : *result = MA_NOACTIVATE; return true;
 	case WM_SIZE          : *result = popup_on_size(m->popup, m->lp); return true;
 	case WM_NCHITTEST     : *result = popup_on_hittest(m); return true;
+	case WM_GETOBJECT     : return popup_on_object(m, result);
 	default               : return false;
 	}
 }

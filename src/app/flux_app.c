@@ -55,6 +55,7 @@ struct FluxApp {
 	ID2D1SolidColorBrush    *shared_brush;
 	int64_t                  last_frame_ticks;
 	XentNodeId               last_uia_focus;
+	FluxUiaWatch            *uia_watch;
 
 	FluxTooltip             *tooltip;
 	bool                     auto_tip_open;
@@ -365,8 +366,14 @@ static void app_pump_uia_focus(FluxApp *app) {
 	if (focused == app->last_uia_focus) return;
 	app->last_uia_focus = focused;
 
-	FluxUiaContext info = {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app)};
+	FluxUiaContext info = {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app), flux_app_text(app)};
 	flux_uia_raisefocus(&info, focused);
+}
+
+static void app_pump_uia_events(FluxApp *app) {
+	if (!app->uia_watch) app->uia_watch = flux_uia_watch_create();
+	FluxUiaContext info = {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app), flux_app_text(app)};
+	flux_uia_watch_pump(app->uia_watch, &info);
 }
 
 static void app_render(void *ctx) {
@@ -386,6 +393,7 @@ static void app_render(void *ctx) {
 		if (t && t->deferred) t->deferred(app_store(app), app->deferred [i]);
 	}
 	app->deferred_count = 0;
+	app_pump_uia_events(app);
 }
 
 static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool is_touch) {
@@ -651,7 +659,7 @@ static void *app_uia_provider(void *ctx, void *hwnd) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return NULL;
 
-	FluxUiaContext info = {app_ctx(app), app_root(app), ( HWND ) hwnd, app_store(app)};
+	FluxUiaContext info = {app_ctx(app), app_root(app), ( HWND ) hwnd, app_store(app), flux_app_text(app)};
 	return flux_uia_provider_create(&info);
 }
 
@@ -728,6 +736,7 @@ static void app_destroy_render_state(FluxApp *app) {
 static void app_destroy_input_state(FluxApp *app) {
 	flux_dragdrop_destroy(app->dragdrop);
 	if (app->tooltip) flux_tooltip_destroy(app->tooltip);
+	flux_uia_watch_destroy(app->uia_watch);
 	if (app->input) flux_input_destroy(app->input);
 }
 

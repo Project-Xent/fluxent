@@ -272,6 +272,32 @@ uint32_t flux_text_selection(FluxTextSelectionQuery const *query) {
 	return n;
 }
 
+static void text_copy_lines(TextLineMetrics const *m, FluxTextLine *out, uint32_t max_lines) {
+	uint32_t start = 0u;
+	float    top   = 0.0f;
+	for (uint32_t i = 0u; i < m->count && i < max_lines; i++) {
+		out [i]  = (FluxTextLine) {start, m->lines [i].length, m->lines [i].newlineLength, top, m->lines [i].height};
+		start   += m->lines [i].length;
+		top     += m->lines [i].height;
+	}
+}
+
+uint32_t flux_text_lines(FluxTextLayoutQuery const *query, FluxTextLine *out, uint32_t max_lines) {
+	if (!query || !query->renderer || !query->style) return 0u;
+	query->renderer->cache_tick++;
+	char const        *safe = query->text && query->text [0] ? query->text : " ";
+	FluxWideBuffer     wide;
+	TextLayoutRequest  req    = text_layout_request(query, safe);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
+	TextLineMetrics    m;
+	bool               ok = layout && read_line_metrics(layout, &m);
+	uint32_t           n  = ok ? m.count : 0u;
+	if (ok && out) text_copy_lines(&m, out, max_lines);
+	if (ok) free_line_metrics(&m);
+	if (layout) flux_wide_buffer_free(&wide);
+	return n;
+}
+
 static IDWriteTextLayout *text_cluster_layout(FluxTextClusterQuery const *query, FluxWideBuffer *wide, int *wlen) {
 	char const        *safe   = (query->layout.text && query->layout.text [0]) ? query->layout.text : " ";
 	TextLayoutRequest  req    = text_layout_request(&query->layout, safe);

@@ -53,6 +53,20 @@ enum
 	FLUX_UIA_P_EXPAND         = 1u << 7,
 	FLUX_UIA_P_SELECTION      = 1u << 8,
 	FLUX_UIA_P_WINDOW         = 1u << 9,
+	FLUX_UIA_P_GRID           = 1u << 10,
+	FLUX_UIA_P_GRID_ITEM      = 1u << 11,
+	FLUX_UIA_P_TABLE          = 1u << 12,
+	FLUX_UIA_P_TABLE_ITEM     = 1u << 13,
+	FLUX_UIA_P_ITEMS          = 1u << 14,
+	FLUX_UIA_P_VIRTUAL        = 1u << 15,
+	FLUX_UIA_P_TEXT           = 1u << 16,
+	FLUX_UIA_P_TEXT2          = 1u << 17,
+};
+
+enum
+{
+	FLUX_UIA_SUB_HEAD = 0x20000000,
+	FLUX_UIA_SUB_LONE = 0x40000000,
 };
 
 #endif

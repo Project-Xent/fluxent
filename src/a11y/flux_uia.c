@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <wchar.h>
 
 #define FLUX_UIA_PROP_NAME                  30005
 #define FLUX_UIA_PROP_CONTROL_TYPE          30003
@@ -73,6 +74,30 @@ static const GUID Flux_IID_Window = {
 static const GUID Flux_IID_SelectionItem = {
   0x2acad808, 0xb2d4, 0x452d, {0xa4, 0x07, 0x91, 0xff, 0x1a, 0xd1, 0x67, 0xb2}
 };
+static const GUID Flux_IID_Grid = {
+  0xb17d6187, 0x0907, 0x464b, {0xa1, 0x68, 0x0e, 0xf1, 0x7a, 0x15, 0x72, 0xb1}
+};
+static const GUID Flux_IID_GridItem = {
+  0xd02541f1, 0xfb81, 0x4d64, {0xae, 0x32, 0xf5, 0x20, 0xf8, 0xa6, 0xdb, 0xd1}
+};
+static const GUID Flux_IID_Table = {
+  0x9c860395, 0x97b3, 0x490a, {0xb5, 0x2a, 0x85, 0x8c, 0xc2, 0x2a, 0xf1, 0x66}
+};
+static const GUID Flux_IID_TableItem = {
+  0xb9734fa6, 0x771f, 0x4d78, {0x9c, 0x90, 0x25, 0x17, 0x99, 0x93, 0x49, 0xcd}
+};
+static const GUID Flux_IID_ItemContainer = {
+  0xe747770b, 0x39ce, 0x4382, {0xab, 0x30, 0xd8, 0xfb, 0x3f, 0x33, 0x6f, 0x24}
+};
+static const GUID Flux_IID_VirtualizedItem = {
+  0xcb98b665, 0x2d35, 0x4fac, {0xad, 0x35, 0xf3, 0xc6, 0x0d, 0x0c, 0x0b, 0x8b}
+};
+static const GUID Flux_IID_Text = {
+  0x3589c92c, 0x63f3, 0x4367, {0x99, 0xbb, 0xad, 0xa6, 0x53, 0xb7, 0x7c, 0xf2}
+};
+static const GUID Flux_IID_Text2 = {
+  0x0dc5e6ed, 0x3e16, 0x4bf1, {0x8f, 0x9a, 0xa9, 0x79, 0x87, 0x8b, 0xc1, 0x95}
+};
 
 
 #define SELF_SIMPLE(p) FLUX_UIA_SELF(p, lpVtblSimple)
@@ -96,16 +121,24 @@ typedef struct UiaPatternSlot {
 } UiaPatternSlot;
 
 static UiaPatternSlot const kUiaPatterns [] = {
-  {FLUX_UIA_P_INVOKE,         10000, &Flux_IID_Invoke,         offsetof(FluxUia, lpVtblInvoke)    },
-  {FLUX_UIA_P_TOGGLE,         10015, &Flux_IID_Toggle,         offsetof(FluxUia, lpVtblToggle)    },
-  {FLUX_UIA_P_RANGE,          10003, &Flux_IID_RangeValue,     offsetof(FluxUia, lpVtblRange)     },
-  {FLUX_UIA_P_VALUE,          10002, &Flux_IID_Value,          offsetof(FluxUia, lpVtblValue)     },
-  {FLUX_UIA_P_SELECTION_ITEM, 10010, &Flux_IID_SelectionItem,  offsetof(FluxUia, lpVtblSelection) },
-  {FLUX_UIA_P_SCROLL,         10004, &Flux_IID_Scroll,         offsetof(FluxUia, lpVtblScroll)    },
-  {FLUX_UIA_P_SCROLL_ITEM,    10017, &Flux_IID_ScrollItem,     offsetof(FluxUia, lpVtblScrollItem)},
-  {FLUX_UIA_P_EXPAND,         10005, &Flux_IID_ExpandCollapse, offsetof(FluxUia, lpVtblExpand)    },
-  {FLUX_UIA_P_SELECTION,      10001, &Flux_IID_Selection,      offsetof(FluxUia, lpVtblSelectionC)},
-  {FLUX_UIA_P_WINDOW,         10009, &Flux_IID_Window,         offsetof(FluxUia, lpVtblWindow)    },
+  {FLUX_UIA_P_INVOKE,         10000, &Flux_IID_Invoke,          offsetof(FluxUia, lpVtblInvoke)    },
+  {FLUX_UIA_P_TOGGLE,         10015, &Flux_IID_Toggle,          offsetof(FluxUia, lpVtblToggle)    },
+  {FLUX_UIA_P_RANGE,          10003, &Flux_IID_RangeValue,      offsetof(FluxUia, lpVtblRange)     },
+  {FLUX_UIA_P_VALUE,          10002, &Flux_IID_Value,           offsetof(FluxUia, lpVtblValue)     },
+  {FLUX_UIA_P_SELECTION_ITEM, 10010, &Flux_IID_SelectionItem,   offsetof(FluxUia, lpVtblSelection) },
+  {FLUX_UIA_P_SCROLL,         10004, &Flux_IID_Scroll,          offsetof(FluxUia, lpVtblScroll)    },
+  {FLUX_UIA_P_SCROLL_ITEM,    10017, &Flux_IID_ScrollItem,      offsetof(FluxUia, lpVtblScrollItem)},
+  {FLUX_UIA_P_EXPAND,         10005, &Flux_IID_ExpandCollapse,  offsetof(FluxUia, lpVtblExpand)    },
+  {FLUX_UIA_P_SELECTION,      10001, &Flux_IID_Selection,       offsetof(FluxUia, lpVtblSelectionC)},
+  {FLUX_UIA_P_WINDOW,         10009, &Flux_IID_Window,          offsetof(FluxUia, lpVtblWindow)    },
+  {FLUX_UIA_P_GRID,           10006, &Flux_IID_Grid,            offsetof(FluxUia, lpVtblGrid)      },
+  {FLUX_UIA_P_GRID_ITEM,      10007, &Flux_IID_GridItem,        offsetof(FluxUia, lpVtblGridItem)  },
+  {FLUX_UIA_P_TABLE,          10012, &Flux_IID_Table,           offsetof(FluxUia, lpVtblTable)     },
+  {FLUX_UIA_P_TABLE_ITEM,     10013, &Flux_IID_TableItem,       offsetof(FluxUia, lpVtblTableItem) },
+  {FLUX_UIA_P_ITEMS,          10019, &Flux_IID_ItemContainer,   offsetof(FluxUia, lpVtblItems)     },
+  {FLUX_UIA_P_VIRTUAL,        10020, &Flux_IID_VirtualizedItem, offsetof(FluxUia, lpVtblVirtual)   },
+  {FLUX_UIA_P_TEXT,           10014, &Flux_IID_Text,            offsetof(FluxUia, lpVtblText)      },
+  {FLUX_UIA_P_TEXT2,          10024, &Flux_IID_Text2,           offsetof(FluxUia, lpVtblText)      },
 };
 
 static FluxNodeData *uia_node_data(FluxUia const *self) {
@@ -127,6 +160,16 @@ static FluxUiaSub const *uia_sub(FluxUia const *self) {
 static bool uia_sub_span(FluxUia const *self, int *first, int *last) {
 	FluxUiaSub const *s = uia_sub(self);
 	return s && s->span && s->span(self->info.store, self->node, first, last) && *first <= *last;
+}
+
+int flux_uia_sub_heads(FluxUia const *self) {
+	FluxUiaSub const *s = uia_sub(self);
+	return s && s->heads ? s->heads(self->info.store, self->node) : 0;
+}
+
+bool flux_uia_sub_range(FluxUiaContext const *info, XentNodeId node, int *first, int *last) {
+	FluxUia probe = {.info = *info, .node = node, .sub = -1};
+	return uia_sub_span(&probe, first, last);
 }
 
 static FluxUiaControlInfo uia_sub_info(FluxUia const *self) {
@@ -229,6 +272,13 @@ static void variant_set_i4(VARIANT *out, int value) {
 	out->lVal = value;
 }
 
+static void variant_set_id(VARIANT *out, XentNodeId node) {
+	wchar_t text [24];
+	swprintf(text, sizeof(text) / sizeof(text [0]), L"%llu", ( unsigned long long ) node);
+	out->bstrVal = SysAllocString(text);
+	out->vt      = out->bstrVal ? VT_BSTR : VT_EMPTY;
+}
+
 static bool uia_has_focus(FluxUia *self) {
 	FluxNodeData *nd = uia_node_data(self);
 	if (!nd || !nd->state.focused || GetFocus() != self->info.hwnd) return false;
@@ -247,7 +297,7 @@ static bool s_get_scalar_property(FluxUia *self, FluxUiaControlInfo info, PROPER
 	switch (id) {
 	case FLUX_UIA_PROP_CONTROL_TYPE : variant_set_i4(out, info.control_type); return true;
 	case FLUX_UIA_PROP_AUTOMATION_ID :
-		if (self->sub < 0) variant_set_i4(out, ( int ) self->node);
+		if (self->sub < 0) variant_set_id(out, self->node);
 		return true;
 	case FLUX_UIA_PROP_IS_ENABLED : variant_set_bool(out, xent_sem_enabled(self->info.ctx, self->node)); return true;
 	case FLUX_UIA_PROP_IS_CONTROL_ELEMENT    :
@@ -256,6 +306,19 @@ static bool s_get_scalar_property(FluxUia *self, FluxUiaControlInfo info, PROPER
 	case FLUX_UIA_PROP_HAS_KEYBOARD_FOCUS    : variant_set_bool(out, uia_has_focus(self)); return true;
 	default                                  : return false;
 	}
+}
+
+static char const *uia_name_text(FluxUia *self, char *text, size_t size) {
+	if (self->sub >= 0) {
+		FluxUiaSub const *s = uia_sub(self);
+		if (s && s->name) s->name(self->info.store, self->node, self->sub, text, size);
+		return text;
+	}
+	char const *label = xent_sem_label(self->info.ctx, self->node);
+	if (label && label [0]) return label;
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
+	if (h && h->name) h->name(self->info.store, self->node, text, size);
+	return text;
 }
 
 static HRESULT STDMETHODCALLTYPE s_get_property(IRawElementProviderSimple *p, PROPERTYID id, VARIANT *out) {
@@ -267,10 +330,8 @@ static HRESULT STDMETHODCALLTYPE s_get_property(IRawElementProviderSimple *p, PR
 	if (s_get_scalar_property(self, info, id, out)) return S_OK;
 	if (id != FLUX_UIA_PROP_NAME) return S_OK;
 
-	char              text [128] = {0};
-	FluxUiaSub const *s          = self->sub >= 0 ? uia_sub(self) : NULL;
-	if (s && s->name) s->name(self->info.store, self->node, self->sub, text, sizeof(text));
-	BSTR name = utf8_to_bstr(self->sub >= 0 ? text : xent_sem_label(self->info.ctx, self->node));
+	char text [128] = {0};
+	BSTR name       = utf8_to_bstr(uia_name_text(self, text, sizeof(text)));
 	if (name) {
 		out->vt      = VT_BSTR;
 		out->bstrVal = name;
@@ -295,6 +356,10 @@ static IRawElementProviderSimpleVtbl const g_simple_vtbl = {
   s_get_property,
   s_get_host,
 };
+
+FluxUia *flux_uia_unwrap(IRawElementProviderSimple *p) {
+	return p && p->lpVtbl == &g_simple_vtbl ? SELF_SIMPLE(p) : NULL;
+}
 
 static HRESULT STDMETHODCALLTYPE f_qi(IRawElementProviderFragment *p, REFIID riid, void **ppv) {
 	return flux_uia_qi(SELF_FRAG(p), riid, ppv);
@@ -321,16 +386,24 @@ static IRawElementProviderFragment *uia_wrap_sub(FluxUia *self, int sub) {
 	return p ? ( IRawElementProviderFragment * ) &p->lpVtblFragment : NULL;
 }
 
-static IRawElementProviderFragment *uia_navigate_sub(FluxUia *self, enum NavigateDirection dir) {
-	int  first = 0, last = -1;
+static int uia_sub_step(FluxUia *self, int step) {
+	int  first = 0, last = -1, heads = flux_uia_sub_heads(self);
 	bool span = uia_sub_span(self, &first, &last);
-	switch (dir) {
-	case NavigateDirection_Parent      : return uia_wrap(self, self->node);
-	case NavigateDirection_NextSibling : return span && self->sub < last ? uia_wrap_sub(self, self->sub + 1) : NULL;
-	case NavigateDirection_PreviousSibling :
-		return span && self->sub > first ? uia_wrap_sub(self, self->sub - 1) : NULL;
-	default : return NULL;
+	int  at   = self->sub + step;
+	if (self->sub >= FLUX_UIA_SUB_LONE) return -1;
+	if (self->sub >= FLUX_UIA_SUB_HEAD) {
+		if (at >= FLUX_UIA_SUB_HEAD && at < FLUX_UIA_SUB_HEAD + heads) return at;
+		return step > 0 && span ? first : -1;
 	}
+	if (span && at >= first && at <= last) return at;
+	return step < 0 && span && self->sub == first && heads > 0 ? FLUX_UIA_SUB_HEAD + heads - 1 : -1;
+}
+
+static IRawElementProviderFragment *uia_navigate_sub(FluxUia *self, enum NavigateDirection dir) {
+	if (dir == NavigateDirection_Parent) return uia_wrap(self, self->node);
+	if (dir != NavigateDirection_NextSibling && dir != NavigateDirection_PreviousSibling) return NULL;
+	int at = uia_sub_step(self, dir == NavigateDirection_NextSibling ? 1 : -1);
+	return at >= 0 ? uia_wrap_sub(self, at) : NULL;
 }
 
 static XentNodeId uia_navigate_target(FluxUia *self, enum NavigateDirection dir) {
@@ -348,10 +421,12 @@ static XentNodeId uia_navigate_target(FluxUia *self, enum NavigateDirection dir)
 
 static IRawElementProviderFragment *uia_navigate(FluxUia *self, enum NavigateDirection dir) {
 	if (self->sub >= 0) return uia_navigate_sub(self, dir);
-	int  first = 0, last = -1;
+	int  first = 0, last = -1, heads = flux_uia_sub_heads(self);
 	bool span = uia_sub_span(self, &first, &last);
+	if (heads > 0 && dir == NavigateDirection_FirstChild) return uia_wrap_sub(self, FLUX_UIA_SUB_HEAD);
 	if (span && dir == NavigateDirection_FirstChild) return uia_wrap_sub(self, first);
 	if (span && dir == NavigateDirection_LastChild) return uia_wrap_sub(self, last);
+	if (heads > 0 && dir == NavigateDirection_LastChild) return uia_wrap_sub(self, FLUX_UIA_SUB_HEAD + heads - 1);
 	return uia_wrap(self, uia_navigate_target(self, dir));
 }
 
@@ -382,13 +457,13 @@ static void uia_sub_rect(FluxUia const *self, XentRect *rect) {
 	FluxUiaSub const *s    = uia_sub(self);
 	XentRect          node = *rect;
 	if (!s || !s->rect || !s->rect(self->info.store, self->node, self->sub, rect)) return;
-	if (xent_resolved_dir(self->info.ctx, self->node) == XENT_DIRECTION_RTL)
+	if (rect->w > 0.0f && xent_resolved_dir(self->info.ctx, self->node) == XENT_DIRECTION_RTL)
 		rect->x = 2.0f * node.x + node.w - rect->x - rect->w;
 }
 
-static bool uia_popup_origin(FluxUia const *self, POINT *origin) {
-	for (XentNodeId n = self->node; n != XENT_NODE_INVALID; n = xent_node_parent(self->info.ctx, n)) {
-		FluxNodeData const *nd = flux_store_find(self->info.store, n);
+static bool uia_popup_origin(FluxUiaContext const *info, XentNodeId node, POINT *origin) {
+	for (XentNodeId n = node; n != XENT_NODE_INVALID; n = xent_node_parent(info->ctx, n)) {
+		FluxNodeData const *nd = flux_store_find(info->store, n);
 		if (!nd || !nd->popup) continue;
 		FluxPoint at = flux_popup_contentorigin(nd->popup);
 		*origin      = (POINT) {( LONG ) at.x, ( LONG ) at.y};
@@ -397,15 +472,23 @@ static bool uia_popup_origin(FluxUia const *self, POINT *origin) {
 	return false;
 }
 
+void flux_uia_origin(FluxUiaContext const *info, XentNodeId node, POINT *origin, float *scale) {
+	*scale  = ( float ) GetDpiForWindow(info->hwnd) / 96.0f;
+	*origin = (POINT) {0, 0};
+	if (!uia_popup_origin(info, node, origin)) ClientToScreen(info->hwnd, origin);
+}
+
 static HRESULT STDMETHODCALLTYPE f_get_bounds(IRawElementProviderFragment *p, struct UiaRect *out) {
 	FluxUia *self = SELF_FRAG(p);
 	if (!out) return E_POINTER;
 	XentRect rect = {0};
 	xent_layout_rect(self->info.ctx, self->node, &rect);
 	if (self->sub >= 0) uia_sub_rect(self, &rect);
-	float scale  = ( float ) GetDpiForWindow(self->info.hwnd) / 96.0f;
+	*out = (struct UiaRect) {0};
+	if (rect.w <= 0.0f && rect.h <= 0.0f) return S_OK;
+	float scale  = 1.0f;
 	POINT origin = {0, 0};
-	if (!uia_popup_origin(self, &origin)) ClientToScreen(self->info.hwnd, &origin);
+	flux_uia_origin(&self->info, self->node, &origin, &scale);
 	out->left   = origin.x + rect.x * scale;
 	out->top    = origin.y + rect.y * scale;
 	out->width  = rect.w * scale;
@@ -687,8 +770,9 @@ static char const             *uia_text_content(FluxUia *self) {
 }
 
 static bool uia_value_is_picker(FluxUia const *self) {
-	FluxControlType t = flux_node_type(self->info.store, self->node);
-	return t == FLUX_CONTROL_DATE_PICKER || t == FLUX_CONTROL_TIME_PICKER;
+	FluxControlType     t = flux_node_type(self->info.store, self->node);
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
+	return t == FLUX_CONTROL_DATE_PICKER || t == FLUX_CONTROL_TIME_PICKER || (h && h->text && !h->set_text);
 }
 
 static HRESULT STDMETHODCALLTYPE val_set_value(IValueProvider *p, LPCWSTR value) {
@@ -748,6 +832,13 @@ FluxUia *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	p->lpVtblScroll     = &flux_uia_scroll_vtbl;
 	p->lpVtblScrollItem = &flux_uia_scrollitem_vtbl;
 	p->lpVtblExpand     = &flux_uia_expand_vtbl;
+	p->lpVtblGrid       = &flux_uia_grid_vtbl;
+	p->lpVtblGridItem   = &flux_uia_griditem_vtbl;
+	p->lpVtblTable      = &flux_uia_table_vtbl;
+	p->lpVtblTableItem  = &flux_uia_tableitem_vtbl;
+	p->lpVtblItems      = &flux_uia_items_vtbl;
+	p->lpVtblVirtual    = &flux_uia_virtual_vtbl;
+	p->lpVtblText       = &flux_uia_text_vtbl;
 	p->ref              = 1;
 	p->info             = *info;
 	p->node             = node;

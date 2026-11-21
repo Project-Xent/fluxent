@@ -62,6 +62,7 @@ typedef struct FluxCalendarData {
 	float              header_line, caption_line, nav_line;
 	XentSize           item [3];
 	char               weekday [7][16];
+	char               uia_value [128];
 	int               *selected;
 	size_t             selected_count, selected_capacity;
 } FluxCalendarData;

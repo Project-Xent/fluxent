@@ -1,4 +1,6 @@
+#include "a11y/flux_uia_ids.h"
 #include "controls/flux_control_uia.h"
+#include "controls/flux_module.h"
 #include "controls/behavior/flux_list_internal.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
@@ -355,6 +357,8 @@ void flux_list_release(FluxListViewData *ld) {
 	free(ld->header_sizes.slots);
 	free(ld->groups);
 	free(ld->band_prev);
+	free(ld->names);
+	free(ld->name_at);
 }
 
 XentNodeId flux_list_init(FluxListViewDesc const *info) {
@@ -555,6 +559,43 @@ bool flux_list_groups(FluxStore *store, XentNodeId list, void const *sizes, int 
 	if (!ld || !flux_list_setgroups(ld, sizes, count)) return false;
 	ld->pinned = false;
 	list_apply_host_extent(ld);
+	return true;
+}
+
+static void list_names_clear(FluxListViewData *ld) {
+	free(ld->names);
+	free(ld->name_at);
+	ld->names   = NULL;
+	ld->name_at = NULL;
+	ld->nname   = 0;
+}
+
+static int list_names_count(char const *data, uint32_t len) {
+	int n = 0;
+	for (uint32_t i = 0; i < len; i++) n += data [i] == '\0';
+	return n;
+}
+
+bool flux_list_names(FluxStore *store, XentNodeId list, void const *data, uint32_t len) {
+	FluxListViewData *ld = list_data(store, list);
+	if (!ld) return false;
+	list_names_clear(ld);
+	if (!data || len == 0) return true;
+	if ((( char const * ) data) [len - 1] != '\0') return false;
+	int n       = list_names_count(data, len);
+	ld->names   = ( char * ) malloc(len);
+	ld->name_at = ( uint32_t * ) malloc(sizeof(uint32_t) * ( size_t ) n);
+	if (!ld->names || !ld->name_at) {
+		list_names_clear(ld);
+		return false;
+	}
+	memcpy(ld->names, data, len);
+	uint32_t at = 0u;
+	for (int i = 0; i < n; i++) {
+		ld->name_at [i]  = at;
+		at              += ( uint32_t ) strlen(ld->names + at) + 1u;
+	}
+	ld->nname = n;
 	return true;
 }
 
@@ -893,16 +934,111 @@ static void list_uia_add(FluxListViewData *ld, int index, bool add) {
 	flux_list_report(ld, index);
 }
 
+static bool list_uia_select_at(FluxListViewData *ld, int index, int op) {
+	if (index < 0 || index >= ld->count || ld->sel_mode == XTK_LIST_SELECT_NONE) return false;
+	bool add   = op != FLUX_UIA_SEL_REMOVE;
+	bool range = multi_mode(ld) && op != FLUX_UIA_SEL_SELECT;
+	if (range) list_uia_add(ld, index, add);
+	if (!range && add) sel_single(ld, index);
+	if (!range && !add && ld->selected == index) list_select_one(ld, -1);
+	return true;
+}
+
 bool flux_list_uia_select(FluxStore *store, XentNodeId node, int op) {
 	FluxListItemData const *it = item_data(store, node);
-	if (!it || !it->owner || it->header || it->index < 0 || it->owner->sel_mode == XTK_LIST_SELECT_NONE) return false;
-	FluxListViewData *ld    = it->owner;
-	bool              add   = op != FLUX_UIA_SEL_REMOVE;
-	bool              range = multi_mode(ld) && op != FLUX_UIA_SEL_SELECT;
-	if (range) list_uia_add(ld, it->index, add);
-	if (!range && add) sel_single(ld, it->index);
-	if (!range && !add && ld->selected == it->index) list_select_one(ld, -1);
+	return it && it->owner && !it->header && list_uia_select_at(it->owner, it->index, op);
+}
+
+int flux_list_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns) {
+	FluxListViewData *ld = list_data(store, node);
+	( void ) sub;
+	*patterns = FLUX_UIA_P_VIRTUAL | FLUX_UIA_P_SCROLL_ITEM;
+	if (ld && ld->sel_mode != XTK_LIST_SELECT_NONE) *patterns |= FLUX_UIA_P_SELECTION_ITEM;
+	return FLUX_UIA_LISTITEM;
+}
+
+bool flux_list_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect *rect) {
+	( void ) store;
+	( void ) node;
+	( void ) sub;
+	*rect = (XentRect) {0};
 	return true;
+}
+
+bool flux_list_uia_subselected(FluxStore *store, XentNodeId node, int sub) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld && sub >= 0 && sub < ld->count && list_row_selected(ld, sub);
+}
+
+bool flux_list_uia_subselect(FluxStore *store, XentNodeId node, int sub, int op) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld && list_uia_select_at(ld, sub, op);
+}
+
+static char const *list_name_at(FluxListViewData const *ld, int index) {
+	return ld && index >= 0 && index < ld->nname ? ld->names + ld->name_at [index] : "";
+}
+
+void flux_uia_name_copy(char const *src, char *out, size_t size) {
+	if (!out || size == 0) return;
+	size_t n = strlen(src);
+	if (n >= size) {
+		n = size - 1;
+		while (n > 0 && (( unsigned char ) src [n] & 0xc0u) == 0x80u) n--;
+	}
+	memcpy(out, src, n);
+	out [n] = '\0';
+}
+
+void flux_list_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size) {
+	flux_uia_name_copy(list_name_at(list_data(store, node), sub), out, size);
+}
+
+void flux_listitem_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxListItemData const *it = item_data(store, node);
+	flux_uia_name_copy(it && !it->header ? list_name_at(it->owner, it->index) : "", out, size);
+}
+
+static FluxUiaHooks const list_uia_hidden = {.role = FLUX_UIA_HIDDEN};
+
+static void               list_uia_hide(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (nd) nd->uia = &list_uia_hidden;
+}
+
+void flux_list_uia_flatten(FluxStore *store, XentNodeId list) {
+	FluxListViewData *ld = list_data(store, list);
+	if (!ld) return;
+	list_uia_hide(store, ld->scroll);
+	list_uia_hide(store, ld->host);
+}
+
+XentNodeId flux_list_uia_scroller(FluxStore *store, XentNodeId node) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld ? ld->scroll : XENT_NODE_INVALID;
+}
+
+int flux_list_uia_count(FluxStore *store, XentNodeId node) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld ? ld->count : 0;
+}
+
+int flux_list_uia_index(FluxStore *store, XentNodeId node, XentNodeId child) {
+	FluxListViewData       *ld = list_data(store, node);
+	FluxListItemData const *it = item_data(store, child);
+	return ld && it && it->owner == ld && !it->header ? it->index : -1;
+}
+
+XentNodeId flux_list_uia_realized(FluxStore *store, XentNodeId node, int sub) {
+	FluxListViewData *ld = list_data(store, node);
+	if (!ld || sub < ld->realized_first || sub > ld->realized_last) return XENT_NODE_INVALID;
+	for (XentNodeId c = flux_list_next_row(ld, XENT_NODE_INVALID); c != XENT_NODE_INVALID;
+	  c               = flux_list_next_row(ld, c))
+	{
+		FluxListItemData const *it = item_data(store, c);
+		if (it && !it->header && it->index == sub) return c;
+	}
+	return XENT_NODE_INVALID;
 }
 
 unsigned flux_list_uia_mode(FluxStore *store, XentNodeId node) {

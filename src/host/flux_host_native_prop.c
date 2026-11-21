@@ -622,6 +622,11 @@ HANDLER(list_groups) {
 	return flux_list_groups(R->store, node, v->u.bytes.data, ( int ) (v->u.bytes.len / sizeof(int32_t)));
 }
 
+HANDLER(list_names) {
+	( void ) control;
+	return flux_list_names(R->store, node, v->u.bytes.data, v->u.bytes.len);
+}
+
 SETTER(list_selected, flux_list_set_selected, v->u.i32)
 SETTER(list_first, flux_list_stage_first, v->u.i32)
 SETTER(list_mode, flux_list_setmode, ( XtkListSelMode ) v->u.u32)
@@ -635,6 +640,7 @@ FluxPropHandler const flux_props_list [] = {
   ON(COLUMN_COUNT, I32, list_columns),
   ON(SELECTION_MODE, ENUM, list_mode),
   ON(GROUPS, BYTES, list_groups),
+  ON(ITEMS, BYTES, list_names),
   ON(RECTANGLE_SELECTION, BOOL, list_rectsel),
   END,
 };

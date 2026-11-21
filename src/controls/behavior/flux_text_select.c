@@ -1,4 +1,5 @@
 #include "controls/behavior/flux_text_select.h"
+#include "controls/flux_module.h"
 
 #include "render/flux_fluent.h"
 #include "fluxent/flux_data.h"
@@ -113,4 +114,37 @@ void flux_text_select_wire(FluxNodeData *nd, FluxTextData *td, bool selectable) 
 	nd->behavior.on_key_ctx          = ctx;
 	nd->behavior.on_blur             = selectable ? text_select_blur : NULL;
 	nd->behavior.on_blur_ctx         = ctx;
+}
+
+static FluxTextData *text_uia_data(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->component_type == FLUX_CONTROL_TEXT ? ( FluxTextData * ) nd->component_data : NULL;
+}
+
+bool flux_text_uia_view(FluxStore *store, XentNodeId node, FluxUiaTextView *out) {
+	FluxTextData *td   = text_uia_data(store, node);
+	XentRect      rect = {0};
+	if (!td || !td->ctx) return false;
+	xent_layout_rect(td->ctx, node, &rect);
+	*out = (FluxUiaTextView) {
+	  .renderer   = td->text,
+	  .text       = td->content ? td->content : "",
+	  .style      = text_select_style(td),
+	  .layout_w   = rect.w,
+	  .clip       = {0.0f, 0.0f, rect.w, rect.h},
+	  .sel_start  = td->selection_start,
+	  .sel_end    = td->selection_end,
+	  .selectable = td->selectable,
+	  .readonly   = true,
+	};
+	out->style.color = td->text_color;
+	return true;
+}
+
+void flux_text_uia_select(FluxStore *store, XentNodeId node, uint32_t start, uint32_t end) {
+	FluxTextData *td = text_uia_data(store, node);
+	if (!td || !td->selectable) return;
+	td->selection_start = start;
+	td->selection_end   = end;
+	td->dragging        = false;
 }

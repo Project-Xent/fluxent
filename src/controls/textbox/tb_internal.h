@@ -120,6 +120,7 @@ void          tb_perform_paste(FluxTextBoxInputData *tb);
 FluxTextStyle tb_make_style(FluxTextBoxInputData const *tb);
 float         tb_visible_text_height(FluxTextBoxInputData const *tb, XentRect const *rect);
 float         tb_layout_width(FluxTextBoxInputData const *tb, float visible_w);
+float         tb_text_max_w(FluxTextBoxInputData *tb, FluxControlType ct);
 void          tb_update_scroll(FluxTextBoxInputData *tb);
 void          tb_clamp_scroll(FluxTextBoxInputData *tb);
 void          tb_update_ime_position(FluxTextBoxInputData *tb);

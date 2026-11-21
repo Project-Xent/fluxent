@@ -67,7 +67,7 @@ static float tb_reserved_trailing_w(FluxTextBoxInputData const *tb, FluxControlT
 	}
 }
 
-static float tb_calc_text_max_w(FluxTextBoxInputData *tb, FluxControlType ct) {
+float tb_text_max_w(FluxTextBoxInputData *tb, FluxControlType ct) {
 	XentRect rect = {0};
 	xent_layout_rect(tb->ctx, tb->node, &rect);
 
@@ -122,7 +122,7 @@ static bool tb_caret_geometry(FluxTextBoxInputData *tb, FluxRect *out) {
 
 	XentRect rect = {0};
 	xent_layout_rect(tb->ctx, tb->node, &rect);
-	float visible_w = tb_calc_text_max_w(tb, flux_node_type(tb->store, tb->node));
+	float visible_w = tb_text_max_w(tb, flux_node_type(tb->store, tb->node));
 	if (visible_w <= 0.0f) return false;
 
 	FluxTextStyle      ts      = tb_make_style(tb);
@@ -140,7 +140,7 @@ static uint32_t tb_offset_at_point(FluxTextBoxInputData *tb, float text_x, float
 	FluxText *tr = tb->app ? flux_app_text(tb->app) : NULL;
 	if (!tr) return tb->base.cursor_position;
 
-	float visible_w = tb_calc_text_max_w(tb, flux_node_type(tb->store, tb->node));
+	float visible_w = tb_text_max_w(tb, flux_node_type(tb->store, tb->node));
 	if (visible_w <= 0.0f) return tb->base.cursor_position;
 
 	FluxTextStyle        ts      = tb_make_style(tb);
@@ -290,7 +290,7 @@ static char const *tb_password_mask_text(FluxTextBoxInputData *tb, char stack [T
 
 static uint32_t
 tb_hit_test_byte_pos(FluxTextBoxInputData *tb, FluxText *tr, FluxControlType ct, float local_x, float local_y) {
-	float         max_w    = tb_calc_text_max_w(tb, ct);
+	float         max_w    = tb_text_max_w(tb, ct);
 	float         text_x   = local_x - FLUX_TEXTBOX_PAD_L + tb->base.scroll_offset_x;
 	float         text_y   = local_y - FLUX_TEXTBOX_PAD_T + tb->base.scroll_offset_y;
 	FluxTextStyle ts       = tb_make_style(tb);

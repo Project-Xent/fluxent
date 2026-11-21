@@ -69,10 +69,28 @@ static XtkEl *contact_header(XtkUi *ui, void *env, int group) {
 	return xtk_text(ui, xtk_fmt(ui, "%c", 'A' + group), (XtkTextDesc) {0});
 }
 
+static char const *contact_text(char *buf, size_t size, int index) {
+	char const *first = kFirst [index % (sizeof(kFirst) / sizeof(kFirst [0]))];
+	snprintf(buf, size, "%c. %s (#%d)", 'A' + contact_group(index), first, index);
+	return buf;
+}
+
 static XtkEl *contact_row(XtkUi *ui, void *env, int index) {
 	( void ) env;
-	char const *first = kFirst [index % (sizeof(kFirst) / sizeof(kFirst [0]))];
-	return xtk_text(ui, xtk_fmt(ui, "%c. %s (#%d)", 'A' + contact_group(index), first, index), (XtkTextDesc) {0});
+	char buf [48];
+	return xtk_text(ui, xtk_fmt(ui, "%s", contact_text(buf, sizeof(buf), index)), (XtkTextDesc) {0});
+}
+
+static char        kContactText [256][48];
+static char const *kContactNames [256];
+
+static int         contact_names(void) {
+	int32_t const *groups = contact_groups();
+	int            count  = 0;
+	for (int g = 0; g < 26; g++) count += groups [g];
+	if (count > 256) count = 256;
+	for (int i = 0; i < count; i++) kContactNames [i] = contact_text(kContactText [i], sizeof(kContactText [i]), i);
+	return count;
 }
 
 XtkEl *page_listview(XtkUi *ui, Model const *m) {
@@ -154,6 +172,8 @@ XtkEl *page_listview(XtkUi *ui, Model const *m) {
 				.groups       = contact_groups(),
 				.ngroup       = 26,
 				.group_header = contact_header,
+				.nname        = contact_names(),
+				.names        = kContactNames,
 			  }
 			),
 			NAN, 360.0f

@@ -746,10 +746,15 @@ static FluxCalendarGeom calendar_geom_at(FluxCalendarData const *d, XentRect con
 }
 
 int flux_calendar_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns) {
-	FluxCalendarData *d = calendar_data(store, node);
-	( void ) sub;
-	bool month = d && d->view == FLUX_CAL_MONTH;
-	*patterns  = month ? FLUX_UIA_P_SELECTION_ITEM : FLUX_UIA_P_INVOKE;
+	FluxCalendarData *d     = calendar_data(store, node);
+	bool              month = d && d->view == FLUX_CAL_MONTH;
+	*patterns               = 0u;
+	if (sub >= FLUX_UIA_SUB_LONE) return FLUX_UIA_CUSTOM;
+	if (sub >= FLUX_UIA_SUB_HEAD) return FLUX_UIA_TEXT;
+	*patterns = (month ? FLUX_UIA_P_SELECTION_ITEM : FLUX_UIA_P_INVOKE)
+	          | FLUX_UIA_P_TABLE_ITEM
+	          | FLUX_UIA_P_GRID_ITEM
+	          | FLUX_UIA_P_SCROLL_ITEM;
 	return month ? FLUX_UIA_DATAITEM : FLUX_UIA_BUTTON;
 }
 
@@ -760,9 +765,17 @@ bool flux_calendar_uia_span(FluxStore *store, XentNodeId node, int *first, int *
 	return true;
 }
 
+static bool calendar_head_rect(FluxCalendarData const *d, int head, XentRect *rect) {
+	FluxCalendarGeom g = calendar_geom_at(d, rect);
+	float            w = g.weekdays.w / 7.0f;
+	*rect              = (XentRect) {g.weekdays.x + ( float ) head * w, g.weekdays.y, w, g.weekdays.h};
+	return true;
+}
+
 bool flux_calendar_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect *rect) {
 	FluxCalendarData *d = calendar_data(store, node);
-	if (!d) return false;
+	if (!d || sub >= FLUX_UIA_SUB_LONE) return false;
+	if (sub >= FLUX_UIA_SUB_HEAD) return calendar_head_rect(d, sub - FLUX_UIA_SUB_HEAD, rect);
 	FluxCalendarGeom g      = calendar_geom_at(d, rect);
 	int              slot   = sub + flux_calendar_start(d, d->view);
 	float            rowpos = flux_calendar_rowpos(d, d->view, calendar_now());
@@ -771,9 +784,22 @@ bool flux_calendar_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect
 	return true;
 }
 
+static void calendar_lone_name(int key, char *out, size_t size) {
+	if (flux_date_month(key) == 0) flux_locale_formattemplate(key + 101, L"year", out, size);
+	else flux_locale_formattemplate(key, L"month year", out, size);
+}
+
 void flux_calendar_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size) {
 	FluxCalendarData *d = calendar_data(store, node);
 	if (!d) return;
+	if (sub >= FLUX_UIA_SUB_LONE) {
+		calendar_lone_name(sub - FLUX_UIA_SUB_LONE, out, size);
+		return;
+	}
+	if (sub >= FLUX_UIA_SUB_HEAD) {
+		snprintf(out, size, "%s", d->weekday [(d->first_day + sub - FLUX_UIA_SUB_HEAD) % 7]);
+		return;
+	}
 	int date = flux_calendar_date_at(d, d->view, sub);
 	if (d->view == FLUX_CAL_MONTH) snprintf(out, size, "%d", flux_date_day(date));
 	else if (d->view == FLUX_CAL_YEAR) flux_locale_formatdate(date, L"MMMM", out, size);
@@ -817,4 +843,53 @@ bool flux_calendar_uia_select(FluxStore *store, XentNodeId node, int sub, int op
 unsigned flux_calendar_uia_mode(FluxStore *store, XentNodeId node) {
 	FluxCalendarData *d = calendar_data(store, node);
 	return d && d->mode == XTK_CALENDAR_MULTIPLE ? FLUX_UIA_SEL_MULTIPLE : 0u;
+}
+
+int flux_calendar_uia_heads(FluxStore *store, XentNodeId node) {
+	FluxCalendarData *d = calendar_data(store, node);
+	return d && d->view == FLUX_CAL_MONTH ? 7 : 0;
+}
+
+bool flux_calendar_uia_grid(FluxStore *store, XentNodeId node, int *rows, int *cols) {
+	FluxCalendarData *d = calendar_data(store, node);
+	if (!d) return false;
+	calendar_dims(d, d->view, cols, rows);
+	return true;
+}
+
+bool flux_calendar_uia_cell(FluxStore *store, XentNodeId node, int sub, int *row, int *col) {
+	FluxCalendarData *d = calendar_data(store, node);
+	if (!d || sub < 0 || sub >= flux_calendar_size(d, d->view)) return false;
+	int cols, rows;
+	calendar_dims(d, d->view, &cols, &rows);
+	if (cols <= 0) return false;
+	int slot = sub + flux_calendar_start(d, d->view);
+	int top  = ( int ) floorf(flux_calendar_rowpos(d, d->view, calendar_now()) + 0.001f);
+	*col     = slot % cols;
+	*row     = slot / cols - top;
+	return *row >= 0;
+}
+
+int flux_calendar_uia_rowhead(FluxStore *store, XentNodeId node, int sub) {
+	FluxCalendarData *d = calendar_data(store, node);
+	if (!d || d->view == FLUX_CAL_DECADE || sub < 0 || sub >= flux_calendar_size(d, d->view)) return -1;
+	int date  = flux_calendar_date_at(d, d->view, sub);
+	int month = d->view == FLUX_CAL_MONTH ? flux_date_month(date) : 0;
+	return FLUX_UIA_SUB_LONE + flux_date_pack(flux_date_year(date), month, month ? 1 : 0);
+}
+
+void flux_calendar_uia_scroll(FluxStore *store, XentNodeId node, int sub) {
+	FluxCalendarData *d = calendar_data(store, node);
+	if (!d || sub < 0 || sub >= flux_calendar_size(d, d->view)) return;
+	d->displayed = flux_calendar_date_at(d, d->view, sub);
+	calendar_bring_into_view(d);
+}
+
+char const *flux_calendar_uia_value(FluxStore *store, XentNodeId node) {
+	FluxCalendarData *d = calendar_data(store, node);
+	if (!d) return NULL;
+	if (d->selected_count == 1)
+		flux_locale_formattemplate(d->selected [0], L"day month.full year", d->uia_value, sizeof(d->uia_value));
+	else flux_calendar_header(d, calendar_now(), d->uia_value, sizeof(d->uia_value));
+	return d->uia_value;
 }

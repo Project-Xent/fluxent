@@ -2,6 +2,7 @@
 #include "a11y/flux_uia_object.h"
 #include "controls/data/flux_scroll_data.h"
 #include "controls/factory/flux_init_container.h"
+#include "controls/flux_module.h"
 #include "render/flux_scroll_geom.h"
 #include "store/flux_node_data.h"
 
@@ -10,6 +11,7 @@
 #define UIA_NO_SCROLL (-1.0)
 
 typedef struct UiaScrollView {
+	XentNodeId      node;
 	FluxScrollData *sd;
 	XentRect        rect;
 	float           max_x;
@@ -17,9 +19,12 @@ typedef struct UiaScrollView {
 } UiaScrollView;
 
 static bool uia_scroll_view(FluxUiaContext const *info, XentNodeId node, UiaScrollView *out) {
+	FluxUiaHooks const *h = flux_module_uia(info->store, node);
+	if (h && h->scroller) node = h->scroller(info->store, node);
 	FluxNodeData *nd
 	  = flux_node_type(info->store, node) == FLUX_CONTROL_SCROLL ? flux_store_find(info->store, node) : NULL;
-	out->sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
+	out->node = node;
+	out->sd   = nd ? ( FluxScrollData * ) nd->component_data : NULL;
 	if (!out->sd || !xent_layout_rect(info->ctx, node, &out->rect)) return false;
 	out->max_x = fmaxf(out->sd->content_w - out->rect.w, 0.0f);
 	out->max_y = fmaxf(out->sd->content_h - out->rect.h, 0.0f);
@@ -34,6 +39,28 @@ static float uia_scroll_step(enum ScrollAmount amount, float view) {
 	case ScrollAmount_SmallIncrement : return FLUX_SCROLLBAR_SMALL_CHANGE;
 	default                          : return 0.0f;
 	}
+}
+
+static FluxUiaHooks const *uia_scroll_hooks(FluxUia const *self) {
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
+	return h && h->scroll_info ? h : NULL;
+}
+
+static int uia_item_step(enum ScrollAmount amount) {
+	switch (amount) {
+	case ScrollAmount_LargeDecrement : return -5;
+	case ScrollAmount_SmallDecrement : return -1;
+	case ScrollAmount_LargeIncrement : return 5;
+	case ScrollAmount_SmallIncrement : return 1;
+	default                          : return 0;
+	}
+}
+
+static double uia_items_read(FluxUia const *self, FluxUiaHooks const *h, int what) {
+	double percent = 0.0, view = 100.0;
+	h->scroll_info(self->info.store, self->node, &percent, &view);
+	if (what & 1) return what & 2 ? view : percent;
+	return what & 2 ? 100.0 : UIA_NO_SCROLL;
 }
 
 static float                     uia_clamp(float v, float max) { return v < 0.0f ? 0.0f : (v > max ? max : v); }
@@ -51,40 +78,52 @@ static ULONG STDMETHODCALLTYPE scr_release(IScrollProvider *p) {
 }
 
 static HRESULT STDMETHODCALLTYPE scr_scroll(IScrollProvider *p, enum ScrollAmount h, enum ScrollAmount v) {
-	FluxUia      *self = FLUX_UIA_SELF(p, lpVtblScroll);
-	UiaScrollView sv;
+	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblScroll);
+	FluxUiaHooks const *hk   = uia_scroll_hooks(self);
+	UiaScrollView       sv;
+	if (hk && hk->scroll_by) hk->scroll_by(self->info.store, self->node, uia_item_step(v));
+	if (hk) return S_OK;
 	if (!uia_scroll_view(&self->info, self->node, &sv)) return UIA_E_ELEMENTNOTAVAILABLE;
 	if ((h != ScrollAmount_NoAmount && sv.max_x <= 0.0f) || (v != ScrollAmount_NoAmount && sv.max_y <= 0.0f))
 		return UIA_E_INVALIDOPERATION;
 	float x = uia_clamp(sv.sd->scroll_x + uia_scroll_step(h, sv.rect.w), sv.max_x);
 	float y = uia_clamp(sv.sd->scroll_y + uia_scroll_step(v, sv.rect.h), sv.max_y);
-	flux_scroll_request(self->info.store, self->node, x, y);
+	flux_scroll_request(self->info.store, sv.node, x, y);
 	return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE scr_set_percent(IScrollProvider *p, double h, double v) {
-	FluxUia      *self = FLUX_UIA_SELF(p, lpVtblScroll);
-	UiaScrollView sv;
+	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblScroll);
+	FluxUiaHooks const *hk   = uia_scroll_hooks(self);
+	UiaScrollView       sv;
+	if (hk) return hk->scroll_set && hk->scroll_set(self->info.store, self->node, v) ? S_OK : UIA_E_INVALIDOPERATION;
 	if (!uia_scroll_view(&self->info, self->node, &sv)) return UIA_E_ELEMENTNOTAVAILABLE;
 	if ((h != UIA_NO_SCROLL && (h < 0.0 || h > 100.0)) || (v != UIA_NO_SCROLL && (v < 0.0 || v > 100.0)))
 		return E_INVALIDARG;
 	float x = h == UIA_NO_SCROLL ? sv.sd->scroll_x : ( float ) (h / 100.0) * sv.max_x;
 	float y = v == UIA_NO_SCROLL ? sv.sd->scroll_y : ( float ) (v / 100.0) * sv.max_y;
-	flux_scroll_request(self->info.store, self->node, x, y);
+	flux_scroll_request(self->info.store, sv.node, x, y);
 	return S_OK;
 }
 
+static double uia_view_read(UiaScrollView const *sv, int what) {
+	float max  = what & 1 ? sv->max_y : sv->max_x;
+	float at   = what & 1 ? sv->sd->scroll_y : sv->sd->scroll_x;
+	float view = what & 1 ? sv->rect.h : sv->rect.w;
+	float all  = what & 1 ? sv->sd->content_h : sv->sd->content_w;
+	if (what & 2) return all > view ? 100.0 * view / all : 100.0;
+	return max > 0.0f ? 100.0 * at / max : UIA_NO_SCROLL;
+}
+
 static HRESULT uia_scroll_read(IScrollProvider *p, double *out, int what) {
-	FluxUia      *self = FLUX_UIA_SELF(p, lpVtblScroll);
-	UiaScrollView sv;
+	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblScroll);
+	FluxUiaHooks const *hk   = uia_scroll_hooks(self);
+	UiaScrollView       sv;
 	if (!out) return E_POINTER;
+	if (hk) *out = uia_items_read(self, hk, what);
+	if (hk) return S_OK;
 	if (!uia_scroll_view(&self->info, self->node, &sv)) return UIA_E_ELEMENTNOTAVAILABLE;
-	float max  = what & 1 ? sv.max_y : sv.max_x;
-	float at   = what & 1 ? sv.sd->scroll_y : sv.sd->scroll_x;
-	float view = what & 1 ? sv.rect.h : sv.rect.w;
-	float all  = what & 1 ? sv.sd->content_h : sv.sd->content_w;
-	if (what & 2) *out = all > view ? 100.0 * view / all : 100.0;
-	else *out = max > 0.0f ? 100.0 * at / max : UIA_NO_SCROLL;
+	*out = uia_view_read(&sv, what);
 	return S_OK;
 }
 
@@ -101,9 +140,13 @@ static HRESULT STDMETHODCALLTYPE scr_get_hview(IScrollProvider *p, double *out) 
 static HRESULT STDMETHODCALLTYPE scr_get_vview(IScrollProvider *p, double *out) { return uia_scroll_read(p, out, 3); }
 
 static HRESULT                   uia_scrollable(IScrollProvider *p, BOOL *out, bool vertical) {
-	FluxUia      *self = FLUX_UIA_SELF(p, lpVtblScroll);
-	UiaScrollView sv;
+	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblScroll);
+	FluxUiaHooks const *hk   = uia_scroll_hooks(self);
+	UiaScrollView       sv;
+	double              percent = 0.0, view = 0.0;
 	if (!out) return E_POINTER;
+	if (hk) *out = vertical && hk->scroll_info(self->info.store, self->node, &percent, &view);
+	if (hk) return S_OK;
 	*out = uia_scroll_view(&self->info, self->node, &sv) && (vertical ? sv.max_y : sv.max_x) > 0.0f;
 	return S_OK;
 }
@@ -148,20 +191,31 @@ static ULONG STDMETHODCALLTYPE sci_release(IScrollItemProvider *p) {
 	return flux_uia_release(FLUX_UIA_SELF(p, lpVtblScrollItem));
 }
 
-static HRESULT STDMETHODCALLTYPE sci_scroll_into_view(IScrollItemProvider *p) {
-	FluxUia      *self = FLUX_UIA_SELF(p, lpVtblScrollItem);
-	XentNodeId    host = xent_node_parent(self->info.ctx, self->node);
+static HRESULT uia_sub_scroll(FluxUia *self) {
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
+	if (!h || !h->sub || !h->sub->scroll) return UIA_E_INVALIDOPERATION;
+	h->sub->scroll(self->info.store, self->node, self->sub);
+	return S_OK;
+}
+
+void flux_uia_bring_into_view(FluxUiaContext const *info, XentNodeId node) {
+	XentNodeId    host = xent_node_parent(info->ctx, node);
 	UiaScrollView sv;
-	while (host != XENT_NODE_INVALID && !uia_scroll_view(&self->info, host, &sv))
-		host = xent_node_parent(self->info.ctx, host);
+	while (host != XENT_NODE_INVALID && !uia_scroll_view(info, host, &sv)) host = xent_node_parent(info->ctx, host);
 	XentRect r = {0};
-	if (host == XENT_NODE_INVALID || !xent_layout_rect(self->info.ctx, self->node, &r)) return S_OK;
+	if (host == XENT_NODE_INVALID || !xent_layout_rect(info->ctx, node, &r)) return;
 	float x = flux_scroll_start(sv.sd, &r, &sv.rect) + sv.sd->origin_x;
 	float y = r.y - sv.rect.y + sv.sd->origin_y;
 	flux_scroll_request(
-	  self->info.store, host, uia_into_view(x, r.w, sv.sd->scroll_x, sv.rect.w, sv.max_x),
+	  info->store, sv.node, uia_into_view(x, r.w, sv.sd->scroll_x, sv.rect.w, sv.max_x),
 	  uia_into_view(y, r.h, sv.sd->scroll_y, sv.rect.h, sv.max_y)
 	);
+}
+
+static HRESULT STDMETHODCALLTYPE sci_scroll_into_view(IScrollItemProvider *p) {
+	FluxUia *self = FLUX_UIA_SELF(p, lpVtblScrollItem);
+	if (self->sub >= 0) return uia_sub_scroll(self);
+	flux_uia_bring_into_view(&self->info, self->node);
 	return S_OK;
 }
 

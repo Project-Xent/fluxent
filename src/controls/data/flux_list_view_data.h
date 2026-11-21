@@ -59,6 +59,10 @@ typedef struct FluxListViewData {
 	int              *group_line;
 	int               ngroup;
 
+	char             *names;
+	uint32_t         *name_at;
+	int               nname;
+
 	bool              rect_select;
 	uint8_t           band;
 	uint8_t           band_mode;

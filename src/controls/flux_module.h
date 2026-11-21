@@ -4,6 +4,7 @@
 #include "fluxent/flux_controls.h"
 #include "controls/factory/flux_control_build.h"
 #include "render/flux_engine.h"
+#include "fluxent/flux_text.h"
 
 #include <xent/xent_display.h>
 #include <xtk/xtk_batch.h>
@@ -59,33 +60,69 @@ typedef struct FluxInputHooks {
 } FluxInputHooks;
 
 typedef struct FluxUiaSub {
-	int  (*kind)(FluxStore *store, XentNodeId node, int sub, unsigned *patterns);
-	bool (*span)(FluxStore *store, XentNodeId node, int *first, int *last);
-	bool (*rect)(FluxStore *store, XentNodeId node, int sub, XentRect *rect);
-	void (*name)(FluxStore *store, XentNodeId node, int sub, char *out, size_t size);
-	bool (*focused)(FluxStore *store, XentNodeId node, int sub);
-	bool (*invoke)(FluxStore *store, XentNodeId node, int sub);
-	bool (*selected)(FluxStore *store, XentNodeId node, int sub);
-	bool (*select)(FluxStore *store, XentNodeId node, int sub, int op);
+	int        (*kind)(FluxStore *store, XentNodeId node, int sub, unsigned *patterns);
+	bool       (*span)(FluxStore *store, XentNodeId node, int *first, int *last);
+	bool       (*rect)(FluxStore *store, XentNodeId node, int sub, XentRect *rect);
+	void       (*name)(FluxStore *store, XentNodeId node, int sub, char *out, size_t size);
+	bool       (*focused)(FluxStore *store, XentNodeId node, int sub);
+	bool       (*invoke)(FluxStore *store, XentNodeId node, int sub);
+	bool       (*selected)(FluxStore *store, XentNodeId node, int sub);
+	bool       (*select)(FluxStore *store, XentNodeId node, int sub, int op);
+	int        (*heads)(FluxStore *store, XentNodeId node);
+	bool       (*grid)(FluxStore *store, XentNodeId node, int *rows, int *cols);
+	bool       (*cell)(FluxStore *store, XentNodeId node, int sub, int *row, int *col);
+	int        (*row_head)(FluxStore *store, XentNodeId node, int sub);
+	void       (*scroll)(FluxStore *store, XentNodeId node, int sub);
+	int        (*count)(FluxStore *store, XentNodeId node);
+	int        (*index)(FluxStore *store, XentNodeId node, XentNodeId child);
+	XentNodeId (*realized)(FluxStore *store, XentNodeId node, int sub);
+	void       (*realize)(FluxStore *store, XentNodeId node, int sub);
 } FluxUiaSub;
 
+typedef struct FluxUiaTextView {
+	FluxText     *renderer;
+	char const   *text;
+	FluxTextStyle style;
+	float         layout_w;
+	float         origin_x;
+	float         origin_y;
+	XentRect      clip;
+	uint32_t      sel_start;
+	uint32_t      sel_end;
+	bool          selectable;
+	bool          readonly;
+	bool          paragraphs;
+} FluxUiaTextView;
+
+typedef struct FluxUiaText {
+	bool (*view)(FluxStore *store, XentNodeId node, FluxUiaTextView *out);
+	void (*select)(FluxStore *store, XentNodeId node, uint32_t start, uint32_t end);
+	void (*reveal)(FluxStore *store, XentNodeId node, uint32_t start, uint32_t end);
+} FluxUiaText;
+
 typedef struct FluxUiaHooks {
-	int               role;
-	unsigned          patterns;
-	int               (*expand)(FluxStore *store, XentNodeId node);
-	void              (*toggle_expand)(FluxStore *store, XentNodeId node);
-	bool              (*selected)(FluxStore *store, XentNodeId node);
-	bool              (*select)(FluxStore *store, XentNodeId node, int op);
-	unsigned          (*select_mode)(FluxStore *store, XentNodeId node);
-	void              (*close)(FluxStore *store, XentNodeId node);
-	unsigned          (*live)(FluxStore *store, XentNodeId node);
-	FluxUiaSub const *sub;
-	bool              modal;
-	char const       *(*text)(FluxStore *store, XentNodeId node);
-	void              (*set_text)(FluxStore *store, XentNodeId node, char const *text);
-	void              (*set_range)(FluxStore *store, XentNodeId node, double value);
-	bool              (*thumb)(FluxStore *store, XentNodeId node, int thumb, float *value, float *lo, float *hi);
-	bool              (*set_thumb)(FluxStore *store, XentNodeId node, int thumb, float value);
+	int                role;
+	unsigned           patterns;
+	int                (*expand)(FluxStore *store, XentNodeId node);
+	void               (*toggle_expand)(FluxStore *store, XentNodeId node);
+	bool               (*selected)(FluxStore *store, XentNodeId node);
+	bool               (*select)(FluxStore *store, XentNodeId node, int op);
+	unsigned           (*select_mode)(FluxStore *store, XentNodeId node);
+	void               (*close)(FluxStore *store, XentNodeId node);
+	unsigned           (*live)(FluxStore *store, XentNodeId node);
+	FluxUiaSub const  *sub;
+	void               (*name)(FluxStore *store, XentNodeId node, char *out, size_t size);
+	XentNodeId         (*scroller)(FluxStore *store, XentNodeId node);
+	FluxUiaText const *doc;
+	bool               (*scroll_info)(FluxStore *store, XentNodeId node, double *percent, double *view);
+	void               (*scroll_by)(FluxStore *store, XentNodeId node, int items);
+	bool               (*scroll_set)(FluxStore *store, XentNodeId node, double percent);
+	bool               modal;
+	char const        *(*text)(FluxStore *store, XentNodeId node);
+	void               (*set_text)(FluxStore *store, XentNodeId node, char const *text);
+	void               (*set_range)(FluxStore *store, XentNodeId node, double value);
+	bool               (*thumb)(FluxStore *store, XentNodeId node, int thumb, float *value, float *lo, float *hi);
+	bool               (*set_thumb)(FluxStore *store, XentNodeId node, int thumb, float value);
 } FluxUiaHooks;
 
 struct FluxTouch {

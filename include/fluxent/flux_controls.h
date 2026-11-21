@@ -96,5 +96,7 @@ extern FluxControlModule const   flux_ctrl_comboitem;
 extern FluxControlModule const   flux_ctrl_suggestitem;
 extern FluxControlModule const   flux_ctrl_menupresenter;
 extern FluxControlModule const   flux_ctrl_menurow;
+extern FluxControlModule const   flux_ctrl_cmdovf;
+extern FluxControlModule const   flux_ctrl_cmdovfrow;
 
 #endif

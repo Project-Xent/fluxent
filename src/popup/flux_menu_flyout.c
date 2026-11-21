@@ -386,12 +386,12 @@ void flux_snap_menupresenter(FluxSnapCtx const *ctx) {
 	if (shift) shift->render_translate_y = tr.clip_translate_y;
 	if (body) body->render_translate_y = tr.content_translate_y - tr.clip_translate_y;
 	if (body) body->clips_children = tr.clip_translate_y == 0.0f && body->render_translate_y == 0.0f;
-	ctx->snap->u.menu_part = (FluxMenuPartSnapshot) {m, -1};
+	ctx->snap->u.part = (FluxPartSnapshot) {m, -1};
 }
 
 void flux_snap_menurow(FluxSnapCtx const *ctx) {
-	MenuRow const *r       = ( MenuRow const * ) ctx->data;
-	ctx->snap->u.menu_part = (FluxMenuPartSnapshot) {r ? r->menu : NULL, r ? r->index : -1};
+	MenuRow const *r  = ( MenuRow const * ) ctx->data;
+	ctx->snap->u.part = (FluxPartSnapshot) {r ? r->menu : NULL, r ? r->index : -1};
 }
 
 bool flux_menu_wheel(FluxStore *store, XentNodeId node, float delta, float *remaining) {

@@ -2029,7 +2029,15 @@ MODULE(menupresenter)                           = {
   .input    = &input_menupresenter,
   .record   = flux_menupresenter_record,
   .uia      = &uia_menupresenter};
-MODULE(menurow)     = {.type = FLUX_CONTROL_MENU_ROW, .snapshot = flux_snap_menurow, .record = flux_menurow_record};
+MODULE(menurow) = {.type = FLUX_CONTROL_MENU_ROW, .snapshot = flux_snap_menurow, .record = flux_menurow_record};
+static FluxInputHooks const input_cmdovf = {.wheel = flux_cmdovf_wheel};
+MODULE(cmdovf)                           = {
+  .type     = FLUX_CONTROL_CMDBAR_OVERFLOW,
+  .snapshot = flux_snap_cmdovf,
+  .input    = &input_cmdovf,
+  .record   = flux_cmdovf_record,
+  .uia      = &uia_hidden};
+MODULE(cmdovfrow) = {.type = FLUX_CONTROL_CMDBAR_ROW, .snapshot = flux_snap_cmdovfrow, .record = flux_cmdovfrow_record};
 MODULE(groupheader) = {
   .type   = FLUX_CONTROL_GROUP_HEADER,
   .tree   = &tree_listitem,

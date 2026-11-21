@@ -16,6 +16,7 @@ void                          flux_appbar_retarget(XentCtx *ctx, FluxStore *stor
 XentNodeId                    flux_cmdbar_slot(FluxStore *store, XentNodeId bar, XentNodeId child);
 XentNodeId                    flux_cmdbar_content(FluxStore *store, XentNodeId bar);
 uint32_t                      flux_cmdbar_frame(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd);
+bool                          flux_cmdovf_wheel(FluxStore *store, XentNodeId node, float delta, float *remaining);
 
 void                          flux_cmdbar_setopen(FluxStore *store, XentNodeId node, bool open);
 void                          flux_cmdbar_setsticky(FluxStore *store, XentNodeId node, bool sticky);

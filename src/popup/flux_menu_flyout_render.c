@@ -281,8 +281,8 @@ XentDl *flux_menurow_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	( void ) rc;
-	FluxMenu *m     = ( FluxMenu * ) snap->u.menu_part.menu;
-	int       index = snap->u.menu_part.index;
+	FluxMenu *m     = ( FluxMenu * ) snap->u.part.owner;
+	int       index = snap->u.part.index;
 	if (!m || index < 0 || index >= m->item_count) return NULL;
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
@@ -299,7 +299,7 @@ XentDl *flux_menupresenter_record(
 ) {
 	( void ) rc;
 	( void ) state;
-	FluxMenu *m = ( FluxMenu * ) snap->u.menu_part.menu;
+	FluxMenu *m = ( FluxMenu * ) snap->u.part.owner;
 	if (!m) return NULL;
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;

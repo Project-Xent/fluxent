@@ -491,8 +491,6 @@ void flux_cmdbar_open(FluxCmdBarData *b, bool open, bool user, bool keyboard) {
 	b->open      = open;
 	b->keyboard  = keyboard;
 	b->focus_row = -1;
-	b->hover     = -1;
-	b->pressed   = -1;
 	( void ) cmdbar_sync(b);
 	if (open) {
 		b->open_up = !space_below(b);
@@ -692,8 +690,6 @@ XentNodeId flux_cmdbar_init(XentCtx *ctx, FluxStore *store, FluxControlEnv const
 	  .restore_min = -1.0f,
 	  .compact_h   = FLUX_APPBAR_COMPACT_H,
 	  .content_h   = FLUX_APPBAR_COMPACT_H,
-	  .hover       = -1,
-	  .pressed     = -1,
 	  .focus_row   = -1};
 	nd->component_data         = b;
 	nd->destroy_component_data = cmdbar_destroy;

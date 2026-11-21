@@ -92,6 +92,8 @@ void flux_controls_all(void) {
 	  &flux_ctrl_suggestitem,
 	  &flux_ctrl_menupresenter,
 	  &flux_ctrl_menurow,
+	  &flux_ctrl_cmdovf,
+	  &flux_ctrl_cmdovfrow,
 	};
 	for (unsigned i = 0; i < sizeof(all) / sizeof(all [0]); i++) flux_controls_use(all [i]);
 }

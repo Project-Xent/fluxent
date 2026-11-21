@@ -138,11 +138,12 @@ void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *pas
 
 void flux_window_applyframe(FluxWindow *win, bool deferred) {
 	if (!win || !win->hwnd) return;
-	UINT     dpi        = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
-	int      top        = ( int ) (48.0f * dpi / FLUX_DPI_BASE);
-	MARGINS  m          = win->title_bar_extended ? (MARGINS) {0, 0, top, 0} : (MARGINS) {0, 0, 0, 0};
+	/* DWM animates minimize and maximize only for a WS_CAPTION window, so keep the caption. Drop WS_SYSMENU instead:
+	 * with it, the window has system caption buttons, and Snap Layouts opens only over those, which the one-pixel frame
+	 * below leaves no room for. Without it, the flyout follows HTMAXBUTTON from the hit test. */
+	MARGINS  m          = win->title_bar_extended ? (MARGINS) {0, 0, 1, 0} : (MARGINS) {0, 0, 0, 0};
 	LONG_PTR style      = GetWindowLongPtrW(win->hwnd, GWL_STYLE);
-	LONG_PTR next_style = win->title_bar_extended ? style & ~WS_CAPTION : style | WS_CAPTION;
+	LONG_PTR next_style = (win->title_bar_extended ? style & ~WS_SYSMENU : style | WS_SYSMENU) | WS_CAPTION;
 	if (next_style != style) SetWindowLongPtrW(win->hwnd, GWL_STYLE, next_style);
 	DwmExtendFrameIntoClientArea(win->hwnd, &m);
 	if (deferred) {

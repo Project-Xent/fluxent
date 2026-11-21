@@ -31,7 +31,12 @@ Entries start at 0.3.1; earlier releases are described by their tags.
   `flux_tooltip_setrtl`): left and right placements swap, submenus open to the
   left, and TeachingTip mirrors its placement as WinUI does. Horizontal
   scrolling starts at the right, and the title bar's window regions mirror.
-  Composition mode's horizontal scrolling stays LTR.
+  Composition mode's horizontal scrolling stays LTR;
+- an extended title bar keeps `WS_CAPTION`, so DWM plays the minimize,
+  maximize and restore animations again. It drops `WS_SYSMENU` instead: with
+  it, Windows opens Snap Layouts only over its own caption buttons, which the
+  frame no longer has room for. The frame extends one pixel into the client
+  area instead of 48, so DWM draws no caption buttons behind the title bar's.
 
 ### Breaking changes
 

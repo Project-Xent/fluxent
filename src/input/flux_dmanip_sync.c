@@ -101,38 +101,29 @@ void flux_dmanip_sync_tree(FluxDManip *dmanip, XentCtx *ctx, FluxStore *store, X
 	sync_node(&sync, root, 0.0f, 0.0f);
 }
 
-static FluxDManipViewport *dmanip_viewport_for_input_pan(FluxInput *input, FluxStore *store, FluxScrollData **out_sd) {
-	XentNodeId target = flux_input_pantarget(input);
-	if (target == XENT_NODE_INVALID) return NULL;
-
-	FluxNodeData   *nd = flux_store_find(store, target);
-	FluxScrollData *sd = nd ? ( FluxScrollData * ) nd->component_data : NULL;
-	*out_sd            = sd;
-	return sd ? ( FluxDManipViewport * ) sd->dmanip_viewport : NULL;
-}
-
-bool flux_dmanip_pan_handoff(FluxDManip *dmanip, FluxInput *input, FluxStore *store, uint32_t pointer_id) {
-	if (!dmanip || !input || !store || pointer_id == 0) return false;
-	if (!flux_input_takepan(input)) return false;
-
-	FluxScrollData     *sd = NULL;
-	FluxDManipViewport *vp = dmanip_viewport_for_input_pan(input, store, &sd);
-	if (!vp) return false;
-
-	flux_dmanip_vp_sync(vp, sd->rtl ? -sd->scroll_x : sd->scroll_x, sd->scroll_y);
-	if (FAILED(flux_dmanip_vp_setcontact(vp, pointer_id))) return false;
-
-	flux_input_clearpan(input);
-	return true;
-}
-
-bool flux_dmanip_contact(FluxStore *store, XentNodeId node, uint32_t pointer_id) {
+static bool dmanip_contact_one(FluxStore *store, XentNodeId node, uint32_t pointer_id) {
 	FluxNodeData       *nd = flux_store_find(store, node);
 	FluxScrollData     *sd = nd && nd->component_type == FLUX_CONTROL_SCROLL ? nd->component_data : NULL;
 	FluxDManipViewport *vp = sd ? ( FluxDManipViewport * ) sd->dmanip_viewport : NULL;
 	if (!vp) return false;
 	flux_dmanip_vp_sync(vp, sd->rtl ? -sd->scroll_x : sd->scroll_x, sd->scroll_y);
 	return SUCCEEDED(flux_dmanip_vp_setcontact(vp, pointer_id));
+}
+
+bool flux_dmanip_contact(FluxStore *store, XentNodeId node, uint32_t pointer_id) {
+	XentCtx *ctx = flux_store_ctx(store);
+	bool     any = false;
+	for (; ctx && node != XENT_NODE_INVALID; node = xent_node_parent(ctx, node))
+		any |= dmanip_contact_one(store, node, pointer_id);
+	return any;
+}
+
+bool flux_dmanip_pan_handoff(FluxDManip *dmanip, FluxInput *input, FluxStore *store, uint32_t pointer_id) {
+	if (!dmanip || !input || !store || pointer_id == 0) return false;
+	if (!flux_input_takepan(input)) return false;
+	if (!flux_dmanip_contact(store, flux_input_pantarget(input), pointer_id)) return false;
+	flux_input_clearpan(input);
+	return true;
 }
 
 static void cleanup_scroll_node(XentCtx *ctx, FluxStore *store, XentNodeId node) {

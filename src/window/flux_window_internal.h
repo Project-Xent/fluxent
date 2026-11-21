@@ -16,6 +16,7 @@ void flux_window_applyframe(FluxWindow *win, bool deferred);
 
 struct FluxWindow {
 	HWND                 hwnd;
+	HMENU                system_menu;
 	FluxDpi              dpi;
 	FluxWindowCfg        config;
 	FluxGfx             *gfx;

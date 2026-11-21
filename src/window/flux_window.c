@@ -786,6 +786,52 @@ static bool window_handle_max_button(WindowMessage const *m, LRESULT *result) {
 	return true;
 }
 
+static void window_menu_enable(HMENU menu, UINT cmd, bool enabled) {
+	EnableMenuItem(menu, cmd, MF_BYCOMMAND | (enabled ? MF_ENABLED : MF_GRAYED));
+}
+
+/* Opens the window's system menu, with its items set for the window's state as DefWindowProc would. */
+static void window_open_system_menu(FluxWindow *win, HWND hwnd, int x, int y) {
+	HMENU menu = win->system_menu;
+	if (!menu) return;
+	LONG_PTR style  = GetWindowLongPtrW(hwnd, GWL_STYLE);
+	bool     zoomed = IsZoomed(hwnd) != FALSE;
+	bool     iconic = IsIconic(hwnd) != FALSE;
+	bool     normal = !zoomed && !iconic;
+	window_menu_enable(menu, SC_RESTORE, !normal);
+	window_menu_enable(menu, SC_MOVE, normal);
+	window_menu_enable(menu, SC_SIZE, normal && (style & WS_THICKFRAME));
+	window_menu_enable(menu, SC_MINIMIZE, !iconic && (style & WS_MINIMIZEBOX));
+	window_menu_enable(menu, SC_MAXIMIZE, !zoomed && (style & WS_MAXIMIZEBOX));
+	window_menu_enable(menu, SC_CLOSE, true);
+	SetMenuDefaultItem(menu, SC_CLOSE, FALSE);
+	UINT align = GetSystemMetrics(SM_MENUDROPALIGNMENT) ? TPM_RIGHTALIGN : TPM_LEFTALIGN;
+	UINT cmd   = ( UINT ) TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | align, x, y, 0, hwnd, NULL);
+	if (cmd) PostMessageW(hwnd, WM_SYSCOMMAND, cmd, 0);
+}
+
+static bool window_handle_system_menu(WindowMessage const *m, LRESULT *result) {
+	/* Right-click on the caption: DefWindowProc would send WM_CONTEXTMENU, which goes to the controls instead. */
+	if (m->msg == WM_NCRBUTTONUP && m->wp == HTCAPTION) {
+		window_open_system_menu(m->win, m->hwnd, GET_X_LPARAM(m->lp), GET_Y_LPARAM(m->lp));
+		*result = 0;
+		return true;
+	}
+	/* Alt+Space arrives as SC_KEYMENU with a space. With WS_SYSMENU, DefWindowProc opens the menu itself; an extended
+	 * title bar drops that style (see flux_window_applyframe), and then DefWindowProc does nothing. */
+	if (m->msg != WM_SYSCOMMAND || (m->wp & 0xfff0) != SC_KEYMENU || m->lp != VK_SPACE) return false;
+	if (GetWindowLongPtrW(m->hwnd, GWL_STYLE) & WS_SYSMENU) return false;
+	POINT pt = {0, 0};
+	if (m->win->title_bar_active) {
+		FluxRect const *bar = &m->win->title_bar_drag;
+		pt.y                = ( LONG ) ((bar->y + bar->h) * window_dpi_scale(m->win));
+	}
+	ClientToScreen(m->hwnd, &pt);
+	window_open_system_menu(m->win, m->hwnd, pt.x, pt.y);
+	*result = 0;
+	return true;
+}
+
 static void window_forward_nc_hover(WindowMessage const *m) {
 	if (!m->win->title_bar_extended) return;
 	if (m->msg != WM_NCMOUSEMOVE && m->msg != WM_NCMOUSELEAVE) return;
@@ -848,6 +894,8 @@ static bool window_is_key_up(UINT msg) { return msg == WM_KEYUP || msg == WM_SYS
 static bool window_handle_text_input(WindowMessage const *m, LRESULT *result) {
 	if (window_is_key_down(m->msg)) {
 		*result = window_on_key_message(m->win, m->wp, true);
+		/* DefWindowProc turns Alt+F4 into SC_CLOSE; every other key stays with the app. */
+		if (m->msg == WM_SYSKEYDOWN && m->wp == VK_F4) *result = DefWindowProcW(m->hwnd, m->msg, m->wp, m->lp);
 		return true;
 	}
 	if (window_is_key_up(m->msg)) {
@@ -886,6 +934,7 @@ static bool window_handle_message(WindowMessage const *m, LRESULT *result) {
 	if (window_handle_redraw_timer(m, result)) return true;
 	if (window_handle_lifecycle(m, result)) return true;
 	if (window_handle_layout(m, result)) return true;
+	if (window_handle_system_menu(m, result)) return true;
 	if (window_handle_pointer(m, result)) return true;
 	if (window_handle_text_input(m, result)) return true;
 	return window_handle_system(m, result);
@@ -944,6 +993,9 @@ static HRESULT window_create_hwnd(FluxWindow *win, HINSTANCE hinst) {
 	win->dpi.dpi_y = ( float ) dpi;
 
 	setup_dwm_backdrop(win);
+	/* Make the window's own copy of the system menu while it still has WS_SYSMENU: once an extended title bar drops the
+	 * style, GetSystemMenu returns NULL for a window that never had one. The window destroys it. */
+	win->system_menu = GetSystemMenu(win->hwnd, FALSE);
 	return S_OK;
 }
 

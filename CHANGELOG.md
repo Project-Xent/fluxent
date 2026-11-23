@@ -41,7 +41,12 @@ Entries start at 0.3.1; earlier releases are described by their tags.
   window opens it on Alt+Space itself;
 - right-clicking the title bar opens the system menu, and Alt+F4 closes the
   window. The right-click became `WM_CONTEXTMENU`, which goes to the controls,
-  and key messages never reached DefWindowProc.
+  and key messages never reached DefWindowProc;
+- choosing a child item from a collapsed NavigationView's flyout raises
+  `XTK_EVENT_SELECT`, so the app switches pages. The flyout's entries are menu
+  items, not NavigationViewItem nodes, so they never went through the
+  activation routing that raises the event for inline items; only the
+  selection indicator moved.
 
 ### Breaking changes
 

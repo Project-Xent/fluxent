@@ -13,6 +13,8 @@
 #include "fluxent/flux_menu.h"
 #include "controls/data/flux_nav_view_data.h"
 #include "controls/data/flux_title_bar_data.h"
+#include <fluxent/flux_host.h>
+#include <xtk/xtk_catalog.h>
 
 #include <math.h>
 #include <stdlib.h>
@@ -437,10 +439,28 @@ static char const *nav_glyph_utf8(char const *icon_name, char buf [4]) {
 	return buf;
 }
 
+static void nav_route_select(FluxNavViewData *d, int index) {
+	XtkHost *host = flux_store_host(d->store);
+	if (!host) return;
+	XtkEvent event = {
+	  .id             = XTK_EVENT_SELECT,
+	  .target         = ( XtkCtrl ) d->root,
+	  .source         = ( XtkCtrl ) d->root,
+	  .current_target = ( XtkCtrl ) d->root,
+	  .phase          = XTK_EVENT_PHASE_TARGET,
+	  .cause          = XTK_EVENT_CAUSE_USER,
+	  .payload        = {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = index},
+	};
+	flux_host_route(host, &event);
+}
+
 static void nav_flyout_child_click(void *ctx) {
-	FluxNavViewItem *it = ( FluxNavViewItem * ) ctx;
-	nav_repaint(it->nav);
-	nav_apply_selection(it->nav, it->index, true);
+	FluxNavViewItem *it       = ( FluxNavViewItem * ) ctx;
+	FluxNavViewData *d        = it->nav;
+	uint64_t         revision = d->selection_revision;
+	nav_repaint(d);
+	nav_apply_selection(d, it->index, true);
+	if (d->selection_revision != revision) nav_route_select(d, it->index);
 }
 
 static void nav_child_flyout_dismissed(void *ctx) {

@@ -102,6 +102,16 @@ Entries start at 0.3.1; earlier releases are described by their tags.
   focused content leaves Enter unhandled.
 - added Windows taskbar progress, overlay icons and thumbnail buttons,
   notification-area icons with native menus, and desktop toast submission.
+- an extended title bar keeps `WS_CAPTION`, so DWM plays the minimize,
+  maximize and restore animations again. It drops `WS_SYSMENU` instead: with
+  it, Windows opens Snap Layouts only over its own caption buttons, which the
+  frame no longer has room for. The frame extends one pixel into the client
+  area instead of 48, so DWM draws no caption buttons behind the title bar's.
+  Without `WS_SYSMENU`, DefWindowProc no longer opens the system menu, so the
+  window opens it on Alt+Space itself.
+- right-clicking the title bar opens the system menu, and Alt+F4 closes the
+  window. The right-click became `WM_CONTEXTMENU`, which goes to the controls,
+  and key messages never reached DefWindowProc.
 
 ### Breaking changes
 

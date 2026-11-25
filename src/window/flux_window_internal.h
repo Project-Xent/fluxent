@@ -24,6 +24,7 @@ typedef struct FluxTrayIcon FluxTrayIcon;
 
 struct FluxWindow {
 	HWND                 hwnd;
+	HMENU                system_menu;
 	FluxDpi              dpi;
 	FluxWindowCfg        config;
 	FluxGfx             *gfx;

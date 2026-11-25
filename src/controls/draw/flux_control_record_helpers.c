@@ -30,6 +30,8 @@ FluxRect flux_rec_snap_bounds(FluxRenderCtx const *rc, FluxRect const *bounds) {
 	return flux_snap_bounds(bounds, rec_dpi_scale_x(rc), rec_dpi_scale_y(rc));
 }
 
+float flux_rec_hairline(FluxRenderCtx const *rc) { return 1.0f / rec_dpi_scale_x(rc); }
+
 float flux_rec_snapx(FluxRenderCtx const *rc, float x) {
 	float sx = rec_dpi_scale_x(rc);
 	return (floorf(x * sx) + 0.5f) / sx;

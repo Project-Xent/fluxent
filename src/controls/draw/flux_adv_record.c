@@ -473,11 +473,14 @@ static bool nav_rec_shadow(XentDlBuilder *b, FluxRect const *pb, float opacity) 
 	);
 }
 
-static bool
-nav_rec_content_layer(XentDlBuilder *b, FluxRect const *root, FluxRenderSnap const *snap, FluxThemeColors const *t) {
+static bool nav_rec_content_layer(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *root, FluxRenderSnap const *snap,
+  FluxThemeColors const *t
+) {
 	float    cx    = snap->u.nav.nav_content_x;
 	float    cy    = snap->u.nav.nav_content_y;
-	FluxRect layer = {root->x + cx, root->y + cy, root->w - cx, root->h - cy};
+	FluxRect raw   = {root->x + cx, root->y + cy, root->w - cx, root->h - cy};
+	FluxRect layer = flux_rec_snap_bounds(rc, &raw);
 	if (layer.w < 1.0f || layer.h < 1.0f) return true;
 	if (t->contrast.active) return flux_rec_fill_rect(b, &layer, t->contrast.window);
 	if (snap->u.nav.nav_top || cx < 0.5f)
@@ -487,21 +490,21 @@ nav_rec_content_layer(XentDlBuilder *b, FluxRect const *root, FluxRenderSnap con
 			  t->card_stroke_default
 			);
 
-	float    r   = FLUX_NAV_CONTENT_RADIUS;
-	FluxRect ext = {layer.x, layer.y, layer.w + r, layer.h + r};
-	bool     ok  = xent_dl_pushcliprect(b, flux_rec_xrect(&layer));
-	if (ok) ok = flux_rec_fill_rounded(b, &ext, r, t->layer_default);
-	if (ok) {
-		FluxRect stroke = {ext.x + 0.5f, ext.y + 0.5f, ext.w - 1.0f, ext.h - 1.0f};
-		ok              = flux_rec_stroke_rounded(b, &stroke, r, t->card_stroke_default, FLUX_STROKE_WIDTH);
-	}
+	/* Same as cards: the fill stops inside the 1px border so the translucent stroke shows against the backdrop. */
+	float    r     = FLUX_NAV_CONTENT_RADIUS;
+	float    w     = flux_rec_hairline(rc);
+	FluxRect ext   = {layer.x, layer.y, layer.w + r, layer.h + r};
+	FluxRect inner = {ext.x + w, ext.y + w, ext.w - w * 2.0f, ext.h - w * 2.0f};
+	bool     ok    = xent_dl_pushcliprect(b, flux_rec_xrect(&layer));
+	if (ok) ok = flux_rec_fill_rounded(b, &inner, r > w ? r - w : 0.0f, t->layer_default);
+	if (ok) ok = flux_rec_stroke_rounded(b, &ext, r - w * 0.5f, t->card_stroke_default, w);
 	return xent_dl_popclip(b) && ok;
 }
 
 bool flux_rec_nav(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
 	FluxThemeColors const *t  = flux_rec_theme(rc);
 	FluxRect               pb = rec_inset(bounds, 1.0f, 1.0f);
-	if (!snap->u.nav.nav_is_pane) return nav_rec_content_layer(b, bounds, snap, t);
+	if (!snap->u.nav.nav_is_pane) return nav_rec_content_layer(b, rc, &pb, snap, t);
 	if (t->contrast.active) {
 		FluxColor fill = snap->u.nav.nav_pane_solid ? t->contrast.window : t->contrast.button_face;
 		return flux_rec_fill_rect(b, &pb, fill);

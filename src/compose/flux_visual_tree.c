@@ -11,6 +11,7 @@
 
 #include <cwinrt/cast.h>
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -197,9 +198,16 @@ tree_sync_node(FluxVisualTree *vt, XentNodeId node, XentNodeId parent_node, Xent
 	VisNode     *parent_vn = parent_node == XENT_NODE_INVALID ? NULL : tree_owned(vt, parent_node);
 	float        pax       = parent_vn ? parent_vn->abs_x : 0.0f;
 	float        pay       = parent_vn ? parent_vn->abs_y : 0.0f;
-	WFN_Vector_3 off       = {(rect->x - pax) * vt->scale, (rect->y - pay) * vt->scale, 0.0f};
+	/* Whole device pixels. A fractional offset makes the compositor resample the surface, which softens a 1px border. */
+	float        ox        = roundf((rect->x - pax) * vt->scale);
+	float        oy        = roundf((rect->y - pay) * vt->scale);
+	float        sw        = roundf(rect->w * vt->scale);
+	float        sh        = roundf(rect->h * vt->scale);
+	if (sw < 1.0f) sw = 1.0f;
+	if (sh < 1.0f) sh = 1.0f;
+	WFN_Vector_3 off       = {ox, oy, 0.0f};
 	( void ) wuc_visual_put__offset(vn->visual, off);
-	WFN_Vector_2 size = {rect->w * vt->scale, rect->h * vt->scale};
+	WFN_Vector_2 size = {sw, sh};
 	( void ) wuc_visual_put__size(vn->visual, size);
 
 	if (flux_node_type(vt->store, node) == FLUX_CONTROL_SCROLL) {

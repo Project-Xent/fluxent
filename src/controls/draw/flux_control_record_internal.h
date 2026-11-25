@@ -12,6 +12,7 @@ FluxThemeColors const *flux_rec_theme(FluxRenderCtx const *rc);
 XentColor              flux_rec_xcolor(FluxColor c);
 XentRect               flux_rec_xrect(FluxRect const *r);
 FluxRect               flux_rec_snap_bounds(FluxRenderCtx const *rc, FluxRect const *bounds);
+float                  flux_rec_hairline(FluxRenderCtx const *rc);
 float                  flux_rec_snapx(FluxRenderCtx const *rc, float x);
 float                  flux_rec_snapy(FluxRenderCtx const *rc, float y);
 XentDl                *flux_rec_finish(XentDlBuilder *b, bool ok);

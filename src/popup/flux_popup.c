@@ -745,6 +745,8 @@ static void popup_repaint_host(FluxPopup const *popup) {
 	if (popup->owner_hwnd && popup->host_owner != XENT_NODE_INVALID) InvalidateRect(popup->owner_hwnd, NULL, FALSE);
 }
 
+static void popup_paint_now(FluxPopup *popup);
+
 void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement) {
 	if (!popup) return;
 
@@ -755,6 +757,9 @@ void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement)
 	popup_position(popup);
 
 	popup_start_open_animation(popup);
+	/* Seed the open-frame clip before ShowWindow so a prior full-size
+	   swapchain frame is not revealed and then snapped back. */
+	popup_paint_now(popup);
 	ShowWindow(popup->popup_hwnd, SW_SHOWNOACTIVATE);
 	InvalidateRect(popup->popup_hwnd, NULL, FALSE);
 	popup_repaint_host(popup);
@@ -1087,13 +1092,8 @@ static float popup_picker_opacity(FluxPopup const *popup) {
 	return 1.0f - popup_clampf((elapsed - 84.0f) / 83.0f, 0.0f, 1.0f);
 }
 
-static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
-	PAINTSTRUCT ps;
-	BeginPaint(hwnd, &ps);
-	if (!popup || !popup->graphics) {
-		EndPaint(hwnd, &ps);
-		return 0;
-	}
+static void popup_paint_now(FluxPopup *popup) {
+	if (!popup || !popup->graphics) return;
 
 	float blur            = flux_theme_systemcontrast() ? 0.0f : POPUP_ACRYLIC_BLUR;
 	popup->acrylic_active = flux_gfx_enable_acrylic(popup->graphics, blur);
@@ -1107,6 +1107,12 @@ static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
 	flux_gfx_end(popup->graphics);
 	flux_gfx_present(popup->graphics, true);
 	flux_gfx_commit(popup->graphics);
+}
+
+static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
+	PAINTSTRUCT ps;
+	BeginPaint(hwnd, &ps);
+	popup_paint_now(popup);
 	EndPaint(hwnd, &ps);
 	return 0;
 }

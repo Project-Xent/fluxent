@@ -1,3 +1,6 @@
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_control_uia.h"
+#include "controls/flux_module.h"
 #include "controls/behavior/flux_repeat_timer.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_container.h"
@@ -10,6 +13,7 @@
 #include "fluxent/flux_window.h"
 #include "bridge/flux_internal.h"
 
+#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -452,6 +456,13 @@ static void looping_destroy(void *component_data) {
 	free(rt);
 }
 
+static FluxUiaHooks const looping_uia_hidden = {.role = FLUX_UIA_HIDDEN};
+
+static void               looping_hide(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (nd) nd->uia = &looping_uia_hidden;
+}
+
 static bool looping_build_spine(FluxLoopingData *ld, XentNodeId root) {
 	ld->scroll = flux_scroll_init(&(FluxContainerDesc) {ld->ctx, ld->store, root});
 	if (ld->scroll == XENT_NODE_INVALID) return false;
@@ -473,6 +484,8 @@ static bool looping_build_spine(FluxLoopingData *ld, XentNodeId root) {
 		sd->v_vis = FLUX_SCROLL_NEVER;
 		sd->h_vis = FLUX_SCROLL_NEVER;
 	}
+	looping_hide(ld->store, ld->scroll);
+	looping_hide(ld->store, ld->host);
 	return true;
 }
 
@@ -643,4 +656,120 @@ void flux_looping_item_place(
 	xent_seth(ld->ctx, item, ld->item_height);
 	if (width > 0.0f) xent_setw(ld->ctx, item, width);
 	else xent_setwpct(ld->ctx, item, 1.0f);
+}
+
+bool flux_looping_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd
+	    && nd->component_type == FLUX_CONTROL_LOOPING_ITEM
+	    && nd->component_data
+	    && (( FluxLoopingItemData const * ) nd->component_data)->selected;
+}
+
+static FluxLoopingRuntime *looping_uia(FluxStore *store, XentNodeId node) {
+	FluxLoopingRuntime *rt = looping_runtime(store, node);
+	return rt && rt->base.item_count > 0 ? rt : NULL;
+}
+
+static int looping_uia_current(FluxLoopingData const *ld) { return ld->selected < 0 ? 0 : ld->selected; }
+
+int        flux_looping_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns) {
+	( void ) store;
+	( void ) node;
+	( void ) sub;
+	*patterns = FLUX_UIA_P_VIRTUAL | FLUX_UIA_P_SCROLL_ITEM | FLUX_UIA_P_SELECTION_ITEM;
+	return FLUX_UIA_LISTITEM;
+}
+
+void flux_looping_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size) {
+	FluxLoopingRuntime *rt = looping_uia(store, node);
+	bool                ok = rt && sub >= 0 && sub < rt->base.item_count && rt->base.items [sub];
+	flux_uia_name_copy(ok ? rt->base.items [sub] : "", out, size);
+}
+
+void flux_loopitem_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxLoopingItemData const *cell = looping_cell(store, node);
+	FluxLoopingData const     *ld   = cell ? cell->owner : NULL;
+	bool                       ok   = ld && cell->visual >= 0 && ld->item_count > 0;
+	int                        at   = ok ? flux_looping_mod(cell->visual, ld->item_count) : 0;
+	flux_uia_name_copy(ok && ld->items [at] ? ld->items [at] : "", out, size);
+}
+
+bool flux_loopitem_uia_concealed(FluxStore *store, XentNodeId node) {
+	FluxLoopingItemData const *cell = looping_cell(store, node);
+	FluxLoopingData const     *ld   = cell ? cell->owner : NULL;
+	if (!ld || ld->item_count <= 0 || cell->visual < 0) return true;
+	return !ld->should_loop && cell->visual >= ld->item_count;
+}
+
+bool flux_looping_uia_subselected(FluxStore *store, XentNodeId node, int sub) {
+	FluxLoopingRuntime *rt = looping_uia(store, node);
+	return rt && sub == rt->base.selected;
+}
+
+bool flux_looping_uia_subselect(FluxStore *store, XentNodeId node, int sub, int op) {
+	FluxLoopingRuntime *rt = looping_uia(store, node);
+	if (!rt || sub < 0 || sub >= rt->base.item_count || op == FLUX_UIA_SEL_REMOVE) return false;
+	looping_go_to_index(rt, sub, false);
+	return true;
+}
+
+void flux_looping_uia_scrollto(FluxStore *store, XentNodeId node, int sub) {
+	FluxLoopingRuntime *rt = looping_uia(store, node);
+	if (rt && sub >= 0 && sub < rt->base.item_count) looping_go_to_index(rt, sub, false);
+}
+
+int flux_looping_uia_count(FluxStore *store, XentNodeId node) {
+	FluxLoopingRuntime *rt = looping_runtime(store, node);
+	return rt ? rt->base.item_count : 0;
+}
+
+int flux_looping_uia_index(FluxStore *store, XentNodeId node, XentNodeId child) {
+	FluxLoopingRuntime        *rt   = looping_uia(store, node);
+	FluxLoopingItemData const *cell = looping_cell(store, child);
+	if (!rt || !cell || cell->owner != &rt->base || cell->visual < 0) return -1;
+	return flux_looping_mod(cell->visual, rt->base.item_count);
+}
+
+static int looping_uia_gap(FluxLoopingData const *ld, XentNodeId node, int sub) {
+	FluxLoopingItemData const *cell = looping_cell(ld->store, node);
+	if (!cell || cell->visual < 0 || flux_looping_mod(cell->visual, ld->item_count) != sub) return INT_MAX;
+	return abs(cell->visual - ld->midpoint);
+}
+
+XentNodeId flux_looping_uia_realized(FluxStore *store, XentNodeId node, int sub) {
+	FluxLoopingRuntime *rt   = looping_uia(store, node);
+	XentNodeId          best = XENT_NODE_INVALID;
+	int                 gap  = INT_MAX;
+	for (int i = 0; rt && i < rt->base.cell_count; i++) {
+		int d = looping_uia_gap(&rt->base, rt->base.cells [i], sub);
+		if (d >= gap) continue;
+		best = rt->base.cells [i];
+		gap  = d;
+	}
+	return best;
+}
+
+bool flux_looping_uia_scrollinfo(FluxStore *store, XentNodeId node, double *percent, double *view) {
+	FluxLoopingRuntime *rt = looping_runtime(store, node);
+	if (!rt) return false;
+	FluxLoopingData const *ld  = &rt->base;
+	double                 all = ( double ) ld->item_count * ld->item_height;
+	*percent                   = ld->item_count > 0 ? 100.0 * looping_uia_current(ld) / ld->item_count : 0.0;
+	*view                      = ld->viewport_h > 0.0f && all > 0.0 ? 100.0 * ld->viewport_h / all : 100.0;
+	return ld->item_count > 0;
+}
+
+void flux_looping_uia_scrollby(FluxStore *store, XentNodeId node, int items) {
+	FluxLoopingRuntime *rt = looping_uia(store, node);
+	if (!rt) return;
+	int to = looping_uia_current(&rt->base) + items;
+	looping_go_to_index(rt, to < 0 ? 0 : (to >= rt->base.item_count ? rt->base.item_count - 1 : to), false);
+}
+
+bool flux_looping_uia_scrollset(FluxStore *store, XentNodeId node, double percent) {
+	FluxLoopingRuntime *rt = looping_uia(store, node);
+	if (!rt || percent < 0.0 || percent > 100.0) return false;
+	looping_go_to_index(rt, ( int ) ((rt->base.item_count - 1) * percent / 100.0), false);
+	return true;
 }

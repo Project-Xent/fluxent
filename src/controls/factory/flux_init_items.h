@@ -32,6 +32,7 @@ XentNodeId flux_listitem_init(FluxListItemDesc const *info);
 XentNodeId flux_groupheader_init(FluxListItemDesc const *info);
 uint32_t   flux_list_stick(XentCtx *ctx, FluxStore *store, XentNodeId node, struct FluxNodeData *nd);
 bool       flux_list_groups(FluxStore *store, XentNodeId list, void const *sizes, int count);
+bool       flux_list_names(FluxStore *store, XentNodeId list, void const *data, uint32_t len);
 
 XentNodeId flux_list_content_node(FluxStore *store, XentNodeId list);
 XentNodeId flux_list_slot(FluxStore *store, XentNodeId list, XentNodeId child);

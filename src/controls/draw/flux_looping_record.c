@@ -19,8 +19,13 @@ static FluxRect looping_deflate(FluxRect const *r, float dx, float dy) {
 static bool looping_rec_button(
   XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *r, wchar_t const *glyph, bool hovered, bool pressed
 ) {
-	if (!flux_rec_fill_rect(b, r, t->flyout_background)) return false;
+	FluxColor bg = t->flyout_background;
 	FluxColor fg = (hovered || pressed) ? t->text_primary : t->text_secondary;
+	if (t->contrast.active) {
+		bg = hovered && !pressed ? t->contrast.highlight : t->contrast.window;
+		fg = pressed ? t->contrast.highlight : hovered ? t->contrast.highlight_text : t->contrast.button_text;
+	}
+	if (!flux_rec_fill_rect(b, r, bg)) return false;
 	return flux_rec_glyph_wc(b, r, glyph, pressed ? LOOP_GLYPH_PRESSED : LOOP_GLYPH_SIZE, fg);
 }
 
@@ -92,6 +97,24 @@ static bool looping_item_fill(
 	return true;
 }
 
+static bool looping_item_contrast(
+  XentDlBuilder *b, FluxContrastColors const *p, FluxRect const *root, FluxRect const *content,
+  FluxRenderSnap const *snap, FluxControlState const *state, float size
+) {
+	bool      hovered = state->hovered && state->pointer_type == FLUX_POINTER_MOUSE;
+	bool      ok      = true;
+	FluxColor fg      = p->button_text;
+	if (snap->u.loop_item.selected) {
+		ok = flux_rec_fill_rect(b, content, p->highlight);
+		fg = p->highlight_text;
+	}
+	else if (state->enabled && (state->pressed || hovered)) {
+		ok = flux_rec_fill_rounded(b, root, FLUX_CORNER_RADIUS, state->pressed ? p->window : p->highlight);
+		fg = state->pressed ? p->highlight : p->highlight_text;
+	}
+	return ok && looping_item_label(b, content, snap, size, fg);
+}
+
 XentDl *flux_looping_item_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
@@ -109,9 +132,10 @@ XentDl *flux_looping_item_record(
 	item_state.hovered                &= !snap->u.loop_item.selected;
 	state                              = &item_state;
 
+	float size                         = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
+	if (t->contrast.active)
+		return flux_rec_finish(b, looping_item_contrast(b, &t->contrast, &root, &content, snap, state, size));
 	if (!looping_item_fill(b, t, &root, &content, snap, state)) return flux_rec_finish(b, false);
-
-	float size = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
 	if (snap->u.loop_item.accent)
 		return flux_rec_finish(b, looping_accent_text(b, t, &content, bounds, snap, state, size));
 	return flux_rec_finish(b, looping_item_label(b, &content, snap, size, looping_item_text(t, state)));

@@ -14,6 +14,8 @@ typedef enum FluxProgressState
 	FLUX_PROGRESS_ERROR,
 } FluxProgressState;
 
+typedef struct FluxTheme FluxTheme;
+
 typedef struct FluxProgressData {
 	float      value;
 	float      min_value;
@@ -23,6 +25,9 @@ typedef struct FluxProgressData {
 	bool       indeterminate;
 	uint8_t    state;
 	XentInsets padding;
+	FluxTheme *theme;
+	float      border_width;
+	float      layout_height;
 } FluxProgressData;
 
 typedef struct FluxProgressRingData {

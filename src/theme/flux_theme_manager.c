@@ -3,6 +3,7 @@
 #endif
 
 #include "fluxent/flux_theme.h"
+#include "theme/flux_theme_contrast.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -193,6 +194,10 @@ static bool theme_read_accent(WUIVI_UISettings *settings, WUIVI_UIColorType type
 }
 
 static void resolve_current(FluxTheme *tm) {
+	if (flux_theme_systemcontrast()) {
+		flux_theme_contrast_palette(&tm->current);
+		return;
+	}
 	bool dark = false;
 	switch (tm->mode) {
 	case FLUX_THEME_LIGHT  : dark = false; break;

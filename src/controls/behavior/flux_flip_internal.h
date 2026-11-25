@@ -14,6 +14,8 @@ typedef struct FluxFlipViewData {
 	FluxWindow   *window;
 	XentNodeId    root;
 	XentNodeId    host;
+	XentNodeId    prev;
+	XentNodeId    next;
 
 	int           selected;
 	bool          vertical;
@@ -37,22 +39,28 @@ typedef struct FluxFlipViewData {
 } FluxFlipViewData;
 
 typedef struct FluxPipsPagerData {
-	XentCtx   *ctx;
-	FluxStore *store;
-	XentNodeId node;
+	XentCtx    *ctx;
+	FluxStore  *store;
+	XentNodeId  node;
 
-	int        count;
-	int        selected;
-	int        max_visible;
-	bool       vertical;
-	uint8_t    nav_vis;
+	int         count;
+	int         selected;
+	int         max_visible;
+	bool        vertical;
+	uint8_t     nav_vis;
 
-	int        window_start;
-	int        pressed_pip;
-	uint8_t    pressed_nav;
+	int         window_start;
+	int         pressed_pip;
+	uint8_t     pressed_nav;
+	XentNodeId  prev;
+	XentNodeId  next;
+	XentNodeId  pane;
+	XentNodeId  group;
+	XentNodeId *pips;
+	int         npips;
 
-	void       (*on_select)(void *ctx, int index);
-	void      *on_select_ctx;
+	void        (*on_select)(void *ctx, int index);
+	void       *on_select_ctx;
 } FluxPipsPagerData;
 
 #endif

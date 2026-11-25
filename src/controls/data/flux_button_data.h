@@ -22,7 +22,10 @@ typedef struct FluxButtonData {
 	float           font_size;
 	FluxButtonStyle style;
 	bool            is_checked;
-	bool            pressed_primary;
+	bool            picker_flyout_button;
+	bool            teaching_tip_close;
+	bool            suggest_query;
+	bool            navigation_back;
 	void            (*on_click)(void *ctx);
 	void           *on_click_ctx;
 	void            (*on_toggle)(void *ctx, bool checked);

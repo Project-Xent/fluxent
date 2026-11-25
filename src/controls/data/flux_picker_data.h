@@ -32,6 +32,7 @@ typedef struct FluxPickerData {
 	FluxPickerFlyout    *flyout;
 
 	char const          *header;
+	XentNodeId           button;
 
 	char                 text [FLUX_PICKER_COLUMNS][64];
 	float                weight [FLUX_PICKER_COLUMNS];

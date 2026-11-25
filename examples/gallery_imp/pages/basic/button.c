@@ -43,14 +43,17 @@ static void button_add(PageBuild *b, XtkNodeRef parent, char const *text, char c
 	xtk_button_create(
 	  &b->txn, parent,
 	  &(XtkButtonProps) {
-		.set     = (text ? XTK_BUTTON_TEXT_MASK : 0u)
-	             | (icon ? XTK_BUTTON_ICON_MASK : 0u)
-	             | XTK_BUTTON_STYLE_MASK
-	             | XTK_BUTTON_ENABLED_MASK,
-		.text    = text,
-		.icon    = icon,
-		.style   = style,
-		.enabled = true,
+		.set       = (text ? XTK_BUTTON_TEXT_MASK : 0u)
+	               | (icon ? XTK_BUTTON_ICON_MASK : 0u)
+	               | ((!text && icon) ? XTK_BUTTON_ANAME_MASK : 0u)
+	               | XTK_BUTTON_STYLE_MASK
+	               | XTK_BUTTON_ENABLED_MASK,
+		.text      = text,
+		.aname     = icon,
+		.aname_len = icon ? ( uint32_t ) strlen(icon) : 0u,
+		.icon      = icon,
+		.style     = style,
+		.enabled   = true,
 	  }
 	);
 }

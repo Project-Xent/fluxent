@@ -2,6 +2,7 @@
 #define FLUX_RENDER_CACHE_H
 
 #include "fluxent/flux_types.h"
+#include "render/flux_icon_timeline.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -60,6 +61,7 @@ typedef struct FluxCacheEntry {
 	FluxTween             scroll_anim_y;
 	FluxColorTween        color_anim;
 	FluxVisualState       vstate;
+	FluxIconPlayback      icon_playback;
 
 	double                caret_blink_epoch;
 	float                 caret_blink_index;

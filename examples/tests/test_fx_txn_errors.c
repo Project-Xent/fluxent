@@ -52,58 +52,63 @@ static XtkBatch *allocation_batch(XtkHost *host) {
 	return batch;
 }
 
+static int oom_construct_failed(XtkHost *host, XtkBatch *batch) {
+	xtk_alloc_fail_at(0);
+	if (batch) xtk_batch_free(batch);
+	if (host) flux_host_destroy(host);
+	XtkAllocStats stats = xtk_alloc_test_stats();
+	EXPECT(stats.failures == 1u, "construction fails only at injected allocation");
+	EXPECT(stats.live_bytes == 0u, "construction failure leaks nothing");
+	return 0;
+}
+
+static int oom_prepare_failed(XtkHost *host, XtkBatch *batch, XtkBatchError perr) {
+	xtk_alloc_fail_at(0);
+	EXPECT(perr == XTK_BATCH_ERR_OOM, "prepare-time allocation failure reports OOM");
+	xtk_batch_free(batch);
+	flux_host_destroy(host);
+	XtkAllocStats stats = xtk_alloc_test_stats();
+	EXPECT(stats.failures == 1u, "prepare fails only at injected allocation");
+	EXPECT(stats.live_bytes == 0u, "prepare failure leaks nothing");
+	return 0;
+}
+
+static int oom_commit(XtkHost *host, XtkBatch *batch, XtkPrepare *prepare, bool *success) {
+	XtkBatchDiag    d      = {0};
+	XtkBatchResult *result = host->vt->commit(host, prepare, &d);
+	xtk_alloc_fail_at(0);
+	if (!result) EXPECT(d.error == XTK_BATCH_ERR_OOM, "commit-time allocation failure reports OOM");
+	if (result) xtk_batchresult_destroy(result);
+	*success = result != NULL;
+	xtk_batch_free(batch);
+	flux_host_destroy(host);
+	XtkAllocStats s = xtk_alloc_test_stats();
+	EXPECT(s.failures == (*success ? 0u : 1u), "commit succeeds only after the injection range");
+	EXPECT(s.live_bytes == 0u, "failed commit leaks nothing");
+	return 0;
+}
+
+static int oom_step(uint64_t fail_at, bool *success) {
+	xtk_alloc_test_reset();
+	xtk_alloc_fail_at(fail_at);
+	XtkHost  *host  = flux_host_create();
+	XtkBatch *batch = host ? allocation_batch(host) : NULL;
+	if (!host || !batch) return oom_construct_failed(host, batch);
+	XtkPrepare   *prepare = NULL;
+	XtkBatchDiag  d;
+	XtkBatchError perr = host->vt->prepare(host, batch, &prepare, &d);
+	if (perr != XTK_BATCH_OK || !prepare) return oom_prepare_failed(host, batch, perr);
+	return oom_commit(host, batch, prepare, success);
+}
+
 static int test_commit_oom_sweep(void) {
 	bool saw_failure = false;
 	bool saw_success = false;
-	for (uint64_t fail_at = 1; fail_at <= 256; fail_at++) {
-		xtk_alloc_test_reset();
-		xtk_alloc_fail_at(fail_at);
-
-		XtkHost  *host  = flux_host_create();
-		XtkBatch *batch = host ? allocation_batch(host) : NULL;
-		if (!host || !batch) {
-			xtk_alloc_fail_at(0);
-			if (batch) xtk_batch_free(batch);
-			if (host) flux_host_destroy(host);
-			XtkAllocStats stats = xtk_alloc_test_stats();
-			EXPECT(stats.failures == 1u, "construction fails only at injected allocation");
-			EXPECT(stats.live_bytes == 0u, "construction failure leaks nothing");
-			saw_failure = true;
-			continue;
-		}
-
-		XtkPrepare   *prepare = NULL;
-		XtkBatchDiag  d;
-		XtkBatchError perr = host->vt->prepare(host, batch, &prepare, &d);
-		if (perr != XTK_BATCH_OK || !prepare) {
-			xtk_alloc_fail_at(0);
-			EXPECT(perr == XTK_BATCH_ERR_OOM, "prepare-time allocation failure reports OOM");
-			xtk_batch_free(batch);
-			flux_host_destroy(host);
-			XtkAllocStats stats = xtk_alloc_test_stats();
-			EXPECT(stats.failures == 1u, "prepare fails only at injected allocation");
-			EXPECT(stats.live_bytes == 0u, "prepare failure leaks nothing");
-			saw_failure = true;
-			continue;
-		}
-
-		XtkBatchResult *result = host->vt->commit(host, prepare, &d);
-		xtk_alloc_fail_at(0);
-		if (!result) {
-			EXPECT(d.error == XTK_BATCH_ERR_OOM, "commit-time allocation failure reports OOM");
-			saw_failure = true;
-		}
-		else {
-			xtk_batchresult_destroy(result);
-			saw_success = true;
-		}
-		xtk_batch_free(batch);
-		flux_host_destroy(host);
-
-		XtkAllocStats s = xtk_alloc_test_stats();
-		EXPECT(s.failures == (result ? 0u : 1u), "commit succeeds only after the injection range");
-		EXPECT(s.live_bytes == 0u, "failed commit leaks nothing");
-		if (saw_success) break;
+	for (uint64_t fail_at = 1; fail_at <= 256 && !saw_success; fail_at++) {
+		bool success = false;
+		if (oom_step(fail_at, &success)) return 1;
+		saw_failure = saw_failure || !success;
+		saw_success = success;
 	}
 	EXPECT(saw_failure && saw_success, "sweep reaches every commit allocation");
 	return 0;

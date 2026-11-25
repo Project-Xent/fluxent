@@ -1,4 +1,5 @@
 #include "app.h"
+#include "gallery_assets.h"
 
 static void stretch_col(XtkTxn *txn, XtkNodeRef parent, XtkImageStretch stretch, char const *label) {
 	XtkNodeRef col = xtk_ref_local(ui_column(txn, parent, 6.0f, XENT_FLEX_ALIGN_START));
@@ -8,17 +9,17 @@ static void stretch_col(XtkTxn *txn, XtkNodeRef parent, XtkImageStretch stretch,
 		.set = XTK_IMAGE_W_MASK | XTK_IMAGE_H_MASK | XTK_IMAGE_SRC_MASK | XTK_IMAGE_FIT_MASK,
 		.w   = 180.0f,
 		.h   = 110.0f,
-		.src = flux_image_respath("C:/Windows/Web/Wallpaper/Windows/img0.jpg"),
+		.src = gallery_wallpaper(),
 		.fit = stretch,
 	  }
 	);
 	ui_text(txn, col, label, 12.0f, FLUX_FONT_REGULAR);
 }
 
-static void asset_col(PageBuild *b, XtkNodeRef parent, char const *name, XtkImageProps props, char const *label) {
+static void asset_col(PageBuild *b, XtkNodeRef parent, wchar_t const *name, XtkImageProps props, char const *label) {
 	XtkNodeRef col  = xtk_ref_local(ui_column(&b->txn, parent, 6.0f, XENT_FLEX_ALIGN_START));
 	props.set      |= XTK_IMAGE_SRC_MASK | XTK_IMAGE_FIT_MASK;
-	props.src       = flux_image_respath(gallery_fmt(b->app, "%s/%s", GALLERY_ASSETS, name));
+	props.src       = gallery_asset(name);
 	xtk_image_create(&b->txn, col, &props);
 	ui_text(&b->txn, col, label, 12.0f, FLUX_FONT_REGULAR);
 }
@@ -43,19 +44,19 @@ bool page_image_build(PageBuild *b) {
 	  b, parent,
 	  "No Width or Height: each image measures to its natural size once its header is decoded off the UI thread."
 	);
-	asset_col(b, natural, "logo.svg", (XtkImageProps) {.fit = XTK_IMAGE_UNIFORM}, "SVG");
-	asset_col(b, natural, "spinner.gif", (XtkImageProps) {.fit = XTK_IMAGE_UNIFORM}, "Animated GIF");
-	asset_col(b, natural, "bounce.png", (XtkImageProps) {.fit = XTK_IMAGE_UNIFORM}, "APNG");
+	asset_col(b, natural, L"logo.svg", (XtkImageProps) {.fit = XTK_IMAGE_UNIFORM}, "SVG");
+	asset_col(b, natural, L"spinner.gif", (XtkImageProps) {.fit = XTK_IMAGE_UNIFORM}, "Animated GIF");
+	asset_col(b, natural, L"bounce.png", (XtkImageProps) {.fit = XTK_IMAGE_UNIFORM}, "APNG");
 	asset_col(
-	  b, natural, "logo.svg",
+	  b, natural, L"logo.svg",
 	  (XtkImageProps) {.set = XTK_IMAGE_W_MASK | XTK_IMAGE_H_MASK, .w = 192.0f, .h = 192.0f, .fit = XTK_IMAGE_UNIFORM},
 	  "SVG at 192 × 192"
 	);
 	XtkNodeRef    nine = image_card(b, parent, "NineGrid = 12: corners keep their size, edges and center stretch.");
 	XtkImageProps fill = {.set = XTK_IMAGE_W_MASK | XTK_IMAGE_H_MASK, .w = 240.0f, .h = 80.0f, .fit = XTK_IMAGE_FILL};
-	asset_col(b, nine, "frame.png", fill, "Fill");
+	asset_col(b, nine, L"frame.png", fill, "Fill");
 	fill.set |= XTK_IMAGE_NL_MASK | XTK_IMAGE_NT_MASK | XTK_IMAGE_NR_MASK | XTK_IMAGE_NB_MASK;
 	fill.nl = fill.nt = fill.nr = fill.nb = 12.0f;
-	asset_col(b, nine, "frame.png", fill, "Fill + NineGrid");
+	asset_col(b, nine, L"frame.png", fill, "Fill + NineGrid");
 	return true;
 }

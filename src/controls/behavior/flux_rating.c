@@ -213,6 +213,62 @@ XentNodeId flux_rating_init(FluxRatingDesc const *info) {
 	return node;
 }
 
+static int rating_fraction(double value) {
+	int hundred = ( int ) (value * 100.0);
+	if (hundred % 100 == 0) return 0;
+	return hundred % 10 == 0 ? 1 : 2;
+}
+
+char const *flux_rating_uia_value(FluxStore *store, XentNodeId id) {
+	FluxRatingData *r = rating_data(store, id);
+	if (!r) return NULL;
+	double v = r->value == -1.0 ? r->placeholder_value : r->value;
+	if (r->value == -1.0 && r->placeholder_value == -1.0) snprintf(r->uia_value, sizeof(r->uia_value), "Rating Unset");
+	else
+		snprintf(
+		  r->uia_value, sizeof(r->uia_value), r->value == -1.0 ? "Community Rating, %.*f of %d" : "Rating, %.*f of %d",
+		  rating_fraction(v), v, r->max_rating
+		);
+	return r->uia_value;
+}
+
+void flux_rating_uia_settext(FluxStore *store, XentNodeId id, char const *text) {
+	FluxRatingData *r   = rating_data(store, id);
+	char           *end = NULL;
+	double          v   = text ? strtod(text, &end) : 0.0;
+	if (!r || !end || end == text) return;
+	r->value = v > 0.0 ? rating_coerce(v, r->max_rating) : -1.0;
+	rating_notify(r);
+}
+
+void flux_rating_uia_setrange(FluxStore *store, XentNodeId id, double value) {
+	FluxRatingData *r = rating_data(store, id);
+	if (!r) return;
+	r->value = value > 0.0 ? rating_coerce(value, r->max_rating) : -1.0;
+	rating_notify(r);
+}
+
+bool flux_rating_uia_range(FluxStore *store, XentNodeId id, double *value, double *lo, double *hi) {
+	FluxRatingData *r = rating_data(store, id);
+	if (!r) return false;
+	*value = r->value == -1.0 ? 0.0 : r->value;
+	*lo    = 0.0;
+	*hi    = r->max_rating;
+	return true;
+}
+
+bool flux_rating_uia_readonly(FluxStore *store, XentNodeId id) {
+	FluxRatingData *r = rating_data(store, id);
+	return !r || r->is_read_only;
+}
+
+void flux_rating_uia_steps(FluxStore *store, XentNodeId id, double *small_step, double *large_step) {
+	( void ) store;
+	( void ) id;
+	*small_step = 1.0;
+	*large_step = 1.0;
+}
+
 void flux_rating_retarget(FluxStore *store, XentNodeId id) {
 	FluxRatingData *r = rating_data(store, id);
 	if (!r) return;

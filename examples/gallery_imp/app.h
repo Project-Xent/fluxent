@@ -88,7 +88,10 @@ struct GalleryApp {
 	XtkScene          scene;
 	Model             model;
 	GalleryBind       nav_bind;
+	GalleryBind       search_text_bind;
+	GalleryBind       search_query_bind;
 	XtkCtrl           nav;
+	XtkCtrl           control_search;
 	XtkCtrl           page_root;
 	GalleryBindBlock *bind_blocks;
 	GalleryPageAlloc *page_allocs;
@@ -183,6 +186,7 @@ bool       page_tree_view_build(PageBuild *b);
 bool       page_items_view_build(PageBuild *b);
 bool       page_pull_refresh_build(PageBuild *b);
 bool       page_split_view_build(PageBuild *b);
+bool       page_navigation_view_build(PageBuild *b);
 bool       page_title_bar_build(PageBuild *b);
 bool       page_drag_drop_build(PageBuild *b);
 bool       page_materials_build(PageBuild *b);

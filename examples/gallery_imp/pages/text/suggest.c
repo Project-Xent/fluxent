@@ -54,7 +54,7 @@ bool page_autosuggest_build(PageBuild *b) {
 	                 | (text ? XTK_SUGGEST_TEXT_MASK : 0u),
 		.w           = 320.0f,
 		.placeholder = "Search cities...",
-		.icon        = "Find",
+		.icon        = "Search",
 		.text        = text,
 	  }
 	);

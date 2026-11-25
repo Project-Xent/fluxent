@@ -435,11 +435,22 @@ static FluxTreeHooks const *tree_hooks(FluxHostState *R, XentNodeId node) {
 	return m ? m->tree : NULL;
 }
 
+static XentNodeId slot_parent(FluxHostState *R, FluxTreeHooks const *tree, XentNodeId parent, XentNodeId child) {
+	PropEntry const *entry = flux_host_prop_find(R, flux_host_as_control(child), XTK_PROP_NAV_SLOT);
+	uint32_t         slot  = entry && entry->value.kind == XTK_VALUE_ENUM ? entry->value.u.u32 : 0u;
+	return tree->slot_value(R->store, parent, slot);
+}
+
+static XentNodeId tree_child_host(FluxHostState *R, XentNodeId parent, XentNodeId child) {
+	FluxTreeHooks const *tree = tree_hooks(R, parent);
+	if (!tree) return XENT_NODE_INVALID;
+	if (tree->slot_value) return slot_parent(R, tree, parent, child);
+	if (tree->slot) return tree->slot(R->store, parent, child);
+	return tree->content ? tree->content(R->store, parent) : XENT_NODE_INVALID;
+}
+
 static XentNodeId content_parent(FluxHostState *R, XentNodeId parent, XentNodeId child) {
-	FluxTreeHooks const *t    = tree_hooks(R, parent);
-	XentNodeId           host = t && t->slot    ? t->slot(R->store, parent, child)
-	                          : t && t->content ? t->content(R->store, parent)
-	                                            : XENT_NODE_INVALID;
+	XentNodeId host = tree_child_host(R, parent, child);
 	return host != XENT_NODE_INVALID ? host : parent;
 }
 
@@ -450,19 +461,31 @@ static bool stage_place_invalidations(Prepare *P, XentNodeId parent, XentNodeId 
 	return flux_host_stage_invalidate(P, flux_host_as_control(previous), mask);
 }
 
+static XentNodeId place_before(FluxHostState *R, XentNodeId logical, XentNodeId physical, XentNodeId before) {
+	if (before == XENT_NODE_INVALID || xent_node_parent(R->ctx, before) == physical) return before;
+	FluxTreeHooks const *tree = tree_hooks(R, logical);
+	if (!tree || !tree->slot_value) return before;
+	XentNodeId sibling_host = slot_parent(R, tree, logical, before);
+	if (sibling_host == XENT_NODE_INVALID || sibling_host == physical) return before;
+	return xent_node_parent(R->ctx, before) == sibling_host ? XENT_NODE_INVALID : before;
+}
+
+static bool place_on_tree(XentCtx *ctx, XentNodeId previous, XentNodeId parent, XentNodeId child, XentNodeId before) {
+	if (previous == XENT_NODE_INVALID) return xent_node_insert(ctx, parent, child, before);
+	if (previous == parent) return xent_node_move(ctx, parent, child, before);
+	return xent_node_reparent(ctx, parent, child, before);
+}
+
 static XtkBatchError place(Prepare *P, XentNodeId parent, XentNodeId child, XentNodeId before) {
-	parent                = content_parent(P->R, parent, child);
+	XentNodeId physical   = content_parent(P->R, parent, child);
+	before                = place_before(P->R, parent, physical, before);
 	XtkBatchError cap_err = capture_topo(P, child);
 	if (cap_err != XTK_BATCH_OK) return cap_err;
 	XentNodeId cur = xent_node_parent(P->R->ctx, child);
-	bool       ok  = false;
-	if (cur == XENT_NODE_INVALID) ok = xent_node_insert(P->R->ctx, parent, child, before);
-	else if (cur == parent) ok = xent_node_move(P->R->ctx, parent, child, before);
-	else ok = xent_node_reparent(P->R->ctx, parent, child, before);
-	if (!ok) return XTK_BATCH_ERR_VALIDATION;
+	if (!place_on_tree(P->R->ctx, cur, physical, child, before)) return XTK_BATCH_ERR_VALIDATION;
 	FluxTreeHooks const *t = tree_hooks(P->R, child);
 	if (t && t->placed) t->placed(P->R->store, child);
-	return stage_place_invalidations(P, parent, cur) ? XTK_BATCH_OK : XTK_BATCH_ERR_OOM;
+	return stage_place_invalidations(P, physical, cur) ? XTK_BATCH_OK : XTK_BATCH_ERR_OOM;
 }
 
 static XtkBatchError store_create_props(Prepare *P, XentNodeId node, XtkPropPatch const *props, uint32_t prop_count) {

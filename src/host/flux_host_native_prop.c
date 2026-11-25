@@ -1,4 +1,6 @@
+#include "a11y/flux_uia_app.h"
 #include "controls/behavior/flux_list_internal.h"
+#include "controls/behavior/flux_nav_internal.h"
 #include "flux_host_internal.h"
 #include "store/flux_node_data.h"
 
@@ -194,6 +196,48 @@ HANDLER(prop_wrap) {
 }
 
 SETTER(prop_tooltip, flux_prop_node_tooltip, str_or_empty(v))
+
+#define A11Y_TEXT(name, slot)                                    \
+	HANDLER(name) {                                              \
+		( void ) control;                                        \
+		flux_uia_settext(R->store, node, slot, str_or_empty(v)); \
+		return true;                                             \
+	}
+
+#define A11Y_NUM(name, slot, field)                                    \
+	HANDLER(name) {                                                    \
+		( void ) control;                                              \
+		flux_uia_setnum(R->store, node, slot, ( int32_t ) v->u.field); \
+		return true;                                                   \
+	}
+
+A11Y_TEXT(a11y_name, FLUX_A11Y_NAME)
+A11Y_TEXT(a11y_id, FLUX_A11Y_ID)
+A11Y_TEXT(a11y_help, FLUX_A11Y_HELP)
+A11Y_TEXT(a11y_description, FLUX_A11Y_DESCRIPTION)
+A11Y_TEXT(a11y_item_status, FLUX_A11Y_ITEM_STATUS)
+A11Y_TEXT(a11y_item_type, FLUX_A11Y_ITEM_TYPE)
+A11Y_TEXT(a11y_control_type, FLUX_A11Y_CONTROL_TYPE)
+A11Y_TEXT(a11y_accelerator, FLUX_A11Y_ACCELERATOR)
+A11Y_TEXT(a11y_access_key, FLUX_A11Y_ACCESS_KEY)
+A11Y_TEXT(a11y_landmark_name, FLUX_A11Y_LANDMARK_NAME)
+A11Y_TEXT(a11y_labeled_by, FLUX_A11Y_LABELED_BY)
+A11Y_TEXT(a11y_described_by, FLUX_A11Y_DESCRIBED_BY)
+A11Y_TEXT(a11y_flows_to, FLUX_A11Y_FLOWS_TO)
+A11Y_TEXT(a11y_flows_from, FLUX_A11Y_FLOWS_FROM)
+A11Y_TEXT(a11y_controlled, FLUX_A11Y_CONTROLLED)
+A11Y_NUM(a11y_landmark, FLUX_A11Y_LANDMARK, u32)
+A11Y_NUM(a11y_live, FLUX_A11Y_LIVE, u32)
+A11Y_NUM(a11y_heading, FLUX_A11Y_HEADING, u32)
+A11Y_NUM(a11y_view, FLUX_A11Y_VIEW, u32)
+A11Y_NUM(a11y_required, FLUX_A11Y_REQUIRED, b)
+A11Y_NUM(a11y_data_valid, FLUX_A11Y_VALID, b)
+A11Y_NUM(a11y_peripheral, FLUX_A11Y_PERIPHERAL, b)
+A11Y_NUM(a11y_dialog, FLUX_A11Y_DIALOG, b)
+A11Y_NUM(a11y_position, FLUX_A11Y_POSITION, i32)
+A11Y_NUM(a11y_size, FLUX_A11Y_SIZE, i32)
+A11Y_NUM(a11y_level, FLUX_A11Y_LEVEL, i32)
+A11Y_NUM(a11y_culture, FLUX_A11Y_CULTURE, i32)
 SETTER(prop_drop, flux_prop_node_drop, v->u.u32)
 SETTER(prop_dragtext, flux_prop_node_dragtext, str_or_empty(v))
 SETTER(prop_dragfiles, flux_prop_node_dragfiles, str_or_empty(v))
@@ -478,12 +522,6 @@ FluxPropHandler const flux_props_image [] = {
   END,
 };
 
-static void progress_min_height(FluxHostState *R, XentNodeId node, FluxNodeData const *nd) {
-	FluxProgressData const *bar    = ( FluxProgressData const * ) nd->component_data;
-	float                   height = 3.0f + bar->padding.top + bar->padding.bottom + 2.0f * nd->visuals.border_width;
-	xent_setminsize(R->ctx, node, (XentSize) {0.0f, height});
-}
-
 HANDLER(progress_padding) {
 	( void ) v;
 	FluxNodeData     *nd  = flux_store_find(R->store, node);
@@ -494,7 +532,7 @@ HANDLER(progress_padding) {
 	  fmaxf(0.0f, stored_f32(R, control, XTK_PROP_PADDING_TOP)),
 	  fmaxf(0.0f, stored_f32(R, control, XTK_PROP_PADDING_RIGHT)),
 	  fmaxf(0.0f, stored_f32(R, control, XTK_PROP_PADDING_BOTTOM))};
-	progress_min_height(R, node, nd);
+	flux_progress_sync(R->ctx, node, nd);
 	return false;
 }
 
@@ -523,10 +561,11 @@ HANDLER(progress_state) {
 
 HANDLER(progress_border_width) {
 	( void ) control;
-	FluxNodeData *nd = flux_store_find(R->store, node);
-	if (!nd || !nd->component_data) return true;
-	nd->visuals.border_width = fmaxf(0.0f, v->u.f32);
-	progress_min_height(R, node, nd);
+	FluxNodeData     *nd  = flux_store_find(R->store, node);
+	FluxProgressData *bar = nd ? nd->component_data : NULL;
+	if (!bar) return true;
+	bar->border_width = fmaxf(0.0f, v->u.f32);
+	flux_progress_sync(R->ctx, node, nd);
 	return true;
 }
 
@@ -622,6 +661,11 @@ HANDLER(list_groups) {
 	return flux_list_groups(R->store, node, v->u.bytes.data, ( int ) (v->u.bytes.len / sizeof(int32_t)));
 }
 
+HANDLER(list_names) {
+	( void ) control;
+	return flux_list_names(R->store, node, v->u.bytes.data, v->u.bytes.len);
+}
+
 SETTER(list_selected, flux_list_set_selected, v->u.i32)
 SETTER(list_first, flux_list_stage_first, v->u.i32)
 SETTER(list_mode, flux_list_setmode, ( XtkListSelMode ) v->u.u32)
@@ -635,6 +679,7 @@ FluxPropHandler const flux_props_list [] = {
   ON(COLUMN_COUNT, I32, list_columns),
   ON(SELECTION_MODE, ENUM, list_mode),
   ON(GROUPS, BYTES, list_groups),
+  ON(ITEMS, BYTES, list_names),
   ON(RECTANGLE_SELECTION, BOOL, list_rectsel),
   END,
 };
@@ -948,6 +993,7 @@ static void dialog_config(FluxHostState *R, XtkCtrl control, XentNodeId node) {
 
 CONFIG(dialog_config_prop, dialog_config)
 SETTER(dialog_open, flux_dialog_sync_host, v->u.b)
+SETTER(dialog_default_button, flux_dialog_setdefaultbutton, ( XtkDialogButton ) v->u.u32)
 
 FluxPropHandler const flux_props_dialog [] = {
   ON(WIDTH, F32, dialog_config_prop),
@@ -956,6 +1002,7 @@ FluxPropHandler const flux_props_dialog [] = {
   ON(PRIMARY_TEXT, STRING, dialog_config_prop),
   ON(SECONDARY_TEXT, STRING, dialog_config_prop),
   ON(CLOSE_TEXT, STRING, dialog_config_prop),
+  ON(DIALOG_DEFAULT_BUTTON, ENUM, dialog_default_button),
   ON(OPEN, BOOL, dialog_open),
   END,
 };
@@ -1032,19 +1079,19 @@ FluxPropHandler const flux_props_menuitem [] = {
 
 static int nav_append(FluxHostState *R, XentNodeId node, XtkNavModelItemView const *item) {
 	switch (item->kind) {
-	case XTK_NAV_ITEM      : return flux_nav_add_item(R->store, node, item->icon, item->label);
-	case XTK_NAV_HEADER    : return flux_nav_add_header(R->store, node, item->label);
-	case XTK_NAV_SEPARATOR : return flux_nav_add_separator(R->store, node);
-	case XTK_NAV_FOOTER    : return flux_nav_addfooter(R->store, node, item->icon, item->label);
-	case XTK_NAV_CHILD     : return flux_nav_addchild(R->store, node, item->parent, item->icon, item->label);
-	default                : return -1;
+	case XTK_NAV_ITEM          : return flux_nav_add_item(R->store, node, item->icon, item->label);
+	case XTK_NAV_HEADER        : return flux_nav_add_header(R->store, node, item->label);
+	case XTK_NAV_SEPARATOR     : return flux_nav_add_separator(R->store, node);
+	case XTK_NAV_FOOTER        : return flux_nav_addfooter(R->store, node, item->icon, item->label);
+	case XTK_NAV_CHILD         : return flux_nav_addchild(R->store, node, item->parent, item->icon, item->label);
+	case XTK_NAV_FOOTER_HEADER : return flux_nav_add_footer_header(R->store, node, item->label);
+	default                    : return -1;
 	}
 }
 
 static bool nav_load(FluxHostState *R, XentNodeId node, XtkNavModelView const *model) {
 	if (model->count > FLUX_NAV_VIEW_MAX_ITEMS || !flux_nav_reset_items(R->store, node)) return false;
-	bool title_bar = (model->flags & XTK_NAV_MODEL_WINDOW_TITLE_BAR) != 0u;
-	if (!flux_nav_set_chrome(R->store, node, title_bar, model->app_title)) return false;
+	if (!flux_nav_set_chrome(R->store, node, model->flags, model->app_title)) return false;
 	for (uint32_t i = 0; i < model->count; i++) {
 		XtkNavModelItemView item;
 		if (!xtk_navmodel_item(model, i, &item) || nav_append(R, node, &item) < 0) return false;
@@ -1053,17 +1100,65 @@ static bool nav_load(FluxHostState *R, XentNodeId node, XtkNavModelView const *m
 }
 
 HANDLER(nav_model) {
-	( void ) control;
 	XtkNavModelView model;
-	if (xtk_navmodel_open(v->u.bytes.data, v->u.bytes.len, &model)) ( void ) nav_load(R, node, &model);
+	if (xtk_navmodel_open(v->u.bytes.data, v->u.bytes.len, &model) && nav_load(R, node, &model))
+		flux_nav_set_selected(R->store, node, stored_selected(R, control));
 	return true;
 }
 
 SETTER(nav_selected, flux_nav_set_selected, v->u.i32)
+SETTER(nav_display, flux_nav_set_pane_mode, ( int ) v->u.u32)
+SETTER(nav_settings, flux_nav_set_settings_visible, v->u.b)
+SETTER(nav_always_show_header, flux_nav_set_always_show_header, v->u.b)
+SETTER(nav_back_button, flux_nav_set_back_button, v->u.u32)
+SETTER(nav_back_enabled, flux_nav_set_back_enabled, v->u.b)
+
+HANDLER(nav_title) {
+	( void ) control;
+	flux_nav_set_pane_title(R->store, node, str_or_empty(v));
+	return true;
+}
+
+HANDLER(navslot_slot) {
+	( void ) control;
+	FluxNodeData *nd = flux_store_find(R->store, node);
+	if (!nd) return false;
+	nd->nav_slot = v->u.u32 <= XTK_NAV_SLOT_CONTENT_OVERLAY ? ( uint8_t ) v->u.u32 : XTK_NAV_SLOT_CONTENT;
+	if (nd->component_type == FLUX_CONTROL_NAV_SLOT) {
+		bool stretch = nd->nav_slot == XTK_NAV_SLOT_SEARCH || nd->nav_slot >= XTK_NAV_SLOT_PAGE_HEADER;
+		xent_setfit(R->ctx, node, !stretch, true);
+		xent_setself(R->ctx, node, stretch ? XENT_FLEX_ALIGN_STRETCH : XENT_FLEX_ALIGN_START);
+	}
+	flux_nav_slot_changed(R->store, node);
+	return true;
+}
+
+HANDLER(nav_width) {
+	if (isnan(v->u.f32)) return xent_setwpct(R->ctx, node, 1.0f);
+	return prop_width(R, control, node, v);
+}
+
+HANDLER(nav_height) {
+	if (isnan(v->u.f32)) return xent_sethpct(R->ctx, node, 1.0f);
+	return prop_height(R, control, node, v);
+}
 
 FluxPropHandler const flux_props_nav [] = {
+  ON(WIDTH, F32, nav_width),
+  ON(HEIGHT, F32, nav_height),
   ON(SELECTED_INDEX, I32, nav_selected),
   ON(NAV_MODEL, BYTES, nav_model),
+  ON(DISPLAY_MODE, ENUM, nav_display),
+  ON(SETTINGS_VISIBLE, BOOL, nav_settings),
+  ON(PANE_TITLE, STRING, nav_title),
+  ON(ALWAYS_SHOW_HEADER, BOOL, nav_always_show_header),
+  ON(NAV_BACK_BUTTON, ENUM, nav_back_button),
+  ON(NAV_BACK_ENABLED, BOOL, nav_back_enabled),
+  END,
+};
+
+FluxPropHandler const flux_props_navslot [] = {
+  ON(NAV_SLOT, ENUM, navslot_slot),
   END,
 };
 
@@ -1146,6 +1241,8 @@ static void avatar_badge(FluxHostState *R, XtkCtrl control, XentNodeId node) {
 CONFIG(avatar_badge_prop, avatar_badge)
 SETTER(avatar_name, flux_avatar_setname, str_or_empty(v))
 SETTER(avatar_image, flux_avatar_set_image, flux_resource_path(( XentResourceId ) v->u.resource))
+SETTER(avatar_badge_image, flux_avatar_set_badge_image, flux_resource_path(( XentResourceId ) v->u.resource))
+SETTER(avatar_badge_text, flux_avatar_set_badge_text, str_or_empty(v))
 SETTER(avatar_initials, flux_avatar_set_initials, str_or_empty(v))
 SETTER(avatar_group, flux_avatar_set_group, v->u.b)
 
@@ -1157,6 +1254,8 @@ FluxPropHandler const flux_props_avatar [] = {
   ON(INITIALS, STRING, avatar_initials),
   ON(BADGE_GLYPH, STRING, avatar_badge_prop),
   ON(BADGE_VALUE, I32, avatar_badge_prop),
+  ON(BADGE_IMAGE_SOURCE, RESOURCE, avatar_badge_image),
+  ON(BADGE_TEXT, STRING, avatar_badge_text),
   ON(IS_GROUP, BOOL, avatar_group),
   END,
 };
@@ -1193,6 +1292,7 @@ CONFIG(pager_config_prop, pager_config)
 CONFIG(pager_buttons_prop, pager_buttons)
 CONFIG(pager_text_prop, pager_text)
 SETTER(pager_selected, flux_pager_set_selected, v->u.i32)
+SETTER(pager_ends, flux_pager_setends, v->u.b)
 
 FluxPropHandler const flux_props_pager [] = {
   ON(ITEM_COUNT, I32, pager_count),
@@ -1204,6 +1304,7 @@ FluxPropHandler const flux_props_pager [] = {
   ON(LAST_BUTTON, ENUM, pager_buttons_prop),
   ON(PREFIX, STRING, pager_text_prop),
   ON(SUFFIX, STRING, pager_text_prop),
+  ON(HIDE_ENDS, BOOL, pager_ends),
   END,
 };
 
@@ -1265,8 +1366,11 @@ FluxPropHandler const flux_props_titlebar [] = {
 };
 
 HANDLER(scrollbar_orientation) {
-	( void ) control;
 	flux_scroll_bar_setorientation(R->ctx, R->store, node, v->u.u32);
+	if (flux_host_prop_findc(R, control, XTK_PROP_WIDTH))
+		xent_setw(R->ctx, node, stored_f32(R, control, XTK_PROP_WIDTH));
+	if (flux_host_prop_findc(R, control, XTK_PROP_HEIGHT))
+		xent_seth(R->ctx, node, stored_f32(R, control, XTK_PROP_HEIGHT));
 	return true;
 }
 
@@ -1441,6 +1545,34 @@ static FluxPropHandler const core_props [] = {
   ON(FIT_HEIGHT, BOOL, prop_fit_height),
   ON(WRAP, ENUM, prop_wrap),
   ON(TOOLTIP, STRING, prop_tooltip),
+  ON(A11Y_NAME, STRING, a11y_name),
+  ON(A11Y_ID, STRING, a11y_id),
+  ON(A11Y_HELP, STRING, a11y_help),
+  ON(A11Y_DESCRIPTION, STRING, a11y_description),
+  ON(A11Y_ITEM_STATUS, STRING, a11y_item_status),
+  ON(A11Y_ITEM_TYPE, STRING, a11y_item_type),
+  ON(A11Y_CONTROL_TYPE, STRING, a11y_control_type),
+  ON(A11Y_ACCELERATOR, STRING, a11y_accelerator),
+  ON(A11Y_ACCESS_KEY, STRING, a11y_access_key),
+  ON(A11Y_LANDMARK_NAME, STRING, a11y_landmark_name),
+  ON(DIALOG_DEFAULT_BUTTON, ENUM, prop_none),
+  ON(A11Y_LABELED_BY, STRING, a11y_labeled_by),
+  ON(A11Y_DESCRIBED_BY, STRING, a11y_described_by),
+  ON(A11Y_FLOWS_TO, STRING, a11y_flows_to),
+  ON(A11Y_FLOWS_FROM, STRING, a11y_flows_from),
+  ON(A11Y_CONTROLLED, STRING, a11y_controlled),
+  ON(A11Y_LANDMARK, ENUM, a11y_landmark),
+  ON(A11Y_LIVE, ENUM, a11y_live),
+  ON(A11Y_HEADING, ENUM, a11y_heading),
+  ON(A11Y_VIEW, ENUM, a11y_view),
+  ON(A11Y_REQUIRED, BOOL, a11y_required),
+  ON(A11Y_DATA_VALID, BOOL, a11y_data_valid),
+  ON(A11Y_PERIPHERAL, BOOL, a11y_peripheral),
+  ON(A11Y_DIALOG, BOOL, a11y_dialog),
+  ON(A11Y_POSITION, I32, a11y_position),
+  ON(A11Y_SIZE, I32, a11y_size),
+  ON(A11Y_LEVEL, I32, a11y_level),
+  ON(A11Y_CULTURE, I32, a11y_culture),
   ON(DROP_OPERATION, ENUM, prop_drop),
   ON(DRAG_TEXT, STRING, prop_dragtext),
   ON(DRAG_FILES, STRING, prop_dragfiles),
@@ -1507,6 +1639,8 @@ static FluxPropHandler const core_props [] = {
   ON(SUFFIX, STRING, prop_none),
   ON(INITIALS, STRING, prop_none),
   ON(BADGE_GLYPH, STRING, prop_none),
+  ON(BADGE_IMAGE_SOURCE, RESOURCE, prop_none),
+  ON(BADGE_TEXT, STRING, prop_none),
   ON(BADGE_MODE, ENUM, prop_none),
   ON(BADGE_VALUE, I32, prop_none),
   ON(DISPLAY_MODE, ENUM, prop_none),
@@ -1531,6 +1665,7 @@ static FluxPropHandler const core_props [] = {
   ON(BACK_DISABLED, BOOL, prop_none),
   ON(INTEGRATE_WINDOW, BOOL, prop_none),
   ON(HIDE_SPIN, BOOL, prop_none),
+  ON(HIDE_ENDS, BOOL, prop_none),
   ON(SHOW_BACK, BOOL, prop_none),
   ON(SHOW_PANE_TOGGLE, BOOL, prop_none),
   ON(OPEN_PANE_LENGTH, F32, prop_none),
@@ -1581,6 +1716,12 @@ static FluxPropHandler const core_props [] = {
   ON(NINE_GRID_TOP, F32, prop_none),
   ON(NINE_GRID_RIGHT, F32, prop_none),
   ON(NINE_GRID_BOTTOM, F32, prop_none),
+  ON(SETTINGS_VISIBLE, BOOL, prop_none),
+  ON(ALWAYS_SHOW_HEADER, BOOL, prop_none),
+  ON(NAV_BACK_BUTTON, ENUM, prop_none),
+  ON(NAV_BACK_ENABLED, BOOL, prop_none),
+  ON(PANE_TITLE, STRING, prop_none),
+  ON(NAV_SLOT, ENUM, prop_none),
   END,
 };
 

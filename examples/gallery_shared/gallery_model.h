@@ -57,6 +57,7 @@ enum
 	PAGE_PULL_REFRESH,
 	PAGE_CAT_SHELL,
 	PAGE_SPLIT_VIEW,
+	PAGE_NAVIGATION_VIEW,
 	PAGE_TITLE_BAR,
 	PAGE_DRAG_DROP,
 	PAGE_MATERIALS,
@@ -68,6 +69,19 @@ enum
 };
 
 extern XtkNavItemDesc const kNavItems [PAGE_COUNT];
+
+enum
+{
+	GALLERY_NAV_DEMO_MODES = 5,
+	GALLERY_NAV_DEMO_ITEMS = 6,
+	GALLERY_NAV_DEMO_HOME  = 1,
+};
+
+extern char const *const    kNavDemoModes [GALLERY_NAV_DEMO_MODES];
+extern XtkNavPaneMode const kNavDemoPaneModes [GALLERY_NAV_DEMO_MODES];
+extern XtkNavItemDesc const kNavDemoItems [GALLERY_NAV_DEMO_ITEMS];
+extern char const *const    kNavDemoSuggestions [2];
+char const                 *gallery_nav_demo_title(int selected);
 
 typedef struct FluxWindow   FluxWindow;
 int                         gallery_backdrop_load(void);
@@ -147,6 +161,7 @@ enum
 	MSG_PP_GROUP,
 	MSG_PAGER_SELECT,
 	MSG_SPLIT_TOGGLE,
+	MSG_SPLIT_OPEN,
 	MSG_SPLIT_MODE,
 	MSG_SPLIT_PLACE,
 	MSG_TB_BACK,
@@ -170,18 +185,29 @@ enum
 	MSG_DD_DONE,
 	MSG_BACKDROP,
 	MSG_RTL,
+	MSG_NAV_STYLE,
+	MSG_NAV_DEMO,
+	MSG_NAV_DEMO_HIDE,
+	MSG_NAV_DEMO_PICK,
+	MSG_NAV_DEMO_MODE,
+	MSG_NAV_DEMO_HIDE_HEADER,
+	MSG_CONTROL_SEARCH_TEXT,
+	MSG_CONTROL_SEARCH_QUERY,
 	MSG_COUNT,
 };
 
-#define BAR_COUNT 4
-#define DET_COLS  4
-#define DET_ROWS  12
-#define CB_COUNT  10
+#define BAR_COUNT            4
+#define DET_COLS             4
+#define DET_ROWS             12
+#define CB_COUNT             10
+#define CONTROL_SEARCH_LIMIT 8
 
 typedef struct Model {
 	int      page;
+	char     control_query [128];
 	int      backdrop;
 	bool     rtl;
+	int      nav_style;
 	int      clicks;
 	bool     button_disabled;
 	bool     check_a;
@@ -275,6 +301,10 @@ typedef struct Model {
 	char    *dd_drop;
 	int      dd_done;
 	char     dd_exe [1024];
+	int      nav_demo_sel;
+	bool     nav_demo_hide;
+	int      nav_demo_mode;
+	bool     nav_demo_hide_header;
 } Model;
 
 void                     gallery_model_init(Model *m);
@@ -289,5 +319,6 @@ char const              *gallery_det_cell(int row, int col);
 void                     gallery_det_rows(Model const *m, int out [DET_ROWS]);
 float                    gallery_det_fit(int col);
 void                     gallery_model_update(Model *m, XtkMsg msg);
+int                      gallery_search_items(char const *query, char const *out [CONTROL_SEARCH_LIMIT]);
 
 #endif

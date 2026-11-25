@@ -48,8 +48,8 @@ static bool cp_checkers(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect cons
 }
 
 static bool cp_border(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *r) {
-	FluxRect inner = {r->x + 1.0f, r->y + 1.0f, r->w - 2.0f, r->h - 2.0f};
-	return flux_rec_stroke_rounded(b, &inner, FLUX_CORNER_RADIUS - 1.0f, t->ctrl_stroke_default, 2.0f);
+	FluxColor ink = t->contrast.active ? t->contrast.button_text : t->ctrl_stroke_default;
+	return flux_rec_stroke_rounded(b, r, FLUX_CORNER_RADIUS - 1.0f, ink, 2.0f);
 }
 
 static bool cp_ellipse_light(FluxColorPickerSnapshot const *c) {
@@ -134,17 +134,26 @@ static FluxColor cp_base(bool dark, uint8_t alpha) {
 	return dark ? flux_color_rgba(255, 255, 255, alpha) : flux_color_rgba(0, 0, 0, alpha);
 }
 
+static FluxColor cp_more_ink(FluxThemeColors const *t, FluxColorPickerSnapshot const *c, bool enabled, bool dark) {
+	if (t->contrast.active) {
+		FluxColor fg = c->more_pressed || c->more_hover ? t->contrast.highlight : t->contrast.button_text;
+		return enabled ? fg : t->contrast.gray_text;
+	}
+	return !enabled || c->more_pressed ? cp_base(dark, 0x66)
+	     : c->more_hover               ? cp_base(dark, 0x99)
+	                                   : cp_base(dark, 0xff);
+}
+
 static bool cp_more(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxColorPickerSnapshot const *c, FluxControlState const *state,
   FluxRect const *bounds
 ) {
 	if (!c->more_button) return true;
-	FluxColorPickerGeom g    = flux_colorpicker_geom_of(c);
-	bool                dark = rc && rc->is_dark;
+	FluxThemeColors const *t    = flux_rec_theme(rc);
+	FluxColorPickerGeom    g    = flux_colorpicker_geom_of(c);
+	bool                   dark = rc && rc->is_dark;
 	FluxRect  r = {bounds->x + FLUX_CP_CONTENT_W - FLUX_CP_MORE_W, bounds->y + g.more_y, FLUX_CP_MORE_W, FLUX_CP_ROW_H};
-	FluxColor fg       = !state->enabled || c->more_pressed ? cp_base(dark, 0x66)
-	                   : c->more_hover                      ? cp_base(dark, 0x99)
-	                                                        : cp_base(dark, 0xff);
+	FluxColor fg       = cp_more_ink(t, c, state->enabled != 0, dark);
 	FluxRect  content  = {r.x, r.y + 5.0f, r.w, r.h - 12.0f};
 	FluxRect  glyph    = {content.x + content.w - 12.0f, content.y, 12.0f, content.h};
 	FluxRect  label    = {content.x, content.y, content.w - 12.0f - 8.0f, content.h};
@@ -156,9 +165,10 @@ static bool cp_more(
 	  .v_align     = 1,
 	  .flags       = XENT_DL_TEXT_ICON,
 	  .font_family = flux_icon_font_family()};
-	bool ok = flux_rec_text_ex(b, &label, c->opened ? "Less" : "More", &text, fg);
+	bool ok = !t->contrast.active || flux_rec_stroke_rounded(b, &r, FLUX_CORNER_RADIUS - 0.5f, fg, 1.0f);
+	ok      = ok && flux_rec_text_ex(b, &label, c->opened ? "Less" : "More", &text, fg);
 	ok      = ok && flux_rec_text_ex(b, &glyph, c->opened ? "\xEE\x9C\x8E" : "\xEE\x9C\x8D", &icon, fg);
-	return ok && (!c->more_focus || flux_rec_focus_rect(b, flux_rec_theme(rc), &r, FLUX_CORNER_RADIUS));
+	return ok && (!c->more_focus || !state->enabled || flux_rec_focus_rect(b, t, &r, FLUX_CORNER_RADIUS));
 }
 
 static bool
@@ -194,6 +204,17 @@ XentDl *flux_colorpicker_record(
 	return flux_rec_finish(b, ok);
 }
 
+static FluxColor cp_slider_inner_color(FluxThemeColors const *t, FluxControlState const *state, bool dark) {
+	bool hot = state->hovered && !state->pressed;
+	if (t->contrast.active) {
+		FluxColor fg = hot ? t->contrast.highlight : t->contrast.button_text;
+		return state->enabled ? fg : t->contrast.gray_text;
+	}
+	if (!state->enabled) return t->ctrl_strong_fill_disabled;
+	if (!hot) return t->text_primary;
+	return dark ? flux_color_rgb(0xf2, 0xf2, 0xf2) : flux_color_rgb(0x17, 0x17, 0x17);
+}
+
 bool flux_colorpicker_slider_record(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
@@ -206,13 +227,10 @@ bool flux_colorpicker_slider_record(
 	float                     cx    = bounds->x + FLUX_CP_THUMB * 0.5f + fmaxf(0.0f, bounds->w - FLUX_CP_THUMB) * frac;
 	float                     cy    = bounds->y + bounds->h * 0.5f;
 	FluxRect  outer = {cx - FLUX_CP_THUMB * 0.5f, cy - FLUX_CP_THUMB * 0.5f, FLUX_CP_THUMB, FLUX_CP_THUMB};
-	bool      dark  = rc && rc->is_dark;
-	FluxColor inner = !state->enabled ? t->ctrl_strong_fill_disabled
-	                : state->hovered && !state->pressed
-	                  ? (dark ? flux_color_rgb(0xf2, 0xf2, 0xf2) : flux_color_rgb(0x17, 0x17, 0x17))
-	                  : t->text_primary;
-	bool      ok    = flux_rec_fill_rounded(b, &outer, FLUX_CP_THUMB * 0.5f, t->ctrl_solid_fill_default);
-	ok              = ok && flux_rec_elevation_border(b, rc, &outer, FLUX_CP_THUMB * 0.5f, false);
-	ok              = ok && flux_rec_fill_circle(b, cx, cy, 10.0f, inner);
+	FluxColor inner = cp_slider_inner_color(t, state, rc && rc->is_dark);
+	FluxColor fill  = t->contrast.active ? t->contrast.button_text : t->ctrl_solid_fill_default;
+	bool      ok    = flux_rec_fill_rounded(b, &outer, FLUX_CP_THUMB * 0.5f, fill);
+	ok = ok && (t->contrast.active || flux_rec_elevation_border(b, rc, &outer, FLUX_CP_THUMB * 0.5f, false));
+	ok = ok && flux_rec_fill_circle(b, cx, cy, 10.0f, inner);
 	return ok && (!state->focused || flux_rec_focus_rect(b, t, bounds, FLUX_CORNER_RADIUS));
 }

@@ -25,11 +25,13 @@ typedef struct FluxProgressDesc {
 	float      value;
 	float      max_value;
 	float      min_value;
+	FluxTheme *theme;
 } FluxProgressDesc;
 
 XentNodeId flux_slider_init(FluxSliderDesc const *info);
 
 XentNodeId flux_progress_init(FluxProgressDesc const *info);
+void       flux_progress_sync(XentCtx *ctx, XentNodeId node, FluxNodeData *nd);
 
 XentNodeId flux_progressring_init(FluxProgressDesc const *info);
 

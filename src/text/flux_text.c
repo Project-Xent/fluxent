@@ -234,20 +234,30 @@ static uint32_t text_copy_selection_rects(
 }
 
 uint32_t flux_text_selection(FluxTextSelectionQuery const *query) {
-	if (!query
-	    || !query->layout.renderer
-	    || !query->layout.text
-	    || !query->layout.text [0]
-	    || !query->layout.style
-	    || !query->out_rects
-	    || query->max_rects == 0)
-		return 0;
-	if (query->start >= query->end) return 0;
+	uint32_t total;
+	return flux_text_selection_for_height(query, FLUX_TEXT_UNBOUNDED, &total);
+}
+
+static bool text_selection_query_valid(FluxTextSelectionQuery const *query) {
+	return query
+	    && query->layout.renderer
+	    && query->layout.text
+	    && query->layout.text [0]
+	    && query->layout.style
+	    && query->out_rects
+	    && query->max_rects > 0
+	    && query->start < query->end;
+}
+
+uint32_t flux_text_selection_for_height(FluxTextSelectionQuery const *query, float height, uint32_t *total) {
+	*total = 0;
+	if (!text_selection_query_valid(query)) return 0;
 
 	query->layout.renderer->cache_tick++;
 
-	FluxWideBuffer     wide;
-	TextLayoutRequest  req    = text_layout_request(&query->layout, NULL);
+	FluxWideBuffer    wide;
+	TextLayoutRequest req     = text_layout_request(&query->layout, NULL);
+	req.max_h                 = height;
 	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
 	if (!layout) return 0;
 
@@ -258,17 +268,36 @@ uint32_t flux_text_selection(FluxTextSelectionQuery const *query) {
 		return 0;
 	}
 
-	UINT32                   count = 0;
-	DWRITE_HIT_TEST_METRICS *htm   = text_selection_metrics(layout, start, end, &count);
-	if (!htm) {
-		flux_wide_buffer_free(&wide);
-		return 0;
-	}
-
-	uint32_t n = text_copy_selection_rects(htm, count, query->out_rects, query->max_rects);
-
+	DWRITE_HIT_TEST_METRICS *htm = text_selection_metrics(layout, start, end, total);
+	uint32_t                 n   = htm ? text_copy_selection_rects(htm, *total, query->out_rects, query->max_rects) : 0;
 	free(htm);
 	flux_wide_buffer_free(&wide);
+	return n;
+}
+
+static void text_copy_lines(TextLineMetrics const *m, FluxTextLine *out, uint32_t max_lines) {
+	uint32_t start = 0u;
+	float    top   = 0.0f;
+	for (uint32_t i = 0u; i < m->count && i < max_lines; i++) {
+		out [i]  = (FluxTextLine) {start, m->lines [i].length, m->lines [i].newlineLength, top, m->lines [i].height};
+		start   += m->lines [i].length;
+		top     += m->lines [i].height;
+	}
+}
+
+uint32_t flux_text_lines(FluxTextLayoutQuery const *query, FluxTextLine *out, uint32_t max_lines) {
+	if (!query || !query->renderer || !query->style) return 0u;
+	query->renderer->cache_tick++;
+	char const        *safe = query->text && query->text [0] ? query->text : " ";
+	FluxWideBuffer     wide;
+	TextLayoutRequest  req    = text_layout_request(query, safe);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
+	TextLineMetrics    m;
+	bool               ok = layout && read_line_metrics(layout, &m);
+	uint32_t           n  = ok ? m.count : 0u;
+	if (ok && out) text_copy_lines(&m, out, max_lines);
+	if (ok) free_line_metrics(&m);
+	if (layout) flux_wide_buffer_free(&wide);
 	return n;
 }
 

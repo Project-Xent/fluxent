@@ -81,6 +81,14 @@ typedef struct FluxTextSelectionQuery {
 	uint32_t            max_rects;
 } FluxTextSelectionQuery;
 
+typedef struct FluxTextLine {
+	uint32_t start;
+	uint32_t length;
+	uint32_t newline;
+	float    top;
+	float    height;
+} FluxTextLine;
+
 typedef struct FluxTextClusterQuery {
 	FluxTextLayoutQuery layout;
 	uint32_t            index;
@@ -103,6 +111,8 @@ int      flux_text_hittest(FluxTextHitTestQuery const *query);
 FluxRect flux_text_caret(FluxTextCaretQuery const *query);
 
 uint32_t flux_text_selection(FluxTextSelectionQuery const *query);
+
+uint32_t flux_text_lines(FluxTextLayoutQuery const *query, FluxTextLine *out, uint32_t max_lines);
 
 uint32_t flux_text_next(FluxTextClusterQuery const *query);
 

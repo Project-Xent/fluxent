@@ -138,17 +138,29 @@ static int date_accept(FluxPickerData *pd) {
 }
 
 static void date_fill(FluxPickerData *pd, FluxPickerFlyout *fly) {
-	FluxDatePickerData *dd = ( FluxDatePickerData * ) pd;
+	static char const *const names [3] = {"day", "month", "year"};
+	static char const *const ids [3]   = {"DayLoopingSelector", "MonthLoopingSelector", "YearLoopingSelector"};
+	FluxDatePickerData      *dd        = ( FluxDatePickerData * ) pd;
 	for (int i = 0; i < FLUX_PICKER_COLUMNS; i++) {
 		int kind = dd->order [i];
 		flux_pflyout_addcolumn(
-		  fly,
-		  &(FluxPickerColumnSpec) {.weight = date_weight(kind), .loop = kind != COL_YEAR, .left = kind == COL_MONTH}
+		  fly, &(FluxPickerColumnSpec) {
+				 .weight        = date_weight(kind),
+				 .loop          = kind != COL_YEAR,
+				 .left          = kind == COL_MONTH,
+				 .name          = names [kind],
+				 .automation_id = ids [kind]}
 		);
 	}
 }
 
+static void date_spoken(FluxPickerData const *pd, char *out, size_t size) {
+	flux_locale_formattemplate(pd->value, L"day month.full year", out, size);
+}
+
 static FluxPickerOps const date_ops = {
+  .spoken = date_spoken,
+  .kind   = "date picker",
   .width  = FLUX_DATE_PICKER_W,
   .face   = date_face,
   .fill   = date_fill,

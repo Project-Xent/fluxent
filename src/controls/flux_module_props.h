@@ -39,6 +39,7 @@ extern FluxPropHandler const flux_props_teachtip [];
 extern FluxPropHandler const flux_props_menufly [];
 extern FluxPropHandler const flux_props_menuitem [];
 extern FluxPropHandler const flux_props_nav [];
+extern FluxPropHandler const flux_props_navslot [];
 extern FluxPropHandler const flux_props_flip [];
 extern FluxPropHandler const flux_props_pips [];
 extern FluxPropHandler const flux_props_rating [];

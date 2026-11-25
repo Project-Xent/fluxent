@@ -1,3 +1,6 @@
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_module.h"
+#include "controls/behavior/flux_uia_part.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
@@ -143,6 +146,7 @@ static bool tv_select_apply(FluxTabViewData *tv, int idx) {
 	int prev     = tv->selected;
 	tv->selected = idx;
 	tv_attach_content(tv, idx, true);
+	if (prev >= 0) xent_sem_setselected(tv->ctx, tv->tabs [prev].tab_node, false);
 	xent_sem_setselected(tv->ctx, tv->tabs [idx].tab_node, true);
 	if (prev >= 0) tv_sync_close(tv, &tv->tabs [prev]);
 	tv_sync_close(tv, &tv->tabs [idx]);
@@ -487,7 +491,18 @@ static float tv_drag_reorder_step(FluxTabViewData *tv, FluxTabViewItem *it, floa
 	}
 }
 
-static void tv_drag_end(FluxTabViewData *tv) {
+static void tv_drag_note(FluxTabViewData *tv, bool cancel) {
+	XentNodeId tab = tv->tabs [tv->drag_slot].tab_node;
+	if (cancel) {
+		flux_uia_note(tv->store, tab, -1, FLUX_UIA_EVT_DRAG_CANCEL);
+		flux_uia_note(tv->store, tv->root, -1, FLUX_UIA_EVT_DRAG_LEAVE);
+	}
+	flux_uia_note(tv->store, tab, -1, FLUX_UIA_EVT_DRAG_COMPLETE);
+	flux_uia_note(tv->store, tv->root, -1, FLUX_UIA_EVT_DROPPED);
+}
+
+static void tv_drag_end(FluxTabViewData *tv, bool cancel) {
+	if (tv->drag_slot >= 0 && tv->drag_active) tv_drag_note(tv, cancel);
 	if (tv->drag_slot >= 0) {
 		FluxNodeData *nd = flux_store_find(tv->store, tv->tabs [tv->drag_slot].tab_node);
 		if (nd) nd->render_translate_x = 0.0f;
@@ -507,6 +522,8 @@ static void tv_item_move(void *ctx, float x, float y) {
 	if (!tv->drag_active) {
 		if (fabsf(dx) < ( float ) GetSystemMetrics(SM_CXDRAG)) return;
 		tv->drag_active = true;
+		flux_uia_note(tv->store, it->tab_node, -1, FLUX_UIA_EVT_DRAG_START);
+		flux_uia_note(tv->store, tv->root, -1, FLUX_UIA_EVT_DRAG_ENTER);
 	}
 	dx               = tv_drag_reorder_step(tv, it, dx);
 	FluxNodeData *nd = flux_store_find(tv->store, it->tab_node);
@@ -532,16 +549,20 @@ static void tv_item_click(void *ctx) {
 	if (it->kind == FLUX_TAB_KIND_ADD) {
 		tv_route(tv, XTK_EVENT_INVOKE, -1);
 		if (tv->on_add_tab) tv->on_add_tab(tv->add_tab_ctx);
+		flux_uia_notify(
+		  tv->store, tv->root, FLUX_UIA_NOTE_ITEM_ADDED, FLUX_UIA_PROC_MOST_RECENT, "New tab added.",
+		  "TabViewNewTabAddedNotificationActivityId"
+		);
 		return;
 	}
 	bool dragged = tv->drag_active;
-	tv_drag_end(tv);
+	tv_drag_end(tv, false);
 	if (!dragged) tv_select(tv, it->index);
 }
 
 static void tv_item_cancel(void *ctx) {
 	FluxTabViewItem *it = ( FluxTabViewItem * ) ctx;
-	tv_drag_end(it->tv);
+	tv_drag_end(it->tv, true);
 }
 
 static void tv_item_middle_click(void *ctx) {
@@ -756,6 +777,27 @@ static void tv_destroy(void *component_data) {
 	free(tv);
 }
 
+static FluxUiaHooks const tv_uia_button
+  = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_INVOKE, .invoked = true, .klass = L"Button"};
+static FluxUiaHooks const tv_uia_hidden = {.role = FLUX_UIA_HIDDEN};
+
+static void               tv_set_uia(FluxTabViewData *tv, XentNodeId node, FluxUiaHooks const *uia, char const *name) {
+	FluxNodeData *nd = flux_store_find(tv->store, node);
+	if (nd) nd->uia = uia;
+	if (name) xent_sem_setlabel(tv->ctx, node, name);
+}
+
+bool flux_tabitem_uia_setinfo(FluxStore *store, XentNodeId node, int *pos, int *size, int *level) {
+	( void ) level;
+	FluxNodeData const    *nd = flux_store_find(store, node);
+	FluxTabViewItem const *it = nd ? ( FluxTabViewItem const * ) nd->component_data : NULL;
+	if (!it || !it->tv || it->kind != FLUX_TAB_KIND_TAB || it->index < 0 || !tv_slot_open(it->tv, it->index))
+		return false;
+	*pos  = tv_model_index(it->tv, it->index) + 1;
+	*size = tv_open_count(it->tv);
+	return true;
+}
+
 static void tv_make_strip_item(FluxTabViewData *tv, FluxTabViewItem *slot, XentNodeId node, FluxTabKind kind) {
 	*slot            = (FluxTabViewItem) {.tv = tv, .tab_node = node, .kind = kind, .index = -1};
 	FluxNodeData *nd = flux_store_find(tv->store, node);
@@ -769,6 +811,7 @@ static void tv_make_scroll_button(FluxTabViewData *tv, XentNodeId *out, FluxTabV
 	*out = flux_factory_create_node(tv->ctx, tv->store, tv->strip, FLUX_CONTROL_TAB_VIEW_ITEM);
 	xent_setsize(tv->ctx, *out, (XentSize) {0.0f, 0.0f});
 	tv_make_strip_item(tv, slot, *out, kind);
+	tv_set_uia(tv, *out, &tv_uia_hidden, NULL);
 	FluxNodeData *nd = flux_store_find(tv->store, *out);
 	if (nd) {
 		nd->behavior.on_pointer_down     = tv_scroll_btn_down;
@@ -780,8 +823,37 @@ static void tv_make_scroll_button(FluxTabViewData *tv, XentNodeId *out, FluxTabV
 	}
 }
 
+static XentNodeId tv_uia_item(FluxStore *store, XentNodeId host, int index) {
+	XentCtx *ctx = flux_store_ctx(store);
+	for (XentNodeId c = xent_node_first(ctx, host); c != XENT_NODE_INVALID; c = xent_node_next(ctx, c))
+		if (!xent_collapsed(ctx, c) && index-- == 0) return c;
+	return XENT_NODE_INVALID;
+}
+
+static int tv_uia_count(FluxStore *store, XentNodeId host) {
+	int n = 0;
+	while (tv_uia_item(store, host, n) != XENT_NODE_INVALID) n++;
+	return n;
+}
+
+static int tv_uia_index(FluxStore *store, XentNodeId host, XentNodeId child) {
+	for (int i = 0, n = tv_uia_count(store, host); i < n; i++)
+		if (tv_uia_item(store, host, i) == child) return i;
+	return -1;
+}
+
+static FluxUiaSub const   tv_uia_items = {.count = tv_uia_count, .realized = tv_uia_item, .index = tv_uia_index};
+
+static FluxUiaHooks const tv_uia_list  = {
+  .role          = FLUX_UIA_LIST,
+  .patterns      = FLUX_UIA_P_SELECTION | FLUX_UIA_P_SCROLL | FLUX_UIA_P_DROP | FLUX_UIA_P_ITEMS,
+  .klass         = L"TabViewListView",
+  .sub           = &tv_uia_items,
+  .select_shared = true};
+
 static void tv_make_tabs_host(FluxTabViewData *tv) {
 	tv->tabs_host = flux_factory_create_node(tv->ctx, tv->store, tv->strip, FLUX_CONTROL_SCROLL);
+	flux_uia_part_hooks(tv->store, tv->tabs_host, &tv_uia_list);
 	xent_setproto(tv->ctx, tv->tabs_host, XENT_PROTOCOL_FLEX);
 	xent_setflexdir(tv->ctx, tv->tabs_host, XENT_FLEX_ROW);
 	xent_setitems(tv->ctx, tv->tabs_host, XENT_FLEX_ALIGN_END);
@@ -807,6 +879,7 @@ static void tv_make_add_button(FluxTabViewData *tv) {
 	xent_setsize(tv->ctx, tv->add_node, (XentSize) {FLUX_TAB_ADD_W, FLUX_TAB_ADD_H});
 	xent_setm(tv->ctx, tv->add_node, (XentInsets) {FLUX_TAB_ADD_PAD_L, 0.0f, 0.0f, FLUX_TAB_ADD_PAD_B});
 	tv_make_strip_item(tv, &tv->add_item, tv->add_node, FLUX_TAB_KIND_ADD);
+	tv_set_uia(tv, tv->add_node, &tv_uia_button, "Add New Tab");
 	xent_set_focusable(tv->ctx, tv->add_node, true);
 }
 
@@ -898,7 +971,8 @@ static void tv_make_close_button(FluxTabViewData *tv, FluxTabViewItem *slot) {
 	  .close_node = XENT_NODE_INVALID,
 	  .kind       = FLUX_TAB_KIND_CLOSE,
 	  .index      = slot->index};
-	cn->component_data                = ci;
+	cn->component_data = ci;
+	tv_set_uia(tv, slot->close_node, &tv_uia_button, "Close Tab");
 	cn->behavior.on_click             = tv_close_click;
 	cn->behavior.on_click_ctx         = ci;
 	cn->behavior.on_hover_changed     = tv_hover_changed;

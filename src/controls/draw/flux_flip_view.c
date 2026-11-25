@@ -11,16 +11,19 @@
 static bool flip_rec_button(
   XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *r, wchar_t const *glyph, bool hovered, bool pressed
 ) {
-	bool      ok  = flux_rec_fill_rounded(b, r, FLUX_CORNER_RADIUS, t->flip_nav_bg_default);
-	FluxColor fg  = hovered || pressed ? t->text_secondary : t->ctrl_strong_fill_default;
-	FluxRect  box = *r;
-	if (pressed) {
-		box.x += r->w * 0.0625f;
-		box.y += r->h * 0.0625f;
-		box.w *= 0.875f;
-		box.h *= 0.875f;
+	bool      hot    = hovered || pressed;
+	FluxColor fg     = hot ? t->text_secondary : t->ctrl_strong_fill_default;
+	FluxColor fill   = t->flip_nav_bg_default;
+	FluxColor stroke = {0};
+	if (t->contrast.active) {
+		fg     = hot ? t->contrast.highlight_text : t->contrast.button_text;
+		fill   = hot ? t->contrast.highlight : t->contrast.button_face;
+		stroke = t->contrast.button_text;
 	}
-	return ok && flux_rec_arrow_wc(b, &box, glyph, 8.0f, fg);
+	float size = pressed ? 7.0f : 8.0f;
+	return flux_rec_fill_rounded(b, r, FLUX_CORNER_RADIUS, fill)
+	    && flux_rec_stroke_rounded(b, r, FLUX_CORNER_RADIUS - 0.5f, stroke, 1.0f)
+	    && flux_rec_arrow_wc(b, r, glyph, size, fg);
 }
 
 static bool flip_hit(FluxRenderSnap const *snap, FluxRect const *bounds, FluxRect const *r) {
@@ -32,41 +35,35 @@ static bool flip_hit(FluxRenderSnap const *snap, FluxRect const *bounds, FluxRec
 	    && hy < r->y - bounds->y + r->h;
 }
 
+static bool flip_rec_nav(
+  XentDlBuilder *b, FluxThemeColors const *t, FluxRenderSnap const *snap, FluxRect const *bounds, bool next
+) {
+	bool     vertical = snap->u.flip.vertical;
+	float    span     = vertical ? bounds->h : bounds->w;
+	float    edge     = next ? span - FLIP_BTN_W - FLIP_BTN_MARGIN : FLIP_BTN_MARGIN;
+	FluxRect r = vertical
+	             ? (FluxRect) {bounds->x + (bounds->w - FLIP_BTN_H) * 0.5f, bounds->y + edge, FLIP_BTN_H, FLIP_BTN_W}
+	             : (FluxRect) {bounds->x + edge, bounds->y + (bounds->h - FLIP_BTN_H) * 0.5f, FLIP_BTN_W, FLIP_BTN_H};
+	static wchar_t const *const arrows [2][2] = {
+	  {L"\xEDD9", L"\xEDDA"},
+      {L"\xEDDB", L"\xEDDC"}
+    };
+	bool over    = flip_hit(snap, bounds, &r);
+	bool pressed = over && snap->u.flip.pressed_btn == (next ? 2 : 1);
+	return flip_rec_button(b, t, &r, arrows [vertical][next], over, pressed);
+}
+
 XentDl *flux_flip_overlay_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	( void ) state;
-	FluxThemeColors const *t        = flux_rec_theme(rc);
-	bool                   vertical = snap->u.flip.vertical;
-	bool                   hovered  = snap->hover_local_x >= 0.0f;
-	bool                   alive    = snap->u.flip.buttons_alive;
-	XentDlBuilder         *b        = xent_dl_begin();
+	if (!state->enabled) return NULL;
+	FluxThemeColors const *t = flux_rec_theme(rc);
+	XentDlBuilder         *b = xent_dl_begin();
 	if (!b) return NULL;
-	if (!alive && !hovered) return xent_dl_end(b);
-
-	bool ok = true;
-	if (snap->u.flip.prev_enabled) {
-		FluxRect r
-		  = vertical
-		    ? (
-				FluxRect
-			  ) {bounds->x + (bounds->w - FLIP_BTN_H) * 0.5f, bounds->y + FLIP_BTN_MARGIN, FLIP_BTN_H, FLIP_BTN_W}
-		    : (FluxRect) {
-				bounds->x + FLIP_BTN_MARGIN, bounds->y + (bounds->h - FLIP_BTN_H) * 0.5f, FLIP_BTN_W, FLIP_BTN_H};
-		bool over = flip_hit(snap, bounds, &r);
-		ok = flip_rec_button(b, t, &r, vertical ? L"\xEDDB" : L"\xEDD9", over, over && snap->u.flip.pressed_btn == 1);
-	}
-	if (ok && snap->u.flip.next_enabled) {
-		FluxRect r
-		  = vertical
-		    ? (
-				FluxRect
-			  ) {bounds->x + (bounds->w - FLIP_BTN_H) * 0.5f, bounds->y + bounds->h - FLIP_BTN_W - FLIP_BTN_MARGIN, FLIP_BTN_H, FLIP_BTN_W}
-		    : (FluxRect) {
-				bounds->x + bounds->w - FLIP_BTN_W - FLIP_BTN_MARGIN, bounds->y + (bounds->h - FLIP_BTN_H) * 0.5f,
-				FLIP_BTN_W, FLIP_BTN_H};
-		bool over = flip_hit(snap, bounds, &r);
-		ok = flip_rec_button(b, t, &r, vertical ? L"\xEDDC" : L"\xEDDA", over, over && snap->u.flip.pressed_btn == 2);
-	}
+	bool ok       = !state->focused || flux_rec_focus_rect(b, t, bounds, FLUX_CORNER_RADIUS);
+	bool show_nav = snap->u.flip.buttons_alive || snap->hover_local_x >= 0.0f;
+	if (!show_nav) return flux_rec_finish(b, ok);
+	ok = ok && (!snap->u.flip.prev_enabled || flip_rec_nav(b, t, snap, bounds, false));
+	ok = ok && (!snap->u.flip.next_enabled || flip_rec_nav(b, t, snap, bounds, true));
 	return flux_rec_finish(b, ok);
 }

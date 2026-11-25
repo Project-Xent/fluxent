@@ -30,6 +30,8 @@ typedef struct FluxSplitViewData {
 	XentCtx   *ctx;
 	FluxStore *store;
 	XentNodeId node;
+	XentNodeId dismiss_pane;
+	XentNodeId previous_focus;
 
 	uint8_t    display_mode;
 	uint8_t    placement;
@@ -40,6 +42,7 @@ typedef struct FluxSplitViewData {
 
 typedef struct FluxSplitPaneData {
 	bool    overlay;
+	bool    open;
 	uint8_t placement;
 	bool    divider;
 } FluxSplitPaneData;

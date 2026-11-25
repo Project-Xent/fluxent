@@ -13,6 +13,7 @@
 #include <string.h>
 #include <windows.h>
 #include <xtk/xtk_alloc.h>
+#include <xtk/xtk.h>
 
 typedef struct FluxCommandBuffer {
 	FluxRenderCommand *cmds;
@@ -61,21 +62,23 @@ static FluxControlState compute_control_state(XentCtx *ctx, XentNodeId node, Flu
 }
 
 typedef struct CollectFrame {
-	XentNodeId       node;
-	float            abs_x;
-	float            abs_y;
-	bool             main_emitted;
-	bool             is_scroll;
-	bool             clips_children;
-	float            scroll_off_x;
-	float            scroll_off_y;
-	float            viewport_w;
-	float            viewport_h;
-	FluxRenderSnap   snapshot;
-	FluxControlState state;
-	XentNodeId       current_child;
-	bool             has_transform;
-	bool             clipped_top;
+	XentNodeId        node;
+	float             abs_x;
+	float             abs_y;
+	bool              main_emitted;
+	bool              is_scroll;
+	bool              clips_children;
+	float             scroll_off_x;
+	float             scroll_off_y;
+	float             viewport_w;
+	float             viewport_h;
+	FluxRenderSnap    snapshot;
+	FluxControlState  state;
+	XentNodeId        current_child;
+	bool              has_transform;
+	bool              clipped_top;
+	bool              dim_item_content;
+	FluxItemTextColor item_text_color;
 } CollectFrame;
 
 static CollectFrame collect_root_frame(XentNodeId root) {
@@ -160,6 +163,45 @@ static void collect_update_scroll_extent(XentCtx *ctx, XentNodeId node, FluxNode
 	if (nd && nd->component_type == FLUX_CONTROL_SCROLL) flux_scroll_measure(ctx, node, nd->component_data);
 }
 
+static FluxItemTextColor collect_item_text_color(FluxRenderSnap const *snap, FluxControlState const *state) {
+	uint8_t kind = snap->u.list_item.kind;
+	if (kind == XTK_LIST_KIND_GRID) return FLUX_ITEM_TEXT_WINDOW;
+	if (kind != XTK_LIST_KIND_LIST && kind != XTK_LIST_KIND_LIST_BOX) return FLUX_ITEM_TEXT_INHERIT;
+	if (kind == XTK_LIST_KIND_LIST_BOX && !state->enabled) return FLUX_ITEM_TEXT_DISABLED;
+	if (snap->u.list_item.is_selected || (state->enabled && (state->hovered || state->pressed)))
+		return FLUX_ITEM_TEXT_HIGHLIGHT;
+	return FLUX_ITEM_TEXT_BUTTON;
+}
+
+static void collect_emit_item_opacity(FluxEngine *eng, CollectFrame const *frame, bool push) {
+	FluxRenderCommand cmd = {
+	  .phase       = FLUX_PHASE_MAIN,
+	  .clip_action = push ? FLUX_CLIP_PUSH_TRANSFORM : FLUX_CLIP_POP_TRANSFORM,
+	  .scale       = 1.0f,
+	  .opacity     = 0.3f,
+	  .pivot_x     = frame->abs_x,
+	  .pivot_y     = frame->abs_y,
+	};
+	engine_push(eng, &cmd);
+}
+
+static void collect_item_content(CollectFrame *frame) {
+	if (frame->snapshot.type == FLUX_CONTROL_TEXT) frame->snapshot.u.text.item_color = frame->item_text_color;
+	if (frame->snapshot.type != FLUX_CONTROL_LIST_ITEM) return;
+	frame->item_text_color  = collect_item_text_color(&frame->snapshot, &frame->state);
+	uint8_t kind            = frame->snapshot.u.list_item.kind;
+	frame->dim_item_content = !frame->state.enabled && (kind == XTK_LIST_KIND_LIST || kind == XTK_LIST_KIND_GRID);
+}
+
+static void collect_control_snapshot(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame, FluxNodeData *nd) {
+	collect_update_scroll_extent(ctx, frame->node, nd);
+	FluxControlModule const *m = nd && nd->component_data ? flux_module_get(nd->component_type) : NULL;
+	if (m && m->tree && m->tree->collect) ( void ) m->tree->collect(ctx, eng->store, frame->node, nd);
+	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
+	frame->state = compute_control_state(ctx, frame->node, nd);
+	collect_item_content(frame);
+}
+
 static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame) {
 	XentRect rect = {0};
 	xent_layout_rect(ctx, frame->node, &rect);
@@ -168,11 +210,7 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	frame->abs_y     = rect.y;
 
 	FluxNodeData *nd = flux_store_find(eng->store, frame->node);
-	collect_update_scroll_extent(ctx, frame->node, nd);
-	FluxControlModule const *m = nd && nd->component_data ? flux_module_get(nd->component_type) : NULL;
-	if (m && m->tree && m->tree->collect) ( void ) m->tree->collect(ctx, eng->store, frame->node, nd);
-	flux_snapshot_build(&frame->snapshot, ctx, frame->node, nd);
-	frame->state          = compute_control_state(ctx, frame->node, nd);
+	collect_control_snapshot(eng, ctx, frame, nd);
 	frame->is_scroll      = frame->snapshot.type == FLUX_CONTROL_SCROLL;
 	frame->clips_children = nd && nd->clips_children;
 
@@ -185,6 +223,7 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 
 	FluxRenderCommand cmd = collect_make_draw_command(frame, &rect, FLUX_PHASE_MAIN);
 	engine_push(eng, &cmd);
+	if (frame->dim_item_content) collect_emit_item_opacity(eng, frame, true);
 	if (frame->is_scroll) collect_emit_scroll_clip(eng, frame, &rect);
 	else if (frame->clips_children) collect_emit_clip(eng, frame, &rect);
 
@@ -218,9 +257,13 @@ static bool collect_grow_stack(CollectFrame **stack, uint32_t *stack_cap) {
 	return true;
 }
 
-static bool collect_push_child(CollectFrame **stack, uint32_t *stack_top, uint32_t *stack_cap, XentNodeId child) {
+static bool collect_push_child(
+  CollectFrame **stack, uint32_t *stack_top, uint32_t *stack_cap, XentNodeId child, FluxItemTextColor item_color
+) {
 	if (*stack_top == *stack_cap && !collect_grow_stack(stack, stack_cap)) return false;
-	(*stack) [(*stack_top)++] = collect_root_frame(child);
+	CollectFrame frame        = collect_root_frame(child);
+	frame.item_text_color     = item_color;
+	(*stack) [(*stack_top)++] = frame;
 	return true;
 }
 
@@ -235,7 +278,7 @@ collect_visit_child(FluxEngine *eng, CollectFrame **stack, uint32_t *stack_top, 
 	if (frame->node != eng->root && flux_node_lifted(eng->store, child)) return true;
 	if (!collect_child_visible(ctx, frame, child)) return true;
 
-	if (!collect_push_child(stack, stack_top, stack_cap, child)) eng->render_degraded = true;
+	if (!collect_push_child(stack, stack_top, stack_cap, child, frame->item_text_color)) eng->render_degraded = true;
 	return true;
 }
 
@@ -247,6 +290,7 @@ static void collect_emit_finish(FluxEngine *eng, XentCtx *ctx, CollectFrame cons
 		pop_cmd.clip_action = FLUX_CLIP_POP;
 		engine_push(eng, &pop_cmd);
 	}
+	if (frame->dim_item_content) collect_emit_item_opacity(eng, frame, false);
 
 	XentRect rect = {0};
 	xent_layout_rect(ctx, frame->node, &rect);

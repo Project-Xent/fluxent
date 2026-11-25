@@ -1,3 +1,4 @@
+#include "a11y/flux_uia_ids.h"
 #include "controls/behavior/flux_repeat_timer.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_value.h"
@@ -69,9 +70,9 @@ static void scroll_bar_scroll_to(FluxScrollBarInputData *sb, double value, FluxS
 static void scroll_bar_step(FluxScrollBarInputData *sb, FluxScrollEventType type) {
 	FluxScrollBarData *d       = &sb->base;
 	bool               forward = type == FLUX_SCROLL_EVENT_SMALL_INCREMENT || type == FLUX_SCROLL_EVENT_LARGE_INCREMENT;
-	bool               small   = type == FLUX_SCROLL_EVENT_SMALL_INCREMENT || type == FLUX_SCROLL_EVENT_SMALL_DECREMENT;
-	double             change  = small ? d->small_change : d->large_change;
-	double             target  = forward ? fmin(d->value + change, d->maximum) : fmax(d->value - change, d->minimum);
+	bool   small_step          = type == FLUX_SCROLL_EVENT_SMALL_INCREMENT || type == FLUX_SCROLL_EVENT_SMALL_DECREMENT;
+	double change              = small_step ? d->small_change : d->large_change;
+	double target              = forward ? fmin(d->value + change, d->maximum) : fmax(d->value - change, d->minimum);
 	scroll_bar_scroll_to(sb, target, type);
 }
 
@@ -250,6 +251,18 @@ void flux_scroll_bar_retarget(XentCtx *ctx, FluxStore *store, XentNodeId id) {
 	sb->ctx   = ctx;
 	sb->store = store;
 	sb->node  = id;
+}
+
+void flux_scroll_bar_uia_steps(FluxStore *store, XentNodeId id, double *small_step, double *large_step) {
+	FluxScrollBarInputData *sb = scroll_bar_data(store, id);
+	if (!sb) return;
+	*small_step = sb->base.small_change;
+	*large_step = sb->base.large_change;
+}
+
+int flux_scroll_bar_uia_orient(FluxStore *store, XentNodeId id) {
+	FluxScrollBarInputData *sb = scroll_bar_data(store, id);
+	return sb && sb->base.orientation == FLUX_SCROLLBAR_VERTICAL ? FLUX_UIA_VERTICAL : FLUX_UIA_HORIZONTAL;
 }
 
 void flux_scroll_bar_setvalue(FluxStore *store, XentNodeId id, double value) {

@@ -19,7 +19,9 @@ static int text_input_cursor(XentCtx *ctx, FluxStore *store, XentNodeId node) {
 		return nd->hover_local_x >= rect.w - FLUX_COMBO_GLYPH_COL ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
 	if (!nd->state.focused || !td || !td->content || !td->content [0] || td->readonly) return FLUX_CURSOR_IBEAM;
 
-	return nd->hover_local_x >= rect.w - FLUX_TEXTBOX_ACTION_BUTTON_W ? FLUX_CURSOR_ARROW : FLUX_CURSOR_IBEAM;
+	return tb_clear_button_hit(nd->hover_local_x, rect.w, tb_clear_button_width(td->suggest_editor), td->query_reserve)
+	       ? FLUX_CURSOR_ARROW
+	       : FLUX_CURSOR_IBEAM;
 }
 
 static int password_cursor(XentCtx *ctx, FluxStore *store, XentNodeId node) {

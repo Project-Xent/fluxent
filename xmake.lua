@@ -37,6 +37,8 @@ target("fluxent")
                  "cwinrt-bindings-ui-composition",
                  "cwinrt-bindings-ui-composition-interactions",
                  "cwinrt-bindings-ui-viewmanagement",
+                 "cwinrt-bindings-ui-notifications",
+                 "cwinrt-bindings-data-xml-dom",
                  "cwinrt-bindings-globalization",
                  "cwinrt-bindings-globalization-datetimeformatting",
                  "cwinrt-bindings-globalization-numberformatting",
@@ -92,11 +94,14 @@ local function gui_binary(name, dirs)
         set_kind("binary")
         add_deps("fluxent")
         add_includedirs("include")
+        on_load(function (target)
+            target:add("defines", format('GALLERY_VERSION="%s"', target:version() or "dev"))
+        end)
         for _, dir in ipairs(dirs) do
             add_files(dir .. "/**.c")
             add_includedirs(dir)
             if dir == "examples/gallery_shared" then
-                add_defines("GALLERY_ASSETS=\"" .. path.unix(path.join(os.scriptdir(), dir, "assets")) .. "\"")
+                add_files(dir .. "/assets/*", { rules = "utils.bin2c", zeroend = false })
             end
         end
         if is_plat("mingw") then
@@ -116,6 +121,8 @@ gui_binary("fluxent_gallery_decl", { "examples/gallery_decl", "examples/gallery_
 gui_binary("fluxent_gallery_imp", { "examples/gallery_imp", "examples/gallery_shared" })
 gui_binary("titlebar_demo", { "examples/titlebar_demo" })
 gui_binary("installer_wizard", { "examples/installer_wizard" })
+gui_binary("a11y_conformance", { "examples/a11y_conformance" })
+gui_binary("shell_demo", { "examples/shell_demo" })
 
 target("bench_fx_release")
     set_default(false)

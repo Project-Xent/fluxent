@@ -1,3 +1,6 @@
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_control_uia.h"
+#include "controls/flux_module.h"
 #include "controls/behavior/flux_list_internal.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
@@ -229,18 +232,38 @@ static int list_nav_line(FluxListViewData const *ld, int from, int delta) {
 	return at < last ? at : last;
 }
 
-static int list_nav_target(FluxListViewData const *ld, int from, FluxKey key) {
-	bool grid = ld->cols > 1;
-	switch (key) {
-	case FLUX_KEY_UP        : return list_nav_line(ld, from, -1);
-	case FLUX_KEY_DOWN      : return list_nav_line(ld, from, 1);
-	case FLUX_KEY_LEFT      : return grid ? from - 1 : from;
-	case FLUX_KEY_RIGHT     : return grid ? from + 1 : from;
-	case FLUX_KEY_HOME      : return flux_list_row_of_item(ld, 0);
-	case FLUX_KEY_END       : return flux_list_row_of_item(ld, ld->count - 1);
-	case FLUX_KEY_PAGE_UP   : return list_nav_line(ld, from, -list_page_rows(ld));
-	case FLUX_KEY_PAGE_DOWN : return list_nav_line(ld, from, list_page_rows(ld));
-	default                 : return from;
+typedef enum ListNavUnit
+{
+	LIST_NAV_NONE,
+	LIST_NAV_CELL,
+	LIST_NAV_LINE,
+	LIST_NAV_PAGE,
+	LIST_NAV_EDGE,
+} ListNavUnit;
+
+typedef struct ListNavMove {
+	ListNavUnit unit;
+	int         direction;
+} ListNavMove;
+
+static ListNavMove const list_nav_moves [FLUX_KEY_COUNT] = {
+  [FLUX_KEY_LEFT]      = {LIST_NAV_CELL, -1},
+  [FLUX_KEY_RIGHT]     = {LIST_NAV_CELL, 1 },
+  [FLUX_KEY_UP]        = {LIST_NAV_LINE, -1},
+  [FLUX_KEY_DOWN]      = {LIST_NAV_LINE, 1 },
+  [FLUX_KEY_PAGE_UP]   = {LIST_NAV_PAGE, -1},
+  [FLUX_KEY_PAGE_DOWN] = {LIST_NAV_PAGE, 1 },
+  [FLUX_KEY_HOME]      = {LIST_NAV_EDGE, -1},
+  [FLUX_KEY_END]       = {LIST_NAV_EDGE, 1 },
+};
+
+static int list_nav_target(FluxListViewData const *ld, int from, ListNavMove move) {
+	switch (move.unit) {
+	case LIST_NAV_CELL : return ld->cols > 1 ? from + move.direction : from;
+	case LIST_NAV_LINE : return list_nav_line(ld, from, move.direction);
+	case LIST_NAV_PAGE : return list_nav_line(ld, from, move.direction * list_page_rows(ld));
+	case LIST_NAV_EDGE : return flux_list_row_of_item(ld, move.direction < 0 ? 0 : ld->count - 1);
+	default            : return from;
 	}
 }
 
@@ -263,12 +286,12 @@ static void list_nav_select(FluxListViewData *ld, int index) {
 	if (ld->sel_mode == XTK_LIST_SELECT_EXTENDED) sel_single(ld, index);
 }
 
-static bool list_key_navigate(FluxListViewData *ld, FluxListItemData const *it, FluxKey key) {
+static bool list_key_navigate(FluxListViewData *ld, FluxListItemData const *it, ListNavMove move) {
 	int last   = ld->count + ld->ngroup - 1;
-	int target = list_nav_target(ld, it->row, key);
+	int target = list_nav_target(ld, it->row, move);
 	if (target > last) target = last;
 	if (target < 0) target = 0;
-	if (target == it->row && key != FLUX_KEY_HOME && key != FLUX_KEY_END) return true;
+	if (target == it->row && move.unit != LIST_NAV_EDGE) return true;
 	FluxStore *store = ld->store;
 	XentNodeId root  = ld->root;
 	int        item  = flux_list_item_of_row(ld, target);
@@ -284,6 +307,7 @@ static void list_invoke_if_live(FluxStore *store, XentNodeId root, int index) {
 }
 
 static bool list_item_activate(FluxListViewData *ld, FluxListItemData const *it, bool secondary) {
+	if (it->header) return false;
 	FluxStore *store = ld->store;
 	XentNodeId root  = ld->root;
 	int        index = it->index;
@@ -300,25 +324,17 @@ static bool list_item_select_all(FluxListViewData *ld) {
 }
 
 static bool list_item_on_key(void *ctx, FluxKey key, bool down) {
-	if (!down) return false;
+	if (!down || ( unsigned ) key >= FLUX_KEY_COUNT) return false;
 	FluxListItemData *it = ( FluxListItemData * ) ctx;
 	FluxListViewData *ld = it->owner;
 	if (!ld || ld->kind == XTK_LIST_KIND_REPEATER || ld->count <= 0) return false;
-	if (it->header && (key == FLUX_KEY_SPACE || key == FLUX_KEY_ENTER)) return false;
-
+	ListNavMove move = list_nav_moves [key];
+	if (move.unit != LIST_NAV_NONE) return list_key_navigate(ld, it, move);
 	switch (key) {
-	case FLUX_KEY_UP        :
-	case FLUX_KEY_DOWN      :
-	case FLUX_KEY_LEFT      :
-	case FLUX_KEY_RIGHT     :
-	case FLUX_KEY_HOME      :
-	case FLUX_KEY_END       :
-	case FLUX_KEY_PAGE_UP   :
-	case FLUX_KEY_PAGE_DOWN : return list_key_navigate(ld, it, key);
-	case FLUX_KEY_SPACE     : return list_item_activate(ld, it, key_down(FLUX_KEY_CONTROL));
-	case FLUX_KEY_ENTER     : return list_item_activate(ld, it, false);
-	case FLUX_KEY_A         : return list_item_select_all(ld);
-	default                 : return false;
+	case FLUX_KEY_SPACE : return list_item_activate(ld, it, key_down(FLUX_KEY_CONTROL));
+	case FLUX_KEY_ENTER : return list_item_activate(ld, it, false);
+	case FLUX_KEY_A     : return list_item_select_all(ld);
+	default             : return false;
 	}
 }
 
@@ -354,6 +370,8 @@ void flux_list_release(FluxListViewData *ld) {
 	free(ld->header_sizes.slots);
 	free(ld->groups);
 	free(ld->band_prev);
+	free(ld->names);
+	free(ld->name_at);
 }
 
 XentNodeId flux_list_init(FluxListViewDesc const *info) {
@@ -554,6 +572,43 @@ bool flux_list_groups(FluxStore *store, XentNodeId list, void const *sizes, int 
 	if (!ld || !flux_list_setgroups(ld, sizes, count)) return false;
 	ld->pinned = false;
 	list_apply_host_extent(ld);
+	return true;
+}
+
+static void list_names_clear(FluxListViewData *ld) {
+	free(ld->names);
+	free(ld->name_at);
+	ld->names   = NULL;
+	ld->name_at = NULL;
+	ld->nname   = 0;
+}
+
+static int list_names_count(char const *data, uint32_t len) {
+	int n = 0;
+	for (uint32_t i = 0; i < len; i++) n += data [i] == '\0';
+	return n;
+}
+
+bool flux_list_names(FluxStore *store, XentNodeId list, void const *data, uint32_t len) {
+	FluxListViewData *ld = list_data(store, list);
+	if (!ld) return false;
+	list_names_clear(ld);
+	if (!data || len == 0) return true;
+	if ((( char const * ) data) [len - 1] != '\0') return false;
+	int n       = list_names_count(data, len);
+	ld->names   = ( char * ) malloc(len);
+	ld->name_at = ( uint32_t * ) malloc(sizeof(uint32_t) * ( size_t ) n);
+	if (!ld->names || !ld->name_at) {
+		list_names_clear(ld);
+		return false;
+	}
+	memcpy(ld->names, data, len);
+	uint32_t at = 0u;
+	for (int i = 0; i < n; i++) {
+		ld->name_at [i]  = at;
+		at              += ( uint32_t ) strlen(ld->names + at) + 1u;
+	}
+	ld->nname = n;
 	return true;
 }
 
@@ -878,4 +933,226 @@ bool flux_list_sync_layout(struct FluxNodeData *nd) {
 	flux_list_set_realized(ld->store, ld->root, ld->realized_first, ld->realized_last, ld->cols);
 	flux_list_flow_sync(ld);
 	return true;
+}
+
+bool flux_list_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxListItemData const *it = item_data(store, node);
+	return it && it->owner && !it->header && it->index >= 0 && list_row_selected(it->owner, it->index);
+}
+
+static void list_uia_add(FluxListViewData *ld, int index, bool add) {
+	if (add == flux_ranges_contains(ld, index)) return;
+	if (add) flux_ranges_add(ld, index, index);
+	else flux_ranges_remove(ld, index);
+	flux_list_report(ld, index);
+}
+
+static bool list_uia_select_at(FluxListViewData *ld, int index, int op) {
+	if (index < 0 || index >= ld->count || ld->sel_mode == XTK_LIST_SELECT_NONE) return false;
+	bool add   = op != FLUX_UIA_SEL_REMOVE;
+	bool range = multi_mode(ld) && op != FLUX_UIA_SEL_SELECT;
+	if (range) list_uia_add(ld, index, add);
+	if (!range && add) sel_single(ld, index);
+	if (!range && !add && ld->selected == index) list_select_one(ld, -1);
+	return true;
+}
+
+bool flux_list_uia_select(FluxStore *store, XentNodeId node, int op) {
+	FluxListItemData const *it = item_data(store, node);
+	return it && it->owner && !it->header && list_uia_select_at(it->owner, it->index, op);
+}
+
+int flux_list_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns) {
+	FluxListViewData *ld = list_data(store, node);
+	( void ) sub;
+	*patterns = FLUX_UIA_P_VIRTUAL | FLUX_UIA_P_SCROLL_ITEM;
+	if (ld && ld->sel_mode != XTK_LIST_SELECT_NONE) *patterns |= FLUX_UIA_P_SELECTION_ITEM;
+	return FLUX_UIA_LISTITEM;
+}
+
+bool flux_list_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect *rect) {
+	( void ) store;
+	( void ) node;
+	( void ) sub;
+	*rect = (XentRect) {0};
+	return true;
+}
+
+bool flux_list_uia_subselected(FluxStore *store, XentNodeId node, int sub) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld && sub >= 0 && sub < ld->count && list_row_selected(ld, sub);
+}
+
+bool flux_list_uia_subselect(FluxStore *store, XentNodeId node, int sub, int op) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld && list_uia_select_at(ld, sub, op);
+}
+
+static char const *list_name_at(FluxListViewData const *ld, int index) {
+	return ld && index >= 0 && index < ld->nname ? ld->names + ld->name_at [index] : "";
+}
+
+void flux_uia_name_copy(char const *src, char *out, size_t size) {
+	if (!out || size == 0) return;
+	size_t n = strlen(src);
+	if (n >= size) {
+		n = size - 1;
+		while (n > 0 && (( unsigned char ) src [n] & 0xc0u) == 0x80u) n--;
+	}
+	memcpy(out, src, n);
+	out [n] = '\0';
+}
+
+void flux_list_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size) {
+	flux_uia_name_copy(list_name_at(list_data(store, node), sub), out, size);
+}
+
+static void list_name_append(char *out, size_t size, char const *piece) {
+	if (!piece || !piece [0] || !out || size == 0) return;
+	size_t used = strlen(out);
+	if (used >= size - 1) return;
+	if (used > 0 && used >= size - 2) return;
+	if (used > 0) out [used++] = ' ';
+	size_t room = size - used - 1;
+	size_t n    = strlen(piece);
+	if (n > room) n = room;
+	while (n > 0 && (( unsigned char ) piece [n] & 0xc0u) == 0x80u) n--;
+	memcpy(out + used, piece, n);
+	out [used + n] = '\0';
+}
+
+static void list_name_from_text(XentCtx *ctx, FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (!nd || nd->component_type != FLUX_CONTROL_TEXT) return;
+	char const *label = xent_node_text(ctx, node);
+	if (!label || !label [0]) label = xent_sem_label(ctx, node);
+	list_name_append(out, size, label);
+}
+
+static void list_name_from_tree(XentCtx *ctx, FluxStore *store, XentNodeId node, char *out, size_t size, int depth) {
+	if (!ctx || depth > 8 || !out || strlen(out) + 1 >= size) return;
+	for (XentNodeId c = xent_node_first(ctx, node); c != XENT_NODE_INVALID; c = xent_node_next(ctx, c)) {
+		list_name_from_text(ctx, store, c, out, size);
+		list_name_from_tree(ctx, store, c, out, size, depth + 1);
+	}
+}
+
+void flux_listitem_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	if (!out || size == 0) return;
+	out [0]                    = '\0';
+	FluxListItemData const *it = item_data(store, node);
+	if (!it) return;
+	if (!it->header) {
+		char const *named = list_name_at(it->owner, it->index);
+		if (named && named [0]) {
+			flux_uia_name_copy(named, out, size);
+			return;
+		}
+	}
+	XentCtx *ctx = it->owner ? it->owner->ctx : flux_store_ctx(store);
+	list_name_from_tree(ctx, store, node, out, size, 0);
+}
+
+static FluxUiaHooks const list_uia_hidden = {.role = FLUX_UIA_HIDDEN};
+
+static void               list_uia_hide(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (nd) nd->uia = &list_uia_hidden;
+}
+
+void flux_list_uia_flatten(FluxStore *store, XentNodeId list) {
+	FluxListViewData *ld = list_data(store, list);
+	if (!ld) return;
+	list_uia_hide(store, ld->scroll);
+	list_uia_hide(store, ld->host);
+}
+
+XentNodeId flux_list_uia_scroller(FluxStore *store, XentNodeId node) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld ? ld->scroll : XENT_NODE_INVALID;
+}
+
+static void list_setinfo_at(FluxListViewData const *ld, int index, int *pos, int *size, int *level) {
+	if (!flux_list_grouped(ld)) {
+		*pos  = index + 1;
+		*size = ld->count;
+		return;
+	}
+	int g  = flux_list_group_of_row(ld, flux_list_row_of_item(ld, index));
+	*pos   = index - ld->group_item [g] + 1;
+	*size  = ld->groups [g];
+	*level = 2;
+}
+
+bool flux_listitem_uia_setinfo(FluxStore *store, XentNodeId node, int *pos, int *size, int *level) {
+	FluxListItemData const *it = item_data(store, node);
+	FluxListViewData const *ld = it ? it->owner : NULL;
+	if (!ld || flux_node_type(store, ld->root) == FLUX_CONTROL_ITEMS_VIEW) return false;
+	if (!it->header) {
+		list_setinfo_at(ld, it->index, pos, size, level);
+		return true;
+	}
+	*pos   = flux_list_group_of_row(ld, it->row) + 1;
+	*size  = ld->ngroup;
+	*level = 1;
+	return true;
+}
+
+unsigned flux_list_uia_live(FluxStore *store, XentNodeId node) {
+	FluxListViewData *ld = list_data(store, node);
+	bool none = ld && ld->sel_mode == XTK_LIST_SELECT_NONE && flux_node_type(store, node) != FLUX_CONTROL_LIST_BOX;
+	return none ? ~( unsigned ) FLUX_UIA_P_SELECTION : ~0u;
+}
+
+static bool list_item_invokable(FluxListViewData const *ld) {
+	return ld->item_invoked_enabled && ld->sel_mode == XTK_LIST_SELECT_NONE;
+}
+
+unsigned flux_listitem_uia_live(FluxStore *store, XentNodeId node) {
+	FluxListItemData const *it    = item_data(store, node);
+	FluxListViewData const *ld    = it ? it->owner : NULL;
+	FluxControlType         owner = ld ? flux_node_type(store, ld->root) : FLUX_CONTROL_LIST;
+	unsigned                live  = ~( unsigned ) FLUX_UIA_P_INVOKE;
+	if (!ld) return live;
+	if (owner != FLUX_CONTROL_LIST_BOX && list_item_invokable(ld)) live |= FLUX_UIA_P_INVOKE;
+	if (owner == FLUX_CONTROL_ITEMS_VIEW) live &= ~( unsigned ) FLUX_UIA_P_VIRTUAL;
+	if (owner != FLUX_CONTROL_LIST_BOX && ld->sel_mode == XTK_LIST_SELECT_NONE)
+		live &= ~( unsigned ) FLUX_UIA_P_SELECTION_ITEM;
+	if (owner == FLUX_CONTROL_ITEMS_VIEW) live &= ~( unsigned ) FLUX_UIA_P_SCROLL_ITEM;
+	return live;
+}
+
+bool flux_listitem_uia_invoke(FluxStore *store, XentNodeId node) {
+	FluxListItemData const *it = item_data(store, node);
+	if (!it || !it->owner || !list_item_invokable(it->owner)) return false;
+	list_invoke(it->owner, it->index);
+	return true;
+}
+
+int flux_list_uia_count(FluxStore *store, XentNodeId node) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld ? ld->count : 0;
+}
+
+int flux_list_uia_index(FluxStore *store, XentNodeId node, XentNodeId child) {
+	FluxListViewData       *ld = list_data(store, node);
+	FluxListItemData const *it = item_data(store, child);
+	return ld && it && it->owner == ld && !it->header ? it->index : -1;
+}
+
+XentNodeId flux_list_uia_realized(FluxStore *store, XentNodeId node, int sub) {
+	FluxListViewData *ld = list_data(store, node);
+	if (!ld || sub < ld->realized_first || sub > ld->realized_last) return XENT_NODE_INVALID;
+	for (XentNodeId c = flux_list_next_row(ld, XENT_NODE_INVALID); c != XENT_NODE_INVALID;
+	  c               = flux_list_next_row(ld, c))
+	{
+		FluxListItemData const *it = item_data(store, c);
+		if (it && !it->header && it->index == sub) return c;
+	}
+	return XENT_NODE_INVALID;
+}
+
+unsigned flux_list_uia_mode(FluxStore *store, XentNodeId node) {
+	FluxListViewData *ld = list_data(store, node);
+	return ld && multi_mode(ld) ? FLUX_UIA_SEL_MULTIPLE : 0u;
 }

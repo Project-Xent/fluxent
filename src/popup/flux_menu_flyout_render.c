@@ -1,8 +1,7 @@
 #include "flux_menu_internal.h"
 #include "controls/draw/flux_control_record_internal.h"
-#include "render/flux_dl_replay.h"
 #include "render/flux_icon.h"
-#include "render/flux_render_internal.h"
+#include "render/flux_render_snapshot.h"
 
 #include <string.h>
 
@@ -19,26 +18,19 @@ typedef enum
 } ItemVisualState;
 
 typedef struct ResolvedColors {
-	FluxColor presenter_bg;
-	FluxColor presenter_border;
-	FluxColor separator;
-	FluxColor fg_primary;
-	FluxColor fg_secondary;
-	FluxColor fg_tertiary;
-	FluxColor fg_disabled;
-	FluxColor bg_hover;
-	FluxColor bg_pressed;
-	FluxColor focus_outer;
-	FluxColor focus_inner;
+	FluxContrastColors contrast;
+	FluxColor          presenter_bg;
+	FluxColor          presenter_border;
+	FluxColor          separator;
+	FluxColor          fg_primary;
+	FluxColor          fg_secondary;
+	FluxColor          fg_tertiary;
+	FluxColor          fg_disabled;
+	FluxColor          bg_hover;
+	FluxColor          bg_pressed;
+	FluxColor          focus_outer;
+	FluxColor          focus_inner;
 } ResolvedColors;
-
-typedef struct MenuPresenterLayout {
-	FluxRect bounds;
-	float    content_x0;
-	float    content_y0;
-	float    content_w;
-	float    content_y1;
-} MenuPresenterLayout;
 
 typedef struct MenuItemPalette {
 	FluxColor bg_fill;
@@ -55,10 +47,9 @@ typedef struct MenuItemState {
 } MenuItemState;
 
 typedef struct MenuRecContext {
-	FluxMenu                  *menu;
-	XentDlBuilder             *b;
-	MenuPresenterLayout const *layout;
-	ResolvedColors const      *colors;
+	FluxMenu             *menu;
+	XentDlBuilder        *b;
+	ResolvedColors const *colors;
 } MenuRecContext;
 
 typedef struct MenuTextDraw {
@@ -84,22 +75,12 @@ static ItemVisualState item_visual_state(StoredItem const *it, MenuItemState con
 	return VS_NORMAL;
 }
 
-static void ensure_brush(FluxMenu *m, ID2D1DeviceContext *d2d) {
-	if (m->brush || !d2d) return;
-	D2D1_COLOR_F          black = {0, 0, 0, 1};
-	D2D1_BRUSH_PROPERTIES bp;
-	bp.opacity       = 1.0f;
-	bp.transform._11 = 1;
-	bp.transform._12 = 0;
-	bp.transform._21 = 0;
-	bp.transform._22 = 1;
-	bp.transform._31 = 0;
-	bp.transform._32 = 0;
-	ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &bp, &m->brush);
-}
-
-static void resolve_presenter_colors(ResolvedColors *r, FluxMenu const *m, bool dark) {
-	( void ) m;
+static void resolve_presenter_colors(ResolvedColors *r, FluxMenu const *m, FluxThemeColors const *t, bool dark) {
+	if (m->breadcrumb && t) {
+		r->presenter_bg     = t->flyout_background;
+		r->presenter_border = t->flyout_border;
+		return;
+	}
 	r->presenter_bg = dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
 	if (dark) r->presenter_border = flux_color_rgba(0, 0, 0, 0x33);
 	else r->presenter_border = flux_color_rgba(0, 0, 0, 0x0f);
@@ -127,13 +108,33 @@ static void resolve_state_colors(ResolvedColors *r, FluxThemeColors const *t, bo
 	  = t ? t->focus_stroke_inner : (dark ? flux_color_rgba(0, 0, 0, 0xb3) : flux_color_rgba(0xff, 0xff, 0xff, 0xb3));
 }
 
-static ResolvedColors resolve_colors(FluxMenu const *m) {
+static ResolvedColors resolve_contrast_colors(FluxContrastColors p) {
+	return (ResolvedColors) {
+	  .contrast         = p,
+	  .presenter_bg     = p.window,
+	  .presenter_border = p.window_text,
+	  .separator        = p.window_text,
+	  .fg_primary       = p.button_text,
+	  .fg_secondary     = p.window_text,
+	  .fg_tertiary      = p.window_text,
+	  .fg_disabled      = p.gray_text,
+	  .bg_hover         = p.highlight,
+	  .bg_pressed       = p.highlight,
+	  .focus_outer      = p.window_text,
+	  .focus_inner      = p.window,
+	};
+}
+
+static ResolvedColors resolve_colors(FluxMenu const *m, FluxRenderCtx const *rc) {
+	if (rc && rc->theme && rc->theme->contrast.active) return resolve_contrast_colors(rc->theme->contrast);
 	ResolvedColors         r;
 	FluxThemeColors const *t    = NULL;
 	bool                   dark = false;
 	menu_resolve_theme(m, &t, &dark);
+	if (t && t->contrast.active) return resolve_contrast_colors(t->contrast);
 
-	resolve_presenter_colors(&r, m, dark);
+	r = (ResolvedColors) {0};
+	resolve_presenter_colors(&r, m, t, dark);
 	r.separator = t ? t->divider_stroke_default
 	                : (dark ? flux_color_rgba(0xff, 0xff, 0xff, 0x15) : flux_color_rgba(0, 0, 0, 0x0f));
 	resolve_text_colors(&r, t, dark);
@@ -155,53 +156,24 @@ static bool rec_menu_text(MenuRecContext const *dc, MenuTextDraw const *draw) {
 	return flux_rec_text_ex(dc->b, draw->box, draw->text, &style, draw->color);
 }
 
-static FluxRenderCtx
-menu_render_context(FluxMenu *m, ID2D1DeviceContext *d2d, FluxThemeColors const *theme, bool is_dark) {
-	FluxRenderCtx rc;
-	memset(&rc, 0, sizeof(rc));
-	rc.d2d     = d2d;
-	rc.brush   = m->brush;
-	rc.text    = m->text;
-	rc.theme   = theme;
-	rc.dpi     = flux_window_dpi(m->owner);
-	rc.is_dark = is_dark;
-	return rc;
-}
-
-static MenuPresenterLayout menu_presenter_layout(FluxMenu *m) {
-	MenuPresenterLayout layout;
-	layout.bounds     = (FluxRect) {0.0f, 0.0f, m->total_w, m->total_h};
-	layout.content_x0 = FLUX_MENU_PRESENTER_BORDER;
-	layout.content_y0 = FLUX_MENU_PRESENTER_BORDER + FLUX_MENU_PRESENTER_PAD_TOP;
-	layout.content_w  = m->total_w - 2.0f * FLUX_MENU_PRESENTER_BORDER;
-	layout.content_y1 = m->total_h - FLUX_MENU_PRESENTER_BORDER - FLUX_MENU_PRESENTER_PAD_BOTTOM;
-	return layout;
-}
-
-static bool menu_rec_presenter(MenuRecContext const *dc) {
-	bool  ok = flux_rec_fill_rounded(dc->b, &dc->layout->bounds, FLUX_MENU_PRESENTER_CORNER, dc->colors->presenter_bg);
-	float half     = FLUX_MENU_PRESENTER_BORDER * 0.5f;
-	FluxRect inset = {
-	  dc->layout->bounds.x + half, dc->layout->bounds.y + half, dc->layout->bounds.w - half * 2.0f,
-	  dc->layout->bounds.h - half * 2.0f};
-	return ok
-	    && flux_rec_stroke_rounded(
-		  dc->b, &inset, FLUX_MENU_PRESENTER_CORNER, dc->colors->presenter_border, FLUX_MENU_PRESENTER_BORDER
-		);
-}
-
 static bool menu_item_submenu_open(FluxMenu *m, StoredItem const *it, int index) {
 	if (it->type != FLUX_MENU_ITEM_SUBMENU || index != m->open_submenu_index) return false;
 	return m->open_submenu && flux_popup_visible(m->open_submenu->popup);
 }
 
-static FluxRect menu_item_rect(StoredItem const *it, MenuPresenterLayout const *layout) {
-	float slot_top = layout->content_y0 + it->y;
-	float ir_x     = layout->content_x0 + FLUX_MENU_ITEM_MARGIN_H;
-	float ir_y     = slot_top + FLUX_MENU_ITEM_MARGIN_V;
-	float ir_w     = layout->content_w - 2.0f * FLUX_MENU_ITEM_MARGIN_H;
-	float ir_h     = it->h - 2.0f * FLUX_MENU_ITEM_MARGIN_V;
-	return (FluxRect) {ir_x, ir_y, ir_w, ir_h};
+static MenuItemPalette menu_contrast_item(
+  MenuItemPalette palette, FluxContrastColors const *p, MenuItemState const *state, ItemVisualState vs
+) {
+	if (vs == VS_DISABLED)
+		return (MenuItemPalette) {.fg_text = p->gray_text, .fg_accel = p->gray_text, .fg_chevron = p->gray_text};
+	if (state->submenu_open && !state->pressed) {
+		palette.fg_text = palette.fg_chevron = p->highlight;
+		return palette;
+	}
+	if (vs == VS_ACTIVE || vs == VS_PRESSED)
+		return (MenuItemPalette) {p->highlight, p->highlight_text, p->highlight_text, p->highlight_text};
+	palette.fg_chevron = p->button_text;
+	return palette;
 }
 
 static MenuItemPalette
@@ -213,6 +185,7 @@ menu_item_palette(ResolvedColors const *colors, StoredItem const *it, MenuItemSt
 	  .fg_chevron = colors->fg_secondary,
 	};
 	ItemVisualState vs = item_visual_state(it, state);
+	if (colors->contrast.active) return menu_contrast_item(palette, &colors->contrast, state, vs);
 	switch (vs) {
 	case VS_DISABLED :
 		palette.fg_text    = colors->fg_disabled;
@@ -307,29 +280,61 @@ static bool menu_rec_label_text(
 	return rec_menu_text(dc, &draw);
 }
 
-static bool menu_rec_separator(MenuRecContext const *dc, StoredItem const *it) {
-	float slot_top = dc->layout->content_y0 + it->y;
-	float y_mid    = slot_top + FLUX_MENU_SEP_PAD_TOP + FLUX_MENU_SEP_HEIGHT * 0.5f;
+static bool menu_rec_separator(MenuRecContext const *dc, FluxRect const *slot) {
+	float y_mid = slot->y + FLUX_MENU_SEP_PAD_TOP + FLUX_MENU_SEP_HEIGHT * 0.5f;
 	return xent_dl_strokeline(
-	  dc->b, dc->layout->content_x0, y_mid, dc->layout->content_x0 + dc->layout->content_w, y_mid,
-	  flux_rec_xcolor(dc->colors->separator), FLUX_MENU_SEP_HEIGHT, XENT_STROKE_CAP_FLAT
+	  dc->b, slot->x, y_mid, slot->x + slot->w, y_mid, flux_rec_xcolor(dc->colors->separator), FLUX_MENU_SEP_HEIGHT,
+	  XENT_STROKE_CAP_FLAT
 	);
 }
 
-static MenuItemState menu_item_state(FluxMenu *m, StoredItem const *it, int index) {
+static MenuItemState menu_item_state(FluxMenu *m, StoredItem const *it, int index, FluxControlState const *state) {
 	return (MenuItemState) {
-	  .pressed      = index == m->pressed_index,
+	  .pressed      = (state && state->pressed) || (m->keyboard_pressed && index == m->keyboard_index),
 	  .submenu_open = menu_item_submenu_open(m, it, index),
 	  .hovered      = index == m->hovered_index,
-	  .focused_kb   = index == m->keyboard_index,
+	  .focused_kb   = state ? state->focused : index == m->keyboard_index,
 	};
 }
 
-static bool menu_rec_item(MenuRecContext const *dc, int index) {
-	FluxMenu       *m       = dc->menu;
-	StoredItem     *it      = &m->items [index];
-	MenuItemState   state   = menu_item_state(m, it, index);
-	FluxRect        ir      = menu_item_rect(it, dc->layout);
+static FluxColor breadcrumb_row_ink(ResolvedColors const *colors, StoredItem const *it, MenuItemState state) {
+	if (!it->enabled) return colors->fg_disabled;
+	if (colors->contrast.active && (state.hovered || state.pressed)) return colors->contrast.highlight;
+	return colors->fg_primary;
+}
+
+static FluxColor breadcrumb_row_fill(ResolvedColors const *colors, StoredItem const *it, MenuItemState state) {
+	if (colors->contrast.active || !it->enabled) return (FluxColor) {0};
+	if (state.pressed) return colors->bg_pressed;
+	return state.hovered ? colors->bg_hover : (FluxColor) {0};
+}
+
+static bool
+breadcrumb_rec_item(MenuRecContext const *dc, StoredItem const *it, FluxRect const *slot, MenuItemState state) {
+	FluxRect row = {
+	  slot->x + BREADCRUMB_FLYOUT_MARGIN_H, slot->y + BREADCRUMB_FLYOUT_MARGIN_V,
+	  slot->w - 2.0f * BREADCRUMB_FLYOUT_MARGIN_H, slot->h - 2.0f * BREADCRUMB_FLYOUT_MARGIN_V};
+	FluxRect label = {
+	  row.x + FLUX_MENU_ITEM_PAD_LEFT, row.y + BREADCRUMB_FLYOUT_PAD_TOP,
+	  row.w - FLUX_MENU_ITEM_PAD_LEFT - FLUX_MENU_ITEM_PAD_RIGHT,
+	  row.h - BREADCRUMB_FLYOUT_PAD_TOP - BREADCRUMB_FLYOUT_PAD_BOT};
+	FluxColor    fill  = breadcrumb_row_fill(dc->colors, it, state);
+	FluxColor    ink   = breadcrumb_row_ink(dc->colors, it, state);
+	MenuTextDraw draw  = {it->label, &label, FLUX_MENU_ITEM_FONT_SIZE, ink, 0u, 1u};
+	FluxRect     focus = {row.x + 3.0f, row.y + 3.0f, row.w - 6.0f, row.h - 6.0f};
+	return (flux_color_af(fill) <= 0.0f || flux_rec_fill_rounded(dc->b, &row, FLUX_MENU_ITEM_CORNER, fill))
+	    && rec_menu_text(dc, &draw)
+	    && (!state.focused_kb || !it->enabled || menu_rec_focus_ring(dc, &focus));
+}
+
+static bool menu_rec_item(MenuRecContext const *dc, int index, FluxRect const *slot, FluxControlState const *control) {
+	FluxMenu     *m     = dc->menu;
+	StoredItem   *it    = &m->items [index];
+	MenuItemState state = menu_item_state(m, it, index, control);
+	if (m->breadcrumb) return breadcrumb_rec_item(dc, it, slot, state);
+	FluxRect ir = {
+	  slot->x + FLUX_MENU_ITEM_MARGIN_H, slot->y + FLUX_MENU_ITEM_MARGIN_V, slot->w - 2.0f * FLUX_MENU_ITEM_MARGIN_H,
+	  slot->h - 2.0f * FLUX_MENU_ITEM_MARGIN_V};
 	MenuItemPalette palette = menu_item_palette(dc->colors, it, &state);
 	float           text_x  = ir.x + FLUX_MENU_ITEM_PAD_LEFT;
 	bool            ok      = true;
@@ -344,62 +349,43 @@ static bool menu_rec_item(MenuRecContext const *dc, int index) {
 	return ok && menu_rec_label_text(dc, it, &ir, palette.fg_text, &span);
 }
 
-static XentDl *menu_record(
-  FluxMenu *m, MenuPresenterLayout const *layout, ResolvedColors const *colors, FluxPopupMenuTransition const *tr
+XentDl *flux_menurow_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
+	FluxMenu *m     = ( FluxMenu * ) snap->u.part.owner;
+	int       index = snap->u.part.index;
+	if (!m || index < 0 || index >= m->item_count) return NULL;
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
-	MenuRecContext dc = {.menu = m, .b = b, .layout = layout, .colors = colors};
-	bool           ok = true;
-
-	if (tr->active) {
-		XentAffine2 scale
-		  = {1.0f, 0.0f, 0.0f, 0.0f, tr->border_scale_y, tr->border_center_y * (1.0f - tr->border_scale_y)};
-		ok = xent_dl_pushtransform(b, scale);
-	}
-	if (ok) ok = menu_rec_presenter(&dc);
-	if (tr->active) ok = xent_dl_poptransform(b) && ok;
-
-	XentRect clip = {
-	  layout->content_x0, layout->content_y0 + tr->clip_translate_y, layout->content_w,
-	  layout->content_y1 - layout->content_y0};
-	if (ok) ok = xent_dl_pushcliprect(b, clip);
-	if (ok) ok = xent_dl_pushtransform(b, xent_affine_translate(0.0f, tr->content_translate_y - m->scroll_y));
-	for (int i = 0; ok && i < m->item_count; i++) {
-		StoredItem *it = &m->items [i];
-		if (it->type == FLUX_MENU_ITEM_SEPARATOR) ok = menu_rec_separator(&dc, it);
-		else ok = menu_rec_item(&dc, i);
-	}
-	if (ok) ok = xent_dl_poptransform(b);
-	ok = xent_dl_popclip(b) && ok;
+	ResolvedColors c  = resolve_colors(m, rc);
+	MenuRecContext dc = {.menu = m, .b = b, .colors = &c};
+	bool           ok = m->items [index].type == FLUX_MENU_ITEM_SEPARATOR ? menu_rec_separator(&dc, bounds)
+	                                                                      : menu_rec_item(&dc, index, bounds, state);
 	return flux_rec_finish(b, ok);
 }
 
-void menu_paint(void *ctx, FluxPopup *popup) {
-	FluxMenu *m = ( FluxMenu * ) ctx;
-	if (!m) return;
-
-	FluxGfx *gfx = flux_popup_gfx(popup);
-	if (!gfx) return;
-	ID2D1DeviceContext *d2d = flux_gfx_d2d(gfx);
-	if (!d2d) return;
-
-	ensure_brush(m, d2d);
-	if (!m->brush) return;
-
-	FluxThemeColors const *theme   = NULL;
-	bool                   is_dark = false;
-	menu_resolve_theme(m, &theme, &is_dark);
-
-	ResolvedColors c               = resolve_colors(m);
-	c.presenter_bg                 = flux_popup_acrylictint(popup, c.presenter_bg);
-	FluxRenderCtx           rc     = menu_render_context(m, d2d, theme, is_dark);
-	MenuPresenterLayout     layout = menu_presenter_layout(m);
-	FluxPopupMenuTransition tr     = flux_popup_menutransition(popup, layout.bounds.h);
-	XentDl                 *list   = menu_record(m, &layout, &c, &tr);
-	if (list && flux_popup_rtl(popup)) xent_dl_mirror(list, m->total_w);
-	if (list) {
-		flux_xtk_replay_rc(&rc, list);
-		xent_dl_free(list);
+XentDl *flux_menupresenter_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	( void ) state;
+	FluxMenu *m = ( FluxMenu * ) snap->u.part.owner;
+	if (!m) return NULL;
+	XentDlBuilder *b = xent_dl_begin();
+	if (!b) return NULL;
+	ResolvedColors          c  = resolve_colors(m, rc);
+	FluxPopupMenuTransition tr = flux_popup_menutransition(m->popup, bounds->h);
+	c.presenter_bg             = flux_popup_acrylictint(m->popup, c.presenter_bg);
+	bool ok                    = true;
+	if (tr.active) {
+		float       cy    = bounds->y + tr.border_center_y;
+		XentAffine2 scale = {1.0f, 0.0f, 0.0f, 0.0f, tr.border_scale_y, cy * (1.0f - tr.border_scale_y)};
+		ok                = xent_dl_pushtransform(b, scale);
 	}
+	ok              = ok && flux_rec_fill_rounded(b, bounds, FLUX_MENU_PRESENTER_CORNER, c.presenter_bg);
+	float    stroke = c.contrast.active ? 2.0f : FLUX_MENU_PRESENTER_BORDER;
+	float    h      = stroke * 0.5f;
+	FluxRect in     = {bounds->x + h, bounds->y + h, bounds->w - h * 2.0f, bounds->h - h * 2.0f};
+	ok              = ok && flux_rec_stroke_rounded(b, &in, FLUX_MENU_PRESENTER_CORNER, c.presenter_border, stroke);
+	if (tr.active) ok = xent_dl_poptransform(b) && ok;
+	return flux_rec_finish(b, ok);
 }

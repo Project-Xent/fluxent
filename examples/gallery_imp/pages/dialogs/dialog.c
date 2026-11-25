@@ -15,24 +15,27 @@ bool page_dialog_build(PageBuild *b) {
 	page_sync(b, dialog_sync);
 	XtkNodeRef parent = xtk_ref_local(b->content);
 	page_header(b, parent, "ContentDialog", "A modal dialog controlled by the model: open while a flag is true.");
-	PageDemo demo = page_demo(b, page_example(b, parent, "A dialog with Delete / Cancel buttons."));
+	PageDemo demo
+	  = page_demo(b, page_example(b, parent, "A dialog with Delete / Cancel buttons. Cancel is the default."));
 	page_button(b, demo.items, "Show dialog", MSG_DIALOG_OPEN, 0);
 	page_keepout(b, MSG_DIALOG_RESULT, page_output(b, demo.row, result_text(b->app)));
 	XtkLocalId dialog = xtk_dialog_create(
 	  &b->txn, parent,
 	  &(XtkDialogProps) {
-		.set      = XTK_DIALOG_W_MASK
-	              | XTK_DIALOG_TEXT_MASK
-	              | XTK_DIALOG_PRIMARY_MASK
-	              | XTK_DIALOG_CLOSE_MASK
-	              | XTK_DIALOG_CONTENTH_MASK
-	              | XTK_DIALOG_OPEN_MASK,
-		.w        = 400.0f,
-		.text     = "Delete file?",
-		.primary  = "Delete",
-		.close    = "Cancel",
-		.contenth = 56.0f,
-		.open     = b->app->model.dialog_open,
+		.set            = XTK_DIALOG_W_MASK
+	                    | XTK_DIALOG_TEXT_MASK
+	                    | XTK_DIALOG_PRIMARY_MASK
+	                    | XTK_DIALOG_CLOSE_MASK
+	                    | XTK_DIALOG_CONTENTH_MASK
+	                    | XTK_DIALOG_DEFAULT_BUTTON_MASK
+	                    | XTK_DIALOG_OPEN_MASK,
+		.w              = 400.0f,
+		.text           = "Delete file?",
+		.primary        = "Delete",
+		.close          = "Cancel",
+		.default_button = XTK_DIALOG_BUTTON_CLOSE,
+		.contenth       = 56.0f,
+		.open           = b->app->model.dialog_open,
 	  }
 	);
 	xtk_dialog_onclose(&b->txn, xtk_ref_local(dialog), page_post, page_bind(b, MSG_DIALOG_RESULT));

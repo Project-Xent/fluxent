@@ -2,6 +2,7 @@
 #define FLUX_TB_INTERNAL_H
 
 #include "controls/factory/flux_init_textbox.h"
+#include "controls/behavior/flux_repeat_timer.h"
 #include "store/flux_node_data.h"
 #include "text/flux_utf.h"
 #include "fluxent/flux_text.h"
@@ -34,20 +35,22 @@ typedef struct TbPendingEdit {
 } TbPendingEdit;
 
 typedef struct FluxNBExt {
-	double  value;
-	double  minimum;
-	double  maximum;
-	double  small_change;
-	double  large_change;
-	bool    is_wrap_enabled;
-	uint8_t spin_placement;
-	uint8_t validation;
-	bool    value_updating;
-	bool    text_updating;
-	bool    stepping;
-	bool    focus_from_click;
-	void    (*on_value_change)(void *ctx, double value);
-	void   *on_value_change_ctx;
+	double          value;
+	double          minimum;
+	double          maximum;
+	double          small_change;
+	double          large_change;
+	bool            is_wrap_enabled;
+	uint8_t         spin_placement;
+	uint8_t         validation;
+	FluxRepeatTimer spin_timer;
+	int             spin_direction;
+	bool            value_updating;
+	bool            text_updating;
+	bool            stepping;
+	bool            focus_from_click;
+	void            (*on_value_change)(void *ctx, double value);
+	void           *on_value_change_ctx;
 } FluxNBExt;
 
 struct FluxApp;
@@ -120,6 +123,7 @@ void          tb_perform_paste(FluxTextBoxInputData *tb);
 FluxTextStyle tb_make_style(FluxTextBoxInputData const *tb);
 float         tb_visible_text_height(FluxTextBoxInputData const *tb, XentRect const *rect);
 float         tb_layout_width(FluxTextBoxInputData const *tb, float visible_w);
+float         tb_text_max_w(FluxTextBoxInputData *tb, FluxControlType ct);
 void          tb_update_scroll(FluxTextBoxInputData *tb);
 void          tb_clamp_scroll(FluxTextBoxInputData *tb);
 void          tb_update_ime_position(FluxTextBoxInputData *tb);
@@ -130,6 +134,8 @@ uint32_t      pb_mask_offset_to_original(char const *original, uint32_t original
 uint32_t      pb_original_offset_to_mask(char const *original, uint32_t original_len, uint32_t original_byte_offset);
 
 bool          nb_is_number_box(FluxTextBoxInputData *tb);
+bool          nb_spin_enabled(FluxNBExt const *nb, bool up);
+void          nb_finish_spin(FluxTextBoxInputData *tb);
 void          nb_update_text_to_value(FluxTextBoxInputData *tb);
 void          nb_validate_input(FluxTextBoxInputData *tb);
 void          nb_step_value(FluxTextBoxInputData *tb, double change);

@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <math.h>
+
 #define DET_CELL_PAD 8.0f
 #define DET_SLOT_ROW DET_COLS
 
@@ -41,7 +43,7 @@ static void det_row(PageBuild *b, XtkNodeRef parent, int r, int const rows [DET_
 		int        col = m->det_order [p];
 		XtkLocalId cell
 		  = ui_text(&b->txn, row, gallery_det_cell(rows [r], col), col ? 12.0f : 14.0f, FLUX_FONT_REGULAR);
-		ui_size(&b->txn, cell, m->det_width [col] - DET_CELL_PAD, 36.0f);
+		ui_size(&b->txn, cell, m->det_width [col] - DET_CELL_PAD, NAN);
 		xtk_txn_set(
 		  &b->txn, xtk_ref_local(cell), XTK_PROP_MARGIN_LEFT, (XtkValue) {.kind = XTK_VALUE_F32, .u.f32 = DET_CELL_PAD},
 		  (XtkChangeStamp) {0}
@@ -82,20 +84,42 @@ bool page_details_build(PageBuild *b) {
 	Model const *m      = &b->app->model;
 	XtkNodeRef   parent = xtk_ref_local(b->content);
 	page_header(b, parent, "Details header", "File Explorer's column header over a list, as Files builds it.");
-	XtkNodeRef body   = xtk_ref_local(ui_column(
-	  &b->txn,
-	  page_example(
-		b, parent, "Click a header to sort, drag a divider to resize, double-click it to fit, drag a header to reorder."
-	  ),
-	  0.0f, XENT_FLEX_ALIGN_STRETCH
+	XtkNodeRef card = page_example(
+	  b, parent, "Click a header to sort, drag a divider to resize, double-click it to fit, drag a header to reorder."
+	);
+	XtkNodeRef list   = xtk_ref_local(xtk_list_create(
+	  &b->txn, card,
+	  &(XtkListProps) {
+		.set   = XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK,
+		.h     = 420.0f,
+		.sel   = -1,
+		.nitem = DET_ROWS,
+		.itemh = 36.0f,
+	  }
 	));
-	XtkNodeRef header = xtk_ref_local(xtk_colheader_create(&b->txn, body, &(XtkLayoutProps) {0}));
+	XtkNodeRef top    = xtk_ref_local(xtk_container_create(
+	  &b->txn, list,
+	  &(XtkContainerProps) {
+		.set  = XTK_CONTAINER_DIR_MASK
+	          | XTK_CONTAINER_PL_MASK
+	          | XTK_CONTAINER_PR_MASK
+	          | XTK_CONTAINER_FITW_MASK
+	          | XTK_CONTAINER_FITH_MASK,
+		.dir  = XTK_STACK_ROW,
+		.pl   = 16.0f,
+		.pr   = 12.0f,
+		.fitw = true,
+		.fith = true,
+	  }
+	));
+	XtkNodeRef header = xtk_ref_local(xtk_colheader_create(&b->txn, top, &(XtkLayoutProps) {0}));
 	for (int p = 0; p < DET_COLS; p++) {
 		det_built [p] = m->det_order [p];
 		det_column(b, header, p, m->det_order [p]);
 	}
 	int rows [DET_ROWS];
 	gallery_det_rows(m, rows);
-	for (int r = 0; r < DET_ROWS; r++) det_row(b, body, r, rows);
+	for (int r = 0; r < DET_ROWS; r++)
+		det_row(b, xtk_ref_local(xtk_txn_create(&b->txn, XTK_CTRL_LISTITEM, list, xtk_ref_none(), NULL, 0)), r, rows);
 	return true;
 }

@@ -12,12 +12,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef enum FluxDialogSurface
+{
+	FLUX_DIALOG_SURFACE_NONE,
+	FLUX_DIALOG_SURFACE_SMOKE,
+	FLUX_DIALOG_SURFACE_CARD,
+} FluxDialogSurface;
+
 typedef struct FluxNodeVisuals {
-	FluxColor background;
-	FluxColor border_color;
-	float     corner_radius;
-	float     border_width;
-	float     opacity;
+	FluxColor         background;
+	FluxColor         border_color;
+	float             corner_radius;
+	float             border_width;
+	float             opacity;
+	FluxDialogSurface dialog_surface;
 } FluxNodeVisuals;
 
 typedef struct FluxNodeState {
@@ -43,6 +51,8 @@ typedef struct FluxNodeBehavior {
 	void       *on_blur_ctx;
 	bool        (*on_tab)(void *ctx, bool shift, bool entering);
 	void       *on_tab_ctx;
+	XentNodeId  (*tab_entry)(void *ctx, XentNodeId group);
+	void       *tab_entry_ctx;
 	bool        (*on_key)(void *ctx, FluxKey key, bool down);
 	void       *on_key_ctx;
 	void        (*on_char)(void *ctx, wchar_t ch);
@@ -68,34 +78,47 @@ typedef struct FluxNodeBehavior {
 } FluxNodeBehavior;
 
 typedef struct FluxNodeData {
-	XentNodeId       node_id;
-	FluxNodeVisuals  visuals;
-	FluxNodeState    state;
-	FluxNodeBehavior behavior;
-	FluxControlType  component_type;
-	void            *component_data;
-	void             (*destroy_component_data)(void *component_data);
+	XentNodeId                 node_id;
+	FluxNodeVisuals            visuals;
+	FluxNodeState              state;
+	FluxNodeBehavior           behavior;
+	FluxControlType            component_type;
+	void                      *component_data;
+	struct FluxUiaHooks const *uia;
+	struct FluxPopup          *popup;
+	XentNodeId                 uia_popup;
+	XentNodeId                 uia_owner;
+	XentNodeId                 uia_graft;
+	XentNodeId                 uia_adopter;
+	int                        uia_part;
+	struct FluxUiaProps       *a11y;
+	bool                       focus_passive;
+	bool                       tab_reverse_children;
+	bool                       tab_inert;
+	bool                       tab_cycle;
+	void                       (*destroy_component_data)(void *component_data);
 
-	float            hover_local_x;
-	float            hover_local_y;
+	float                      hover_local_x;
+	float                      hover_local_y;
 
-	char const      *tooltip_text;
-	uint8_t          drop_operation;
-	char const      *drag_text;
-	char const      *drag_files;
+	char const                *tooltip_text;
+	uint8_t                    nav_slot;
+	uint8_t                    drop_operation;
+	char const                *drag_text;
+	char const                *drag_files;
 
-	float            render_scale;
-	float            render_opacity;
-	float            render_translate_x;
-	float            render_translate_y;
-	float            render_rotate_x;
-	float            render_rotate_y;
-	bool             render_clip_subtree;
-	float            clip_top;
-	bool             clips_children;
+	float                      render_scale;
+	float                      render_opacity;
+	float                      render_translate_x;
+	float                      render_translate_y;
+	float                      render_rotate_x;
+	float                      render_rotate_y;
+	bool                       render_clip_subtree;
+	float                      clip_top;
+	bool                       clips_children;
 
-	XentDl const    *display_list;
-	bool             display_list_owned;
+	XentDl const              *display_list;
+	bool                       display_list_owned;
 } FluxNodeData;
 
 struct FluxStore;
@@ -108,6 +131,28 @@ bool                     flux_node_lift(FluxStore *store, XentNodeId node, bool 
 bool                     flux_node_lifted(FluxStore const *store, XentNodeId node);
 uint32_t                 flux_store_nlifted(FluxStore const *store);
 XentNodeId               flux_store_lifted(FluxStore const *store, uint32_t i);
+
+typedef struct FluxUiaNote {
+	XentNodeId node;
+	int        sub;
+	int        event;
+	int        kind;
+	int        processing;
+	char      *text;
+	char      *activity;
+	double     old_v;
+	double     new_v;
+} FluxUiaNote;
+
+void flux_uia_note(FluxStore *store, XentNodeId node, int sub, int event);
+void flux_uia_retarget_notes(FluxStore *store, XentNodeId from, XentNodeId to);
+void flux_uia_noteprop(FluxStore *store, XentNodeId node, int property, double old_v, double new_v);
+void flux_uia_notify(
+  FluxStore *store, XentNodeId node, int kind, int processing, char const *text, char const *activity
+);
+uint32_t           flux_store_nnotes(FluxStore const *store);
+FluxUiaNote const *flux_store_note(FluxStore const *store, uint32_t i);
+void               flux_store_clearnotes(FluxStore *store);
 
 static void inline flux_node_settype(FluxStore *store, XentNodeId node, FluxControlType type) {
 	FluxNodeData *nd = flux_store_ensure(store, node);

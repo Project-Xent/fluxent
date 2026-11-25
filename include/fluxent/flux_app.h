@@ -85,9 +85,68 @@ XtkPostStatus           flux_app_post(FluxApp *app, XtkMsg msg);
 /** Copies `data` and delivers it on the window thread. The caller may free `data`. `len > 0` with NULL `data` is rejected. */
 XtkPostStatus           flux_app_poststring(FluxApp *app, XtkMsg msg, char const *data, uint32_t len);
 
-XtkRt                  *flux_app_createruntime(FluxApp *app, void *model, XtkUpdateFn update, XtkViewFn view);
+typedef enum FluxAutomationEvent
+{
+	FLUX_AUTOMATION_TOOLTIP_OPENED              = 0,
+	FLUX_AUTOMATION_TOOLTIP_CLOSED              = 1,
+	FLUX_AUTOMATION_MENU_OPENED                 = 2,
+	FLUX_AUTOMATION_MENU_CLOSED                 = 3,
+	FLUX_AUTOMATION_FOCUS_CHANGED               = 4,
+	FLUX_AUTOMATION_INVOKED                     = 5,
+	FLUX_AUTOMATION_ADDED_TO_SELECTION          = 6,
+	FLUX_AUTOMATION_REMOVED_FROM_SELECTION      = 7,
+	FLUX_AUTOMATION_ELEMENT_SELECTED            = 8,
+	FLUX_AUTOMATION_SELECTION_INVALIDATED       = 9,
+	FLUX_AUTOMATION_TEXT_SELECTION_CHANGED      = 10,
+	FLUX_AUTOMATION_TEXT_CHANGED                = 11,
+	FLUX_AUTOMATION_ASYNC_CONTENT_LOADED        = 12,
+	FLUX_AUTOMATION_PROPERTY_CHANGED            = 13,
+	FLUX_AUTOMATION_STRUCTURE_CHANGED           = 14,
+	FLUX_AUTOMATION_DRAG_START                  = 15,
+	FLUX_AUTOMATION_DRAG_CANCEL                 = 16,
+	FLUX_AUTOMATION_DRAG_COMPLETE               = 17,
+	FLUX_AUTOMATION_DRAG_ENTER                  = 18,
+	FLUX_AUTOMATION_DRAG_LEAVE                  = 19,
+	FLUX_AUTOMATION_DROPPED                     = 20,
+	FLUX_AUTOMATION_LIVE_REGION_CHANGED         = 21,
+	FLUX_AUTOMATION_INPUT_REACHED_TARGET        = 22,
+	FLUX_AUTOMATION_INPUT_REACHED_OTHER_ELEMENT = 23,
+	FLUX_AUTOMATION_INPUT_DISCARDED             = 24,
+	FLUX_AUTOMATION_WINDOW_CLOSED               = 25,
+	FLUX_AUTOMATION_WINDOW_OPENED               = 26,
+	FLUX_AUTOMATION_CONVERSION_TARGET_CHANGED   = 27,
+	FLUX_AUTOMATION_TEXT_EDIT_TEXT_CHANGED      = 28,
+	FLUX_AUTOMATION_LAYOUT_INVALIDATED          = 29,
+	FLUX_AUTOMATION_NOTIFICATION                = 30,
+} FluxAutomationEvent;
 
-int                     flux_run(FluxAppCfg const *cfg, void *model, XtkUpdateFn update, XtkViewFn view);
+typedef enum FluxNotificationKind
+{
+	FLUX_NOTIFICATION_ITEM_ADDED       = 0,
+	FLUX_NOTIFICATION_ITEM_REMOVED     = 1,
+	FLUX_NOTIFICATION_ACTION_COMPLETED = 2,
+	FLUX_NOTIFICATION_ACTION_ABORTED   = 3,
+	FLUX_NOTIFICATION_OTHER            = 4,
+} FluxNotificationKind;
+
+typedef enum FluxNotificationProcessing
+{
+	FLUX_NOTIFICATION_IMPORTANT_ALL            = 0,
+	FLUX_NOTIFICATION_IMPORTANT_MOST_RECENT    = 1,
+	FLUX_NOTIFICATION_ALL                      = 2,
+	FLUX_NOTIFICATION_MOST_RECENT              = 3,
+	FLUX_NOTIFICATION_CURRENT_THEN_MOST_RECENT = 4,
+} FluxNotificationProcessing;
+
+bool flux_app_raiseevent(FluxApp *app, XtkCtrl control, FluxAutomationEvent event);
+bool flux_app_raisenotification(
+  FluxApp *app, XtkCtrl control, FluxNotificationKind kind, FluxNotificationProcessing processing, char const *text,
+  char const *activity
+);
+
+XtkRt *flux_app_createruntime(FluxApp *app, void *model, XtkUpdateFn update, XtkViewFn view);
+
+int    flux_run(FluxAppCfg const *cfg, void *model, XtkUpdateFn update, XtkViewFn view);
 
 static_assert(sizeof(FluxBackdropType) == 4, "FluxBackdropType crosses the ABI as int32");
 

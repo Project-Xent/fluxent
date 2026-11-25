@@ -94,9 +94,7 @@ static XtkMsg event_pair_msg(XtkMsg msg, XtkEventPayload const *p) {
 	return msg;
 }
 
-static XtkMsg event_msg(GalleryBind const *bind, XtkEvent const *event) {
-	XtkMsg                 msg = {.tag = bind->tag, .i = bind->i};
-	XtkEventPayload const *p   = &event->payload;
+static XtkMsg event_payload_msg(XtkMsg msg, XtkEventPayload const *p) {
 	switch (p->kind) {
 	case XTK_EVENT_PAYLOAD_BOOL   : msg.b = p->u.b; break;
 	case XTK_EVENT_PAYLOAD_I32    : msg.i = p->u.i32; break;
@@ -108,11 +106,19 @@ static XtkMsg event_msg(GalleryBind const *bind, XtkEvent const *event) {
 	return msg;
 }
 
+static XtkMsg event_msg(GalleryBind const *bind, XtkEvent const *event) {
+	XtkMsg msg = event_payload_msg((XtkMsg) {.tag = bind->tag, .i = bind->i}, &event->payload);
+	if (event->id == XTK_EVENT_TREE_SELECT) msg.i = msg.i >= 0 ? msg.i + 1 : 0;
+	return msg;
+}
+
 static bool msg_owns_string(int tag) {
 	return tag == MSG_NAME
 	    || tag == MSG_PASSWORD
 	    || tag == MSG_ASB_TEXT
 	    || tag == MSG_ASB_QUERY
+	    || tag == MSG_CONTROL_SEARCH_TEXT
+	    || tag == MSG_CONTROL_SEARCH_QUERY
 	    || tag == MSG_COMBO_SUBMIT;
 }
 
@@ -436,6 +442,7 @@ static PageBuildFn const k_pages [PAGE_COUNT] = {
   [PAGE_ITEMS_VIEW]      = page_items_view_build,
   [PAGE_PULL_REFRESH]    = page_pull_refresh_build,
   [PAGE_SPLIT_VIEW]      = page_split_view_build,
+  [PAGE_NAVIGATION_VIEW] = page_navigation_view_build,
   [PAGE_TITLE_BAR]       = page_title_bar_build,
   [PAGE_DRAG_DROP]       = page_drag_drop_build,
   [PAGE_MATERIALS]       = page_materials_build,
@@ -466,6 +473,34 @@ static void apply_flow(GalleryApp *g) {
 	if (result) xtk_batchresult_destroy(result);
 }
 
+static void sync_control_search(GalleryApp *g) {
+	char const *items [CONTROL_SEARCH_LIMIT];
+	int         count = gallery_search_items(g->model.control_query, items);
+	xtk_ctrl_setitems(&g->scene, g->control_search, items, count);
+}
+
+static void clear_control_search(GalleryApp *g) {
+	if (g->model.control_query [0]) return;
+	xtk_suggest_settext(&g->scene, g->control_search, "", 0u, (XtkChangeStamp) {0});
+	sync_control_search(g);
+}
+
+static void apply_pending_message(GalleryApp *g, XtkMsg msg) {
+	gallery_model_update(&g->model, msg);
+	switch (msg.tag) {
+	case MSG_BACKDROP             : gallery_backdrop_apply(flux_app_window(g->flux), g->model.backdrop); break;
+	case MSG_RTL                  : apply_flow(g); break;
+	case MSG_CONTROL_SEARCH_TEXT  : sync_control_search(g); break;
+	case MSG_CONTROL_SEARCH_QUERY : clear_control_search(g); break;
+	case MSG_NAV_STYLE :
+		xtk_nav_setdisplay(
+		  &g->scene, g->nav, g->model.nav_style ? XTK_NAV_PANE_TOP : XTK_NAV_PANE_AUTO, (XtkChangeStamp) {0}
+		);
+		break;
+	default : break;
+	}
+}
+
 static void flush(void *ctx) {
 	GalleryApp *g = ( GalleryApp * ) ctx;
 	if (!g->pending_head || g->rebuilding) return;
@@ -474,9 +509,7 @@ static void flush(void *ctx) {
 	while (g->pending_head) {
 		GalleryPending *pending = g->pending_head;
 		g->pending_head         = pending->next;
-		gallery_model_update(&g->model, pending->msg);
-		if (pending->msg.tag == MSG_BACKDROP) gallery_backdrop_apply(flux_app_window(g->flux), g->model.backdrop);
-		if (pending->msg.tag == MSG_RTL) apply_flow(g);
+		apply_pending_message(g, pending->msg);
 		free(pending->owned);
 		free(pending);
 	}
@@ -490,12 +523,34 @@ static void flush(void *ctx) {
 	g->rebuild_request = false;
 }
 
+static XtkLocalId create_control_search(GalleryApp *g, XtkTxn *txn, XtkNodeRef nav) {
+	XtkLocalId slot
+	  = xtk_navslot_create(txn, nav, &(XtkNavSlotProps) {.set = XTK_NAVSLOT_SLOT_MASK, .slot = XTK_NAV_SLOT_SEARCH});
+	XtkLocalId box = xtk_suggest_create(
+	  txn, xtk_ref_local(slot),
+	  &(XtkSuggestProps) {
+		.set         = XTK_SUGGEST_PLACEHOLDER_MASK | XTK_SUGGEST_ICON_MASK,
+		.placeholder = "Search controls",
+		.icon        = "Search",
+	  }
+	);
+	g->search_text_bind  = (GalleryBind) {.app = g, .tag = MSG_CONTROL_SEARCH_TEXT};
+	g->search_query_bind = (GalleryBind) {.app = g, .tag = MSG_CONTROL_SEARCH_QUERY};
+	xtk_suggest_onchange(txn, xtk_ref_local(box), page_post, &g->search_text_bind);
+	xtk_suggest_onquery(txn, xtk_ref_local(box), page_post, &g->search_query_bind);
+	return box;
+}
+
 static bool shell_build(GalleryApp *g) {
 	XtkTxn txn;
 	if (!xtk_txn_begin(&g->scene, &txn)) return false;
 	XtkLocalId nav = xtk_nav_create(
 	  &txn, xtk_ref_existing(xtk_scene_root(&g->scene)),
-	  &(XtkNavProps) {.set = XTK_NAV_GROW_MASK | XTK_NAV_SEL_MASK, .grow = 1.0f, .sel = g->model.page}
+	  &(XtkNavProps) {
+		.set         = XTK_NAV_GROW_MASK | XTK_NAV_SEL_MASK | XTK_NAV_BACK_BUTTON_MASK,
+		.grow        = 1.0f,
+		.sel         = g->model.page,
+		.back_button = XTK_NAV_BACK_COLLAPSED}
 	);
 	xtk_txn_setnav(
 	  &txn, xtk_ref_local(nav),
@@ -503,17 +558,20 @@ static bool shell_build(GalleryApp *g) {
 		.items            = kNavItems,
 		.nitem            = PAGE_COUNT,
 		.sel              = g->model.page,
-		.window_title_bar = true,
+		.window_title_bar = XTK_NAV_TITLE_BAR_TALL,
 		.app_title        = "FluXent Gallery",
 	  }
 	);
 	g->nav_bind = (GalleryBind) {.app = g, .tag = MSG_NAV};
 	xtk_nav_onselect(&txn, xtk_ref_local(nav), page_post, &g->nav_bind);
+	XtkLocalId      search = create_control_search(g, &txn, xtk_ref_local(nav));
 	XtkBatchResult *result = xtk_txn_commit(&txn, NULL);
 	if (!result) return false;
-	g->nav = result_ctrl(result, nav);
+	g->nav            = result_ctrl(result, nav);
+	g->control_search = result_ctrl(result, search);
 	xtk_batchresult_destroy(result);
-	return g->nav != XTK_CTRL_INVALID;
+	if (g->nav != XTK_CTRL_INVALID) xtk_nav_setsettings_visible(&g->scene, g->nav, false, (XtkChangeStamp) {0});
+	return g->nav != XTK_CTRL_INVALID && g->control_search != XTK_CTRL_INVALID;
 }
 
 bool gallery_app_create(GalleryApp *g) {

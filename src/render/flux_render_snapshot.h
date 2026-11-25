@@ -5,6 +5,7 @@
 #include "controls/behavior/flux_calendar.h"
 #include "controls/behavior/flux_color_picker.h"
 #include "controls/data/flux_component_data.h"
+#include "controls/data/flux_title_bar_data.h"
 #include "store/flux_node_data.h"
 #include "store/flux_node_data.h"
 
@@ -20,19 +21,29 @@ typedef struct FluxEditSnapshot {
 	bool           multiline;
 } FluxEditSnapshot;
 
+typedef enum FluxItemTextColor
+{
+	FLUX_ITEM_TEXT_INHERIT,
+	FLUX_ITEM_TEXT_BUTTON,
+	FLUX_ITEM_TEXT_WINDOW,
+	FLUX_ITEM_TEXT_HIGHLIGHT,
+	FLUX_ITEM_TEXT_DISABLED,
+} FluxItemTextColor;
+
 typedef struct FluxTextSnapshot {
-	char const    *text_content;
-	char const    *font_family;
-	FluxColor      text_color;
-	FluxFontWeight font_weight;
-	FluxTextAlign  text_alignment;
-	FluxTextVAlign text_vert_alignment;
-	uint8_t        max_lines;
-	XentTextTrim   trim;
-	uint32_t       selection_start;
-	uint32_t       selection_end;
-	bool           word_wrap;
-	bool           selectable;
+	char const       *text_content;
+	char const       *font_family;
+	FluxColor         text_color;
+	FluxFontWeight    font_weight;
+	FluxTextAlign     text_alignment;
+	FluxTextVAlign    text_vert_alignment;
+	uint8_t           max_lines;
+	XentTextTrim      trim;
+	uint32_t          selection_start;
+	uint32_t          selection_end;
+	bool              word_wrap;
+	bool              selectable;
+	FluxItemTextColor item_color;
 } FluxTextSnapshot;
 
 typedef struct FluxButtonSnapshot {
@@ -41,8 +52,14 @@ typedef struct FluxButtonSnapshot {
 	char const     *icon_name;
 	FluxColor       text_color;
 	FluxButtonStyle button_style;
-	bool            pressed_primary;
+	bool            picker_flyout_button;
+	bool            teaching_tip_close;
+	bool            suggest_query;
+	bool            navigation_back;
 	bool            is_checked;
+	bool            split_open;
+	bool            split_secondary_pressed;
+	bool            split_key_pressed;
 } FluxButtonSnapshot;
 
 typedef struct FluxCheckSnapshot {
@@ -82,7 +99,11 @@ typedef struct FluxTextBoxSnapshot {
 	uint8_t          nb_spin_placement;
 	bool             nb_up_enabled;
 	bool             nb_down_enabled;
+	int              nb_spin_direction;
 	bool             combo_editor;
+	bool             suggest_editor;
+	float            query_reserve;
+	XentNodeId       combo_owner;
 } FluxTextBoxSnapshot;
 
 typedef struct FluxProgressSnapshot {
@@ -167,18 +188,17 @@ typedef struct FluxTabSnapshot {
 	bool        is_checked;
 	bool        tab_separator;
 	bool        tab_closable;
-	bool        tab_compact;
+	bool        tab_owner_hot;
+	bool        tab_owner_disabled;
+	bool        tab_dragging;
 } FluxTabSnapshot;
 
 typedef struct FluxNavSnapshot {
 	char const *label;
 	char const *icon_name;
-	float       nav_ind_top;
-	float       nav_ind_bottom;
+	float       nav_ind_scale;
+	float       nav_ind_offset;
 	float       nav_ind_opacity;
-	float       nav_ind_indent;
-	float       nav_ind_clip_top;
-	float       nav_ind_clip_bottom;
 	float       nav_shadow_opacity;
 	float       nav_content_x;
 	float       nav_content_y;
@@ -186,7 +206,11 @@ typedef struct FluxNavSnapshot {
 	bool        nav_pane_solid;
 	bool        nav_top;
 	uint8_t     nav_item_kind;
+	uint8_t     nav_place;
 	uint8_t     nav_depth;
+
+	bool        nav_ind_horizontal;
+	bool        nav_in_flyout;
 	bool        nav_has_children;
 	bool        nav_expanded;
 	bool        is_checked;
@@ -274,18 +298,19 @@ typedef struct FluxRefreshSnapshot {
 } FluxRefreshSnapshot;
 
 typedef struct FluxPagerSnapshot {
-	int         count;
-	int         selected;
-	uint8_t     display_mode;
-	uint8_t     first_state;
-	uint8_t     prev_state;
-	uint8_t     next_state;
-	uint8_t     last_state;
-	int16_t     cells [12];
-	uint8_t     cell_count;
-	int16_t     pressed_elem;
-	char const *prefix;
-	char const *suffix;
+	int     count;
+	int     selected;
+	uint8_t display_mode;
+	uint8_t first_state;
+	uint8_t prev_state;
+	uint8_t next_state;
+	uint8_t last_state;
+	int32_t cells [12];
+	uint8_t cell_count;
+	int16_t pressed_elem;
+	float   box_w;
+	int8_t  focus_kind;
+	int32_t focus_page;
 } FluxPagerSnapshot;
 
 typedef struct FluxSplitPaneSnapshot {
@@ -295,22 +320,26 @@ typedef struct FluxSplitPaneSnapshot {
 } FluxSplitPaneSnapshot;
 
 typedef struct FluxTitleBarSnapshot {
-	char const *title;
-	char const *subtitle;
-	char const *icon_glyph;
-	float       title_w;
-	int         pressed;
-	bool        show_back;
-	bool        back_disabled;
-	bool        show_pane_toggle;
-	bool        caption_buttons;
-	bool        maximized;
+	char const       *title;
+	char const       *subtitle;
+	char const       *icon_glyph;
+	float             title_w;
+	float             subtitle_w;
+	int               pressed;
+	int               focus_part;
+	bool              show_back;
+	bool              back_disabled;
+	bool              show_pane_toggle;
+	FluxTitleBarFrame frame;
+	bool              maximized;
+	bool              inactive;
 } FluxTitleBarSnapshot;
 
 typedef struct FluxPersonSnapshot {
 	char const *initials;
 	char const *image_path;
 	char const *badge_glyph;
+	char const *badge_image_path;
 	int         badge_number;
 	float       diameter;
 	bool        is_group;
@@ -357,20 +386,44 @@ typedef struct FluxListSnapshot {
 	FluxRect rect;
 } FluxListSnapshot;
 
+typedef struct FluxComboItemSnapshot {
+	char const *label;
+	bool        selected;
+	bool        focus;
+	uint32_t    press_tick;
+} FluxComboItemSnapshot;
+
+typedef struct FluxSuggestItemSnapshot {
+	char const *label;
+	bool        highlight;
+	float       alpha;
+	float       slide;
+} FluxSuggestItemSnapshot;
+
+typedef struct FluxPartSnapshot {
+	void const *owner;
+	int         index;
+} FluxPartSnapshot;
+
+typedef struct FluxTeachTipSnapshot {
+	void const *paint;
+} FluxTeachTipSnapshot;
+
 typedef struct FluxRenderSnap {
-	uint64_t        id;
-	FluxControlType type;
+	uint64_t          id;
+	FluxControlType   type;
 
-	FluxColor       background;
-	FluxColor       border_color;
-	float           corner_radius;
-	float           border_width;
-	float           opacity;
-	float           font_size;
-	bool            rtl;
+	FluxColor         background;
+	FluxColor         border_color;
+	float             corner_radius;
+	float             border_width;
+	float             opacity;
+	float             font_size;
+	bool              rtl;
+	FluxDialogSurface dialog_surface;
 
-	float           hover_local_x;
-	float           hover_local_y;
+	float             hover_local_x;
+	float             hover_local_y;
 
 	union
 	{
@@ -414,6 +467,10 @@ typedef struct FluxRenderSnap {
 		FluxAppBarSnapshot       app_bar;
 		FluxCmdBarSnapshot       cmd_bar;
 		FluxListSnapshot         list;
+		FluxTeachTipSnapshot     teach_tip;
+		FluxComboItemSnapshot    combo_item;
+		FluxSuggestItemSnapshot  suggest_item;
+		FluxPartSnapshot         part;
 	} u;
 } FluxRenderSnap;
 
@@ -425,7 +482,15 @@ typedef struct FluxSnapCtx {
 } FluxSnapCtx;
 
 void flux_snap_breadcrumb_item(FluxSnapCtx const *ctx);
+void flux_snap_teachtip(FluxSnapCtx const *ctx);
+void flux_snap_comboitem(FluxSnapCtx const *ctx);
+void flux_snap_suggestitem(FluxSnapCtx const *ctx);
+void flux_snap_menupresenter(FluxSnapCtx const *ctx);
+void flux_snap_menurow(FluxSnapCtx const *ctx);
+void flux_snap_cmdovf(FluxSnapCtx const *ctx);
+void flux_snap_cmdovfrow(FluxSnapCtx const *ctx);
 void flux_snap_button(FluxSnapCtx const *ctx);
+void flux_snap_split_button(FluxSnapCtx const *ctx);
 void flux_snap_calendar(FluxSnapCtx const *ctx);
 void flux_snap_checkbox_like(FluxSnapCtx const *ctx);
 void flux_snap_colorpicker(FluxSnapCtx const *ctx);

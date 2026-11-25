@@ -1,5 +1,6 @@
 #include "flux_menu_internal.h"
 
+#include <math.h>
 #include <string.h>
 #include <windows.h>
 
@@ -115,19 +116,30 @@ static void menu_clamp_scroll(FluxMenu *m, float intrinsic_h, float total_h) {
 	if (m->scroll_y < 0.0f) m->scroll_y = 0.0f;
 }
 
-void menu_measure(FluxMenu *m) {
-	menu_scan_item_kinds(m);
+float menu_body_inset(FluxMenu const *m) {
+	if (!m->breadcrumb) return FLUX_MENU_PRESENTER_BORDER;
+	FluxThemeColors const *theme = NULL;
+	bool                   dark  = false;
+	menu_resolve_theme(m, &theme, &dark);
+	return theme && theme->contrast.active ? 2.0f : FLUX_MENU_PRESENTER_BORDER;
+}
 
-	float max_label    = 0.0f;
-	float max_accel    = 0.0f;
-	float max_text_h   = 0.0f;
-	m->col_placeholder = menu_placeholder_width(m);
-	menu_measure_columns(m, &max_label, &max_accel, &max_text_h);
-	if (max_text_h <= 0.0f) max_text_h = FLUX_MENU_ITEM_FONT_SIZE * 1.35f;
+float menu_view_height(FluxMenu const *m) {
+	return m->total_h - 2.0f * menu_body_inset(m) - FLUX_MENU_PRESENTER_PAD_TOP - FLUX_MENU_PRESENTER_PAD_BOTTOM;
+}
 
-	m->col_label_w = max_label;
-	m->col_accel_w = max_accel;
+static void breadcrumb_flyout_measure(FluxMenu *m, float label_w, float line_h) {
+	float inset  = menu_body_inset(m);
+	float slot_h = line_h + BREADCRUMB_FLYOUT_PAD_TOP + BREADCRUMB_FLYOUT_PAD_BOT + 2.0f * BREADCRUMB_FLYOUT_MARGIN_V;
+	float rows_h = menu_assign_item_layouts(m, slot_h);
+	float height = fmaxf(40.0f, rows_h + FLUX_MENU_PRESENTER_PAD_TOP + FLUX_MENU_PRESENTER_PAD_BOTTOM + 2.0f * inset);
+	float max_h  = menu_owner_max_height(m);
+	m->total_w   = fminf(456.0f, label_w + 2.0f * (FLUX_MENU_ITEM_PAD_LEFT + BREADCRUMB_FLYOUT_MARGIN_H + inset));
+	m->total_h   = max_h > 64.0f ? fminf(height, max_h) : height;
+	menu_clamp_scroll(m, height, m->total_h);
+}
 
+static void menu_measure_standard(FluxMenu *m, float max_label, float max_accel, float max_text_h) {
 	float trailing = 0.0f;
 	if (m->has_accels) trailing += FLUX_MENU_ITEM_ACCEL_GAP + max_accel;
 	if (m->has_submenus) trailing += FLUX_MENU_ITEM_CHEVRON_GAP + FLUX_MENU_ITEM_CHEVRON_SIZE;
@@ -162,27 +174,14 @@ void menu_measure(FluxMenu *m) {
 	m->total_h = total_h;
 }
 
-int menu_hit_test(FluxMenu const *m, float px, float py) {
-	if (m->item_count == 0) return -1;
-
-	float band_top = FLUX_MENU_PRESENTER_BORDER + FLUX_MENU_PRESENTER_PAD_TOP;
-	float band_bot = m->total_h - FLUX_MENU_PRESENTER_BORDER - FLUX_MENU_PRESENTER_PAD_BOTTOM;
-	if (py < band_top || py >= band_bot) return -1;
-
-	float local_x   = px - FLUX_MENU_PRESENTER_BORDER;
-	float local_y   = py - band_top + m->scroll_y;
-	float content_w = m->total_w - 2.0f * FLUX_MENU_PRESENTER_BORDER;
-
-	for (int i = 0; i < m->item_count; i++) {
-		StoredItem const *it = &m->items [i];
-		if (local_y < it->y || local_y >= it->y + it->h) continue;
-		if (it->type == FLUX_MENU_ITEM_SEPARATOR) return -1;
-		float ir_left  = FLUX_MENU_ITEM_MARGIN_H;
-		float ir_right = content_w - FLUX_MENU_ITEM_MARGIN_H;
-		float ir_top   = it->y + FLUX_MENU_ITEM_MARGIN_V;
-		float ir_bot   = it->y + it->h - FLUX_MENU_ITEM_MARGIN_V;
-		if (local_x >= ir_left && local_x < ir_right && local_y >= ir_top && local_y < ir_bot) return i;
-		return -1;
-	}
-	return -1;
+void menu_measure(FluxMenu *m) {
+	menu_scan_item_kinds(m);
+	float label, accel, line_h;
+	menu_measure_columns(m, &label, &accel, &line_h);
+	if (line_h <= 0.0f) line_h = FLUX_MENU_ITEM_FONT_SIZE * 1.35f;
+	m->col_placeholder = menu_placeholder_width(m);
+	m->col_label_w     = label;
+	m->col_accel_w     = accel;
+	if (m->breadcrumb) breadcrumb_flyout_measure(m, label, line_h);
+	else menu_measure_standard(m, label, accel, line_h);
 }

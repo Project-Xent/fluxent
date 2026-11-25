@@ -112,10 +112,35 @@ XentDl *flux_expbody_record(
 XentDl *flux_dialogbody_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
+XentDl *flux_flyout_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
 XentDl *flux_listitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
+XentDl *flux_listitem_overlay_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+
 XentDl *flux_list_overlay_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+XentDl *flux_comboitem_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+XentDl *flux_suggestitem_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+XentDl *flux_menupresenter_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+XentDl *flux_menurow_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+XentDl *flux_cmdovf_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+);
+XentDl *flux_cmdovfrow_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
 XentDl *flux_groupheader_record(
@@ -170,9 +195,6 @@ XentDl *flux_refresh_overlay_record(
 XentDl *flux_scroll_overlay_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
-XentDl *flux_nav_overlay_record(
-  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
-);
 XentDl *flux_flip_overlay_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 );
@@ -194,6 +216,10 @@ XentDl *flux_flip_overlay_record(
 #define FLUX_MENU_BAR_ITEM_H       (FLUX_MENU_BAR_HEIGHT - 2.0f * FLUX_MENU_BAR_ITEM_MARGIN)
 #define FLUX_MENU_BAR_ITEM_FONT    14.0f
 
+#define FLUX_FLYOUT_CORNER         8.0f
+#define FLUX_FLYOUT_MIN_W          96.0f
+#define FLUX_FLYOUT_MAX_W          456.0f
+#define FLUX_FLYOUT_MAX_H          758.0f
 #define FLUX_NAV_PANE_EXPANDED     320.0f
 #define FLUX_NAV_PANE_COMPACT      48.0f
 #define FLUX_NAV_ICON_BOX          40.0f
@@ -219,7 +245,7 @@ XentDl *flux_flip_overlay_record(
 #define FLUX_NAV_SEP_TOP_LINE_H    24.0f
 #define FLUX_NAV_HEADER_H          40.0f
 #define FLUX_NAV_HEADER_PAD        16.0f
-#define FLUX_NAV_HEADER_FONT       12.0f
+#define FLUX_NAV_HEADER_FONT       14.0f
 
 #define FLUX_TAB_STRIP_TOP_PAD     8.0f
 #define FLUX_TAB_MIN_H             32.0f

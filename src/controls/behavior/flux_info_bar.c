@@ -1,3 +1,7 @@
+#include "a11y/flux_uia_app.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_module.h"
+#include "render/flux_icon.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "controls/draw/flux_control_draw.h"
@@ -100,6 +104,27 @@ static void ib_set_layout_text(XentCtx *ctx, XentNodeId node, char const *title,
 	xent_settext(ctx, node, buf);
 }
 
+static char const *ib_severity_name(FluxInfoBarSeverity severity) {
+	switch (severity) {
+	case FLUX_INFOBAR_SUCCESS : return "Info message, severity success";
+	case FLUX_INFOBAR_WARNING : return "Info message, severity warning";
+	case FLUX_INFOBAR_ERROR   : return "Info message, severity error";
+	default                   : return "Info message, severity informational";
+	}
+}
+
+static void ib_notify(FluxStore *store, XentNodeId id, FluxInfoBarData const *d, bool open) {
+	char text [512];
+	bool loud = d->severity == FLUX_INFOBAR_ERROR || d->severity == FLUX_INFOBAR_WARNING;
+	int  proc = loud ? FLUX_UIA_PROC_IMPORTANT_ALL : FLUX_UIA_PROC_CURRENT_RECENT;
+	snprintf(
+	  text, sizeof(text), "%s %s %s", ib_severity_name(d->severity), d->title ? d->title : "",
+	  d->message ? d->message : ""
+	);
+	if (open) flux_uia_notify(store, id, FLUX_UIA_NOTE_OTHER, proc, text, "InfoBarOpenedActivityId");
+	else flux_uia_notify(store, id, FLUX_UIA_NOTE_OTHER, proc, "InfoBar dismissed", "InfoBarClosedActivityId");
+}
+
 XentNodeId flux_infobar_init(FluxInfoBarDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
@@ -145,15 +170,22 @@ XentNodeId flux_infobar_init(FluxInfoBarDesc const *info) {
 	xent_setlinebreak(info->ctx, node, XENT_LINEBREAK_WORDWRAP);
 	ib_set_layout_text(info->ctx, node, info->title, info->message);
 	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_CONTAINER);
-	if (info->title) xent_sem_setlabel(info->ctx, node, info->title);
 	if (info->is_closable) xent_set_focusable(info->ctx, node, true);
-
+	d->notify_open = true;
 	return node;
+}
+
+void flux_infobar_frame(FluxStore *store, XentNodeId node) {
+	FluxInfoBarData *d = info_bar_data(store, node);
+	if (!d || !d->notify_open) return;
+	d->notify_open = false;
+	if (d->is_open) ib_notify(store, node, d, true);
 }
 
 void flux_prop_infobar_severity(FluxStore *store, XentNodeId id, FluxInfoBarSeverity severity) {
 	FluxInfoBarData *d = info_bar_data(store, id);
-	if (d) d->severity = severity;
+	if (!d) return;
+	d->severity = severity;
 }
 
 void flux_prop_infobar_title(FluxStore *store, XentNodeId id, char const *title) {
@@ -170,10 +202,135 @@ void flux_prop_infobar_message(FluxStore *store, XentNodeId id, char const *mess
 	ib_set_layout_text(( XentCtx * ) d->layout_ctx, d->layout_node, d->title, d->message);
 }
 
+#define IB_UIA_PAD_LEFT     16.0f
+#define IB_UIA_ICON_TOP     16.0f
+#define IB_UIA_ICON_SIZE    16.0f
+#define IB_UIA_ICON_GAP     14.0f
+#define IB_UIA_MSG_GAP      12.0f
+#define IB_UIA_CLOSE_SIZE   38.0f
+#define IB_UIA_CLOSE_MARGIN 5.0f
+
+int flux_infobar_uia_heads(FluxStore *store, XentNodeId node) {
+	FluxInfoBarData *d = info_bar_data(store, node);
+	if (!d) return 0;
+	return d->is_closable ? 4 : 3;
+}
+
+int flux_infobar_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns) {
+	( void ) store;
+	( void ) node;
+	*patterns = sub == FLUX_UIA_SUB_HEAD + 3 ? FLUX_UIA_P_INVOKE : FLUX_UIA_P_TEXT;
+	return sub == FLUX_UIA_SUB_HEAD + 3 ? FLUX_UIA_BUTTON : FLUX_UIA_TEXT;
+}
+
+static float ib_uia_width(FluxStore *store, char const *text, uint16_t weight, float avail) {
+	XentTextMetrics m = {0};
+	if (!text || !text [0] || avail <= 0.0f) return 0.0f;
+	XentTextMeasureReq req = {
+	  .text              = text,
+	  .font_size         = IB_TEXT_FONT,
+	  .font_weight       = weight,
+	  .width_constraint  = avail,
+	  .line_break_policy = XENT_LINEBREAK_WORDWRAP,
+	  .width_mode        = XENT_MEASURE_AT_MOST};
+	if (!xent_text_measure(flux_store_ctx(store), &req, &m)) return 0.0f;
+	return m.width < avail ? m.width : avail;
+}
+
+static XentRect ib_uia_text_rect(FluxStore *store, FluxInfoBarData const *d, XentRect r, bool message) {
+	float close = d->is_closable ? r.x + r.w - IB_UIA_CLOSE_MARGIN - IB_UIA_CLOSE_SIZE : r.x + r.w;
+	float x     = r.x + IB_UIA_PAD_LEFT + IB_UIA_ICON_SIZE + IB_UIA_ICON_GAP;
+	float right = close - IB_UIA_MSG_GAP > x ? close - IB_UIA_MSG_GAP : x;
+	float tw    = ib_uia_width(store, d->title, 600u, right - x);
+	if (message) x += tw + (tw > 0.0f ? IB_UIA_MSG_GAP : 0.0f);
+	float w = message ? ib_uia_width(store, d->message, 400u, right - x) : tw;
+	return (XentRect) {x, r.y + IB_TEXT_TOP, w, w > 0.0f ? 20.0f : 0.0f};
+}
+
+bool flux_infobar_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect *rect) {
+	FluxInfoBarData *d = info_bar_data(store, node);
+	XentRect         r = *rect;
+	if (!d) return false;
+	switch (sub - FLUX_UIA_SUB_HEAD) {
+	case 0 :
+		*rect = (XentRect) {r.x + IB_UIA_PAD_LEFT, r.y + IB_UIA_ICON_TOP, IB_UIA_ICON_SIZE, IB_UIA_ICON_SIZE};
+		break;
+	case 1 : *rect = ib_uia_text_rect(store, d, r, false); break;
+	case 2 : *rect = ib_uia_text_rect(store, d, r, true); break;
+	default :
+		*rect = (XentRect) {
+		  r.x + r.w - IB_UIA_CLOSE_MARGIN - IB_UIA_CLOSE_SIZE, r.y + IB_UIA_CLOSE_MARGIN, IB_UIA_CLOSE_SIZE,
+		  IB_UIA_CLOSE_SIZE};
+		break;
+	}
+	return true;
+}
+
+static char const *ib_uia_glyph(FluxInfoBarSeverity severity) {
+	static char const *const glyph [4] = {"ï¿", "ï¾", "ï¼", "ï½"};
+	return ( unsigned ) severity < 4u ? glyph [severity] : glyph [0];
+}
+
+static char const *ib_uia_text_content(FluxInfoBarData const *d, int part) {
+	if (part == 0) return ib_uia_glyph(d->severity);
+	return part == 1 ? d->title : d->message;
+}
+
+bool flux_infobar_uia_text(FluxStore *store, XentNodeId node, int sub, FluxUiaTextView *out) {
+	FluxInfoBarData *d    = info_bar_data(store, node);
+	int              part = sub - FLUX_UIA_SUB_HEAD;
+	XentRect         r    = {0};
+	if (!d || part < 0 || part > 2) return false;
+	xent_layout_rect(flux_store_ctx(store), node, &r);
+	XentRect box
+	  = part ? ib_uia_text_rect(store, d, r, part == 2) : (XentRect) {0, 0, IB_UIA_ICON_SIZE, IB_UIA_ICON_SIZE};
+	char const *text = ib_uia_text_content(d, part);
+	*out             = (FluxUiaTextView) {
+	  .text = text ? text : "", .layout_w = box.w + 1.0f, .clip = {0.0f, 0.0f, box.w + 1.0f, box.h},
+                    .readonly = true
+    };
+	out->style.font_family = part == 0 ? flux_icon_font_family() : NULL;
+	out->style.font_size   = part == 0 ? IB_UIA_ICON_SIZE : IB_TEXT_FONT;
+	out->style.font_weight = part == 1 ? FLUX_FONT_SEMI_BOLD : FLUX_FONT_REGULAR;
+	out->style.word_wrap   = part != 0;
+	return true;
+}
+
+void flux_infobar_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size) {
+	FluxInfoBarData *d = info_bar_data(store, node);
+	if (!d) return;
+	switch (sub - FLUX_UIA_SUB_HEAD) {
+	case 0  : snprintf(out, size, "%s", ib_severity_name(d->severity)); break;
+	case 1  : snprintf(out, size, "%s", d->title ? d->title : ""); break;
+	case 2  : snprintf(out, size, "%s", d->message ? d->message : ""); break;
+	default : snprintf(out, size, "Close"); break;
+	}
+}
+
+bool flux_infobar_uia_focused(FluxStore *store, XentNodeId node, int sub) {
+	FluxInfoBarData *d = info_bar_data(store, node);
+	return d && d->is_closable && sub == FLUX_UIA_SUB_HEAD + 3;
+}
+
+bool flux_infobar_uia_invoke(FluxStore *store, XentNodeId node, int sub) {
+	XentCtx         *ctx = flux_store_ctx(store);
+	FluxInfoBarData *d   = info_bar_data(store, node);
+	if (!d || sub != FLUX_UIA_SUB_HEAD + 3) return false;
+	flux_uia_note(store, node, sub, FLUX_UIA_EVT_INVOKED);
+	info_bar_do_close(&(FluxInfoBarBinding) {.store = store, .node = node, .ctx = ctx});
+	return true;
+}
+
+bool flux_infobar_uia_concealed(FluxStore *store, XentNodeId node) {
+	FluxInfoBarData *d = info_bar_data(store, node);
+	return d && !d->is_open;
+}
+
 void flux_prop_infobar_open(FluxStore *store, XentNodeId id, bool open) {
 	FluxInfoBarData *d = info_bar_data(store, id);
 	if (!d || d->is_open == open) return;
-	d->is_open   = open;
+	d->is_open = open;
+	ib_notify(store, id, d, open);
 	XentCtx *ctx = ( XentCtx * ) d->layout_ctx;
 	if (!open) {
 		xent_setsize(ctx, id, (XentSize) {0.0f, 0.0f});

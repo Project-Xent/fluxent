@@ -9,6 +9,7 @@ typedef struct FluxPickerFlyoutDesc {
 	FluxInput  *input;
 	FluxWindow *window;
 	XentNodeId  overlay;
+	XentNodeId  owner;
 	float       width;
 	bool        time;
 	void        (*on_accept)(void *ctx);
@@ -24,6 +25,8 @@ typedef struct FluxPickerColumnSpec {
 	float              weight;
 	bool               loop;
 	bool               left;
+	char const        *name;
+	char const        *automation_id;
 } FluxPickerColumnSpec;
 
 FluxPickerFlyout *flux_pflyout_create(FluxPickerFlyoutDesc const *desc);

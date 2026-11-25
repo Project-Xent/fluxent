@@ -52,6 +52,8 @@ void       flux_avatar_set_initials(FluxStore *store, XentNodeId pp, char const 
 void       flux_avatar_set_image(FluxStore *store, XentNodeId pp, char const *image_path);
 
 void       flux_avatar_set_badge(FluxStore *store, XentNodeId pp, char const *badge_glyph, int badge_number);
+void       flux_avatar_set_badge_image(FluxStore *store, XentNodeId pp, char const *path);
+void       flux_avatar_set_badge_text(FluxStore *store, XentNodeId pp, char const *text);
 
 void       flux_avatar_set_group(FluxStore *store, XentNodeId pp, bool is_group);
 

@@ -47,7 +47,9 @@ XtkEl *page_button(XtkUi *ui, Model const *m) {
 			  xtk_kids(
 				xtk_button(ui, "Save", (XtkButtonDesc) {.icon = "Save"}),
 				xtk_button(ui, "Share", (XtkButtonDesc) {.icon = "Share"}),
-				xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Mail"})
+				xtk_automation(
+				  ui, xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Mail"}), &(XtkAutomation) {.name = "Mail"}
+				)
 			  )
 			))
 		  )

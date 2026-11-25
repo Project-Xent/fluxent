@@ -167,15 +167,32 @@ static int time_accept(FluxPickerData *pd) {
 }
 
 static void time_fill(FluxPickerData *pd, FluxPickerFlyout *fly) {
-	FluxTimePickerData *td = ( FluxTimePickerData * ) pd;
+	static char const *const names [3] = {"hour", "minute", "period"};
+	static char const *const ids [3]   = {"HourLoopingSelector", "MinuteLoopingSelector", "PeriodLoopingSelector"};
+	FluxTimePickerData      *td        = ( FluxTimePickerData * ) pd;
 	for (int i = 0; i < td->columns; ++i) {
 		int  kind = td->order [i];
 		bool loop = kind == COL_HOUR || (kind == COL_MINUTE && td->step > 0);
-		flux_pflyout_addcolumn(fly, &(FluxPickerColumnSpec) {.weight = 1.0f, .loop = loop});
+		flux_pflyout_addcolumn(
+		  fly, &(FluxPickerColumnSpec) {.weight = 1.0f, .loop = loop, .name = names [kind], .automation_id = ids [kind]}
+		);
 	}
 }
 
+static void time_spoken(FluxPickerData const *pd, char *out, size_t size) {
+	FluxTimePickerData const *td = ( FluxTimePickerData const * ) pd;
+	SYSTEMTIME                st = {.wYear = 2000, .wMonth = 1, .wDay = 1};
+	wchar_t                   text [64];
+	if (td->minutes <= 0) return;
+	st.wHour   = ( WORD ) (td->minutes / 60);
+	st.wMinute = ( WORD ) (td->minutes % 60);
+	if (!GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &st, td->h12 ? L"h:mm tt" : L"HH:mm", text, 64)) return;
+	WideCharToMultiByte(CP_UTF8, 0, text, -1, out, ( int ) size, NULL, NULL);
+}
+
 static FluxPickerOps const time_ops = {
+  .spoken = time_spoken,
+  .kind   = "time picker",
   .width  = FLUX_TIME_PICKER_W,
   .face   = time_face,
   .fill   = time_fill,

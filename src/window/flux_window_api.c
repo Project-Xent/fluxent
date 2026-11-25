@@ -1,4 +1,6 @@
 #include "flux_window_internal.h"
+#include "controls/data/flux_title_bar_data.h"
+#include "theme/flux_theme_contrast.h"
 #include "fluxent/flux_gfx.h"
 
 #include <objbase.h>
@@ -17,7 +19,18 @@ void flux_window_destroy(FluxWindow *win) {
 	free(win);
 }
 
-HWND     flux_window_hwnd(FluxWindow const *win) { return win ? win->hwnd : NULL; }
+HWND flux_window_hwnd(FluxWindow const *win) { return win ? win->hwnd : NULL; }
+
+bool flux_window_setaccelerators(FluxWindow *win, ACCEL const *entries, int count, FluxAcceleratorFn cb, void *ctx) {
+	if (!win || count < 0 || (count && (!entries || !cb))) return false;
+	HACCEL table = count ? CreateAcceleratorTableW(( ACCEL * ) entries, count) : NULL;
+	if (count && !table) return false;
+	if (win->accelerators) DestroyAcceleratorTable(win->accelerators);
+	win->accelerators    = table;
+	win->on_accelerator  = table ? cb : NULL;
+	win->accelerator_ctx = table ? ctx : NULL;
+	return true;
+}
 
 FluxSize flux_window_size(FluxWindow const *win) {
 	if (!win || !win->hwnd) return (FluxSize) {0, 0};
@@ -107,7 +120,7 @@ void flux_window_onime(FluxWindow *win, FluxImeCompositionFn cb, void *ctx) {
 
 void flux_window_setdark(FluxWindow *win, bool enabled) {
 	if (!win || !win->hwnd) return;
-	BOOL dark = enabled ? TRUE : FALSE;
+	BOOL dark = enabled && !flux_theme_systemcontrast();
 	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
 	win->config.dark_mode = enabled;
 }
@@ -121,8 +134,29 @@ void flux_window_setmaxbutton(FluxWindow *win, FluxRect bounds) {
 	if (win) win->title_bar_max = bounds;
 }
 
-void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *passthrough, int count) {
-	if (!win) return;
+bool flux_window_caption_bounds(FluxWindow *win, FluxRect *bounds) {
+	win->title_bar_native_buttons = false;
+	if (!win->title_bar_extended || IsIconic(win->hwnd) || !IsWindowVisible(win->hwnd)) return false;
+	RECT    caption = {0}, window = {0};
+	HRESULT hr = DwmGetWindowAttribute(win->hwnd, DWMWA_CAPTION_BUTTON_BOUNDS, &caption, sizeof(caption));
+	if (FAILED(hr) || IsRectEmpty(&caption) || !GetWindowRect(win->hwnd, &window)) return false;
+	POINT start = {window.left + caption.left, window.top + caption.top};
+	if (!ScreenToClient(win->hwnd, &start)) return false;
+	UINT dpi = GetDpiForWindow(win->hwnd);
+	if (!dpi) return false;
+	float scale = FLUX_DPI_BASE / ( float ) dpi;
+	*bounds     = (FluxRect) {
+	  start.x * scale, start.y * scale, (caption.right - caption.left) * scale, (caption.bottom - caption.top) * scale};
+	win->title_bar_native_buttons = true;
+	win->title_bar_max_pressed    = false;
+	return true;
+}
+
+static float window_titlebar_height(FluxWindow const *win) {
+	return win->title_bar_active ? win->title_bar_drag.h : FLUX_TB_HEIGHT;
+}
+
+static void window_set_titlebar_regions(FluxWindow *win, FluxRect drag, FluxRect const *passthrough, int count) {
 	if (drag.w <= 0.0f || drag.h <= 0.0f) {
 		win->title_bar_active     = false;
 		win->title_bar_pass_count = 0;
@@ -136,10 +170,18 @@ void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *pas
 	for (int i = 0; i < count; i++) win->title_bar_pass [i] = passthrough [i];
 }
 
+void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *passthrough, int count) {
+	if (!win) return;
+	float previous = window_titlebar_height(win);
+	window_set_titlebar_regions(win, drag, passthrough, count);
+	if (win->shown && win->title_bar_extended && window_titlebar_height(win) != previous)
+		flux_window_applyframe(win, true);
+}
+
 void flux_window_applyframe(FluxWindow *win, bool deferred) {
 	if (!win || !win->hwnd) return;
 	UINT     dpi        = win->dpi.dpi_x > 0.0f ? ( UINT ) win->dpi.dpi_x : 96;
-	int      top        = ( int ) (48.0f * dpi / FLUX_DPI_BASE);
+	int      top        = ( int ) (window_titlebar_height(win) * dpi / FLUX_DPI_BASE);
 	MARGINS  m          = win->title_bar_extended ? (MARGINS) {0, 0, top, 0} : (MARGINS) {0, 0, 0, 0};
 	LONG_PTR style      = GetWindowLongPtrW(win->hwnd, GWL_STYLE);
 	LONG_PTR next_style = win->title_bar_extended ? style & ~WS_CAPTION : style | WS_CAPTION;
@@ -156,7 +198,9 @@ void flux_window_applyframe(FluxWindow *win, bool deferred) {
 
 void flux_window_extendtitlebar(FluxWindow *win, bool enabled) {
 	if (!win || win->title_bar_extended == enabled) return;
-	win->title_bar_extended = enabled;
+	win->title_bar_extended       = enabled;
+	win->title_bar_native_buttons = false;
+	win->title_bar_max_pressed    = false;
 	if (win->shown) flux_window_applyframe(win, true);
 }
 

@@ -247,6 +247,10 @@ static HRESULT dmanip_viewport_configure(FluxDManipViewport *vp) {
 		hr = IDirectManipulationViewport_SetViewportOptions(
 		  vp->viewport, DIRECTMANIPULATION_VIEWPORT_OPTIONS_MANUALUPDATE
 		);
+	if (SUCCEEDED(hr))
+		hr = IDirectManipulationViewport_SetChaining(
+		  vp->viewport, DIRECTMANIPULATION_MOTION_TRANSLATEX | DIRECTMANIPULATION_MOTION_TRANSLATEY
+		);
 	return hr;
 }
 

@@ -55,6 +55,7 @@ XtkEl *page_split_view(XtkUi *ui, Model const *m) {
 			ui,
 			(XtkSplitViewDesc) {
 			  .pane_open      = m->split_open,
+			  .change         = xtk_msg(MSG_SPLIT_OPEN),
 			  .display_mode   = m->split_mode,
 			  .pane_placement = m->split_right ? XTK_SPLITVIEW_RIGHT : XTK_SPLITVIEW_LEFT,
 			},

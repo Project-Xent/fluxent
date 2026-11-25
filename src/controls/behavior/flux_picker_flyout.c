@@ -1,3 +1,4 @@
+#include "a11y/flux_uia_app.h"
 #include "controls/behavior/flux_picker_flyout.h"
 #include "controls/behavior/flux_flyout_binding.h"
 #include "controls/factory/flux_factory.h"
@@ -7,6 +8,7 @@
 #include "fluxent/flux_window.h"
 #include "render/flux_picker_geom.h"
 #include "store/flux_node_data.h"
+#include "popup/flux_popup_tree.h"
 
 #include <stdlib.h>
 #include <math.h>
@@ -89,9 +91,9 @@ static XentNodeId pfly_make_button(FluxPickerFlyout *fly, char const *icon, void
 	flux_prop_button_icon(fly->desc.store, node, icon);
 	FluxNodeData *nd = flux_store_find(fly->desc.store, node);
 	if (nd && nd->component_data) {
-		FluxButtonData *bd  = ( FluxButtonData * ) nd->component_data;
-		bd->font_size       = PFLY_BUTTON_FONT / 1.14f;
-		bd->pressed_primary = true;
+		FluxButtonData *bd       = ( FluxButtonData * ) nd->component_data;
+		bd->font_size            = PFLY_BUTTON_FONT / 1.14f;
+		bd->picker_flyout_button = true;
 	}
 	return node;
 }
@@ -104,6 +106,11 @@ static bool pfly_build(FluxPickerFlyout *fly) {
 	if (fly->scrim == XENT_NODE_INVALID) return false;
 	fly->card = flux_factory_create_node(ctx, store, fly->scrim, FLUX_CONTROL_PICKER_FLYOUT);
 	if (fly->card == XENT_NODE_INVALID) return false;
+	FluxControlType owner = flux_node_type(store, fly->desc.owner);
+	flux_uia_settext(
+	  store, fly->card, FLUX_A11Y_ID,
+	  owner == FLUX_CONTROL_TIME_PICKER ? "TimePickerFlyoutPresenter" : "DatePickerFlyoutPresenter"
+	);
 
 	xent_setproto(ctx, fly->scrim, XENT_PROTOCOL_ABSOLUTE);
 	xent_setproto(ctx, fly->card, XENT_PROTOCOL_ABSOLUTE);
@@ -116,50 +123,12 @@ static bool pfly_build(FluxPickerFlyout *fly) {
 
 	fly->accept                    = pfly_make_button(fly, "Accept", pfly_accept_click);
 	fly->dismiss                   = pfly_make_button(fly, "Cancel", pfly_dismiss_click);
+	flux_uia_settext(fly->desc.store, fly->accept, FLUX_A11Y_NAME, "î£»");
+	flux_uia_settext(fly->desc.store, fly->dismiss, FLUX_A11Y_NAME, "î");
 	return fly->accept != XENT_NODE_INVALID && fly->dismiss != XENT_NODE_INVALID;
 }
 
 static void pfly_popup_dismiss(void *ctx) { pfly_close(( FluxPickerFlyout * ) ctx, false); }
-
-static void pfly_mouse_button(FluxPopup *popup, FluxPointerEvent *ev, bool down) {
-	HWND hwnd          = flux_popup_hwnd(popup);
-	ev->kind           = down ? FLUX_POINTER_DOWN : FLUX_POINTER_UP;
-	ev->changed_button = FLUX_POINTER_BUTTON_LEFT;
-	ev->buttons        = down ? FLUX_POINTER_BUTTON_LEFT : 0;
-	if (down) SetCapture(hwnd);
-	else if (GetCapture() == hwnd) ReleaseCapture();
-}
-
-static void pfly_mouse_wheel(FluxPickerFlyout *fly, FluxPopup *popup, FluxPointerEvent *ev, float delta) {
-	POINT pt;
-	GetCursorPos(&pt);
-	FluxPoint origin = flux_popup_contentorigin(popup);
-	float     scale  = flux_window_dpi(fly->desc.window).dpi_y / FLUX_DPI_BASE;
-	ev->kind         = FLUX_POINTER_WHEEL;
-	ev->wheel_dy     = delta / 48.0f;
-	ev->y            = (( float ) pt.y - origin.y) / scale;
-}
-
-static void pfly_popup_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent event, float x, float y) {
-	FluxPickerFlyout *fly = ctx;
-	if (!fly->shown) return;
-	FluxPointerEvent ev = {
-	  .x      = x,
-	  .y      = y,
-	  .kind   = FLUX_POINTER_MOVE,
-	  .device = flux_popup_lasttouch(popup) ? FLUX_POINTER_TOUCH : FLUX_POINTER_MOUSE};
-	switch (event) {
-	case FLUX_POPUP_MOUSE_DOWN  : pfly_mouse_button(popup, &ev, true); break;
-	case FLUX_POPUP_MOUSE_UP    : pfly_mouse_button(popup, &ev, false); break;
-	case FLUX_POPUP_MOUSE_WHEEL : pfly_mouse_wheel(fly, popup, &ev, y); break;
-	case FLUX_POPUP_MOUSE_LEAVE : ev.x = ev.y = -1.0f; break;
-	default :
-		ev.buttons = GetKeyState(VK_LBUTTON) < 0 || flux_popup_lasttouch(popup) ? FLUX_POINTER_BUTTON_LEFT : 0;
-		break;
-	}
-	flux_input_dispatch(fly->desc.input, fly->card, &ev);
-	InvalidateRect(flux_popup_hwnd(popup), NULL, FALSE);
-}
 
 static bool pfly_build_popup(FluxPickerFlyout *fly) {
 	fly->popup = flux_popup_create(fly->desc.window);
@@ -167,8 +136,8 @@ static bool pfly_build_popup(FluxPickerFlyout *fly) {
 	flux_popup_setshadow(fly->popup, true, FLUX_PFLY_RADIUS);
 	flux_popup_setanim(fly->popup, FLUX_POPUP_ANIM_PICKER);
 	flux_popup_ondismiss(fly->popup, pfly_popup_dismiss, fly);
-	flux_popup_onmouse(fly->popup, pfly_popup_mouse, fly);
-	return flux_popup_setcontent(fly->popup, fly->desc.ctx, fly->desc.store, fly->card);
+	return flux_popup_setcontent(fly->popup, fly->desc.ctx, fly->desc.store, fly->card)
+	    && flux_popup_sethost(fly->popup, fly->desc.input, fly->desc.owner);
 }
 
 FluxPickerFlyout *flux_pflyout_create(FluxPickerFlyoutDesc const *desc) {
@@ -211,6 +180,9 @@ int flux_pflyout_addcolumn(FluxPickerFlyout *fly, FluxPickerColumnSpec const *sp
 	  .userdata    = &fly->column [index]});
 	if (wheel == XENT_NODE_INVALID) return -1;
 
+	if (fly->accept != XENT_NODE_INVALID) xent_node_move(fly->desc.ctx, fly->card, wheel, fly->accept);
+	flux_uia_settext(fly->desc.store, wheel, FLUX_A11Y_NAME, spec->name);
+	flux_uia_settext(fly->desc.store, wheel, FLUX_A11Y_ID, spec->automation_id);
 	FluxNodeData *nd = flux_store_find(fly->desc.store, wheel);
 	if (nd) {
 		fly->column [index].wheel_key     = nd->behavior.on_key;

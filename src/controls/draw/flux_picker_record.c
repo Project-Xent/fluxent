@@ -11,13 +11,30 @@
 
 static float     picker_header_h(FluxRenderSnap const *snap) { return snap->u.picker.header_h; }
 
+static FluxColor picker_header_color(FluxThemeColors const *t, bool enabled) {
+	if (t->contrast.active) return enabled ? t->contrast.button_text : t->contrast.gray_text;
+	return enabled ? t->text_primary : t->text_disabled;
+}
+
 static FluxColor picker_text_color(FluxThemeColors const *t, FluxControlState const *state, bool has_value) {
+	if (t->contrast.active) {
+		FluxColor active = state->pressed || state->hovered ? t->contrast.highlight : t->contrast.button_text;
+		return state->enabled ? active : t->contrast.gray_text;
+	}
 	if (!state->enabled) return t->text_disabled;
 	if (state->pressed) return t->text_secondary;
 	return has_value || state->hovered ? t->text_primary : t->text_secondary;
 }
 
+static FluxRecButtonColors picker_contrast_colors(FluxContrastColors const *p, FluxControlState const *state) {
+	if (!state->enabled) return (FluxRecButtonColors) {.fill = p->window, .stroke = p->gray_text};
+	if (state->pressed) return (FluxRecButtonColors) {.fill = p->window, .stroke = p->highlight};
+	if (state->hovered) return (FluxRecButtonColors) {.fill = p->highlight_text, .stroke = p->highlight};
+	return (FluxRecButtonColors) {.fill = p->button_face, .stroke = p->button_text};
+}
+
 static FluxRecButtonColors picker_colors(FluxThemeColors const *t, FluxControlState const *state) {
+	if (t->contrast.active) return picker_contrast_colors(&t->contrast, state);
 	FluxRecButtonColors c = {.fill = t->ctrl_fill_default, .stroke = t->ctrl_stroke_default, .use_elevation = true};
 	if (!state->enabled) {
 		c.fill          = t->ctrl_fill_disabled;
@@ -51,9 +68,11 @@ picker_draw_column(XentDlBuilder *b, FluxRect const *col, FluxRenderSnap const *
 	return xent_dl_popclip(b) && ok;
 }
 
-static bool picker_draw_spacer(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *button, float x) {
-	FluxRect spacer = {x, button->y + PICKER_BORDER, FLUX_PFLY_SPACER, button->h - 2.0f * PICKER_BORDER};
-	return flux_rec_fill_rect(b, &spacer, t->ctrl_stroke_default);
+static bool
+picker_draw_spacer(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *button, float x, bool enabled) {
+	FluxRect  spacer = {x, button->y + PICKER_BORDER, FLUX_PFLY_SPACER, button->h - 2.0f * PICKER_BORDER};
+	FluxColor color  = t->contrast.active ? picker_header_color(t, enabled) : t->ctrl_stroke_default;
+	return flux_rec_fill_rect(b, &spacer, color);
 }
 
 static bool picker_draw_columns(
@@ -73,7 +92,7 @@ static bool picker_draw_columns(
 		FluxRect col = {x, button->y + PICKER_TEXT_TOP, w, snap->u.picker.button_h - 11.0f};
 		if (!picker_draw_column(b, &col, snap, i, color)) return false;
 		x += w;
-		if (i + 1 < n && !picker_draw_spacer(b, t, button, x)) return false;
+		if (i + 1 < n && !picker_draw_spacer(b, t, button, x, state->enabled != 0)) return false;
 		x += FLUX_PFLY_SPACER;
 	}
 	return true;
@@ -94,9 +113,7 @@ XentDl *flux_picker_record(
 		FluxRect      head = {bounds->x, bounds->y, bounds->w, header_h - 4.0f};
 		XentTextStyle style
 		  = {.font_size = FLUX_FONT_SIZE_DEFAULT, .font_weight = 400u, .v_align = 0u, .flags = XENT_DL_TEXT_WRAP};
-		ok = flux_rec_text_ex(
-		  b, &head, snap->u.picker.header, &style, state->enabled ? t->text_primary : t->text_disabled
-		);
+		ok = flux_rec_text_ex(b, &head, snap->u.picker.header, &style, picker_header_color(t, state->enabled != 0));
 	}
 	FluxControlState button_state  = *state;
 	button_state.hovered          &= snap->u.picker.pointer_on_button;
@@ -117,28 +134,32 @@ XentDl *flux_pickercard_record(
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
 
-	FluxThemeColors const *t    = flux_rec_theme(rc);
-	FluxPickerCardData     card = snap->u.picker_card;
-	FluxPickerColumn       cols [FLUX_PICKER_COLUMNS];
+	FluxThemeColors const    *t         = flux_rec_theme(rc);
+	FluxContrastColors const *p         = &t->contrast;
+	FluxColor                 stroke    = p->active ? p->window_text : t->flyout_border;
+	FluxColor                 divider   = p->active ? p->window_text : t->divider_stroke_default;
+	FluxColor                 highlight = p->active ? p->highlight : t->accent_default;
+	FluxPickerCardData        card      = snap->u.picker_card;
+	FluxPickerColumn          cols [FLUX_PICKER_COLUMNS];
 
-	FluxRect               inset = {bounds->x + 0.5f, bounds->y + 0.5f, bounds->w - 1.0f, bounds->h - 1.0f};
-	bool                   ok    = flux_rec_fill_rounded(b, bounds, FLUX_PFLY_RADIUS, t->flyout_background);
-	if (ok) ok = flux_rec_stroke_rounded(b, &inset, FLUX_PFLY_RADIUS, t->flyout_border, FLUX_PFLY_BORDER);
+	FluxRect                  inset = {bounds->x + 0.5f, bounds->y + 0.5f, bounds->w - 1.0f, bounds->h - 1.0f};
+	bool                      ok    = flux_rec_fill_rounded(b, bounds, FLUX_PFLY_RADIUS, t->flyout_background);
+	ok             = ok && flux_rec_stroke_rounded(b, &inset, FLUX_PFLY_RADIUS, stroke, FLUX_PFLY_BORDER);
 
 	FluxRect band  = flux_pgeom_band(&card, bounds->w);
 	band.x        += bounds->x;
 	band.y        += bounds->y;
-	if (ok) ok = flux_rec_fill_rounded(b, &band, FLUX_PFLY_RADIUS, t->accent_default);
+	ok             = ok && flux_rec_fill_rounded(b, &band, FLUX_PFLY_RADIUS, highlight);
 
 	flux_pgeom_split(&card, bounds->w - 2.0f * FLUX_PFLY_BORDER, cols);
 	for (int i = 0; ok && i + 1 < card.columns; i++) {
 		FluxRect spacer
 		  = {bounds->x + cols [i].x + cols [i].w, bounds->y + FLUX_PFLY_BORDER, FLUX_PFLY_SPACER, card.body_h};
-		ok = flux_rec_fill_rect(b, &spacer, t->divider_stroke_default);
+		ok = flux_rec_fill_rect(b, &spacer, divider);
 	}
 	FluxRect rule = {
 	  bounds->x + FLUX_PFLY_BORDER, bounds->y + FLUX_PFLY_BORDER + card.body_h, bounds->w - 2.0f * FLUX_PFLY_BORDER,
 	  FLUX_PFLY_SPACER};
-	if (ok) ok = flux_rec_fill_rect(b, &rule, t->divider_stroke_default);
+	ok = ok && flux_rec_fill_rect(b, &rule, divider);
 	return flux_rec_finish(b, ok);
 }

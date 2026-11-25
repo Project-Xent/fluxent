@@ -2,6 +2,7 @@
 #define FLUX_INPUT_INTERNAL_H
 
 #include "fluxent/flux_input.h"
+#include "input/flux_access_keys.h"
 #include "store/flux_node_data.h"
 #include "render/flux_scroll_geom.h"
 
@@ -41,10 +42,17 @@ typedef enum FluxScrollPhase
 	FLUX_SCROLL_TOUCH_PAN,
 } FluxScrollPhase;
 
+typedef struct FluxXyManifolds {
+	double h_lo, h_hi, v_lo, v_hi;
+} FluxXyManifolds;
+
+typedef struct FluxDismissLayer FluxDismissLayer;
+
 struct FluxInput {
 	struct FluxWindow *window;
 	XentCtx           *ctx;
 	FluxStore         *store;
+	FluxAccessKeys     access_keys;
 	XentNodeId         hovered;
 	XentNodeId         pressed;
 	XentNodeId         key_pressed;
@@ -68,14 +76,25 @@ struct FluxInput {
 	XentNodeId         modal_root;
 	void               (*modal_escape)(void *ctx);
 	void              *modal_escape_ctx;
+	bool               (*modal_enter)(void *ctx);
+	FluxDismissLayer  *dismiss_layers;
+	bool               dismiss_touch;
 
 	FluxPoint          press_point;
 	void               (*drag_start)(void *ctx, XentNodeId source);
 	void              *drag_ctx;
+	FluxXyManifolds    xy;
+	FluxXyManifolds    xy_saved;
 };
 
 void flux_input_setwindow(FluxInput *input, struct FluxWindow *window);
+void flux_input_setmodal_enter(FluxInput *input, bool (*on_enter)(void *ctx));
+bool flux_input_modal_enter(FluxInput *input);
 void flux_input_ondragstart(FluxInput *input, void (*fn)(void *ctx, XentNodeId source), void *ctx);
+void flux_input_set_dismiss_layer(FluxInput *input, XentNodeId owner, XentNodeId target);
+bool flux_input_set_dismiss_action(
+  FluxInput *input, XentNodeId owner, XentNodeId inside, void (*dismiss)(FluxStore *store, XentNodeId owner)
+);
 
 void input_blur_focused(FluxInput *input);
 void input_clear_node_hover(FluxNodeData *nd);
@@ -99,7 +118,13 @@ void flux_scroll_update_hover(FluxInput *input, XentNodeId hit_node, float px, f
 XentNodeId      input_scrollable_ancestor(FluxInput *input, XentNodeId node);
 
 void            input_node_abs_rect(FluxInput const *input, XentNodeId node, FluxRect *out);
+bool            flux_input_xyfocus(FluxInput *input, XentNodeId root, FluxKey dir);
+bool            flux_input_keyactivate(FluxInput *input, FluxKey key, bool down);
+bool            flux_input_keyrepeated(FluxInput const *input);
+void            input_xy_reset(FluxInput *input);
+bool            input_hit_interactive(FluxInput *input, XentNodeId node);
 bool            input_within(XentCtx const *ctx, XentNodeId node, XentNodeId ancestor);
+bool            input_focus_available(XentCtx const *ctx, XentNodeId node);
 FluxPoint       input_local(XentCtx const *ctx, XentNodeId node, FluxRect const *bounds, float px, float py);
 FluxPoint       input_hit_point(XentCtx const *ctx, FluxHitResult const *hit);
 

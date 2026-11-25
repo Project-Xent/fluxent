@@ -5,7 +5,10 @@ static XtkEl *home_card(XtkUi *ui, char const *icon, char const *title, char con
 	  xtk_card(
 		ui, (XtkStackDesc) {.gap = 8},
 		xtk_kids(
-		  xtk_button(ui, NULL, (XtkButtonDesc) {.style = XTK_BUTTON_SUBTLE, .icon = icon, .disabled = true}),
+		  xtk_automation(
+			ui, xtk_button(ui, NULL, (XtkButtonDesc) {.style = XTK_BUTTON_SUBTLE, .icon = icon, .disabled = true}),
+			&(XtkAutomation) {.name = title}
+		  ),
 		  xtk_text(ui, title, (XtkTextDesc) {.size = 16, .weight = FLUX_FONT_SEMI_BOLD}),
 		  xtk_text(ui, body, (XtkTextDesc) {.size = 13})
 		)

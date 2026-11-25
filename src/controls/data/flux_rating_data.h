@@ -23,6 +23,7 @@ typedef struct FluxRatingData {
 	uint32_t   set_glyph;
 	uint32_t   unset_glyph;
 	char      *caption;
+	char       uia_value [64];
 
 	bool       pointer_over;
 	bool       pointer_down;

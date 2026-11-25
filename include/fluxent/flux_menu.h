@@ -8,6 +8,7 @@
 #include "flux_text.h"
 #include "flux_theme.h"
 #include "flux_window.h"
+#include "flux_node_store.h"
 
 #define FLUX_MENU_PRESENTER_PAD_TOP     2.0f
 #define FLUX_MENU_PRESENTER_PAD_BOTTOM  2.0f
@@ -74,6 +75,7 @@ typedef struct FluxMenuItemDef {
 	struct FluxMenu *submenu;
 
 	char const      *radio_group;
+	char const      *access_key;
 } FluxMenuItemDef;
 
 typedef struct FluxMenu  FluxMenu;
@@ -102,6 +104,7 @@ int                      flux_menu_nitem(FluxMenu const *menu);
 
 void                     flux_menu_show(FluxMenu *menu, FluxRect anchor, FluxPlacement placement);
 void                     flux_menu_setrtl(FluxMenu *menu, bool rtl);
+void                     flux_menu_bind(FluxMenu *menu, FluxStore *store, XentNodeId host);
 
 void      flux_menu_showinput(FluxMenu *menu, FluxRect anchor, FluxPlacement placement, FluxMenuInputKind input_kind);
 

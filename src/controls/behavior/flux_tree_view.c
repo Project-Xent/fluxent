@@ -1,3 +1,7 @@
+#include <stdio.h>
+#include "controls/flux_module.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "render/flux_anim.h"
@@ -21,7 +25,9 @@
 #define TREE_OVERSCAN      4
 #define TREE_FALLBACK_ROWS 32
 
-static FluxTreeViewData *tree_data(FluxStore *store, XentNodeId id) {
+static FluxUiaHooks const tree_uia_hidden = {.role = FLUX_UIA_HIDDEN};
+
+static FluxTreeViewData  *tree_data(FluxStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || nd->component_type != FLUX_CONTROL_TREE_VIEW || !nd->component_data) return NULL;
 	return ( FluxTreeViewData * ) nd->component_data;
@@ -595,6 +601,9 @@ XentNodeId flux_tree_init(FluxTreeViewDesc const *info) {
 	nd->destroy_component_data = tree_destroy;
 
 	flux_list_onstale(info->store, list, tree_on_stale, d);
+	flux_list_uia_flatten(info->store, list);
+	FluxNodeData *list_nd = flux_store_find(info->store, list);
+	if (list_nd) list_nd->uia = &tree_uia_hidden;
 	xent_sem_setrole(info->ctx, root, XENT_SEM_ROLE_CONTAINER);
 	return root;
 }
@@ -739,4 +748,116 @@ int flux_tree_flat_node(FluxStore *store, XentNodeId tree, int flat_index) {
 	FluxTreeViewData *d = tree_data(store, tree);
 	if (!d || flat_index < 0 || flat_index >= d->flat_count) return -1;
 	return d->flat [flat_index];
+}
+
+static FluxTreeItemData *tree_item_data(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (!nd || nd->component_type != FLUX_CONTROL_TREE_ITEM) return NULL;
+	FluxTreeItemData *it = ( FluxTreeItemData * ) nd->component_data;
+	return it && it->owner && it->flat_index >= 0 && it->flat_index < it->owner->flat_count ? it : NULL;
+}
+
+int flux_tree_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (!it) return 3;
+	FluxTreeNode const *n = &it->owner->nodes [it->owner->flat [it->flat_index]];
+	if (n->first_child < 0) return 3;
+	return n->expanded ? 1 : 0;
+}
+
+void flux_tree_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (it) tree_toggle_expand(it->owner, it->flat_index);
+}
+
+bool flux_tree_uia_selected(FluxStore *store, XentNodeId node) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (!it) return false;
+	FluxTreeViewData *d = it->owner;
+	int               h = d->flat [it->flat_index];
+	if (d->sel_mode == XTK_TREE_SELECT_SINGLE) return d->selected == h;
+	return d->nodes [h].sel_state == FLUX_TREE_SEL_SELECTED;
+}
+
+bool flux_tree_uia_select(FluxStore *store, XentNodeId node, int op) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (!it || it->owner->sel_mode == XTK_TREE_SELECT_NONE) return false;
+	FluxTreeViewData *d    = it->owner;
+	bool              want = op != FLUX_UIA_SEL_REMOVE;
+	if (!tree_multi(d)) {
+		if (want) tree_select_single(d, it->flat_index);
+		return want;
+	}
+	if (flux_tree_uia_selected(store, node) != want) tree_toggle_check(d, it->flat_index);
+	return true;
+}
+
+bool flux_treeitem_uia_setinfo(FluxStore *store, XentNodeId node, int *pos, int *size, int *level) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	if (!it) return false;
+	FluxTreeViewData const *d     = it->owner;
+	int                     self  = d->flat [it->flat_index];
+	FluxTreeNode const     *n     = &d->nodes [self];
+	int                     first = n->parent >= 0 ? d->nodes [n->parent].first_child : d->first_root;
+	*pos = *size = 0;
+	for (int c = first; c >= 0; c = d->nodes [c].next_sibling) {
+		*size += 1;
+		if (c == self) *pos = *size;
+	}
+	*level = n->depth + 1;
+	return true;
+}
+
+unsigned flux_tree_uia_live(FluxStore *store, XentNodeId node) {
+	FluxTreeViewData *d = tree_data(store, node);
+	return d && d->sel_mode == XTK_TREE_SELECT_NONE ? ~( unsigned ) FLUX_UIA_P_SELECTION : ~0u;
+}
+
+unsigned flux_treeitem_uia_live(FluxStore *store, XentNodeId node) {
+	FluxTreeItemData *it = tree_item_data(store, node);
+	return it && it->owner->sel_mode == XTK_TREE_SELECT_NONE ? ~( unsigned ) FLUX_UIA_P_SELECTION_ITEM : ~0u;
+}
+
+int flux_tree_uia_count(FluxStore *store, XentNodeId node) {
+	FluxTreeViewData *d = tree_data(store, node);
+	return d ? d->flat_count : 0;
+}
+
+XentNodeId flux_tree_uia_realized(FluxStore *store, XentNodeId node, int sub) {
+	FluxTreeViewData *d = tree_data(store, node);
+	return d ? tree_row_for_flat(d, sub) : XENT_NODE_INVALID;
+}
+
+int flux_tree_uia_index(FluxStore *store, XentNodeId node, XentNodeId child) {
+	FluxTreeItemData *it = tree_item_data(store, child);
+	return it && it->owner == tree_data(store, node) ? it->flat_index : -1;
+}
+
+int flux_tree_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns) {
+	( void ) store;
+	( void ) node;
+	( void ) sub;
+	*patterns = FLUX_UIA_P_VIRTUAL;
+	return FLUX_UIA_TREEITEM;
+}
+
+void flux_tree_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size) {
+	FluxTreeViewData *d = tree_data(store, node);
+	if (d && sub >= 0 && sub < d->flat_count && d->nodes [d->flat [sub]].text)
+		snprintf(out, size, "%s", d->nodes [d->flat [sub]].text);
+}
+
+void flux_tree_uia_realize(FluxStore *store, XentNodeId node, int sub) {
+	FluxTreeViewData *d = tree_data(store, node);
+	if (d) flux_list_scrollto(store, d->list, sub);
+}
+
+XentNodeId flux_tree_uia_scroller(FluxStore *store, XentNodeId node) {
+	FluxTreeViewData *d = tree_data(store, node);
+	return d ? flux_list_uia_scroller(store, d->list) : XENT_NODE_INVALID;
+}
+
+unsigned flux_tree_uia_mode(FluxStore *store, XentNodeId node) {
+	FluxTreeViewData *d = tree_data(store, node);
+	return d && tree_multi(d) ? FLUX_UIA_SEL_MULTIPLE | FLUX_UIA_SEL_EACH : 0u;
 }

@@ -15,9 +15,11 @@ typedef struct FluxNavViewDesc {
 	FluxWindow *window;
 	FluxText   *text;
 	FluxTheme  *theme;
+	FluxInput  *input;
 	float       width;
 	float       height;
 	int         mode;
+	int         pane;
 	bool        adaptive;
 	bool        window_title_bar;
 	char const *app_title;
@@ -27,8 +29,9 @@ typedef struct FluxNavViewDesc {
 } FluxNavViewDesc;
 
 XentNodeId flux_nav_init(FluxNavViewDesc const *info);
+uint32_t   flux_nav_frame(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd);
 
-bool       flux_nav_set_chrome(FluxStore *store, XentNodeId nav, bool window_title_bar, char const *app_title);
+bool       flux_nav_set_chrome(FluxStore *store, XentNodeId nav, uint32_t flags, char const *app_title);
 
 bool       flux_nav_reset_items(FluxStore *store, XentNodeId nav);
 
@@ -40,11 +43,14 @@ void       flux_nav_select(FluxStore *store, XentNodeId nav, int index);
 
 void       flux_nav_set_selected(FluxStore *store, XentNodeId nav, int index);
 
+void       flux_nav_set_pane_mode(FluxStore *store, XentNodeId nav, int pane_mode);
+
 XentNodeId flux_nav_content_node(FluxStore *store, XentNodeId nav);
 
 int        flux_nav_add_separator(FluxStore *store, XentNodeId nav);
 
 int        flux_nav_add_header(FluxStore *store, XentNodeId nav, char const *label);
+int        flux_nav_add_footer_header(FluxStore *store, XentNodeId nav, char const *label);
 
 int flux_nav_addchild(FluxStore *store, XentNodeId nav, int parent_index, char const *icon_name, char const *label);
 
@@ -111,6 +117,7 @@ typedef struct FluxTitleBarDesc {
 XentNodeId flux_titlebar_init(FluxTitleBarDesc const *info);
 
 void       flux_titlebar_sync(XentCtx *ctx, XentNodeId node, struct FluxNodeData *nd);
+uint32_t   flux_titlebar_frame(XentCtx *ctx, FluxStore *store, XentNodeId node, struct FluxNodeData *nd);
 
 void       flux_titlebar_set_title(FluxStore *store, XentNodeId id, char const *title, char const *subtitle);
 
@@ -135,7 +142,11 @@ XentNodeId flux_menubar_content_node(FluxStore *store, XentNodeId bar);
 
 FluxMenu  *flux_menubar_add_menu(FluxStore *store, XentNodeId bar, char const *title);
 void       flux_menubar_clear_menus(FluxStore *store, XentNodeId bar);
-bool       flux_menubar_add_menu_ref(FluxStore *store, XentNodeId bar, char const *title, FluxMenu *flyout);
+bool       flux_menubar_add_menu_ref(
+  FluxStore *store, XentNodeId bar, char const *title, FluxMenu *flyout, XentNodeId source
+);
+char const *flux_menubar_item_access_key(FluxStore *store, XentNodeId node);
+XentNodeId  flux_cmdbar_access_source(FluxStore *store, XentNodeId node);
 
 typedef struct FluxBreadcrumbBarDesc {
 	XentCtx           *ctx;
@@ -183,25 +194,30 @@ void flux_selector_set_items(FluxStore *store, XentNodeId bar, XtkSelectorItem c
 void flux_selector_set_selected(FluxStore *store, XentNodeId bar, int index);
 
 typedef struct FluxPagerDesc {
-	XentCtx    *ctx;
-	FluxStore  *store;
-	XentNodeId  parent;
-	int         count;
-	int         selected;
-	int         display_mode;
-	int         first_button;
-	int         prev_button;
-	int         next_button;
-	int         last_button;
-	char const *prefix;
-	char const *suffix;
-	void        (*on_select)(void *ctx, int index);
-	void       *userdata;
+	XentCtx                     *ctx;
+	FluxStore                   *store;
+	XentNodeId                   parent;
+	int                          count;
+	int                          selected;
+	int                          display_mode;
+	int                          first_button;
+	int                          prev_button;
+	int                          next_button;
+	int                          last_button;
+	char const                  *prefix;
+	char const                  *suffix;
+	bool                         hide_ends;
+	struct FluxControlEnv const *env;
+	void                         (*on_select)(void *ctx, int index);
+	void                        *userdata;
 } FluxPagerDesc;
 
 XentNodeId flux_pager_init(FluxPagerDesc const *info);
+void       flux_pager_sync(XentNodeId node, struct FluxNodeData *nd);
+int        flux_pager_focus(struct FluxPagerData const *d, int *page);
 
 void       flux_pager_configure(FluxStore *store, XentNodeId id, int count, int selected, int display_mode);
+void       flux_pager_setends(FluxStore *store, XentNodeId id, bool hide);
 
 void       flux_pager_set_selected(FluxStore *store, XentNodeId id, int index);
 

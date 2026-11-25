@@ -1,4 +1,8 @@
 #include "controls/behavior/flux_color_picker.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/behavior/flux_uia_part.h"
+#include "controls/flux_control_uia.h"
+#include "controls/flux_module.h"
 #include "controls/factory/flux_control_build.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_value.h"
@@ -7,6 +11,8 @@
 #include "controls/data/flux_slider_data.h"
 #include "controls/data/flux_textbox_data.h"
 #include "render/flux_color_picker_geom.h"
+#include "render/flux_slider_geom.h"
+#include "runtime/flux_color_name.h"
 #include "host/flux_prop_apply.h"
 #include "bridge/flux_internal.h"
 #include <fluxent/flux_input.h>
@@ -48,10 +54,15 @@ struct ColorPickerData {
 	FluxColorPickerSnapshot visual;
 	XentCtx                *ctx;
 	FluxStore              *store;
-	XentNodeId              node, third, alpha_slider, combo, more, field [CP_FIELDS];
+	XentNodeId              node, third, alpha_slider, combo, more, spectrum, field [CP_FIELDS];
+	char                    uia_value [96];
+	char                    uia_third [48];
+	char                    tip [64];
 	ColorField              binding [CP_FIELDS];
 	bool                    (*alpha_key)(void *ctx, FluxKey key, bool down);
 	void                   *alpha_key_ctx;
+	bool                    (*third_key)(void *ctx, FluxKey key, bool down);
+	void                   *third_key_ctx;
 	char                    previous [16];
 	bool                    valid, updating, dragging, dirty, layout_enabled;
 };
@@ -299,6 +310,21 @@ static bool cp_alpha_key(void *ctx, FluxKey key, bool down) {
 	return true;
 }
 
+#define CP_TIP_LIFT 16.0f
+
+static char const *cp_name(FluxColor color) {
+	uint32_t v = color.rgba;
+	return flux_color_name(( uint8_t ) (v >> 24), ( uint8_t ) (v >> 16 & 255u), ( uint8_t ) (v >> 8 & 255u));
+}
+
+static char const *cp_hsv_name(double const *hsv) {
+	return cp_name(flux_color_fromhsv(( float ) hsv [0], ( float ) hsv [1], ( float ) hsv [2], 1.0f));
+}
+
+static void cp_named(double *hsv, int c, bool lower, bool wrap) {
+	flux_color_next_named(hsv, c, lower, wrap, FLUX_CP_MAX_HUE);
+}
+
 static void cp_point(ColorPickerData *d, float x, float y) {
 	float span = FLUX_CP_SPECTRUM - 1.0f;
 	float cx   = fminf(span, fmaxf(0.0f, roundf(x))) / span;
@@ -339,20 +365,124 @@ static float cp_step(float now, float step, bool lower, float hi) {
 	return next;
 }
 
-static bool cp_key(void *ctx, FluxKey key, bool down) {
-	ColorPickerData *d = ctx;
-	if (!down) return false;
+static bool cp_key_target(ColorPickerData const *d, FluxKey key, int *c, bool *lower) {
 	bool horizontal = key == FLUX_KEY_LEFT || key == FLUX_KEY_RIGHT;
 	if (!horizontal && key != FLUX_KEY_UP && key != FLUX_KEY_DOWN) return false;
 	int  spectrum = d->visual.spectrum;
 	bool hue      = horizontal ? spectrum != XTK_SPECTRUM_SATURATION_VALUE : false;
-	bool lower    = hue ? key == FLUX_KEY_LEFT : key == FLUX_KEY_RIGHT || key == FLUX_KEY_DOWN;
-	if (horizontal && spectrum == XTK_SPECTRUM_SATURATION_VALUE) lower = !lower;
-	int   c       = hue ? 0 : horizontal || spectrum == XTK_SPECTRUM_HUE_SATURATION ? 1 : 2;
-	float hsv [3] = {d->visual.hue, d->visual.saturation, d->visual.value};
+	*lower        = hue ? key == FLUX_KEY_LEFT : key == FLUX_KEY_RIGHT || key == FLUX_KEY_DOWN;
+	if (horizontal && spectrum == XTK_SPECTRUM_SATURATION_VALUE) *lower = !*lower;
+	*c = hue ? 0 : horizontal || spectrum == XTK_SPECTRUM_HUE_SATURATION ? 1 : 2;
+	return true;
+}
+
+static bool cp_key(void *ctx, FluxKey key, bool down) {
+	ColorPickerData *d     = ctx;
+	int              c     = 0;
+	bool             lower = false;
+	if (!down || !cp_key_target(d, key, &c, &lower)) return false;
+	double hsv [3] = {d->visual.hue, d->visual.saturation, d->visual.value};
+	if (flux_key_held(FLUX_KEY_CONTROL)) {
+		cp_named(hsv, c, lower, true);
+		cp_set_hsv(d, ( float ) hsv [0], ( float ) hsv [1], ( float ) hsv [2], 0);
+		return true;
+	}
 	float hi = c == 0 ? FLUX_CP_MAX_HUE : 100.0f, scale = c == 0 ? 1.0f : 100.0f;
-	hsv [c] = cp_step(hsv [c] * scale, 1.0f, lower, hi) / scale;
-	cp_set_hsv(d, hsv [0], hsv [1], hsv [2], 0);
+	hsv [c] = cp_step(( float ) hsv [c] * scale, 1.0f, lower, hi) / scale;
+	cp_set_hsv(d, ( float ) hsv [0], ( float ) hsv [1], ( float ) hsv [2], 0);
+	return true;
+}
+
+static int cp_third_channel(ColorPickerData const *d) {
+	int spectrum = d->visual.spectrum;
+	return spectrum == XTK_SPECTRUM_SATURATION_VALUE ? 0 : spectrum == XTK_SPECTRUM_HUE_VALUE ? 1 : 2;
+}
+
+static bool cp_third_key(void *ctx, FluxKey key, bool down) {
+	ColorPickerData *d     = ctx;
+	bool             lower = key == FLUX_KEY_LEFT || key == FLUX_KEY_DOWN;
+	bool             arrow = lower || key == FLUX_KEY_RIGHT || key == FLUX_KEY_UP;
+	if (!down || !arrow || !flux_key_held(FLUX_KEY_CONTROL))
+		return d->third_key && d->third_key(d->third_key_ctx, key, down);
+	double hsv [3] = {d->visual.hue, d->visual.saturation, d->visual.value};
+	cp_named(hsv, cp_third_channel(d), lower, false);
+	cp_set_hsv(d, ( float ) hsv [0], ( float ) hsv [1], ( float ) hsv [2], 0);
+	return true;
+}
+
+static FluxRect cp_thumb(ColorPickerData *d, XentNodeId node) {
+	XentRect        r  = {0};
+	FluxSliderData *sd = cp_slider(d, node);
+	if (!sd) return (FluxRect) {0};
+	xent_layout_rect(d->ctx, node, &r);
+	float f  = (sd->current_value - sd->min_value) / fmaxf(sd->max_value - sd->min_value, 1e-6f);
+	float cx = 9.0f + fmaxf(0.0f, r.w - 18.0f) * f, cy = r.h * 0.5f;
+	return (FluxRect) {cx - 9.0f, cy - 9.0f, 18.0f, 18.0f};
+}
+
+static void cp_third_text(ColorPickerData *d, char *text, size_t cap) {
+	static char const *const labels [3] = {"Hue", "Saturation", "Value"};
+	FluxSliderData          *sd         = cp_slider(d, d->third);
+	int                      c          = cp_third_channel(d);
+	float                    value      = sd ? sd->current_value : 0.0f;
+	double                   hsv [3]    = {d->visual.hue, d->visual.saturation, d->visual.value};
+	hsv [c]                             = c == 0 ? value : value / 100.0;
+	snprintf(text, cap, "%s %ld (%s)", labels [c], lroundf(value), cp_hsv_name(hsv));
+}
+
+static void cp_alpha_tip_text(ColorPickerData *d, char *text, size_t cap) {
+	FluxSliderData *sd = cp_slider(d, d->alpha_slider);
+	snprintf(text, cap, "%ld%% opacity", lroundf(sd ? sd->current_value : 0.0f));
+}
+
+static bool
+cp_slider_tip(ColorPickerData *d, XentNodeId node, char *text, size_t cap, FluxRect *local, FluxPlacement *placement) {
+	FluxRect thumb = cp_thumb(d, node);
+	if (node == d->third) cp_third_text(d, text, cap);
+	else cp_alpha_tip_text(d, text, cap);
+	*local     = (FluxRect) {thumb.x, thumb.y - CP_TIP_LIFT, thumb.w, thumb.h + CP_TIP_LIFT};
+	*placement = FLUX_PLACEMENT_TOP;
+	return true;
+}
+
+static bool cp_third_tip(void *ctx, char *text, size_t cap, FluxRect *local, FluxPlacement *placement) {
+	ColorPickerData *d = ctx;
+	return cp_slider_tip(d, d->third, text, cap, local, placement);
+}
+
+static bool cp_alpha_tip(void *ctx, char *text, size_t cap, FluxRect *local, FluxPlacement *placement) {
+	ColorPickerData *d = ctx;
+	return cp_slider_tip(d, d->alpha_slider, text, cap, local, placement);
+}
+
+static char const *cp_hover_tip(ColorPickerData *d, XentNodeId node, float x, float y) {
+	FluxRect thumb = cp_thumb(d, node);
+	bool     over  = x >= thumb.x && x < thumb.x + thumb.w && y >= thumb.y && y < thumb.y + thumb.h;
+	if (!over) return NULL;
+	if (node == d->third) cp_third_text(d, d->tip, sizeof(d->tip));
+	else cp_alpha_tip_text(d, d->tip, sizeof(d->tip));
+	return d->tip;
+}
+
+static char const *cp_third_hover(void *ctx, float x, float y) {
+	ColorPickerData *d = ctx;
+	return cp_hover_tip(d, d->third, x, y);
+}
+
+static char const *cp_alpha_hover(void *ctx, float x, float y) {
+	ColorPickerData *d = ctx;
+	return cp_hover_tip(d, d->alpha_slider, x, y);
+}
+
+static bool cp_spectrum_tip(void *ctx, char *text, size_t cap, FluxRect *local, FluxPlacement *placement) {
+	ColorPickerData *d        = ctx;
+	int              spectrum = d->visual.spectrum;
+	float            span     = FLUX_CP_SPECTRUM - 1.0f;
+	float cx = spectrum == XTK_SPECTRUM_SATURATION_VALUE ? d->visual.saturation : d->visual.hue / FLUX_CP_MAX_HUE;
+	float cy = spectrum == XTK_SPECTRUM_HUE_SATURATION ? 1.0f - d->visual.saturation : 1.0f - d->visual.value;
+	snprintf(text, cap, "%s", cp_name(d->visual.color));
+	*local = (FluxRect) {cx * span - 8.0f, FLUX_CP_PAD + cy * span - 8.0f - CP_TIP_LIFT, 16.0f, 16.0f + CP_TIP_LIFT};
+	*placement = FLUX_PLACEMENT_TOP;
 	return true;
 }
 
@@ -360,6 +490,10 @@ static void cp_representation(void *ctx, int index) {
 	ColorPickerData *d = ctx;
 	d->visual.hsv      = index == 1;
 	d->dirty           = true;
+}
+
+static void cp_uia_range(FluxStore *store, XentNodeId node, double value) {
+	flux_prop_slider_value(store, node, ( float ) value);
 }
 
 static XentNodeId cp_slider_init(ColorPickerData *d, void (*on_change)(void *, float)) {
@@ -403,6 +537,70 @@ static void cp_more_toggle(void *ctx) {
 	xent_sem_setlabel(d->ctx, d->more, d->visual.opened ? "Less" : "More");
 }
 
+static ColorPickerData *cp_of_child(FluxStore *store, XentNodeId child) {
+	return cp_data(store, xent_node_parent(flux_store_ctx(store), child));
+}
+
+static char const *cp_uia_spectrum_value(FluxStore *store, XentNodeId node) {
+	ColorPickerData *d = cp_of_child(store, node);
+	if (!d) return NULL;
+	snprintf(
+	  d->uia_value, sizeof(d->uia_value), "%s, Hue %ld, Saturation %ld, Value %ld", cp_name(d->visual.color),
+	  lroundf(d->visual.hue), lroundf(d->visual.saturation * 100.0f), lroundf(d->visual.value * 100.0f)
+	);
+	return d->uia_value;
+}
+
+static void cp_uia_spectrum_set(FluxStore *store, XentNodeId node, char const *text) {
+	ColorPickerData *d   = cp_of_child(store, node);
+	char            *end = NULL;
+	size_t           len = text ? strlen(text) : 0u;
+	unsigned long    hex = len > 1 && text [0] == '#' ? strtoul(text + 1, &end, 16) : 0ul;
+	if (!d || !end || *end || (len != 7 && len != 9)) return;
+	uint32_t alpha = len == 9 ? ( uint32_t ) (hex >> 24) : 255u;
+	cp_set_rgb(d, (FluxColor) {(( uint32_t ) hex & 0xffffffu) << 8 | 255u}, 0);
+	cp_set_alpha(d, ( float ) alpha / 255.0f, 0);
+}
+
+static char const *cp_uia_third_value(FluxStore *store, XentNodeId node) {
+	ColorPickerData *d  = cp_of_child(store, node);
+	FluxSliderData  *sd = d ? cp_slider(d, node) : NULL;
+	if (!sd) return NULL;
+	snprintf(d->uia_third, sizeof(d->uia_third), "%ld, %s", lroundf(sd->current_value), cp_name(d->visual.color));
+	return d->uia_third;
+}
+
+static int cp_uia_more_state(FluxStore *store, XentNodeId node) {
+	ColorPickerData *d = cp_of_child(store, node);
+	return d && d->visual.opened ? 1 : 0;
+}
+
+static void cp_uia_more_toggle(FluxStore *store, XentNodeId node) {
+	ColorPickerData *d = cp_of_child(store, node);
+	if (d) cp_more_toggle(d);
+}
+
+static FluxUiaHooks const cp_uia_spectrum = {
+  .role     = FLUX_UIA_SLIDER,
+  .patterns = FLUX_UIA_P_VALUE,
+  .klass    = L"Microsoft.UI.Xaml.Controls.Primitives.ColorSpectrum",
+  .lctype   = L"2D slider",
+  .help     = L"2D navigation with arrow keys",
+  .text     = cp_uia_spectrum_value,
+  .set_text = cp_uia_spectrum_set};
+static FluxUiaHooks const cp_uia_more = {
+  .role         = FLUX_UIA_BUTTON,
+  .patterns     = FLUX_UIA_P_TOGGLE,
+  .klass        = L"ToggleButton",
+  .help         = L"Invoke to show or hide the text entry fields.",
+  .toggle_state = cp_uia_more_state,
+  .toggle       = cp_uia_more_toggle};
+
+XentNodeId flux_colorpicker_uia_delegate(FluxStore *store, XentNodeId node) {
+	ColorPickerData *d = cp_data(store, node);
+	return d ? d->spectrum : XENT_NODE_INVALID;
+}
+
 static bool cp_more_key(void *ctx, FluxKey key, bool down) {
 	if (!down || (key != FLUX_KEY_SPACE && key != FLUX_KEY_ENTER)) return false;
 	cp_more_toggle(ctx);
@@ -420,6 +618,31 @@ static bool cp_more_init(ColorPickerData *d) {
 	xent_sem_setrole(d->ctx, d->more, XENT_SEM_ROLE_BUTTON);
 	xent_sem_setlabel(d->ctx, d->more, "More");
 	return true;
+}
+
+static void cp_uia_parts(ColorPickerData *d) {
+	d->spectrum = flux_uia_part(d->ctx, d->store, d->node, d->node, 0);
+	flux_uia_part_hooks(d->store, d->spectrum, &cp_uia_spectrum);
+	flux_uia_part_label(d->ctx, d->spectrum, "Color picker", true);
+	flux_uia_part_place(
+	  d->ctx, d->spectrum, (XentRect) {0.0f, FLUX_CP_PAD, FLUX_CP_SPECTRUM, FLUX_CP_SPECTRUM}, (XentPoint) {0}
+	);
+	FluxNodeData *more = flux_store_find(d->store, d->more);
+	if (more) more->uia = &cp_uia_more;
+	xent_sem_setlabel(d->ctx, d->combo, "Color model");
+	if (d->spectrum && d->third) xent_node_move(d->ctx, d->node, d->spectrum, d->third);
+}
+
+static void cp_slider_hooks(
+  ColorPickerData *d, XentNodeId node, bool (*tip)(void *, char *, size_t, FluxRect *, FluxPlacement *),
+  char const *(*hover)( void *, float, float )
+) {
+	FluxNodeData *nd = flux_store_find(d->store, node);
+	if (!nd) return;
+	nd->behavior.auto_tooltip     = tip;
+	nd->behavior.auto_tooltip_ctx = d;
+	nd->behavior.tooltip_at       = hover;
+	nd->behavior.tooltip_at_ctx   = d;
 }
 
 static bool cp_children(ColorPickerData *d, FluxControlEnv const *env) {
@@ -450,8 +673,16 @@ static bool cp_children(ColorPickerData *d, FluxControlEnv const *env) {
 	d->alpha_key_ctx           = alpha->behavior.on_key_ctx;
 	alpha->behavior.on_key     = cp_alpha_key;
 	alpha->behavior.on_key_ctx = d;
+	cp_slider_hooks(d, d->third, cp_third_tip, cp_third_hover);
+	cp_slider_hooks(d, d->alpha_slider, cp_alpha_tip, cp_alpha_hover);
+	FluxNodeData *third        = flux_store_find(d->store, d->third);
+	d->third_key               = third->behavior.on_key;
+	d->third_key_ctx           = third->behavior.on_key_ctx;
+	third->behavior.on_key     = cp_third_key;
+	third->behavior.on_key_ctx = d;
 	for (int i = 0; i < CP_FIELDS; ++i)
 		if (!cp_field_init(d, env, i)) return false;
+	cp_uia_parts(d);
 	return true;
 }
 
@@ -486,6 +717,8 @@ XentNodeId  flux_colorpicker_init(XentCtx *ctx, FluxStore *store, FluxControlEnv
 	nd->behavior.on_cancel_ctx       = d;
 	nd->behavior.on_key              = cp_key;
 	nd->behavior.on_key_ctx          = d;
+	nd->behavior.auto_tooltip        = cp_spectrum_tip;
+	nd->behavior.auto_tooltip_ctx    = d;
 	xent_setproto(ctx, node, XENT_PROTOCOL_ABSOLUTE);
 	xent_setsize(ctx, node, (XentSize) {FLUX_CP_CONTENT_W, flux_colorpicker_geom(false, false, false).height});
 	xent_setminsize(ctx, node, (XentSize) {FLUX_CP_CONTENT_W, 0});
@@ -507,11 +740,45 @@ void flux_colorpicker_retarget(XentCtx *ctx, FluxStore *store, XentNodeId node) 
 }
 
 static void cp_place(ColorPickerData *d, XentNodeId node, FluxRect rect, bool visible, bool enabled) {
+	xent_setcollapsed(d->ctx, node, !visible);
 	xent_setminsize(d->ctx, node, (XentSize) {0, 0});
 	xent_setpos(d->ctx, node, (XentPoint) {rect.x, rect.y});
 	xent_setsize(d->ctx, node, (XentSize) {visible ? rect.w : 0, visible ? rect.h : 0});
 	xent_set_focusable(d->ctx, node, visible && enabled);
 	xent_sem_setenabled(d->ctx, node, enabled);
+}
+
+static FluxUiaHooks const cp_uia_third = {
+  .role      = FLUX_UIA_SLIDER,
+  .patterns  = FLUX_UIA_P_RANGE | FLUX_UIA_P_VALUE,
+  .klass     = L"Slider",
+  .text      = cp_uia_third_value,
+  .set_range = cp_uia_range,
+  .orient    = flux_slider_uia_orient,
+  .steps     = flux_slider_uia_steps};
+static FluxUiaHooks const cp_uia_alpha = {
+  .role      = FLUX_UIA_SLIDER,
+  .patterns  = FLUX_UIA_P_RANGE,
+  .klass     = L"Slider",
+  .set_range = cp_uia_range,
+  .orient    = flux_slider_uia_orient,
+  .steps     = flux_slider_uia_steps};
+
+static void cp_uia_labels(ColorPickerData *d) {
+	static char const *const names [CP_FIELDS]
+	  = {"Red", "Green", "Blue", "Hue", "Saturation", "Value (Brightness)", "Opacity", NULL};
+	static char const *const third [3] = {"Hue", "Saturation", "Value (Brightness)"};
+	int                      spectrum  = d->visual.spectrum;
+	int           channel = spectrum == XTK_SPECTRUM_SATURATION_VALUE ? 0 : spectrum == XTK_SPECTRUM_HUE_VALUE ? 1 : 2;
+	FluxNodeData *t = flux_store_find(d->store, d->third), *a = flux_store_find(d->store, d->alpha_slider);
+	if (t) t->uia = &cp_uia_third;
+	if (a) a->uia = &cp_uia_alpha;
+	flux_uia_part_label(d->ctx, d->third, third [channel], xent_sem_enabled(d->ctx, d->third));
+	flux_uia_part_label(d->ctx, d->alpha_slider, "Opacity", xent_sem_enabled(d->ctx, d->alpha_slider));
+	for (int i = 0; i < CP_FIELDS; ++i) {
+		char const *name = names [i] ? names [i] : (d->visual.hsv ? "HSV hex" : "RGB hex");
+		flux_uia_part_label(d->ctx, d->field [i], name, xent_sem_enabled(d->ctx, d->field [i]));
+	}
 }
 
 void flux_colorpicker_sync(XentNodeId node, FluxNodeData *nd) {
@@ -546,12 +813,14 @@ void flux_colorpicker_sync(XentNodeId node, FluxNodeData *nd) {
 	);
 	FluxTextBoxData *hex = cp_textbox(d, CP_HEX);
 	if (hex) hex->max_length = alpha ? 9u : 7u;
+	cp_uia_labels(d);
 	xent_seth(d->ctx, node, g.height);
 }
 
 bool flux_colorpicker_set(FluxStore *store, XentNodeId node, XtkPropertyId property, XtkValue const *value) {
 	ColorPickerData *d = cp_data(store, node);
 	if (!d) return false;
+	if (property == XTK_PROP_COLOR && d->visual.color.rgba == value->u.color.rgba) return true;
 	switch (property) {
 	case XTK_PROP_COLOR :
 		d->visual.color.rgba = value->u.color.rgba;

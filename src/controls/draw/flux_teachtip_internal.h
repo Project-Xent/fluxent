@@ -3,13 +3,10 @@
 
 #include "controls/data/flux_teaching_tip_data.h"
 
+#include <xent/xent_display.h>
+
 #include <stdbool.h>
 #include <stdint.h>
-
-#define FLUX_TIP_ZONE_NONE        0
-#define FLUX_TIP_ZONE_ACTION      1
-#define FLUX_TIP_ZONE_CLOSE       2
-#define FLUX_TIP_ZONE_X           3
 
 #define FLUX_TIP_TAIL_EDGE_NONE   0
 #define FLUX_TIP_TAIL_EDGE_TOP    1
@@ -26,13 +23,6 @@ typedef struct FluxTeachingTipPaintInfo {
 	uint8_t                    tail_edge;
 	float                      tail_center;
 	FluxColor                  background;
-	float                      scale_x, scale_y;
-	float                      scale_cx, scale_cy;
-	int                        hot_zone;
-	int                        pressed_zone;
-	FluxRect                   action_rect;
-	FluxRect                   close_rect;
-	FluxRect                   x_rect;
 } FluxTeachingTipPaintInfo;
 
 XentDl *flux_teachtip_record_surface(FluxRenderCtx const *rc, FluxTeachingTipPaintInfo const *info);

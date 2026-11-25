@@ -1,4 +1,6 @@
+#include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_host_menu.h"
+#include "a11y/flux_uia_app.h"
 
 #include "bridge/flux_internal.h"
 #include "controls/behavior/flux_flyout_binding.h"
@@ -48,6 +50,7 @@ static void menu_fly_show(FluxHostMenuFlyData *fly, FluxMenuInputKind input) {
 	if (!fly || !fly->menu || flux_menu_visible(fly->menu)) return;
 	FluxRect anchor = flux_binding_screen_anchor(fly->window, fly->ctx, fly->store, fly->parent);
 	flux_menu_setrtl(fly->menu, xent_resolved_dir(fly->ctx, fly->parent) == XENT_DIRECTION_RTL);
+	flux_menu_bind(fly->menu, fly->store, fly->parent);
 	flux_menu_showinput(fly->menu, anchor, FLUX_PLACEMENT_BOTTOM, input);
 }
 
@@ -201,6 +204,27 @@ void flux_host_menuitem_set_enabled(FluxStore *store, XentNodeId node, bool enab
 	if (item) item->enabled = enabled;
 }
 
+static void menu_fly_append(FluxHostMenuFlyData *fly, FluxHostMenuItemData *item, XentNodeId child) {
+	item->parent = fly->node;
+	if (!item->label) {
+		flux_menu_addsep(fly->menu);
+		return;
+	}
+	char glyph [8] = {0};
+	if (item->icon) flux_icon_to_utf8(flux_icon_lookup(item->icon), glyph, sizeof(glyph));
+	flux_menu_additem(
+	  fly->menu, &(FluxMenuItemDef) {
+				   .type         = FLUX_MENU_ITEM_NORMAL,
+				   .label        = item->label,
+				   .icon_glyph   = glyph [0] ? glyph : NULL,
+				   .access_key   = flux_uia_apptext(fly->store, child, FLUX_A11Y_ACCESS_KEY),
+				   .enabled      = item->enabled,
+				   .on_click     = menu_item_invoke,
+				   .on_click_ctx = item,
+				 }
+	);
+}
+
 static void menu_fly_fill(FluxHostMenuFlyData *fly) {
 	if (!fly->menu) return;
 	flux_menu_clear(fly->menu);
@@ -208,24 +232,7 @@ static void menu_fly_fill(FluxHostMenuFlyData *fly) {
 	  child               = xent_node_next(fly->ctx, child))
 	{
 		FluxHostMenuItemData *item = menu_item_data(fly->store, child);
-		if (!item) continue;
-		item->parent = fly->node;
-		if (!item->label) {
-			flux_menu_addsep(fly->menu);
-			continue;
-		}
-		char glyph [8] = {0};
-		if (item->icon) flux_icon_to_utf8(flux_icon_lookup(item->icon), glyph, sizeof(glyph));
-		flux_menu_additem(
-		  fly->menu, &(FluxMenuItemDef) {
-					   .type         = FLUX_MENU_ITEM_NORMAL,
-					   .label        = item->label,
-					   .icon_glyph   = glyph [0] ? glyph : NULL,
-					   .enabled      = item->enabled,
-					   .on_click     = menu_item_invoke,
-					   .on_click_ctx = item,
-					 }
-		);
+		if (item) menu_fly_append(fly, item, child);
 	}
 }
 
@@ -250,6 +257,24 @@ void flux_host_menu_sync_bar(FluxStore *store, XentNodeId node) {
 	  child               = xent_node_next(ctx, child))
 	{
 		FluxHostMenuFlyData *fly = menu_fly_data(store, child);
-		if (fly) flux_menubar_add_menu_ref(store, node, fly->title ? fly->title : "", fly->menu);
+		if (fly) flux_menubar_add_menu_ref(store, node, fly->title ? fly->title : "", fly->menu, child);
 	}
+}
+
+static FluxHostMenuFlyData *dropdown_fly(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	return nd && nd->behavior.on_click == menu_fly_click ? ( FluxHostMenuFlyData * ) nd->behavior.on_click_ctx : NULL;
+}
+
+int flux_dropdown_uia_expand(FluxStore *store, XentNodeId node) {
+	FluxHostMenuFlyData *fly = dropdown_fly(store, node);
+	if (!fly || !fly->menu) return 3;
+	return flux_menu_visible(fly->menu) ? 1 : 0;
+}
+
+void flux_dropdown_uia_toggle(FluxStore *store, XentNodeId node) {
+	FluxHostMenuFlyData *fly = dropdown_fly(store, node);
+	if (!fly || !fly->menu) return;
+	if (flux_menu_visible(fly->menu)) flux_menu_dismiss(fly->menu);
+	else menu_fly_show(fly, FLUX_MENU_INPUT_KEYBOARD);
 }

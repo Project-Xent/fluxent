@@ -1,3 +1,7 @@
+#include "a11y/flux_uia_app.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/behavior/flux_uia_part.h"
+#include "controls/flux_module.h"
 #include "controls/behavior/flux_picker_internal.h"
 #include "controls/behavior/flux_flyout_binding.h"
 #include "controls/factory/flux_factory.h"
@@ -48,6 +52,7 @@ static bool picker_build_flyout(FluxPickerData *pd) {
 	  .input      = pd->input,
 	  .window     = pd->window,
 	  .overlay    = pd->overlay,
+	  .owner      = pd->root,
 	  .width      = pd->ops->width,
 	  .time       = pd->ops->width == FLUX_TIME_PICKER_W,
 	  .on_accept  = picker_flyout_accept,
@@ -89,7 +94,52 @@ static void picker_on_click(void *ctx) {
 	FluxPickerData *pd     = ( FluxPickerData * ) ctx;
 	bool            landed = !pd->press_valid || pd->press_on_button;
 	pd->press_valid        = false;
+	if (pd->enabled && landed) flux_uia_note(pd->store, pd->button, -1, FLUX_UIA_EVT_INVOKED);
 	if (pd->enabled && landed) picker_open(pd);
+}
+
+static FluxPickerData *picker_of_part(FluxStore *store, XentNodeId part) {
+	XentNodeId owner = flux_uia_part_owner(store, part, NULL);
+	return owner != XENT_NODE_INVALID ? picker_data(store, owner) : NULL;
+}
+
+static bool picker_uia_invoke(FluxStore *store, XentNodeId part) {
+	FluxPickerData *pd = picker_of_part(store, part);
+	if (!pd || !pd->enabled) return false;
+	picker_open(pd);
+	return true;
+}
+
+static char const *picker_parent_name(FluxPickerData const *pd) {
+	char const *app = flux_uia_apptext(pd->store, pd->root, FLUX_A11Y_NAME);
+	if (app) return app;
+	return pd->header ? pd->header : "";
+}
+
+static void picker_uia_name(FluxStore *store, XentNodeId part, char *out, size_t size) {
+	FluxPickerData *pd          = picker_of_part(store, part);
+	char            value [128] = {0};
+	if (!pd) return;
+	if (pd->has_value && pd->ops->spoken) pd->ops->spoken(pd, value, sizeof(value));
+	snprintf(out, size, "%s %s %s", picker_parent_name(pd), value, pd->ops->kind);
+}
+
+static FluxUiaHooks const picker_uia_button = {
+  .role     = FLUX_UIA_BUTTON,
+  .patterns = FLUX_UIA_P_INVOKE,
+  .invoked  = true,
+  .klass    = L"Button",
+  .invoke   = picker_uia_invoke,
+  .name     = picker_uia_name};
+
+XentNodeId flux_picker_uia_delegate(FluxStore *store, XentNodeId node) {
+	FluxPickerData *pd = picker_data(store, node);
+	return pd ? pd->button : XENT_NODE_INVALID;
+}
+
+void flux_picker_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxPickerData *pd = picker_data(store, node);
+	if (pd) snprintf(out, size, "%s", pd->ops->kind);
 }
 
 static void picker_on_cancel(void *ctx) { (( FluxPickerData * ) ctx)->press_valid = false; }
@@ -103,12 +153,11 @@ void        flux_picker_sync(XentNodeId node, FluxNodeData *nd) {
 }
 
 static void picker_set_label(FluxPickerData *pd) {
-	char label [256];
-	int  n = 0;
-	if (pd->header && pd->header [0]) n = snprintf(label, sizeof(label), "%s, ", pd->header);
-	for (int i = 0; i < pd->columns && n >= 0 && n < ( int ) sizeof(label); i++)
-		n += snprintf(label + n, sizeof(label) - ( size_t ) n, i ? " %s" : "%s", pd->text [i]);
-	xent_sem_setlabel(pd->ctx, pd->root, label);
+	xent_sem_setlabel(pd->ctx, pd->root, pd->header ? pd->header : "");
+	flux_uia_part_place(
+	  pd->ctx, pd->button, (XentRect) {0.0f, pd->header_h, pd->measured_width, pd->button_h}, (XentPoint) {0}
+	);
+	flux_uia_part_label(pd->ctx, pd->button, NULL, pd->enabled);
 }
 
 static float picker_text_height(FluxPickerData const *pd, char const *text, float width, bool wrap) {
@@ -160,6 +209,8 @@ bool flux_picker_setup(
 
 	xent_set_focusable(ctx, root, true);
 	xent_sem_setrole(ctx, root, XENT_SEM_ROLE_BUTTON);
+	pd->button = flux_uia_part(ctx, store, root, root, 0);
+	flux_uia_part_hooks(store, pd->button, &picker_uia_button);
 	xent_setsize(ctx, root, (XentSize) {NAN, FLUX_PICKER_BUTTON_H});
 	xent_setminsize(ctx, root, (XentSize) {width, FLUX_PICKER_BUTTON_H});
 	xent_setmaxsize(ctx, root, (XentSize) {456.0f, NAN});
@@ -211,6 +262,7 @@ void flux_picker_setenabled(FluxStore *store, XentNodeId id, bool enabled) {
 	if (!pd) return;
 	pd->enabled = enabled;
 	xent_sem_setenabled(pd->ctx, pd->root, enabled);
+	flux_uia_part_label(pd->ctx, pd->button, NULL, enabled);
 	if (!enabled) flux_picker_close(store, id);
 }
 

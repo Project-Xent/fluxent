@@ -24,6 +24,10 @@ typedef struct {
 } IbSeverity;
 
 static IbSeverity ib_severity(int sev, bool dark, FluxThemeColors const *t) {
+	static wchar_t const *const glyph [] = {L"\xF13F", L"\xF13E", L"\xF13C", L"\xF13D"};
+	int s = (sev >= FLUX_INFOBAR_INFORMATIONAL && sev <= FLUX_INFOBAR_ERROR) ? sev : FLUX_INFOBAR_INFORMATIONAL;
+	FluxContrastColors const *p = &t->contrast;
+	if (p->active) return (IbSeverity) {p->window, p->highlight, p->highlight_text, glyph [s]};
 	FluxColor bg [2][4] = {
 	  {flux_color_rgba(0xf6, 0xf6, 0xf6, 0x80), flux_color_rgba(0xdf, 0xf6, 0xdd, 0xff),
 	   flux_color_rgba(0xff, 0xf4, 0xce, 0xff), flux_color_rgba(0xfd, 0xe7, 0xe9, 0xff)},
@@ -36,10 +40,8 @@ static IbSeverity ib_severity(int sev, bool dark, FluxThemeColors const *t) {
 	  {{0}, flux_color_rgba(0x6c, 0xcb, 0x5f, 0xff), flux_color_rgba(0xfc, 0xe1, 0x00, 0xff),
 	   flux_color_rgba(0xff, 0x99, 0xa4, 0xff)},
 	};
-	wchar_t const *glyph [4] = {L"\xF13F", L"\xF13E", L"\xF13C", L"\xF13D"};
-	int            d         = dark ? 1 : 0;
-	int       s   = (sev >= FLUX_INFOBAR_INFORMATIONAL && sev <= FLUX_INFOBAR_ERROR) ? sev : FLUX_INFOBAR_INFORMATIONAL;
-	FluxColor inv = dark ? flux_color_rgba(0, 0, 0, 0xe4) : flux_color_rgba(255, 255, 255, 0xff);
+	int       d       = dark ? 1 : 0;
+	FluxColor inv     = dark ? flux_color_rgba(0, 0, 0, 0xe4) : flux_color_rgba(255, 255, 255, 0xff);
 	FluxColor icon_bg = (s == FLUX_INFOBAR_INFORMATIONAL) ? t->accent_default : icon [d][s];
 	return (IbSeverity) {bg [d][s], icon_bg, inv, glyph [s]};
 }
@@ -62,13 +64,24 @@ static float ib_draw_run(
 	return x + w;
 }
 
+static bool ib_draw_close_contrast(
+  XentDlBuilder *b, FluxRect const *box, FluxControlState const *state, bool over, FluxThemeColors const *t
+) {
+	FluxContrastColors const *p = &t->contrast;
+	if (over && !flux_rec_fill_rounded(b, box, FLUX_CORNER_RADIUS, p->highlight)) return false;
+	FluxColor color = over ? p->highlight_text : state->enabled ? p->button_text : p->gray_text;
+	if (!flux_rec_glyph_wc(b, box, IB_CLOSE_GLYPH, IB_CLOSE_FONT, color)) return false;
+	return !state->focused || !state->enabled || flux_rec_focus_rect(b, t, box, FLUX_CORNER_RADIUS);
+}
+
 static bool ib_draw_close(
   XentDlBuilder *b, FluxRect const *sb, FluxControlState const *state, float hover_local_x, FluxThemeColors const *t
 ) {
 	FluxRect box
 	  = {sb->x + sb->w - IB_CLOSE_MARGIN - IB_CLOSE_SIZE, sb->y + IB_CLOSE_MARGIN, IB_CLOSE_SIZE, IB_CLOSE_SIZE};
-	bool over = state->enabled && hover_local_x >= (box.x - sb->x);
-	bool ok   = true;
+	bool over = state->enabled && state->hovered && hover_local_x >= box.x - sb->x;
+	if (t->contrast.active) return ib_draw_close_contrast(b, &box, state, over, t);
+	bool ok = true;
 	if (over && state->pressed) ok = flux_rec_fill_rounded(b, &box, FLUX_CORNER_RADIUS, t->ctrl_alt_fill_tertiary);
 	else if (over) ok = flux_rec_fill_rounded(b, &box, FLUX_CORNER_RADIUS, t->ctrl_alt_fill_secondary);
 	if (ok) ok = flux_rec_glyph_wc(b, &box, IB_CLOSE_GLYPH, IB_CLOSE_FONT, t->text_primary);
@@ -76,22 +89,26 @@ static bool ib_draw_close(
 	return ok;
 }
 
+static bool
+ib_draw_severity(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
+	FluxThemeColors const *t         = flux_rec_theme(rc);
+	IbSeverity             s         = ib_severity(( int ) snap->u.info_bar.severity, rc && rc->is_dark, t);
+	float                  radius    = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
+	FluxColor              border    = t->contrast.active ? t->contrast.button_text : t->card_stroke_default;
+	float                  thickness = t->contrast.active ? 2.0f : FLUX_STROKE_WIDTH;
+	FluxRect               icon      = {bounds->x + IB_PAD_LEFT, bounds->y + IB_ICON_TOP, IB_ICON_SIZE, IB_ICON_SIZE};
+	return flux_rec_fill_rounded(b, bounds, radius, s.bg)
+	    && flux_rec_stroke_rounded(b, bounds, radius, border, thickness)
+	    && flux_rec_glyph_wc(b, &icon, IB_ICON_BG_GLYPH, IB_ICON_SIZE, s.icon_bg)
+	    && flux_rec_glyph_wc(b, &icon, s.glyph, IB_ICON_SIZE, s.icon_fg);
+}
+
 bool flux_rec_infobar(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 ) {
-	FluxThemeColors const *t      = flux_rec_theme(rc);
-	bool                   dark   = rc && rc->is_dark;
-	float                  radius = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-	IbSeverity             s      = ib_severity(( int ) snap->u.info_bar.severity, dark, t);
-
-	bool                   ok     = flux_rec_fill_rounded(b, bounds, radius, s.bg);
-	if (ok) ok = flux_rec_stroke_rounded(b, bounds, radius, t->card_stroke_default, FLUX_STROKE_WIDTH);
-
-	FluxRect icon_box = {bounds->x + IB_PAD_LEFT, bounds->y + IB_ICON_TOP, IB_ICON_SIZE, IB_ICON_SIZE};
-	if (ok) ok = flux_rec_glyph_wc(b, &icon_box, IB_ICON_BG_GLYPH, IB_ICON_SIZE, s.icon_bg);
-	if (ok) ok = flux_rec_glyph_wc(b, &icon_box, s.glyph, IB_ICON_SIZE, s.icon_fg);
-	if (!ok) return false;
+	FluxThemeColors const *t = flux_rec_theme(rc);
+	if (!ib_draw_severity(b, rc, snap, bounds)) return false;
 
 	bool      closable   = snap->u.info_bar.is_closable;
 	float     close_left = closable ? bounds->x + bounds->w - IB_CLOSE_MARGIN - IB_CLOSE_SIZE : bounds->x + bounds->w;
@@ -104,6 +121,5 @@ bool flux_rec_infobar(
 	float     msg_x = after + (after > text_x ? IB_MSG_GAP : 0.0f);
 	( void ) ib_draw_run(b, tr, snap->u.info_bar.text_content, msg_x, text_top, text_right, 400u, t->text_primary);
 
-	if (closable && state) ok = ib_draw_close(b, bounds, state, snap->hover_local_x, t);
-	return ok;
+	return !closable || !state || ib_draw_close(b, bounds, state, snap->hover_local_x, t);
 }

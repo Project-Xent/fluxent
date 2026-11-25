@@ -6,6 +6,7 @@
 #include "fluxent/flux_gfx.h"
 #include "fluxent/flux_input.h"
 #include "input/flux_input_internal.h"
+#include "input/flux_access_keys.h"
 #include "window/flux_window_internal.h"
 #include "fluxent/flux_text.h"
 #include "fluxent/flux_host.h"
@@ -14,6 +15,8 @@
 #include "fluxent/flux_theme.h"
 #include "fluxent/flux_popup.h"
 #include "fluxent/flux_tooltip.h"
+#include "popup/flux_menu_internal.h"
+#include "popup/flux_popup_tree.h"
 #include "app/flux_scene.h"
 #include "shell/flux_dragdrop.h"
 #include "runtime/flux_time.h"
@@ -55,6 +58,8 @@ struct FluxApp {
 	ID2D1SolidColorBrush    *shared_brush;
 	int64_t                  last_frame_ticks;
 	XentNodeId               last_uia_focus;
+	int                      last_uia_sub;
+	FluxUiaWatch            *uia_watch;
 
 	FluxTooltip             *tooltip;
 	bool                     auto_tip_open;
@@ -76,13 +81,39 @@ struct FluxApp {
 	uint32_t                 deferred_cap;
 };
 
-static XentCtx   *app_ctx(FluxApp const *app) { return app ? flux_scene_context(app->scene) : NULL; }
+static XentCtx       *app_ctx(FluxApp const *app) { return app ? flux_scene_context(app->scene) : NULL; }
 
-static FluxStore *app_store(FluxApp const *app) { return app ? flux_scene_store(app->scene) : NULL; }
+static FluxStore     *app_store(FluxApp const *app) { return app ? flux_scene_store(app->scene) : NULL; }
 
-static XentNodeId app_root(FluxApp const *app) { return app ? flux_scene_root(app->scene) : XENT_NODE_INVALID; }
+static XentNodeId     app_root(FluxApp const *app) { return app ? flux_scene_root(app->scene) : XENT_NODE_INVALID; }
 
-static void       app_ensure_shared_brush(FluxApp *app, FluxGfx *gfx) {
+static FluxUiaContext app_uia_context(FluxApp *app) {
+	return (FluxUiaContext) {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app), flux_app_text(app)};
+}
+
+static FluxUiaContext app_access_context(FluxApp *app) {
+	FluxMenu *menu = flux_app_menu(app);
+	if (flux_menu_visible(menu) && menu->presenter)
+		return (FluxUiaContext) {menu->ctx, menu->presenter, flux_popup_hwnd(menu->popup), menu->store, menu->text};
+	FluxUiaContext info;
+	if (flux_popup_commandbar_access_scope(flux_app_hwnd(app), &info)) return info;
+	return app_uia_context(app);
+}
+
+static void app_access_redraw(FluxApp *app, HWND hwnd) {
+	if (hwnd && hwnd != flux_app_hwnd(app)) InvalidateRect(hwnd, NULL, FALSE);
+	flux_app_redraw(app);
+}
+
+static void app_cancel_access_keys(void *ctx) {
+	FluxApp *app = ctx;
+	if (!app->input) return;
+	FluxAccessKeys *keys = &app->input->access_keys;
+	if (keys->visible) app_access_redraw(app, keys->surface);
+	*keys = (FluxAccessKeys) {0};
+}
+
+static void app_ensure_shared_brush(FluxApp *app, FluxGfx *gfx) {
 	if (app->shared_brush) return;
 	ID2D1DeviceContext *d2d = flux_gfx_d2d(gfx);
 	if (!d2d) return;
@@ -248,8 +279,9 @@ static FluxRenderCtx app_render_context(FluxApp *app, FluxGfx *gfx, FluxDpi dpi,
 }
 
 static FluxColor app_clear_color(FluxApp const *app) {
-	if (app->window && flux_window_backdrop(app->window) != FLUX_BACKDROP_NONE) return flux_color_rgba(0, 0, 0, 0);
 	FluxThemeColors const *t = app->theme ? flux_theme_colors(app->theme) : flux_theme_defaults();
+	if (!t->contrast.active && app->window && flux_window_backdrop(app->window) != FLUX_BACKDROP_NONE)
+		return flux_color_rgba(0, 0, 0, 0);
 	return t->solid_background;
 }
 
@@ -339,6 +371,8 @@ static void app_render_classic(FluxApp *app, FluxGfx *gfx, FluxDpi dpi) {
 	flux_gfx_clear(gfx, app_clear_color(app));
 	if (app->xtk_backend) flux_xtk_setrc(app->xtk_backend, &rc);
 	flux_engine_execute(app->engine, &rc);
+	FluxUiaContext info = app_uia_context(app);
+	flux_access_keys_paint(&app->input->access_keys, &info, app->input, &rc);
 	flux_gfx_end(gfx);
 	flux_gfx_present(gfx, kFluxAppPresentUseVsync);
 
@@ -361,18 +395,31 @@ static FluxRenderBackend const *app_select_backend(FluxGfx *gfx) {
 }
 
 static void app_pump_uia_focus(FluxApp *app) {
-	XentNodeId focused = flux_input_focus(app->input);
-	if (focused == app->last_uia_focus) return;
+	XentNodeId     focused = flux_input_focus(app->input);
+	FluxUiaContext info    = {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app), flux_app_text(app)};
+	int            sub     = flux_uia_focussub(&info, focused);
+	if (focused == app->last_uia_focus && sub == app->last_uia_sub) return;
 	app->last_uia_focus = focused;
+	app->last_uia_sub   = sub;
+	flux_uia_raisefocus(&info, focused, sub);
+}
 
-	FluxUiaContext info = {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app)};
-	flux_uia_raisefocus(&info, focused);
+static void app_flush_uia_notes(FluxApp *app) {
+	FluxUiaContext info = {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app), flux_app_text(app)};
+	flux_uia_watch_flush(&info);
+}
+
+static void app_pump_uia_events(FluxApp *app) {
+	if (!app->uia_watch) app->uia_watch = flux_uia_watch_create();
+	FluxUiaContext info = {app_ctx(app), app_root(app), flux_app_hwnd(app), app_store(app), flux_app_text(app)};
+	flux_uia_watch_pump(app->uia_watch, &info);
 }
 
 static void app_render(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return;
 
+	app_flush_uia_notes(app);
 	if (app->frame_cb) app->frame_cb(app->frame_cb_ctx);
 	app_pump_uia_focus(app);
 
@@ -386,6 +433,7 @@ static void app_render(void *ctx) {
 		if (t && t->deferred) t->deferred(app_store(app), app->deferred [i]);
 	}
 	app->deferred_count = 0;
+	app_pump_uia_events(app);
 }
 
 static void app_update_cursor_and_tooltip(FluxApp *app, float x, float y, bool is_touch) {
@@ -430,12 +478,14 @@ static void app_pointer_move(FluxApp *app, FluxPointerEvent const *ev, bool is_t
 }
 
 static bool app_lightdismiss_popups(FluxApp *app, FluxPointerEvent const *ev) {
-	if (!flux_popup_lightdismissvisible(flux_app_hwnd(app))) return false;
+	HWND hwnd = flux_app_hwnd(app);
+	if (!flux_popup_lightdismissvisible(hwnd)) return false;
 	FluxHitResult hit = flux_input_hittest(app->input, app_root(app), ev->x, ev->y);
 	if (flux_lift_within(app_ctx(app), app_store(app), hit.node)) return false;
+	if (ev->kind == FLUX_POINTER_DOWN && flux_popup_ownerpress_passes(hwnd, hit.node)) return false;
 	FluxMenu *menu;
 	if (app_active_menu_visible(app, &menu)) flux_menu_dismissall(menu);
-	flux_popup_dismissowner(flux_app_hwnd(app));
+	flux_popup_dismissowner(hwnd);
 	return true;
 }
 
@@ -484,6 +534,7 @@ static void app_pointer(void *ctx, FluxPointerEvent const *ev) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app->input || app_root(app) == XENT_NODE_INVALID || !ev) return;
 
+	if (ev->kind == FLUX_POINTER_DOWN) app_cancel_access_keys(app);
 	bool const is_touch = (ev->device == FLUX_POINTER_TOUCH);
 	app_pointer_route(app, ev, is_touch);
 	flux_app_redraw(app);
@@ -492,16 +543,12 @@ static void app_pointer(void *ctx, FluxPointerEvent const *ev) {
 static void app_setting_changed(void *ctx) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app) return;
-	if (app->theme && flux_theme_mode(app->theme) == FLUX_THEME_SYSTEM) {
-		flux_theme_setmode(app->theme, FLUX_THEME_SYSTEM);
-		flux_window_setdark(app->window, flux_theme_systemdark());
+	if (app->theme) {
+		FluxThemeMode mode = flux_theme_mode(app->theme);
+		flux_theme_setmode(app->theme, mode);
+		flux_window_setdark(app->window, app_mode_dark(mode));
 	}
 	flux_app_redraw(app);
-}
-
-static bool app_handle_active_menu_key(FluxApp *app, FluxKey key) {
-	FluxMenu *active_menu = flux_app_menu(app);
-	return active_menu && flux_menu_onkey(active_menu, key);
 }
 
 static bool app_handle_arrow_key(FluxApp *app, FluxKey key) {
@@ -530,7 +577,6 @@ static FluxKey app_flow_key(FluxApp *app, FluxKey key) {
 }
 
 static bool app_handle_key_command(FluxApp *app, FluxKey key) {
-	if (app_handle_active_menu_key(app, key)) return true;
 	key = app_flow_key(app, key);
 	if (key == FLUX_KEY_TAB) {
 		flux_input_tab(app->input, app_root(app), flux_key_held(FLUX_KEY_SHIFT));
@@ -538,6 +584,7 @@ static bool app_handle_key_command(FluxApp *app, FluxKey key) {
 	}
 	if (flux_input_keydown(app->input, key)) return true;
 	if (flux_input_buttonkey(app->input, key, true)) return true;
+	if (key == FLUX_KEY_ENTER && flux_input_modal_enter(app->input)) return true;
 	if (app_handle_arrow_key(app, key)) return true;
 	if (app_handle_activation_key(app, key)) return true;
 	if (key != FLUX_KEY_ESCAPE) return false;
@@ -546,20 +593,65 @@ static bool app_handle_key_command(FluxApp *app, FluxKey key) {
 	return true;
 }
 
-static void app_key(void *ctx, FluxKey key, bool down) {
-	FluxApp *app = ( FluxApp * ) ctx;
-	if (!app || !app->input) return;
+static void app_handle_key_up(FluxApp *app, FluxKey key) {
+	if (!flux_input_buttonkey(app->input, key, false)) flux_input_keyup(app->input, app_flow_key(app, key));
+}
 
+static bool app_access_key_event(FluxApp *app, FluxKey key, bool down) {
+	FluxAccessKeys *keys        = &app->input->access_keys;
+	bool            was_visible = keys->visible;
+	bool            handled     = flux_access_keys_key(keys, key, down, app->window->key_repeated);
+	if (!was_visible && keys->visible) {
+		FluxUiaContext info = app_access_context(app);
+		flux_access_keys_show(keys, &info, app->input);
+	}
+	if (was_visible || keys->visible) app_access_redraw(app, keys->surface);
+	return handled;
+}
+
+static void app_key(void *ctx, FluxKey key, bool down) {
+	FluxApp *app = ctx;
+	if (!app || !app->input) return;
 	if (down && app->tooltip) flux_tooltip_dismiss(app->tooltip);
-	if (down) app_handle_key_command(app, key);
-	else if (!flux_input_buttonkey(app->input, key, false)) flux_input_keyup(app->input, app_flow_key(app, key));
+	if (app_access_key_event(app, key, down)) return;
+	if (!menu_key_event(flux_app_menu(app), key, down)) {
+		if (down) app_handle_key_command(app, key);
+		else app_handle_key_up(app, key);
+	}
 	flux_app_redraw(app);
+}
+
+static void app_access_next_scope(FluxApp *app, HWND previous) {
+	FluxUiaContext next = app_access_context(app);
+	if (previous == next.hwnd || next.hwnd == flux_app_hwnd(app)) return;
+	flux_access_keys_show(&app->input->access_keys, &next, app->input);
+	app_access_redraw(app, next.hwnd);
+}
+
+static bool app_access_char(FluxApp *app, wchar_t ch, bool alt) {
+	if (!app->input || !app_ctx(app)) return false;
+	if (alt && flux_key_held(FLUX_KEY_CONTROL)) return false;
+	FluxAccessKeys *keys        = &app->input->access_keys;
+	bool            was_visible = keys->visible;
+	if (!alt && !was_visible) return false;
+	FluxUiaContext info    = app_access_context(app);
+	bool           handled = flux_access_keys_char(keys, &info, app->input, ch, alt);
+	if (was_visible) app_access_redraw(app, info.hwnd);
+	if (handled && was_visible) app_access_next_scope(app, info.hwnd);
+	return handled;
+}
+
+static bool app_syschar(void *ctx, wchar_t ch) {
+	FluxApp *app     = ctx;
+	bool     handled = app_access_char(app, ch, true);
+	flux_app_redraw(app);
+	return handled;
 }
 
 static void app_char(void *ctx, wchar_t ch) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app->input) return;
-	flux_input_char(app->input, ch);
+	if (!app_access_char(app, ch, false)) flux_input_char(app->input, ch);
 	flux_app_redraw(app);
 }
 
@@ -601,6 +693,7 @@ static bool app_bind_scene_runtime(FluxApp *app) {
 	app->engine = flux_engine_create(store);
 	if (app->engine) flux_engine_bind(app->engine, app->xtk_backend);
 	app->input = flux_input_create(ctx, store);
+	flux_store_setinput(store, app->input);
 	flux_input_setwindow(app->input, app->window);
 	if (app->input) {
 		FluxDragDropEnv env = {app, app->window, app->input, store, app_root(app)};
@@ -650,7 +743,7 @@ static void *app_uia_provider(void *ctx, void *hwnd) {
 	FluxApp *app = ( FluxApp * ) ctx;
 	if (!app || !app_ctx(app) || app_root(app) == XENT_NODE_INVALID) return NULL;
 
-	FluxUiaContext info = {app_ctx(app), app_root(app), ( HWND ) hwnd, app_store(app)};
+	FluxUiaContext info = {app_ctx(app), app_root(app), ( HWND ) hwnd, app_store(app), flux_app_text(app)};
 	return flux_uia_provider_create(&info);
 }
 
@@ -659,6 +752,8 @@ static void app_bind_window_callbacks(FluxApp *app) {
 	flux_window_onpointer(app->window, app_pointer, app);
 	flux_window_onkey(app->window, app_key, app);
 	flux_window_onchar(app->window, app_char, app);
+	app->window->on_syschar    = app_syschar;
+	app->window->on_key_cancel = app_cancel_access_keys;
 	flux_window_onsettings(app->window, app_setting_changed, app);
 	flux_window_onime(app->window, app_ime_composition, app);
 	flux_window_onuia(app->window, app_uia_provider, app);
@@ -727,6 +822,7 @@ static void app_destroy_render_state(FluxApp *app) {
 static void app_destroy_input_state(FluxApp *app) {
 	flux_dragdrop_destroy(app->dragdrop);
 	if (app->tooltip) flux_tooltip_destroy(app->tooltip);
+	flux_uia_watch_destroy(app->uia_watch);
 	if (app->input) flux_input_destroy(app->input);
 }
 
@@ -798,6 +894,64 @@ bool      flux_app_setfocus(FluxApp *app, XtkCtrl control) {
 	if (!ctx || !app->input || control == XTK_CTRL_INVALID || !xent_node_valid(ctx, ( XentNodeId ) control))
 		return false;
 	app->focus_request = control;
+	flux_app_redraw(app);
+	return true;
+}
+
+static int const kAutomationEventIds [] = {
+  20000,
+  20001,
+  20003,
+  20007,
+  20005,
+  20009,
+  20010,
+  20011,
+  20012,
+  20013,
+  20014,
+  20015,
+  20006,
+  20004,
+  20002,
+  20026,
+  20027,
+  20028,
+  20029,
+  20030,
+  20031,
+  20024,
+  20020,
+  20021,
+  20022,
+  20017,
+  20016,
+  20033,
+  20032,
+  20008,
+};
+
+static XentNodeId app_automation_node(FluxApp *app, XtkCtrl control) {
+	XentCtx *ctx = app_ctx(app);
+	if (!ctx || control == XTK_CTRL_INVALID || !xent_node_valid(ctx, ( XentNodeId ) control)) return XENT_NODE_INVALID;
+	return ( XentNodeId ) control;
+}
+
+bool flux_app_raiseevent(FluxApp *app, XtkCtrl control, FluxAutomationEvent event) {
+	XentNodeId node = app_automation_node(app, control);
+	if (node == XENT_NODE_INVALID || ( unsigned ) event >= sizeof(kAutomationEventIds) / sizeof(int)) return false;
+	flux_uia_note(flux_app_store(app), node, -1, kAutomationEventIds [event]);
+	flux_app_redraw(app);
+	return true;
+}
+
+bool flux_app_raisenotification(
+  FluxApp *app, XtkCtrl control, FluxNotificationKind kind, FluxNotificationProcessing processing, char const *text,
+  char const *activity
+) {
+	XentNodeId node = app_automation_node(app, control);
+	if (node == XENT_NODE_INVALID) return false;
+	flux_uia_notify(flux_app_store(app), node, ( int ) kind, ( int ) processing, text, activity);
 	flux_app_redraw(app);
 	return true;
 }

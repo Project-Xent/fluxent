@@ -8,10 +8,12 @@ static XtkLocalId badge_button(PageBuild *b, XtkNodeRef parent, char const *icon
 	XtkLocalId button = xtk_button_create(
 	  &b->txn, parent,
 	  &(XtkButtonProps) {
-		.set     = XTK_BUTTON_ICON_MASK | XTK_BUTTON_STYLE_MASK | XTK_BUTTON_ENABLED_MASK,
-		.icon    = icon,
-		.style   = XTK_BUTTON_STANDARD,
-		.enabled = true,
+		.set       = XTK_BUTTON_ICON_MASK | XTK_BUTTON_STYLE_MASK | XTK_BUTTON_ENABLED_MASK | XTK_BUTTON_ANAME_MASK,
+		.icon      = icon,
+		.style     = XTK_BUTTON_STANDARD,
+		.enabled   = true,
+		.aname     = icon,
+		.aname_len = ( uint32_t ) strlen(icon),
 	  }
 	);
 	xtk_button_oninvoke(&b->txn, xtk_ref_local(button), page_post, page_bind_i(b, MSG_BADGE_DELTA, delta));

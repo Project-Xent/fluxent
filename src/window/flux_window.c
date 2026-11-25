@@ -90,8 +90,24 @@ static bool os_supports_backdrop(void) { return os_build() >= 22621; }
 
 char const *flux_icon_font_family(void) { return os_build() >= 22000 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets"; }
 
+#ifndef DWMWA_CAPTION_COLOR
+  #define DWMWA_CAPTION_COLOR 35
+#endif
+#ifndef DWMWA_COLOR_NONE
+  #define DWMWA_COLOR_NONE 0xFFFFFFFE
+#endif
+
 static void setup_dwm_backdrop(FluxWindow *win) {
 	flux_window_setdark(win, win->config.dark_mode);
+
+	/* QuickLook EnableDwmBlur: CaptionColor = -2 before system backdrop. */
+	if (win->config.backdrop != 0) {
+		DWORD caption = DWMWA_COLOR_NONE;
+		DwmSetWindowAttribute(win->hwnd, DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
+		MARGINS glass = {-1, -1, -1, -1};
+		DwmExtendFrameIntoClientArea(win->hwnd, &glass);
+	}
+
 	flux_window_setbackdrop(win, win->config.backdrop);
 }
 
@@ -588,8 +604,17 @@ static void window_show_first(FluxWindow *win) {
 	if (win->shown) return;
 	win->shown = true;
 	flux_window_applyframe(win, false);
-	ShowWindow(win->hwnd, SW_SHOW);
+	/* Tip/OSD hosts set WS_EX_NOACTIVATE before the first present. SW_SHOW would
+	 * still activate and leave DWM system backdrop (Mica/Acrylic) inert until a
+	 * later focus/click. Match popup flyouts and use SHOWNOACTIVATE instead. */
+	LONG_PTR ex   = GetWindowLongPtrW(win->hwnd, GWL_EXSTYLE);
+	UINT     show = (ex & WS_EX_NOACTIVATE) ? SW_SHOWNOACTIVATE : SW_SHOW;
+	ShowWindow(win->hwnd, show);
 	UpdateWindow(win->hwnd);
+	if (ex & WS_EX_NOACTIVATE) {
+		setup_dwm_backdrop(win);
+		if (win->config.backdrop != 0) SendMessageW(win->hwnd, WM_NCACTIVATE, TRUE, 0);
+	}
 }
 
 static void window_render_if_requested(FluxWindow *win) {
@@ -749,6 +774,13 @@ static bool window_handle_lifecycle(WindowMessage const *m, LRESULT *result) {
 		return true;
 	}
 	if (m->msg == WM_SETCURSOR) return window_on_set_cursor(m->win, m->lp) ? (*result = TRUE, true) : false;
+	if (m->msg == WM_NCACTIVATE && m->win->config.backdrop != 0
+	    && (GetWindowLongPtrW(m->hwnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
+		/* DWM draws Mica/Acrylic as the opaque fallback while the frame is inactive.
+		 * A NOACTIVATE flyout is never activated, so keep the frame looking active. */
+		*result = DefWindowProcW(m->hwnd, WM_NCACTIVATE, TRUE, m->lp);
+		return true;
+	}
 	if (m->msg == FLUX_WM_APPLY_FRAME) {
 		SetWindowPos(
 		  m->hwnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
@@ -1139,7 +1171,6 @@ void flux_window_setbackdrop(FluxWindow *win, int backdrop_type) {
 	if (!win || !win->hwnd) return;
 	if (backdrop_type != 0 && !os_supports_backdrop()) backdrop_type = 0;
 	bool  contrast = flux_theme_systemcontrast();
-	BOOL  host     = !contrast;
 	DWORD bd       = DWMSBT_NONE;
 	switch (contrast ? 0 : backdrop_type) {
 	case 1  : bd = DWMSBT_MAINWINDOW; break;
@@ -1147,6 +1178,9 @@ void flux_window_setbackdrop(FluxWindow *win, int backdrop_type) {
 	case 3  : bd = DWMSBT_TRANSIENTWINDOW; break;
 	default : bd = DWMSBT_NONE; break;
 	}
+	/* Arm the host brush only when a system material is requested. Setting it
+	 * with DWMSBT_NONE still perturbs other NOACTIVATE hwnds in-process. */
+	BOOL host = !contrast && bd != DWMSBT_NONE;
 	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &host, sizeof(host));
 	DwmSetWindowAttribute(win->hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &bd, sizeof(bd));
 	win->config.backdrop = backdrop_type;

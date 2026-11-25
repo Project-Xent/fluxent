@@ -183,9 +183,25 @@ void flux_window_applyframe(FluxWindow *win, bool deferred) {
 	/* DWM animates minimize and maximize only for a WS_CAPTION window, so keep the caption. Drop WS_SYSMENU instead:
 	 * with it, the window has system caption buttons, and Snap Layouts opens only over those, which the one-pixel frame
 	 * below leaves no room for. Without it, the flyout follows HTMAXBUTTON from the hit test. */
-	MARGINS  m          = win->title_bar_extended ? (MARGINS) {0, 0, 1, 0} : (MARGINS) {0, 0, 0, 0};
-	LONG_PTR style      = GetWindowLongPtrW(win->hwnd, GWL_STYLE);
-	LONG_PTR next_style = (win->title_bar_extended ? style & ~WS_SYSMENU : style | WS_SYSMENU) | WS_CAPTION;
+	LONG_PTR style = GetWindowLongPtrW(win->hwnd, GWL_STYLE);
+	LONG_PTR next_style;
+	if ((style & WS_POPUP) && !(style & WS_CAPTION) && !win->title_bar_extended) {
+		/* Chromeless OSD/popup already stripped caption — do not put it back
+		 * (FRAMECHANGED would also clear DWMWA_SYSTEMBACKDROP_TYPE). */
+		next_style = style;
+	} else {
+		next_style = (win->title_bar_extended ? style & ~WS_SYSMENU : style | WS_SYSMENU) | WS_CAPTION;
+	}
+	/* QuickLook EnableDwmBlur: Mica/Acrylic need sheet-of-glass margins (-1).
+	 * Zero margins leave SYSTEMBACKDROP inert on chromeless flyouts. */
+	MARGINS m;
+	if (win->title_bar_extended) {
+		m = (MARGINS) {0, 0, 1, 0};
+	} else if (win->config.backdrop != 0) {
+		m = (MARGINS) {-1, -1, -1, -1};
+	} else {
+		m = (MARGINS) {0, 0, 0, 0};
+	}
 	if (next_style != style) SetWindowLongPtrW(win->hwnd, GWL_STYLE, next_style);
 	DwmExtendFrameIntoClientArea(win->hwnd, &m);
 	if (deferred) {

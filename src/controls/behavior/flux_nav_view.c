@@ -44,6 +44,8 @@
 #define NAV_OVERLAY_OPEN_MS  350.0f
 #define NAV_OVERLAY_CLOSE_MS 120.0f
 #define NAV_IND_MS           600.0f
+#define NAV_CONTENT_MS       250.0f
+#define NAV_CONTENT_DY       20.0f
 #define NAV_ADAPT_COMPACT    641.0f
 #define NAV_ADAPT_EXPANDED   1008.0f
 #define NAV_EXPAND_MS        200.0f
@@ -607,15 +609,35 @@ static bool nav_tick_expand(FluxNavViewData *d, DWORD now) {
 	return active;
 }
 
+static void nav_apply_content_motion(FluxNavViewData *d) {
+	FluxNodeData *cn = flux_store_find(d->store, d->content);
+	if (!cn) return;
+	float p = d->content_t.current;
+	if (p < 0.0f) p = 0.0f;
+	if (p > 1.0f) p = 1.0f;
+	cn->render_opacity     = p;
+	cn->render_translate_y = (1.0f - p) * NAV_CONTENT_DY * d->content_dir;
+}
+
+static void nav_content_play(FluxNavViewData *d, int from, int to) {
+	if (!d->content_ready || from < 0) return;
+	d->content_dir = (to >= from) ? 1.0f : -1.0f;
+	flux_nav_tween_snap(&d->content_t, 0.0f);
+	nav_tween_to(&d->content_t, 1.0f, NAV_CONTENT_MS);
+	nav_apply_content_motion(d);
+}
+
 static float nav_overlay_ease(float t) { return flux_cubic_bezier(t, 0.1f, 0.9f, 0.2f, 1.0f); }
 
 static bool  nav_tick_one(FluxNavViewData *d, DWORD now) {
 	bool active
 	  = nav_tween_tick(&d->pane_progress, now, flux_nav_pane_overlay(d) ? nav_overlay_ease : flux_ease_out_cubic);
+	active |= nav_tween_tick(&d->content_t, now, flux_ease_out_cubic);
 	active |= nav_tick_expand(d, now);
+	nav_apply_content_motion(d);
 	nav_apply_geometry(d);
 	flux_nav_fly_refresh(d);
-	return nav_indicator_tick(d, now) || active;
+	return nav_indicator_tick(d, now) || active || d->content_t.active;
 }
 
 static bool nav_step(void *ctx, unsigned long now) {
@@ -836,10 +858,12 @@ void flux_nav_apply_selection(FluxNavViewData *d, int index, bool notify) {
 	bool settings = index == FLUX_NAV_SETTINGS;
 	if (!settings && (index < 0 || index >= d->count)) return;
 	if (d->selected == index) return;
+	int from = d->selected;
 	nav_clear_selected(d);
 	d->selected = index;
 	nav_mark_selected(d, index);
 	if (!settings) flux_nav_top_bring(d, index);
+	nav_content_play(d, from, index);
 	flux_nav_anim_start(d);
 	d->selection_revision++;
 	if (notify && d->on_selection_changed) d->on_selection_changed(d->on_sel_ctx, index);
@@ -952,6 +976,7 @@ static void nav_apply_width(FluxNavViewData *d) {
 uint32_t flux_nav_frame(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) {
 	( void ) store;
 	FluxNavViewData *d    = nd->component_data;
+	d->content_ready = true;
 	XentRect         rect = {0};
 	if (node != d->root || !xent_layout_rect(ctx, node, &rect)) return 0u;
 	bool  resized = rect.w != d->width || rect.h != d->height;
@@ -1130,6 +1155,9 @@ static void nav_init_data(FluxNavViewData *d, FluxNavViewDesc const *info, XentN
 	d->settings_visible     = true;
 	d->always_show_header   = true;
 	nav_tween_init(&d->pane_progress, 0.0f);
+	nav_tween_init(&d->content_t, 1.0f);
+	d->content_dir   = 1.0f;
+	d->content_ready = false;
 }
 
 static bool nav_make_pane(FluxNavViewData *d) {
@@ -1169,6 +1197,8 @@ static bool nav_make_content(FluxNavViewData *d) {
 	xent_setcollapsed(d->ctx, d->page_header, true);
 	d->content = flux_factory_create_node(d->ctx, d->store, d->content_grid, FLUX_CONTROL_CONTAINER);
 	flux_uia_part_hooks(d->store, d->content, &nav_uia_main);
+	FluxNodeData *cn = flux_store_find(d->store, d->content);
+	if (cn) cn->clips_children = true;
 	xent_setgrow(d->ctx, d->content, 1.0f);
 	xent_setbasis(d->ctx, d->content, 0.0f);
 	return d->page_header && d->content;
@@ -1439,6 +1469,9 @@ bool flux_nav_reset_items(FluxStore *store, XentNodeId nav) {
 	if (!d) return false;
 	flux_nav_fly_close(d);
 	nav_anim_remove(d);
+	d->content_ready = false;
+	flux_nav_tween_snap(&d->content_t, 1.0f);
+	nav_apply_content_motion(d);
 	nav_destroy_item_nodes(d);
 	for (int i = 0; i < d->count; i++) {
 		flux_str_free(d->items [i].label);

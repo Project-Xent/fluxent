@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_range
 #include "a11y/flux_uia_doc.h"
 
 #include <stdlib.h>
@@ -10,6 +9,7 @@ typedef struct FluxUiaRange {
 	LONG                          ref;
 	FluxUiaContext                info;
 	XentNodeId                    node;
+	int                           sub;
 	uint32_t                      start;
 	uint32_t                      end;
 } FluxUiaRange;
@@ -30,7 +30,7 @@ static FluxUiaRange                *range_unwrap(ITextRangeProvider *p) {
 }
 
 static bool range_open(FluxUiaRange *r, UiaDoc *doc) {
-	if (!flux_uia_doc_open(&r->info, r->node, doc)) {
+	if (!flux_uia_doc_open(&r->info, r->node, r->sub, doc)) {
 		flux_uia_doc_close(doc);
 		return false;
 	}
@@ -39,10 +39,11 @@ static bool range_open(FluxUiaRange *r, UiaDoc *doc) {
 	return true;
 }
 
-ITextRangeProvider *flux_uia_range_new(FluxUiaContext const *info, XentNodeId node, uint32_t start, uint32_t end) {
+ITextRangeProvider *
+flux_uia_range_new(FluxUiaContext const *info, XentNodeId node, int sub, uint32_t start, uint32_t end) {
 	FluxUiaRange *r = ( FluxUiaRange * ) calloc(1, sizeof(*r));
 	if (!r) return NULL;
-	*r = (FluxUiaRange) {&g_range_vtbl, 1, *info, node, start < end ? start : end, start < end ? end : start};
+	*r = (FluxUiaRange) {&g_range_vtbl, 1, *info, node, sub, start < end ? start : end, start < end ? end : start};
 	return ( ITextRangeProvider * ) r;
 }
 
@@ -82,14 +83,14 @@ static HRESULT range_out(ITextRangeProvider *made, ITextRangeProvider **out) {
 static HRESULT STDMETHODCALLTYPE range_clone(ITextRangeProvider *p, ITextRangeProvider **out) {
 	FluxUiaRange *r = range_self(p);
 	if (!out) return E_POINTER;
-	return range_out(flux_uia_range_new(&r->info, r->node, r->start, r->end), out);
+	return range_out(flux_uia_range_new(&r->info, r->node, r->sub, r->start, r->end), out);
 }
 
 static HRESULT STDMETHODCALLTYPE range_compare(ITextRangeProvider *p, ITextRangeProvider *other, BOOL *out) {
 	FluxUiaRange *r = range_self(p), *o = range_unwrap(other);
 	if (!out) return E_POINTER;
 	if (!o) return E_INVALIDARG;
-	*out = o->node == r->node && o->start == r->start && o->end == r->end;
+	*out = o->node == r->node && o->sub == r->sub && o->start == r->start && o->end == r->end;
 	return S_OK;
 }
 
@@ -103,7 +104,7 @@ static HRESULT STDMETHODCALLTYPE range_compare_ends(
 ) {
 	FluxUiaRange *r = range_self(p), *t = range_unwrap(target);
 	if (!out) return E_POINTER;
-	if (!t || t->node != r->node) return E_INVALIDARG;
+	if (!t || t->node != r->node || t->sub != r->sub) return E_INVALIDARG;
 	*out = ( int ) range_point(r, ep) - ( int ) range_point(t, tep);
 	return S_OK;
 }
@@ -141,7 +142,7 @@ static HRESULT STDMETHODCALLTYPE range_find_attr(
 	bool hit = r->start < r->end && range_same(&have, &val);
 	if (have.vt != VT_UNKNOWN) VariantClear(&have);
 	flux_uia_doc_close(&doc);
-	return hit ? range_out(flux_uia_range_new(&r->info, r->node, r->start, r->end), out) : S_OK;
+	return hit ? range_out(flux_uia_range_new(&r->info, r->node, r->sub, r->start, r->end), out) : S_OK;
 }
 
 static bool range_match(wchar_t const *at, BSTR text, UINT n, bool fold) {
@@ -171,7 +172,9 @@ static HRESULT STDMETHODCALLTYPE range_find_text(
 	int at = range_search(&doc, r, text, backward != FALSE, fold != FALSE);
 	flux_uia_doc_close(&doc);
 	if (at < 0) return S_OK;
-	return range_out(flux_uia_range_new(&r->info, r->node, ( uint32_t ) at, ( uint32_t ) at + SysStringLen(text)), out);
+	return range_out(
+	  flux_uia_range_new(&r->info, r->node, r->sub, ( uint32_t ) at, ( uint32_t ) at + SysStringLen(text)), out
+	);
 }
 
 static HRESULT STDMETHODCALLTYPE range_attr(ITextRangeProvider *p, TEXTATTRIBUTEID id, VARIANT *out) {
@@ -199,7 +202,7 @@ static HRESULT STDMETHODCALLTYPE range_rects(ITextRangeProvider *p, SAFEARRAY **
 static HRESULT STDMETHODCALLTYPE range_enclosing(ITextRangeProvider *p, IRawElementProviderSimple **out) {
 	FluxUiaRange *r = range_self(p);
 	if (!out) return E_POINTER;
-	FluxUia *e = flux_uia_alloc(&r->info, r->node);
+	FluxUia *e = r->sub < 0 ? flux_uia_alloc(&r->info, r->node) : flux_uia_alloc_sub(&r->info, r->node, r->sub);
 	*out       = e ? ( IRawElementProviderSimple * ) &e->lpVtblSimple : NULL;
 	return e ? S_OK : E_OUTOFMEMORY;
 }
@@ -294,14 +297,15 @@ static HRESULT STDMETHODCALLTYPE range_move_by_range(
   ITextRangeProvider *p, enum TextPatternRangeEndpoint ep, ITextRangeProvider *target, enum TextPatternRangeEndpoint tep
 ) {
 	FluxUiaRange *r = range_self(p), *t = range_unwrap(target);
-	if (!t || t->node != r->node) return E_INVALIDARG;
+	if (!t || t->node != r->node || t->sub != r->sub) return E_INVALIDARG;
 	range_set(r, ep, range_point(t, tep));
 	return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE range_select(ITextRangeProvider *p) {
 	FluxUiaRange *r = range_self(p);
-	UiaDoc        doc;
+	flux_uia_dirty(&r->info);
+	UiaDoc doc;
 	if (!range_open(r, &doc)) return UIA_E_ELEMENTNOTAVAILABLE;
 	bool ok = doc.view.selectable && doc.hooks->select;
 	if (ok) doc.hooks->select(r->info.store, r->node, flux_uia_doc_to8(&doc, r->start), flux_uia_doc_to8(&doc, r->end));
@@ -316,7 +320,8 @@ static HRESULT STDMETHODCALLTYPE range_add(ITextRangeProvider *p) {
 
 static HRESULT STDMETHODCALLTYPE range_scroll(ITextRangeProvider *p, BOOL top) {
 	FluxUiaRange *r = range_self(p);
-	UiaDoc        doc;
+	flux_uia_dirty(&r->info);
+	UiaDoc doc;
 	( void ) top;
 	if (!range_open(r, &doc)) return UIA_E_ELEMENTNOTAVAILABLE;
 	if (doc.hooks->reveal)

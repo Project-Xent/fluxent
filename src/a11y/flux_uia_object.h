@@ -1,19 +1,8 @@
 #ifndef FLUX_UIA_OBJECT_H
 #define FLUX_UIA_OBJECT_H
 
-#ifndef COBJMACROS
-  #define COBJMACROS
-#endif
-#ifndef CINTERFACE
-  #define CINTERFACE
-#endif
-
+#include "a11y/flux_uia_sdk.h"
 #include "a11y/flux_uia.h"
-
-#include <windows.h>
-#include <oleauto.h>
-#include <uiautomationcore.h>
-#include <uiautomationcoreapi.h>
 
 #include <stddef.h>
 
@@ -38,6 +27,7 @@ typedef struct FluxUia {
 	IItemContainerProviderVtbl const          *lpVtblItems;
 	IVirtualizedItemProviderVtbl const        *lpVtblVirtual;
 	ITextProvider2Vtbl const                  *lpVtblText;
+	IDropTargetProviderVtbl const             *lpVtblDrop;
 	LONG                                       ref;
 	FluxUiaContext                             info;
 	XentNodeId                                 node;
@@ -69,10 +59,24 @@ extern ITableItemProviderVtbl const       flux_uia_tableitem_vtbl;
 extern IItemContainerProviderVtbl const   flux_uia_items_vtbl;
 extern IVirtualizedItemProviderVtbl const flux_uia_virtual_vtbl;
 extern ITextProvider2Vtbl const           flux_uia_text_vtbl;
+extern IDropTargetProviderVtbl const      flux_uia_drop_vtbl;
 
 int                                       flux_uia_sub_heads(FluxUia const *self);
 FluxUia                                  *flux_uia_unwrap(IRawElementProviderSimple *p);
-void flux_uia_origin(FluxUiaContext const *info, XentNodeId node, POINT *origin, float *scale);
-void flux_uia_bring_into_view(FluxUiaContext const *info, XentNodeId node);
+void       flux_uia_origin(FluxUiaContext const *info, XentNodeId node, POINT *origin, float *scale);
+void       flux_uia_bring_into_view(FluxUiaContext const *info, XentNodeId node);
+bool       flux_uia_place(FluxUiaContext const *info, XentNodeId node, int sub, XentRect *visual, XentRect *seen);
+bool       flux_uia_bounds(FluxUiaContext const *info, XentNodeId node, int sub, struct UiaRect *out);
+XentNodeId flux_uia_hit(FluxUiaContext const *info, double x, double y, int *sub);
+void       flux_uia_property(FluxUia *self, int role, PROPERTYID id, VARIANT *out);
+BSTR       flux_uia_bstr(char const *utf8);
+bool       flux_uia_focusable(FluxUia const *self);
+XentNodeId flux_uia_find_focused(FluxUiaContext const *info, XentNodeId node);
+XentNodeId flux_uia_delegate(FluxUiaContext const *info, XentNodeId node);
+void       flux_uia_dirty(FluxUiaContext const *info);
+int        flux_uia_refs(FluxUiaContext const *info, XentNodeId node, int slot, XentNodeId *out, int cap);
+void       flux_uia_refs_prop(FluxUiaContext const *info, XentNodeId node, int slot, XentNodeId extra, VARIANT *out);
+wchar_t const *flux_uia_class(FluxUiaContext const *info, XentNodeId node, int sub, int role);
+wchar_t const *flux_uia_lctype(FluxUiaContext const *info, XentNodeId node, int sub);
 
 #endif

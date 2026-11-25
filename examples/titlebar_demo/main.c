@@ -44,12 +44,8 @@ static XtkEl *view(XtkUi *ui, void *model) {
 		xtk_column(
 		  ui, (XtkStackDesc) {.padding = {28, 24, 28, 24}, .gap = 12, .align = XENT_FLEX_ALIGN_START},
 		  (XtkEl *[]) {
-			xtk_text(
-			  ui, "This window has no system title bar.", (XtkTextDesc) {.size = 20, .weight = FLUX_FONT_SEMI_BOLD}
-			),
-			xtk_text(ui, "The band above is drawn by the app.", (XtkTextDesc) {.size = 14}),
-			xtk_text(ui, "Drag it to move the window.", (XtkTextDesc) {.size = 14}),
-			xtk_text(ui, "The buttons at the right minimize, maximize, close.", (XtkTextDesc) {.size = 14}),
+			xtk_text(ui, "Integrated title bar", (XtkTextDesc) {.size = 20, .weight = FLUX_FONT_SEMI_BOLD}),
+			xtk_text(ui, "Drag the title bar to move the window.", (XtkTextDesc) {.size = 14}),
 			xtk_text(
 			  ui, xtk_fmt(ui, "Back clicks: %d   Pane-toggle clicks: %d", m->back_clicks, m->pane_clicks),
 			  (XtkTextDesc) {.size = 13}

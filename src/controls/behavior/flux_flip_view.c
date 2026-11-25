@@ -1,4 +1,8 @@
 #include "controls/behavior/flux_flip_internal.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/behavior/flux_uia_part.h"
+#include "controls/flux_control_uia.h"
+#include "controls/flux_module.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_items.h"
@@ -130,6 +134,98 @@ static void flip_pointer_down(void *ctx, float x, float y, int clicks) {
 	fv->pressed_btn      = ( uint8_t ) flip_hit_button(fv, x, y);
 }
 
+static FluxFlipViewData *flip_of_part(FluxStore *store, XentNodeId part, int *index) {
+	XentNodeId owner = flux_uia_part_owner(store, part, index);
+	return owner != XENT_NODE_INVALID ? flip_data(store, owner) : NULL;
+}
+
+static bool flip_uia_go(FluxStore *store, XentNodeId part) {
+	int               index = 0;
+	FluxFlipViewData *fv    = flip_of_part(store, part, &index);
+	if (!fv) return false;
+	flip_go(fv, fv->selected + (index == 1 ? 1 : -1), true);
+	return true;
+}
+
+static void flip_uia_name(FluxStore *store, XentNodeId part, char *out, size_t size) {
+	int index = 0;
+	( void ) flip_of_part(store, part, &index);
+	snprintf(out, size, "%s", index == 1 ? "Next" : "Previous");
+}
+
+static FluxFlipViewData *flip_of_host(FluxStore *store, XentNodeId host) {
+	FluxFlipViewData *fv = flip_data(store, xent_node_parent(flux_store_ctx(store), host));
+	return fv && fv->host == host ? fv : NULL;
+}
+
+static XentNodeId flip_selected_page(FluxFlipViewData const *fv) {
+	int i = 0;
+	for (XentNodeId c = xent_node_first(fv->ctx, fv->host); c != XENT_NODE_INVALID; c = xent_node_next(fv->ctx, c), i++)
+		if (i == fv->selected) return c;
+	return XENT_NODE_INVALID;
+}
+
+static bool flip_uia_admits(FluxStore *store, XentNodeId host, XentNodeId child) {
+	FluxFlipViewData *fv = flip_of_host(store, host);
+	return !fv || child == flip_selected_page(fv);
+}
+
+static bool flip_uia_selected(FluxStore *store, XentNodeId host) { return flip_of_host(store, host) != NULL; }
+
+static bool flip_uia_select(FluxStore *store, XentNodeId host, int op) {
+	return op != FLUX_UIA_SEL_REMOVE && flip_of_host(store, host) != NULL;
+}
+
+static bool flip_uia_setinfo(FluxStore *store, XentNodeId host, int *pos, int *size, int *level) {
+	( void ) level;
+	FluxFlipViewData *fv = flip_of_host(store, host);
+	if (!fv) return false;
+	*pos  = fv->selected + 1;
+	*size = flip_page_count(fv);
+	return true;
+}
+
+static void flip_uia_item_name(FluxStore *store, XentNodeId host, char *out, size_t size) {
+	FluxFlipViewData *fv    = flip_of_host(store, host);
+	XentNodeId        page  = fv ? flip_selected_page(fv) : XENT_NODE_INVALID;
+	char const       *label = page != XENT_NODE_INVALID ? xent_sem_label(fv->ctx, page) : NULL;
+	snprintf(out, size, "%s", label ? label : "");
+}
+
+static FluxUiaHooks const flip_uia_button = {
+  .role     = FLUX_UIA_BUTTON,
+  .patterns = FLUX_UIA_P_INVOKE,
+  .invoked  = true,
+  .klass    = L"Button",
+  .invoke   = flip_uia_go,
+  .name     = flip_uia_name};
+static FluxUiaHooks const flip_uia_item = {
+  .role     = FLUX_UIA_LISTITEM,
+  .patterns = FLUX_UIA_P_SELECTION_ITEM | FLUX_UIA_P_SCROLL_ITEM,
+  .klass    = L"FlipViewItem",
+  .selected = flip_uia_selected,
+  .select   = flip_uia_select,
+  .admits   = flip_uia_admits,
+  .setinfo  = flip_uia_setinfo,
+  .name     = flip_uia_item_name};
+
+static void flip_parts_sync(FluxFlipViewData *fv, XentRect const *root) {
+	FluxRect p = flip_btn_rect(fv, root, false), n = flip_btn_rect(fv, root, true);
+	bool     a = fv->selected > 0, b = fv->selected < flip_page_count(fv) - 1;
+	flux_uia_part_place(fv->ctx, fv->prev, a ? (XentRect) {p.x, p.y, p.w, p.h} : (XentRect) {0}, (XentPoint) {0});
+	flux_uia_part_place(fv->ctx, fv->next, b ? (XentRect) {n.x, n.y, n.w, n.h} : (XentRect) {0}, (XentPoint) {0});
+}
+
+static void flip_parts_make(FluxFlipViewData *fv) {
+	fv->prev = flux_uia_part(fv->ctx, fv->store, fv->root, fv->root, 0);
+	fv->next = flux_uia_part(fv->ctx, fv->store, fv->root, fv->root, 1);
+	flux_uia_part_hooks(fv->store, fv->prev, &flip_uia_button);
+	flux_uia_part_hooks(fv->store, fv->next, &flip_uia_button);
+	flux_uia_part_hooks(fv->store, fv->host, &flip_uia_item);
+	if (fv->prev) xent_node_move(fv->ctx, fv->root, fv->prev, fv->host);
+	if (fv->next) xent_node_move(fv->ctx, fv->root, fv->next, fv->host);
+}
+
 static void flip_click(void *ctx) {
 	FluxFlipViewData *fv      = ( FluxFlipViewData * ) ctx;
 	FluxNodeData     *nd      = flux_store_find(fv->store, fv->root);
@@ -139,6 +235,7 @@ static void flip_click(void *ctx) {
 	fv->pressed_btn           = 0;
 	if (hit && hit == pressed) {
 		fv->pointer_activity = flux_anim_now();
+		flux_uia_note(fv->store, hit == 2 ? fv->next : fv->prev, -1, FLUX_UIA_EVT_INVOKED);
 		flip_go(fv, target, true);
 	}
 }
@@ -220,6 +317,7 @@ void flux_flip_sync(XentCtx *ctx, XentNodeId flip, struct FluxNodeData *nd) {
 	float cross  = fv->vertical ? root.w : root.h;
 	flip_resize(fv, extent, cross);
 	int i = flip_layout_pages(fv, &root);
+	flip_parts_sync(fv, &root);
 	xent_setpos(ctx, fv->host, fv->vertical ? (XentPoint) {0.0f, -fv->offset} : (XentPoint) {-fv->offset, 0.0f});
 	float total = ( float ) (i > 0 ? i : 1);
 	xent_setsize(
@@ -271,6 +369,7 @@ XentNodeId flux_flip_init(FluxFlipViewDesc const *info) {
 
 	xent_set_focusable(info->ctx, root, true);
 	xent_sem_setrole(info->ctx, root, XENT_SEM_ROLE_CONTAINER);
+	flip_parts_make(fv);
 	return root;
 }
 

@@ -1,3 +1,4 @@
+#include "a11y/flux_uia_app.h"
 #include "controls/behavior/flux_picker_flyout.h"
 #include "controls/behavior/flux_flyout_binding.h"
 #include "controls/factory/flux_factory.h"
@@ -90,9 +91,9 @@ static XentNodeId pfly_make_button(FluxPickerFlyout *fly, char const *icon, void
 	flux_prop_button_icon(fly->desc.store, node, icon);
 	FluxNodeData *nd = flux_store_find(fly->desc.store, node);
 	if (nd && nd->component_data) {
-		FluxButtonData *bd  = ( FluxButtonData * ) nd->component_data;
-		bd->font_size       = PFLY_BUTTON_FONT / 1.14f;
-		bd->pressed_primary = true;
+		FluxButtonData *bd       = ( FluxButtonData * ) nd->component_data;
+		bd->font_size            = PFLY_BUTTON_FONT / 1.14f;
+		bd->picker_flyout_button = true;
 	}
 	return node;
 }
@@ -105,6 +106,11 @@ static bool pfly_build(FluxPickerFlyout *fly) {
 	if (fly->scrim == XENT_NODE_INVALID) return false;
 	fly->card = flux_factory_create_node(ctx, store, fly->scrim, FLUX_CONTROL_PICKER_FLYOUT);
 	if (fly->card == XENT_NODE_INVALID) return false;
+	FluxControlType owner = flux_node_type(store, fly->desc.owner);
+	flux_uia_settext(
+	  store, fly->card, FLUX_A11Y_ID,
+	  owner == FLUX_CONTROL_TIME_PICKER ? "TimePickerFlyoutPresenter" : "DatePickerFlyoutPresenter"
+	);
 
 	xent_setproto(ctx, fly->scrim, XENT_PROTOCOL_ABSOLUTE);
 	xent_setproto(ctx, fly->card, XENT_PROTOCOL_ABSOLUTE);
@@ -117,6 +123,8 @@ static bool pfly_build(FluxPickerFlyout *fly) {
 
 	fly->accept                    = pfly_make_button(fly, "Accept", pfly_accept_click);
 	fly->dismiss                   = pfly_make_button(fly, "Cancel", pfly_dismiss_click);
+	flux_uia_settext(fly->desc.store, fly->accept, FLUX_A11Y_NAME, "î£»");
+	flux_uia_settext(fly->desc.store, fly->dismiss, FLUX_A11Y_NAME, "î");
 	return fly->accept != XENT_NODE_INVALID && fly->dismiss != XENT_NODE_INVALID;
 }
 
@@ -172,6 +180,9 @@ int flux_pflyout_addcolumn(FluxPickerFlyout *fly, FluxPickerColumnSpec const *sp
 	  .userdata    = &fly->column [index]});
 	if (wheel == XENT_NODE_INVALID) return -1;
 
+	if (fly->accept != XENT_NODE_INVALID) xent_node_move(fly->desc.ctx, fly->card, wheel, fly->accept);
+	flux_uia_settext(fly->desc.store, wheel, FLUX_A11Y_NAME, spec->name);
+	flux_uia_settext(fly->desc.store, wheel, FLUX_A11Y_ID, spec->automation_id);
 	FluxNodeData *nd = flux_store_find(fly->desc.store, wheel);
 	if (nd) {
 		fly->column [index].wheel_key     = nd->behavior.on_key;

@@ -2,7 +2,9 @@
 #include "a11y/flux_uia_internal.h"
 #include "fluxent/flux_gfx.h"
 #include "fluxent/flux_popup.h"
+#include "popup/flux_menu_internal.h"
 #include "runtime/flux_anim_driver.h"
+#include "theme/flux_theme_contrast.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -89,12 +91,7 @@ static bool os_supports_backdrop(void) { return os_build() >= 22621; }
 char const *flux_icon_font_family(void) { return os_build() >= 22000 ? "Segoe Fluent Icons" : "Segoe MDL2 Assets"; }
 
 static void setup_dwm_backdrop(FluxWindow *win) {
-	BOOL dark = win->config.dark_mode ? TRUE : FALSE;
-	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
-
-	BOOL host = TRUE;
-	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &host, sizeof(host));
-
+	flux_window_setdark(win, win->config.dark_mode);
 	flux_window_setbackdrop(win, win->config.backdrop);
 }
 
@@ -229,6 +226,7 @@ static bool window_on_nc_hittest(FluxWindow *win, HWND hwnd, LPARAM lp, LRESULT 
 		return true;
 	if (win->title_bar_active
 	    && win->title_bar_extended
+	    && !win->title_bar_native_buttons
 	    && win->config.resizable
 	    && window_rect_contains_pt(&win->title_bar_max, x, y))
 	{
@@ -257,6 +255,7 @@ static LRESULT window_on_dpi_changed(FluxWindow *win, HWND hwnd, WPARAM wp, LPAR
 	win->dpi.dpi_x = ( float ) dpi;
 	win->dpi.dpi_y = ( float ) dpi;
 	if (win->gfx) flux_gfx_setdpi(win->gfx, win->dpi);
+	if (win->title_bar_extended) flux_window_applyframe(win, true);
 
 	RECT *suggested = ( RECT * ) lp;
 	if (suggested) {
@@ -546,22 +545,42 @@ static HRESULT window_register_class(HINSTANCE hinst) {
 	return S_OK;
 }
 
-static bool window_dispatch_message(MSG const *msg, int *exit_code) {
+static bool window_translate_accelerator(FluxWindow *win, MSG *msg) {
+	if (!win->accelerators || !msg->hwnd) return false;
+	if (msg->message != WM_KEYDOWN && msg->message != WM_SYSKEYDOWN) return false;
+	if (GetAncestor(msg->hwnd, GA_ROOTOWNER) != win->hwnd) return false;
+	return TranslateAcceleratorW(win->hwnd, win->accelerators, msg) != 0;
+}
+
+static bool window_translate_access_key(FluxWindow *win, MSG const *msg) {
+	if (!win->on_syschar || msg->message != WM_SYSKEYDOWN || !(msg->lParam & (1l << 29))) return false;
+	if (GetAncestor(msg->hwnd, GA_ROOTOWNER) != win->hwnd) return false;
+	WPARAM key          = msg->wParam;
+	bool   alphanumeric = (key >= '0' && key <= '9') || (key >= 'A' && key <= 'Z');
+	return alphanumeric && win->on_syschar(win->char_ctx, ( wchar_t ) key);
+}
+
+static bool window_dispatch_message(FluxWindow *win, MSG *msg, int *exit_code) {
 	if (msg->message == WM_QUIT) {
 		*exit_code = ( int ) msg->wParam;
 		return false;
 	}
 
+	if (window_translate_accelerator(win, msg)) {
+		if (win->on_key_cancel) win->on_key_cancel(win->key_ctx);
+		return true;
+	}
+	if (window_translate_access_key(win, msg)) return true;
 	TranslateMessage(msg);
 	DispatchMessageW(msg);
 	return true;
 }
 
-static bool window_pump_messages(int *exit_code) {
+static bool window_pump_messages(FluxWindow *win, int *exit_code) {
 	MSG  msg;
 	bool keep_running = true;
 	while (keep_running && PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
-		keep_running = window_dispatch_message(&msg, exit_code);
+		keep_running = window_dispatch_message(win, &msg, exit_code);
 	return keep_running;
 }
 
@@ -583,7 +602,7 @@ static void window_render_if_requested(FluxWindow *win) {
 }
 
 static bool window_run_iteration(FluxWindow *win, int *exit_code) {
-	if (!window_pump_messages(exit_code)) return false;
+	if (!window_pump_messages(win, exit_code)) return false;
 
 	bool animating = flux_anim_frame();
 	window_render_if_requested(win);
@@ -604,10 +623,12 @@ static FluxWindow *window_bind_or_get(HWND hwnd, UINT msg, LPARAM lp) {
 }
 
 static LRESULT window_on_create(FluxWindow *win, HWND hwnd) {
-	win->cursor_arrow  = LoadCursorW(NULL, IDC_ARROW);
-	win->cursor_ibeam  = LoadCursorW(NULL, IDC_IBEAM);
-	win->cursor_hand   = LoadCursorW(NULL, IDC_HAND);
-	win->cursor_sizewe = LoadCursorW(NULL, IDC_SIZEWE);
+	win->taskbar_button_created = RegisterWindowMessageW(L"TaskbarButtonCreated");
+	win->taskbar_created        = RegisterWindowMessageW(L"TaskbarCreated");
+	win->cursor_arrow           = LoadCursorW(NULL, IDC_ARROW);
+	win->cursor_ibeam           = LoadCursorW(NULL, IDC_IBEAM);
+	win->cursor_hand            = LoadCursorW(NULL, IDC_HAND);
+	win->cursor_sizewe          = LoadCursorW(NULL, IDC_SIZEWE);
 	window_enable_pointer_input(hwnd);
 	return 0;
 }
@@ -664,13 +685,16 @@ bool flux_key_held(FluxKey key) {
 	return vk != 0 && (GetKeyState(vk) & 0x8000) != 0;
 }
 
-static LRESULT window_on_key_message(FluxWindow *win, WPARAM wp, bool down) {
-	FluxKey key = window_key(wp);
+static LRESULT window_on_key_message(FluxWindow *win, WPARAM wp, bool down, bool repeated) {
+	FluxKey key       = window_key(wp);
+	win->key_repeated = repeated;
 	if (key != FLUX_KEY_NONE && win->on_key) win->on_key(win->key_ctx, key, down);
+	else if (key == FLUX_KEY_NONE && down && win->active_menu) menu_cancel_activation(win->active_menu);
 	return 0;
 }
 
 static LRESULT window_on_setting_message(FluxWindow *win) {
+	setup_dwm_backdrop(win);
 	if (win->on_setting_changed) win->on_setting_changed(win->setting_changed_ctx);
 	win->render_requested = true;
 	return 0;
@@ -678,6 +702,9 @@ static LRESULT window_on_setting_message(FluxWindow *win) {
 
 static bool window_handle_close_message(WindowMessage const *m, LRESULT *result) {
 	if (m->msg == WM_DESTROY) {
+		( void ) flux_window_setaccelerators(m->win, NULL, 0, NULL, NULL);
+		flux_taskbar_destroy(m->win);
+		flux_tray_destroy_window(m->win);
 		PostQuitMessage(0);
 		*result = 0;
 		return true;
@@ -689,14 +716,30 @@ static bool window_handle_close_message(WindowMessage const *m, LRESULT *result)
 	return true;
 }
 
+static void window_set_max_pressed(FluxWindow *win, bool pressed) {
+	if (win->title_bar_max_pressed == pressed) return;
+	win->title_bar_max_pressed = pressed;
+	flux_window_redraw(win);
+}
+
+static void window_dismiss_popups(WindowMessage const *m) {
+	if (m->win->on_key_cancel) m->win->on_key_cancel(m->win->key_ctx);
+	flux_menu_dismissall(m->win->active_menu);
+	flux_popup_dismissowner(m->hwnd);
+}
+
 static bool window_handle_popup_lifecycle(WindowMessage const *m) {
 	if (m->msg == WM_ACTIVATE) {
-		if (LOWORD(m->wp) == WA_INACTIVE) flux_popup_dismissowner(m->hwnd);
+		InvalidateRect(m->hwnd, NULL, FALSE);
+		if (LOWORD(m->wp) == WA_INACTIVE) {
+			window_set_max_pressed(m->win, false);
+			window_dismiss_popups(m);
+		}
 		return true;
 	}
 	if (m->msg != WM_MOVE && m->msg != WM_ENTERSIZEMOVE) return false;
 
-	flux_popup_dismissowner(m->hwnd);
+	window_dismiss_popups(m);
 	return true;
 }
 
@@ -771,15 +814,16 @@ static bool window_handle_capture_change(WindowMessage const *m) {
 static bool window_is_mouse_wheel(UINT msg) { return msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL; }
 
 static bool window_handle_max_button(WindowMessage const *m, LRESULT *result) {
-	if (!m->win->title_bar_extended) return false;
+	if (!m->win->title_bar_extended || m->win->title_bar_native_buttons) return false;
+	if (m->msg == WM_CANCELMODE) window_set_max_pressed(m->win, false);
 	if (m->msg == WM_NCLBUTTONDOWN && m->wp == HTMAXBUTTON) {
-		m->win->title_bar_max_pressed = true;
-		*result                       = 0;
+		window_set_max_pressed(m->win, true);
+		*result = 0;
 		return true;
 	}
 	if (m->msg != WM_NCLBUTTONUP || !m->win->title_bar_max_pressed) return false;
-	m->win->title_bar_max_pressed = false;
-	LRESULT hit                   = HTNOWHERE;
+	window_set_max_pressed(m->win, false);
+	LRESULT hit = HTNOWHERE;
 	window_on_nc_hittest(m->win, m->hwnd, m->lp, &hit);
 	if (hit == HTMAXBUTTON) PostMessageW(m->hwnd, WM_SYSCOMMAND, IsZoomed(m->hwnd) ? SC_RESTORE : SC_MAXIMIZE, 0);
 	*result = 0;
@@ -789,8 +833,10 @@ static bool window_handle_max_button(WindowMessage const *m, LRESULT *result) {
 static void window_forward_nc_hover(WindowMessage const *m) {
 	if (!m->win->title_bar_extended) return;
 	if (m->msg != WM_NCMOUSEMOVE && m->msg != WM_NCMOUSELEAVE) return;
+	bool over_max = m->msg == WM_NCMOUSEMOVE && m->wp == HTMAXBUTTON && !m->win->title_bar_native_buttons;
+	if (!over_max) window_set_max_pressed(m->win, false);
 	FluxPointerEvent ev = {.kind = FLUX_POINTER_MOVE, .device = FLUX_POINTER_MOUSE, .x = -1.0f, .y = -1.0f};
-	if (m->msg == WM_NCMOUSEMOVE) window_client_point_from_lparam(m->hwnd, m->lp, m->win, &ev.x, &ev.y);
+	if (over_max) window_client_point_from_lparam(m->hwnd, m->lp, m->win, &ev.x, &ev.y);
 	window_emit_pointer(m->win, &ev);
 }
 
@@ -847,15 +893,19 @@ static bool window_is_key_up(UINT msg) { return msg == WM_KEYUP || msg == WM_SYS
 
 static bool window_handle_text_input(WindowMessage const *m, LRESULT *result) {
 	if (window_is_key_down(m->msg)) {
-		*result = window_on_key_message(m->win, m->wp, true);
+		*result = window_on_key_message(m->win, m->wp, true, (m->lp & (1l << 30)) != 0);
 		return true;
 	}
 	if (window_is_key_up(m->msg)) {
-		*result = window_on_key_message(m->win, m->wp, false);
+		*result = window_on_key_message(m->win, m->wp, false, false);
 		return true;
 	}
 	if (m->msg == WM_CHAR) {
 		if (m->win->on_char) m->win->on_char(m->win->char_ctx, ( wchar_t ) m->wp);
+		*result = 0;
+		return true;
+	}
+	if (m->msg == WM_SYSCHAR && m->win->on_syschar && m->win->on_syschar(m->win->char_ctx, ( wchar_t ) m->wp)) {
 		*result = 0;
 		return true;
 	}
@@ -866,10 +916,11 @@ static bool window_handle_system(WindowMessage const *m, LRESULT *result) {
 	if (flux_window_ime_message(m->win, m->hwnd, m->msg, m->wp, m->lp, result)) return true;
 
 	switch (m->msg) {
-	case WM_SETTINGCHANGE :
-	case WM_THEMECHANGED  : *result = window_on_setting_message(m->win); return true;
-	case WM_DISPLAYCHANGE : *result = window_on_display_change(m->win); return true;
-	default               : return false;
+	case WM_SYSCOLORCHANGE :
+	case WM_SETTINGCHANGE  :
+	case WM_THEMECHANGED   : *result = window_on_setting_message(m->win); return true;
+	case WM_DISPLAYCHANGE  : *result = window_on_display_change(m->win); return true;
+	default                : return false;
 	}
 }
 
@@ -882,7 +933,20 @@ static bool window_handle_redraw_timer(WindowMessage const *m, LRESULT *result) 
 	return true;
 }
 
+static bool window_handle_accelerator_command(WindowMessage const *m) {
+	if (m->msg != WM_COMMAND || m->lp != 0 || HIWORD(m->wp) != 1 || !m->win->on_accelerator) return false;
+	m->win->on_accelerator(m->win->accelerator_ctx, LOWORD(m->wp));
+	return true;
+}
+
+static bool window_handle_shell_message(WindowMessage const *m) {
+	return window_handle_accelerator_command(m)
+	    || flux_taskbar_message(m->win, m->msg, m->wp)
+	    || flux_tray_message(m->win, m->msg, m->wp, m->lp);
+}
+
 static bool window_handle_message(WindowMessage const *m, LRESULT *result) {
+	if (window_handle_shell_message(m)) return (*result = 0, true);
 	if (window_handle_redraw_timer(m, result)) return true;
 	if (window_handle_lifecycle(m, result)) return true;
 	if (window_handle_layout(m, result)) return true;
@@ -891,12 +955,31 @@ static bool window_handle_message(WindowMessage const *m, LRESULT *result) {
 	return window_handle_system(m, result);
 }
 
+static bool window_is_native_caption_message(UINT msg) {
+	switch (msg) {
+	case WM_NCHITTEST       :
+	case WM_NCMOUSEMOVE     :
+	case WM_NCMOUSELEAVE    :
+	case WM_NCLBUTTONDOWN   :
+	case WM_NCLBUTTONUP     :
+	case WM_NCLBUTTONDBLCLK : return true;
+	default                 : return false;
+	}
+}
+
+static bool window_handle_native_caption(WindowMessage const *m, LRESULT *result) {
+	return m->win->title_bar_native_buttons
+	    && window_is_native_caption_message(m->msg)
+	    && DwmDefWindowProc(m->hwnd, m->msg, m->wp, m->lp, result);
+}
+
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 	FluxWindow *win = window_bind_or_get(hwnd, msg, lp);
 	if (!win) return DefWindowProcW(hwnd, msg, wp, lp);
 
 	LRESULT       result  = 0;
 	WindowMessage message = {win, hwnd, msg, wp, lp};
+	if (window_handle_native_caption(&message, &result)) return result;
 	if (window_handle_message(&message, &result)) return result;
 	return DefWindowProcW(hwnd, msg, wp, lp);
 }
@@ -1003,13 +1086,16 @@ HRESULT flux_window_create(FluxWindowCfg const *cfg, FluxWindow **out) {
 void flux_window_setbackdrop(FluxWindow *win, int backdrop_type) {
 	if (!win || !win->hwnd) return;
 	if (backdrop_type != 0 && !os_supports_backdrop()) backdrop_type = 0;
-	DWORD bd = DWMSBT_NONE;
-	switch (backdrop_type) {
+	bool  contrast = flux_theme_systemcontrast();
+	BOOL  host     = !contrast;
+	DWORD bd       = DWMSBT_NONE;
+	switch (contrast ? 0 : backdrop_type) {
 	case 1  : bd = DWMSBT_MAINWINDOW; break;
 	case 2  : bd = DWMSBT_TABBEDWINDOW; break;
 	case 3  : bd = DWMSBT_TRANSIENTWINDOW; break;
 	default : bd = DWMSBT_NONE; break;
 	}
+	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &host, sizeof(host));
 	DwmSetWindowAttribute(win->hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &bd, sizeof(bd));
 	win->config.backdrop = backdrop_type;
 }

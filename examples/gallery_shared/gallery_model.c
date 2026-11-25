@@ -2,6 +2,7 @@
 
 #include <fluxent/flux_window.h>
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,6 +89,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_PULL_REFRESH]    = {XTK_NAV_CHILD,     NULL,              "PullToRefresh"    },
   [PAGE_CAT_SHELL]       = {XTK_NAV_ITEM,      "GlobalNavButton", "Layout & shell"   },
   [PAGE_SPLIT_VIEW]      = {XTK_NAV_CHILD,     NULL,              "SplitView"        },
+  [PAGE_NAVIGATION_VIEW] = {XTK_NAV_CHILD,     NULL,              "NavigationView"   },
   [PAGE_TITLE_BAR]       = {XTK_NAV_CHILD,     NULL,              "TitleBar"         },
   [PAGE_DRAG_DROP]       = {XTK_NAV_CHILD,     NULL,              "Drag and drop"    },
   [PAGE_MATERIALS]       = {XTK_NAV_CHILD,     NULL,              "Materials"        },
@@ -97,9 +99,91 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_SETTINGS]        = {XTK_NAV_FOOTER,    "Settings",        "Settings"         },
 };
 
+enum
+{
+	SEARCH_SUBSTRING = 1,
+	SEARCH_PREFIX,
+	SEARCH_EXACT,
+};
+
+static struct {
+	int         page;
+	char const *label;
+} const search_aliases [] = {
+  {PAGE_TEXTBOX,      "PasswordBox"     },
+  {PAGE_PROGRESS,     "ProgressBar"     },
+  {PAGE_PROGRESS,     "ProgressRing"    },
+  {PAGE_FLIPVIEW,     "PipsPager"       },
+  {PAGE_MENUS,        "HyperlinkButton" },
+  {PAGE_MENUS,        "MenuBar"         },
+  {PAGE_MENUS,        "MenuFlyout"      },
+  {PAGE_PULL_REFRESH, "RefreshContainer"},
+};
+
+static bool search_key(char out [128], char const *text) {
+	if (!text) return false;
+	size_t n = 0;
+	for (; *text; text++) {
+		unsigned char ch = ( unsigned char ) *text;
+		if (!isalnum(ch)) continue;
+		if (n == 127) return false;
+		out [n++] = ( char ) tolower(ch);
+	}
+	out [n] = '\0';
+	return n != 0;
+}
+
+static int search_match(char const *query, char const *label) {
+	char key [128];
+	if (!search_key(key, label)) return 0;
+	char const *match = strstr(key, query);
+	if (!match) return 0;
+	if (match != key) return SEARCH_SUBSTRING;
+	return strcmp(key, query) == 0 ? SEARCH_EXACT : SEARCH_PREFIX;
+}
+
+static int search_page_rank(char const *query, int page) {
+	int best = search_match(query, kNavItems [page].label);
+	for (size_t i = 0; i < sizeof(search_aliases) / sizeof(search_aliases [0]); i++) {
+		if (search_aliases [i].page != page) continue;
+		int rank = search_match(query, search_aliases [i].label);
+		if (rank > best) best = rank;
+	}
+	return best;
+}
+
+static int search_append(char const *key, int rank, char const **out, int n) {
+	for (int page = 0; page < PAGE_COUNT && n < CONTROL_SEARCH_LIMIT; page++) {
+		char const *label = kNavItems [page].label;
+		if (search_page_rank(key, page) == rank) out [n++] = label;
+	}
+	return n;
+}
+
+int gallery_search_items(char const *query, char const *out [CONTROL_SEARCH_LIMIT]) {
+	char key [128];
+	if (!search_key(key, query)) return 0;
+	int n = 0;
+	for (int rank = SEARCH_EXACT; rank >= SEARCH_SUBSTRING; rank--) n = search_append(key, rank, out, n);
+	return n;
+}
+
+static int search_page(char const *query) {
+	char key [128];
+	if (!search_key(key, query)) return -1;
+	int found = -1;
+	for (int page = 0; page < PAGE_COUNT; page++) {
+		int rank = search_page_rank(key, page);
+		if (rank == SEARCH_EXACT) return page;
+		if (rank) found = found == -1 ? page : -2;
+	}
+	return found;
+}
+
 void gallery_model_init(Model *m) {
 	memset(m, 0, sizeof(*m));
 	m->combo_sel    = -1;
+	m->nav_demo_sel = GALLERY_NAV_DEMO_HOME;
 	m->backdrop     = 1;
 	m->combo_font   = -1;
 	m->slider_basic = 50.0f;
@@ -132,7 +216,7 @@ void gallery_model_init(Model *m) {
 	m->radio_buttons_sel                                                  = 0;
 	m->rating_value                                                       = -1.0;
 	m->selector_sel                                                       = 0;
-	m->tree_sel                                                           = -1;
+	m->tree_sel                                                           = 0;
 	m->tree_invoke                                                        = -1;
 	m->tree_docs_expanded                                                 = true;
 	m->items_sel                                                          = -1;
@@ -340,15 +424,16 @@ static int        det_compare(int col, int a, int b) {
 	return strcmp(kDetCells [a][col], kDetCells [b][col]);
 }
 
+static bool det_in_order(Model const *m, int a, int b) {
+	int c = det_compare(m->det_sort, a, b);
+	return m->det_desc ? c >= 0 : c <= 0;
+}
+
 void gallery_det_rows(Model const *m, int out [DET_ROWS]) {
 	for (int i = 0; i < DET_ROWS; i++) out [i] = i;
 	for (int i = 1; i < DET_ROWS; i++) {
 		int v = out [i], j = i;
-		for (; j > 0; j--) {
-			int c = det_compare(m->det_sort, out [j - 1], v);
-			if (m->det_desc ? c >= 0 : c <= 0) break;
-			out [j] = out [j - 1];
-		}
+		for (; j > 0 && !det_in_order(m, out [j - 1], v); j--) out [j] = out [j - 1];
 		out [j] = v;
 	}
 }
@@ -439,7 +524,7 @@ static void msg_tip_action(Model *m, XtkMsg msg) {
 	m->tip_actions++;
 }
 
-static void msg_tree_select(Model *m, XtkMsg msg) { m->tree_sel = msg.i >= 0 ? msg.i : -1; }
+static void msg_tree_select(Model *m, XtkMsg msg) { m->tree_sel = msg.i > 0 ? msg.i : 0; }
 
 static void msg_tree_expand(Model *m, XtkMsg msg) {
 	if (msg.i == 0) {
@@ -482,6 +567,8 @@ static void msg_split_toggle(Model *m, XtkMsg msg) {
 }
 
 static void msg_split_mode(Model *m, XtkMsg msg) { m->split_mode = msg.i; }
+
+static void msg_split_open(Model *m, XtkMsg msg) { m->split_open = msg.b; }
 
 static void msg_split_place(Model *m, XtkMsg msg) { m->split_right = msg.b; }
 
@@ -526,103 +613,140 @@ static void msg_backdrop(Model *m, XtkMsg msg) {
 	m->backdrop = msg.i;
 }
 
-static void               msg_rtl(Model *m, XtkMsg msg) { m->rtl = msg.b; }
+static void msg_rtl(Model *m, XtkMsg msg) { m->rtl = msg.b; }
+
+static void msg_nav_style(Model *m, XtkMsg msg) { m->nav_style = msg.i > 0 || msg.b; }
+
+static void msg_nav_demo(Model *m, XtkMsg msg) { m->nav_demo_sel = msg.i; }
+
+static void msg_nav_demo_hide(Model *m, XtkMsg msg) { m->nav_demo_hide = msg.b || msg.i > 0; }
+
+static void msg_nav_demo_mode(Model *m, XtkMsg msg) {
+	if (( unsigned ) msg.i < GALLERY_NAV_DEMO_MODES) m->nav_demo_mode = msg.i;
+}
+
+static void msg_nav_demo_hide_header(Model *m, XtkMsg msg) { m->nav_demo_hide_header = msg.b || msg.i > 0; }
+
+static void msg_nav_demo_pick(Model *m, XtkMsg msg) {
+	( void ) msg;
+	m->nav_demo_sel = XTK_NAV_SETTINGS;
+}
+
+static void msg_control_search_text(Model *m, XtkMsg msg) {
+	snprintf(m->control_query, sizeof(m->control_query), "%s", msg.ptr ? ( char const * ) msg.ptr : "");
+}
+
+static void msg_control_search_query(Model *m, XtkMsg msg) {
+	int page = search_page(msg.ptr);
+	if (page < 0) return;
+	m->page              = page;
+	m->control_query [0] = '\0';
+}
 
 static GalleryMsgFn const k_msg_fn [] = {
-  [MSG_NAV]                = msg_nav,
-  [MSG_CLICK]              = msg_click,
-  [MSG_BUTTON_DISABLE]     = msg_button_disable,
-  [MSG_CHECK_A]            = msg_check_a,
-  [MSG_CHECK_B]            = msg_check_b,
-  [MSG_RADIO_0]            = msg_radio,
-  [MSG_RADIO_1]            = msg_radio,
-  [MSG_RADIO_2]            = msg_radio,
-  [MSG_COMBO]              = msg_combo,
-  [MSG_COMBO_FONT]         = msg_combo_font,
-  [MSG_SLIDER_BASIC]       = msg_slider_basic,
-  [MSG_SLIDER_STEP]        = msg_slider_step,
-  [MSG_SLIDER_TICK]        = msg_slider_tick,
-  [MSG_SCROLLBAR_V]        = msg_scrollbar_v,
-  [MSG_SCROLLBAR_H]        = msg_scrollbar_h,
-  [MSG_LOOPING]            = msg_looping,
-  [MSG_DATE_PICKER]        = msg_date_picker,
-  [MSG_TIME_PICKER]        = msg_time_picker,
-  [MSG_TIME_PICKER_24]     = msg_time_picker_24,
-  [MSG_CALENDAR]           = msg_calendar,
-  [MSG_CALENDAR_MULTI]     = msg_calendar_multi,
-  [MSG_COLOR_PICKER]       = msg_color_picker,
-  [MSG_COLOR_ALPHA]        = msg_color_alpha,
-  [MSG_LIGHT]              = msg_light,
-  [MSG_NAME]               = msg_name,
-  [MSG_PASSWORD]           = msg_password,
-  [MSG_QUANTITY]           = msg_quantity,
-  [MSG_BAR_CLOSE]          = msg_bar_close,
-  [MSG_BARS_RESET]         = msg_bars_reset,
-  [MSG_BADGE_DELTA]        = msg_badge_delta,
-  [MSG_PROGRESS]           = msg_progress,
-  [MSG_INDETERMINATE]      = msg_indeterminate,
-  [MSG_MENU]               = msg_menu,
-  [MSG_REPEAT]             = msg_repeat,
-  [MSG_EXPAND]             = msg_expand,
-  [MSG_SPLIT_PRIMARY]      = msg_split_primary,
-  [MSG_SPLIT_MENU]         = msg_split_menu,
-  [MSG_TAB_SELECT]         = msg_tab_select,
-  [MSG_TAB_CLOSE]          = msg_tab_close,
-  [MSG_TAB_ADD]            = msg_tab_add,
-  [MSG_DIALOG_OPEN]        = msg_dialog_open,
-  [MSG_DIALOG_RESULT]      = msg_dialog_result,
-  [MSG_LIST_SELECT]        = msg_list_select,
-  [MSG_MULTI_SELECT]       = msg_multi_select,
-  [MSG_GRID_SELECT]        = msg_grid_select,
-  [MSG_LISTBOX_SELECT]     = msg_listbox_select,
-  [MSG_DET_SORT]           = msg_det_sort,
-  [MSG_DET_RESIZE]         = msg_det_resize,
-  [MSG_DET_FIT]            = msg_det_fit,
-  [MSG_DET_REORDER]        = msg_det_reorder,
-  [MSG_CB_ACTION]          = msg_cb_action,
-  [MSG_CB_OPEN]            = msg_cb_open,
-  [MSG_CB_FAV]             = msg_cb_fav,
-  [MSG_CB_BOLD]            = msg_cb_bold,
-  [MSG_FLIP_SELECT]        = msg_flip_select,
-  [MSG_ASB_TEXT]           = msg_asb_text,
-  [MSG_ASB_QUERY]          = msg_asb_query,
-  [MSG_ASB_CHOSEN]         = msg_asb_chosen,
-  [MSG_RADIO_BUTTONS]      = msg_radio_buttons,
-  [MSG_RATING]             = msg_rating,
-  [MSG_TOGGLE_SPLIT]       = msg_toggle_split,
-  [MSG_TOGGLE_SPLIT_CLICK] = msg_toggle_split_click,
-  [MSG_TOGGLE_SPLIT_MENU]  = msg_toggle_split_menu,
-  [MSG_BREADCRUMB]         = msg_breadcrumb,
-  [MSG_SELECTOR_BAR]       = msg_selector_bar,
-  [MSG_TIP_OPEN]           = msg_tip_open,
-  [MSG_TIP_CLOSE]          = msg_tip_close,
-  [MSG_TIP_ACTION]         = msg_tip_action,
-  [MSG_TREE_SELECT]        = msg_tree_select,
-  [MSG_TREE_EXPAND]        = msg_tree_expand,
-  [MSG_TREE_INVOKE]        = msg_tree_invoke,
-  [MSG_ITEMS_SELECT]       = msg_items_select,
-  [MSG_ITEMS_INVOKE]       = msg_items_invoke,
-  [MSG_REFRESH]            = msg_refresh,
-  [MSG_REFRESH_DONE]       = msg_refresh_done,
-  [MSG_PP_BADGE]           = msg_pp_badge,
-  [MSG_PP_GROUP]           = msg_pp_group,
-  [MSG_PAGER_SELECT]       = msg_pager_select,
-  [MSG_SPLIT_TOGGLE]       = msg_split_toggle,
-  [MSG_SPLIT_MODE]         = msg_split_mode,
-  [MSG_SPLIT_PLACE]        = msg_split_place,
-  [MSG_TB_BACK]            = msg_tb_back,
-  [MSG_TB_PANE]            = msg_tb_pane,
-  [MSG_CHECK_TRI]          = msg_check_tri,
-  [MSG_SLIDER_VERT]        = msg_slider_vert,
-  [MSG_SLIDER_RANGE]       = msg_slider_range,
-  [MSG_COMBO_EDIT]         = msg_combo_edit,
-  [MSG_COMBO_SUBMIT]       = msg_combo_submit,
-  [MSG_DD_HOVER]           = msg_dd_hover,
-  [MSG_DD_FILES]           = msg_dd_drop,
-  [MSG_DD_TEXT]            = msg_dd_drop,
-  [MSG_DD_DONE]            = msg_dd_done,
-  [MSG_BACKDROP]           = msg_backdrop,
-  [MSG_RTL]                = msg_rtl,
+  [MSG_NAV]                  = msg_nav,
+  [MSG_CLICK]                = msg_click,
+  [MSG_BUTTON_DISABLE]       = msg_button_disable,
+  [MSG_CHECK_A]              = msg_check_a,
+  [MSG_CHECK_B]              = msg_check_b,
+  [MSG_RADIO_0]              = msg_radio,
+  [MSG_RADIO_1]              = msg_radio,
+  [MSG_RADIO_2]              = msg_radio,
+  [MSG_COMBO]                = msg_combo,
+  [MSG_COMBO_FONT]           = msg_combo_font,
+  [MSG_SLIDER_BASIC]         = msg_slider_basic,
+  [MSG_SLIDER_STEP]          = msg_slider_step,
+  [MSG_SLIDER_TICK]          = msg_slider_tick,
+  [MSG_SCROLLBAR_V]          = msg_scrollbar_v,
+  [MSG_SCROLLBAR_H]          = msg_scrollbar_h,
+  [MSG_LOOPING]              = msg_looping,
+  [MSG_DATE_PICKER]          = msg_date_picker,
+  [MSG_TIME_PICKER]          = msg_time_picker,
+  [MSG_TIME_PICKER_24]       = msg_time_picker_24,
+  [MSG_CALENDAR]             = msg_calendar,
+  [MSG_CALENDAR_MULTI]       = msg_calendar_multi,
+  [MSG_COLOR_PICKER]         = msg_color_picker,
+  [MSG_COLOR_ALPHA]          = msg_color_alpha,
+  [MSG_LIGHT]                = msg_light,
+  [MSG_NAME]                 = msg_name,
+  [MSG_PASSWORD]             = msg_password,
+  [MSG_QUANTITY]             = msg_quantity,
+  [MSG_BAR_CLOSE]            = msg_bar_close,
+  [MSG_BARS_RESET]           = msg_bars_reset,
+  [MSG_BADGE_DELTA]          = msg_badge_delta,
+  [MSG_PROGRESS]             = msg_progress,
+  [MSG_INDETERMINATE]        = msg_indeterminate,
+  [MSG_MENU]                 = msg_menu,
+  [MSG_REPEAT]               = msg_repeat,
+  [MSG_EXPAND]               = msg_expand,
+  [MSG_SPLIT_PRIMARY]        = msg_split_primary,
+  [MSG_SPLIT_MENU]           = msg_split_menu,
+  [MSG_TAB_SELECT]           = msg_tab_select,
+  [MSG_TAB_CLOSE]            = msg_tab_close,
+  [MSG_TAB_ADD]              = msg_tab_add,
+  [MSG_DIALOG_OPEN]          = msg_dialog_open,
+  [MSG_DIALOG_RESULT]        = msg_dialog_result,
+  [MSG_LIST_SELECT]          = msg_list_select,
+  [MSG_MULTI_SELECT]         = msg_multi_select,
+  [MSG_GRID_SELECT]          = msg_grid_select,
+  [MSG_LISTBOX_SELECT]       = msg_listbox_select,
+  [MSG_DET_SORT]             = msg_det_sort,
+  [MSG_DET_RESIZE]           = msg_det_resize,
+  [MSG_DET_FIT]              = msg_det_fit,
+  [MSG_DET_REORDER]          = msg_det_reorder,
+  [MSG_CB_ACTION]            = msg_cb_action,
+  [MSG_CB_OPEN]              = msg_cb_open,
+  [MSG_CB_FAV]               = msg_cb_fav,
+  [MSG_CB_BOLD]              = msg_cb_bold,
+  [MSG_FLIP_SELECT]          = msg_flip_select,
+  [MSG_ASB_TEXT]             = msg_asb_text,
+  [MSG_ASB_QUERY]            = msg_asb_query,
+  [MSG_ASB_CHOSEN]           = msg_asb_chosen,
+  [MSG_RADIO_BUTTONS]        = msg_radio_buttons,
+  [MSG_RATING]               = msg_rating,
+  [MSG_TOGGLE_SPLIT]         = msg_toggle_split,
+  [MSG_TOGGLE_SPLIT_CLICK]   = msg_toggle_split_click,
+  [MSG_TOGGLE_SPLIT_MENU]    = msg_toggle_split_menu,
+  [MSG_BREADCRUMB]           = msg_breadcrumb,
+  [MSG_SELECTOR_BAR]         = msg_selector_bar,
+  [MSG_TIP_OPEN]             = msg_tip_open,
+  [MSG_TIP_CLOSE]            = msg_tip_close,
+  [MSG_TIP_ACTION]           = msg_tip_action,
+  [MSG_TREE_SELECT]          = msg_tree_select,
+  [MSG_TREE_EXPAND]          = msg_tree_expand,
+  [MSG_TREE_INVOKE]          = msg_tree_invoke,
+  [MSG_ITEMS_SELECT]         = msg_items_select,
+  [MSG_ITEMS_INVOKE]         = msg_items_invoke,
+  [MSG_REFRESH]              = msg_refresh,
+  [MSG_REFRESH_DONE]         = msg_refresh_done,
+  [MSG_PP_BADGE]             = msg_pp_badge,
+  [MSG_PP_GROUP]             = msg_pp_group,
+  [MSG_PAGER_SELECT]         = msg_pager_select,
+  [MSG_SPLIT_TOGGLE]         = msg_split_toggle,
+  [MSG_SPLIT_OPEN]           = msg_split_open,
+  [MSG_SPLIT_MODE]           = msg_split_mode,
+  [MSG_SPLIT_PLACE]          = msg_split_place,
+  [MSG_TB_BACK]              = msg_tb_back,
+  [MSG_TB_PANE]              = msg_tb_pane,
+  [MSG_CHECK_TRI]            = msg_check_tri,
+  [MSG_SLIDER_VERT]          = msg_slider_vert,
+  [MSG_SLIDER_RANGE]         = msg_slider_range,
+  [MSG_COMBO_EDIT]           = msg_combo_edit,
+  [MSG_COMBO_SUBMIT]         = msg_combo_submit,
+  [MSG_DD_HOVER]             = msg_dd_hover,
+  [MSG_DD_FILES]             = msg_dd_drop,
+  [MSG_DD_TEXT]              = msg_dd_drop,
+  [MSG_DD_DONE]              = msg_dd_done,
+  [MSG_BACKDROP]             = msg_backdrop,
+  [MSG_RTL]                  = msg_rtl,
+  [MSG_NAV_STYLE]            = msg_nav_style,
+  [MSG_NAV_DEMO]             = msg_nav_demo,
+  [MSG_NAV_DEMO_HIDE]        = msg_nav_demo_hide,
+  [MSG_NAV_DEMO_PICK]        = msg_nav_demo_pick,
+  [MSG_NAV_DEMO_MODE]        = msg_nav_demo_mode,
+  [MSG_NAV_DEMO_HIDE_HEADER] = msg_nav_demo_hide_header,
+  [MSG_CONTROL_SEARCH_TEXT]  = msg_control_search_text,
+  [MSG_CONTROL_SEARCH_QUERY] = msg_control_search_query,
 };
 
 void gallery_model_update(Model *m, XtkMsg msg) {

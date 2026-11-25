@@ -1,6 +1,7 @@
 #include "flux_input_internal.h"
 #include "flux_dmanip_sync.h"
 #include "bridge/flux_internal.h"
+#include "controls/textbox/tb_metrics.h"
 
 #include <fluxent/flux_node_store.h>
 #include "store/flux_node_data.h"
@@ -170,6 +171,10 @@ static bool input_node_interactive(FluxInput *input, XentNodeId node, FluxNodeDa
 	return hit_node_interactive(input->ctx, node, nd);
 }
 
+bool input_hit_interactive(FluxInput *input, XentNodeId node) {
+	return hit_node_interactive(input->ctx, node, flux_store_find(input->store, node));
+}
+
 static FluxHitResult input_rebase_hit(FluxInput *input, FluxHitResult const *hit, XentNodeId node, FluxNodeData *nd) {
 	XentRect from = {0}, to = {0};
 	xent_layout_rect(input->ctx, hit->node, &from);
@@ -263,24 +268,6 @@ static void input_forward_pressed_move(FluxInput *input, float px, float py) {
 	nd->behavior.on_pointer_move(nd->behavior.on_pointer_move_ctx, local.x, local.y);
 }
 
-static bool input_press_number_box_spin(FluxInput *input, FluxHitResult const *hit) {
-	if (hit->node == XENT_NODE_INVALID || !hit->data) return false;
-	if (flux_node_type(input->store, hit->node) != FLUX_CONTROL_NUMBER_BOX) return false;
-	if (!xent_sem_expanded(input->ctx, hit->node)) return false;
-
-	XentRect rect = {0};
-	xent_layout_rect(input->ctx, hit->node, &rect);
-
-	float spin_start = rect.w - 76.0f;
-	if (hit->local.x < spin_start) return false;
-
-	if (hit->data->behavior.on_key) {
-		bool up = hit->local.x < spin_start + 40.0f;
-		hit->data->behavior.on_key(hit->data->behavior.on_key_ctx, up ? FLUX_KEY_UP : FLUX_KEY_DOWN, true);
-	}
-	return true;
-}
-
 static void input_update_click_count(FluxInput *input, FluxHitResult const *hit, float px, float py) {
 	ULONGLONG now_ms   = GetTickCount64();
 	DWORD     dbl_time = GetDoubleClickTime();
@@ -335,6 +322,14 @@ static void input_press_hit(FluxInput *input, FluxHitResult const *hit) {
 	nd = flux_store_find(input->store, hit->node);
 	if (nd && nd->behavior.on_pointer_down)
 		nd->behavior.on_pointer_down(nd->behavior.on_pointer_down_ctx, hit->local.x, hit->local.y, input->click_count);
+}
+
+static bool input_press_number_box_spin(FluxInput *input, FluxHitResult const *hit) {
+	if (flux_node_type(input->store, hit->node) != FLUX_CONTROL_NUMBER_BOX) return false;
+	if (!xent_sem_expanded(input->ctx, hit->node)) return false;
+	if (!nb_inline_spin_at(hit->local.x, hit->local.y, hit->bounds.w, hit->bounds.h)) return false;
+	input_press_hit(input, hit);
+	return true;
 }
 
 void input_blur_focused(FluxInput *input) {
@@ -478,14 +473,63 @@ FluxInput *flux_input_create(XentCtx *ctx, FluxStore *store) {
 	input->last_click_node      = XENT_NODE_INVALID;
 	input->touch.target         = XENT_NODE_INVALID;
 	input->refresh_pull.refresh = XENT_NODE_INVALID;
-	input->refresh_pull.scroll  = XENT_NODE_INVALID;
-	input->scroll_drag.node     = XENT_NODE_INVALID;
-	input->scroll_drag.axis     = 0;
-	input->scroll_hover_target  = XENT_NODE_INVALID;
+	input_xy_reset(input);
+	input->xy_saved            = input->xy;
+	input->refresh_pull.scroll = XENT_NODE_INVALID;
+	input->scroll_drag.node    = XENT_NODE_INVALID;
+	input->scroll_drag.axis    = 0;
+	input->scroll_hover_target = XENT_NODE_INVALID;
 	return input;
 }
 
-void          flux_input_destroy(FluxInput *input) { free(input); }
+struct FluxDismissLayer {
+	XentNodeId        owner;
+	XentNodeId        inside;
+	XentNodeId        target;
+	void              (*dismiss)(FluxStore *store, XentNodeId owner);
+	FluxDismissLayer *next;
+};
+
+static void input_remove_dismiss_layer(FluxInput *input, XentNodeId node) {
+	FluxDismissLayer **link = &input->dismiss_layers;
+	while (*link) {
+		FluxDismissLayer *layer = *link;
+		if (layer->owner == node || layer->inside == node || layer->target == node) {
+			*link = layer->next;
+			free(layer);
+			continue;
+		}
+		link = &layer->next;
+	}
+}
+
+static bool input_add_dismiss_layer(FluxInput *input, FluxDismissLayer const *desc) {
+	if (!input || desc->owner == XENT_NODE_INVALID) return false;
+	input_remove_dismiss_layer(input, desc->owner);
+	if (desc->target == XENT_NODE_INVALID && !desc->dismiss) return true;
+	FluxDismissLayer *layer = malloc(sizeof(*layer));
+	if (!layer) return false;
+	*layer                = *desc;
+	layer->next           = input->dismiss_layers;
+	input->dismiss_layers = layer;
+	return true;
+}
+
+void flux_input_set_dismiss_layer(FluxInput *input, XentNodeId owner, XentNodeId target) {
+	input_add_dismiss_layer(input, &(FluxDismissLayer) {.owner = owner, .inside = owner, .target = target});
+}
+
+bool flux_input_set_dismiss_action(
+  FluxInput *input, XentNodeId owner, XentNodeId inside, void (*dismiss)(FluxStore *store, XentNodeId owner)
+) {
+	return input_add_dismiss_layer(input, &(FluxDismissLayer) {.owner = owner, .inside = inside, .dismiss = dismiss});
+}
+
+void flux_input_destroy(FluxInput *input) {
+	if (!input) return;
+	while (input->dismiss_layers) input_remove_dismiss_layer(input, input->dismiss_layers->owner);
+	free(input);
+}
 
 FluxHitResult flux_input_hittest(FluxInput *input, XentNodeId root, float px, float py) {
 	if (!input || root == XENT_NODE_INVALID) return (FluxHitResult) {0};
@@ -506,6 +550,7 @@ static void fi_pointer_leave(FluxInput *input) {
 
 static void fi_cancel(FluxInput *input) {
 	if (!input) return;
+	input->dismiss_touch = false;
 
 	input_finish_scroll_drag(input);
 	input_cancel_refresh_pull(input);
@@ -607,10 +652,45 @@ static void fi_pointer_move(FluxInput *input, XentNodeId root, float px, float p
 	input_forward_pressed_move(input, px, py);
 }
 
+static bool input_dismiss_scope_visible(FluxInput const *input, XentNodeId owner, XentNodeId root) {
+	if (input->modal_root != XENT_NODE_INVALID && !input_within(input->ctx, owner, input->modal_root)) return false;
+	for (XentNodeId node = owner; node != XENT_NODE_INVALID; node = xent_node_parent(input->ctx, node)) {
+		if (xent_collapsed(input->ctx, node)) return false;
+		if (node == root) return true;
+	}
+	return false;
+}
+
+static FluxDismissLayer const *input_outer_dismiss_layer(FluxInput *input, XentNodeId root, XentNodeId hit) {
+	for (FluxDismissLayer *layer = input->dismiss_layers; layer; layer = layer->next) {
+		if (!input_dismiss_scope_visible(input, layer->owner, root)) continue;
+		return input_within(input->ctx, hit, layer->inside) ? NULL : layer;
+	}
+	return NULL;
+}
+
+static void input_dismiss_outside(FluxInput *input, FluxDismissLayer layer) {
+	input_cancel_pressed(input);
+	input_clear_hovered(input);
+	input->dismiss_touch = input->pointer_type == FLUX_POINTER_TOUCH;
+	if (layer.dismiss) {
+		layer.dismiss(input->store, layer.owner);
+		return;
+	}
+	FluxNodeData *nd = flux_store_find(input->store, layer.target);
+	if (nd && nd->behavior.on_click) nd->behavior.on_click(nd->behavior.on_click_ctx);
+}
+
 static void fi_pointer_down(FluxInput *input, XentNodeId root, float px, float py) {
 	if (!input || root == XENT_NODE_INVALID) return;
 
-	FluxHitResult hit  = input_hit_test_root(input, root, px, py);
+	FluxHitResult hit               = input_hit_test_root(input, root, px, py);
+	input->dismiss_touch            = false;
+	FluxDismissLayer const *dismiss = input_outer_dismiss_layer(input, root, hit.node);
+	if (dismiss) {
+		input_dismiss_outside(input, *dismiss);
+		return;
+	}
 	input->press_point = (FluxPoint) {px, py};
 
 	if (input_press_scroll_overlay(input, &hit, px, py)) return;
@@ -626,6 +706,7 @@ static void fi_pointer_down(FluxInput *input, XentNodeId root, float px, float p
 
 static void fi_pointer_up(FluxInput *input, XentNodeId root, float px, float py) {
 	if (!input || root == XENT_NODE_INVALID) return;
+	input->dismiss_touch = false;
 
 	if (input_finish_scroll_drag(input)) return;
 	if (input_release_scroll_buttons(input)) return;
@@ -643,6 +724,14 @@ static void input_drop_scroll_refs(FluxInput *input, XentNodeId node) {
 	if (input->refresh_pull.refresh == node || input->refresh_pull.scroll == node) input_cancel_refresh_pull(input);
 }
 
+static void input_drop_dismiss_scope(FluxInput *input, XentNodeId node) {
+	input_remove_dismiss_layer(input, node);
+	if (input->modal_root != node) return;
+	input->modal_root       = XENT_NODE_INVALID;
+	input->modal_escape     = NULL;
+	input->modal_escape_ctx = NULL;
+}
+
 void flux_input_dropnode(FluxInput *input, XentNodeId node) {
 	if (!input || node == XENT_NODE_INVALID) return;
 
@@ -651,15 +740,14 @@ void flux_input_dropnode(FluxInput *input, XentNodeId node) {
 	if (input->hovered == node) input->hovered = XENT_NODE_INVALID;
 	if (input->pressed == node) input->pressed = XENT_NODE_INVALID;
 	if (input->key_pressed == node) input->key_pressed = XENT_NODE_INVALID;
-	if (input->focused == node) input->focused = XENT_NODE_INVALID;
+	if (input->focused == node) {
+		input_xy_reset(input);
+		input->focused = XENT_NODE_INVALID;
+	}
 	if (input->last_click_node == node) input->last_click_node = XENT_NODE_INVALID;
 	if (input->scroll_hover_target == node) input->scroll_hover_target = XENT_NODE_INVALID;
 	input_drop_scroll_refs(input, node);
-	if (input->modal_root == node) {
-		input->modal_root       = XENT_NODE_INVALID;
-		input->modal_escape     = NULL;
-		input->modal_escape_ctx = NULL;
-	}
+	input_drop_dismiss_scope(input, node);
 }
 
 FluxPointerType flux_input_pointertype(FluxInput const *input) {
@@ -696,11 +784,20 @@ bool flux_input_takepan(FluxInput *input) {
 	return v;
 }
 
+static bool input_dismiss_focused_pane(FluxInput *input) {
+	for (FluxDismissLayer *layer = input->dismiss_layers; layer; layer = layer->next) {
+		if (!layer->dismiss || !input_within(input->ctx, input->focused, layer->owner)) continue;
+		layer->dismiss(input->store, layer->owner);
+		return true;
+	}
+	return false;
+}
+
 bool flux_input_keydown(FluxInput *input, FluxKey key) {
 	if (!input || input->focused == XENT_NODE_INVALID) return false;
 	FluxNodeData *nd = flux_store_find(input->store, input->focused);
-	if (!nd || !nd->behavior.on_key) return false;
-	return nd->behavior.on_key(nd->behavior.on_key_ctx, key, true);
+	if (nd && nd->behavior.on_key && nd->behavior.on_key(nd->behavior.on_key_ctx, key, true)) return true;
+	return key == FLUX_KEY_ESCAPE && input_dismiss_focused_pane(input);
 }
 
 void flux_input_keyup(FluxInput *input, FluxKey key) {
@@ -754,6 +851,7 @@ static bool input_has_context_menu(FluxInput *input, XentNodeId root, float px, 
 
 static void fi_touch_hold(FluxInput *input, XentNodeId root, float px, float py) {
 	if (!input || root == XENT_NODE_INVALID) return;
+	if (input->dismiss_touch) return;
 	if (!input_has_context_menu(input, root, px, py)) return;
 	input_cancel_pressed(input);
 	fi_context_menu(input, root, px, py);

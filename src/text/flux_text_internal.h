@@ -104,5 +104,6 @@ float                      kept_line_height(TextLineMetrics const *m, uint32_t m
 void text_configure_layout(FluxText *tr, IDWriteTextLayout *layout, char const *utf8, FluxTextStyle const *style);
 
 IDWriteTextLayout *get_or_create_layout(FluxText *tr, TextLayoutCacheRequest const *req);
+uint32_t           flux_text_selection_for_height(FluxTextSelectionQuery const *query, float height, uint32_t *total);
 
 #endif

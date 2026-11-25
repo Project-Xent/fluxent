@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_doc
 #include "a11y/flux_uia_doc.h"
 #include "store/flux_node_data.h"
 
@@ -43,16 +42,28 @@ static bool doc_lines(UiaDoc *doc) {
 	return true;
 }
 
-bool flux_uia_doc_open(FluxUiaContext const *info, XentNodeId node, UiaDoc *doc) {
+static FluxUiaText const doc_sub_hooks = {0};
+
+static bool              doc_view(FluxUiaHooks const *h, UiaDoc *doc) {
+	FluxStore *store = doc->info->store;
+	if (doc->sub >= 0) {
+		doc->hooks = &doc_sub_hooks;
+		return h && h->sub && h->sub->text && h->sub->text(store, doc->node, doc->sub, &doc->view);
+	}
+	doc->hooks = h ? h->doc : NULL;
+	return doc->hooks && doc->hooks->view && doc->hooks->view(store, doc->node, &doc->view);
+}
+
+bool flux_uia_doc_open(FluxUiaContext const *info, XentNodeId node, int sub, UiaDoc *doc) {
 	FluxUiaHooks const *h = flux_module_uia(info->store, node);
 	memset(doc, 0, sizeof(*doc));
-	doc->info  = info;
-	doc->node  = node;
-	doc->hooks = h ? h->doc : NULL;
-	if (!doc->hooks || !doc->hooks->view || !doc->hooks->view(info->store, node, &doc->view)) return false;
+	doc->info = info;
+	doc->node = node;
+	doc->sub  = sub;
+	if (!doc_view(h, doc)) return false;
 	if (!doc->view.renderer) doc->view.renderer = info->text;
 	if (!doc->view.text) doc->view.text = "";
-	xent_layout_rect(info->ctx, node, &doc->rect);
+	flux_uia_place(info, node, sub, &doc->rect, &doc->seen);
 	doc->mirror = xent_resolved_dir(info->ctx, node) == XENT_DIRECTION_RTL;
 	return doc->view.renderer && doc_wide(doc) && doc_lines(doc);
 }
@@ -196,13 +207,24 @@ static bool doc_clip(UiaDoc const *doc, XentRect *r) {
 	return true;
 }
 
+static bool doc_abs(UiaDoc const *doc, XentRect *r) {
+	XentRect c  = doc->seen;
+	float    x  = doc->mirror ? doc->rect.x + doc->rect.w - r->x - r->w : doc->rect.x + r->x;
+	float    y  = doc->rect.y + r->y;
+	float    x0 = x > c.x ? x : c.x, y0 = y > c.y ? y : c.y;
+	float    x1 = x + r->w < c.x + c.w ? x + r->w : c.x + c.w;
+	float    y1 = y + r->h < c.y + c.h ? y + r->h : c.y + c.h;
+	if (x1 < x0 || y1 <= y0) return false;
+	*r = (XentRect) {x0, y0, x1 - x0, y1 - y0};
+	return true;
+}
+
 static void doc_screen(UiaDoc const *doc, XentRect r, double *out) {
 	POINT origin = {0, 0};
 	float scale  = 1.0f;
 	flux_uia_origin(doc->info, doc->node, &origin, &scale);
-	float x = doc->mirror ? doc->rect.x + doc->rect.w - r.x - r.w : doc->rect.x + r.x;
-	out [0] = origin.x + x * scale;
-	out [1] = origin.y + (doc->rect.y + r.y) * scale;
+	out [0] = origin.x + r.x * scale;
+	out [1] = origin.y + r.y * scale;
 	out [2] = r.w * scale;
 	out [3] = r.h * scale;
 }
@@ -221,7 +243,7 @@ SAFEARRAY *flux_uia_doc_rects(UiaDoc const *doc, uint32_t start, uint32_t end) {
 	uint32_t  n = rects && kept ? doc_raw_rects(doc, start, end, rects, cap) : 0u, count = 0u;
 	for (uint32_t i = 0; i < n; i++) {
 		kept [count]  = doc_local(doc, &rects [i]);
-		count        += doc_clip(doc, &kept [count]);
+		count        += doc_clip(doc, &kept [count]) && doc_abs(doc, &kept [count]);
 	}
 	SAFEARRAY *sa   = SafeArrayCreateVector(VT_R8, 0, count * 4u);
 	double    *data = NULL;
@@ -294,12 +316,24 @@ void flux_uia_doc_attr(UiaDoc const *doc, TEXTATTRIBUTEID id, VARIANT *out) {
 	int  i = 0;
 	bool b = false;
 	VariantInit(out);
-	if (id == DOC_ATTR_FONT_NAME) doc_attr_font(doc, out);
-	else if (id == DOC_ATTR_FONT_SIZE) *out = (VARIANT) {.vt = VT_R8, .dblVal = doc->view.style.font_size};
-	else if (id == DOC_ATTR_FOREGROUND && doc_attr_color(doc, out)) return;
-	else if (doc_attr_int(doc, id, &i)) *out = (VARIANT) {.vt = VT_I4, .lVal = i};
-	else if (doc_attr_bool(doc, id, &b)) *out = (VARIANT) {.vt = VT_BOOL, .boolVal = b ? VARIANT_TRUE : VARIANT_FALSE};
-	else doc_unsupported(out);
+	if (id == DOC_ATTR_FONT_NAME) {
+		doc_attr_font(doc, out);
+		return;
+	}
+	if (id == DOC_ATTR_FONT_SIZE) {
+		*out = (VARIANT) {.vt = VT_R8, .dblVal = doc->view.style.font_size};
+		return;
+	}
+	if (id == DOC_ATTR_FOREGROUND && doc_attr_color(doc, out)) return;
+	if (doc_attr_int(doc, id, &i)) {
+		*out = (VARIANT) {.vt = VT_I4, .lVal = i};
+		return;
+	}
+	if (doc_attr_bool(doc, id, &b)) {
+		*out = (VARIANT) {.vt = VT_BOOL, .boolVal = b ? VARIANT_TRUE : VARIANT_FALSE};
+		return;
+	}
+	doc_unsupported(out);
 }
 
 bool flux_uia_doc_state(FluxUiaContext const *info, XentNodeId node, uint32_t *text, uint32_t *selection) {

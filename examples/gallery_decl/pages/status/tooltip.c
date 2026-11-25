@@ -15,7 +15,11 @@ XtkEl *page_tooltip(XtkUi *ui, Model const *m) {
 			  xtk_kids(
 				xtk_tooltip(ui, xtk_button(ui, "Hover me", (XtkButtonDesc) {0}), "A simple ToolTip on a Button"),
 				xtk_tooltip(
-				  ui, xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Save"}), "Icon-only buttons especially need one"
+				  ui,
+				  xtk_automation(
+					ui, xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Save"}), &(XtkAutomation) {.name = "Save"}
+				  ),
+				  "Icon-only buttons especially need one"
 				)
 			  )
 			))

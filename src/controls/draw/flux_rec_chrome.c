@@ -21,37 +21,24 @@ FluxVisualState *flux_rec_vstate(FluxRenderCtx const *rc, FluxRenderSnap const *
 FluxRecStateAnim flux_rec_animstate(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state, bool check_target
 ) {
-	FluxRecStateAnim out = {0};
-	if (!state) return out;
-	if (!rc || !snap) {
-		out.hover = state->hovered ? 1.0f : 0.0f;
-		out.press = state->pressed ? 1.0f : 0.0f;
-		out.focus = state->focused ? 1.0f : 0.0f;
-		out.check = check_target ? 1.0f : 0.0f;
-		return out;
-	}
-
-	FluxCacheEntry *ce = rc->cache ? flux_rcache_ensure(rc->cache, snap->id) : NULL;
-	if (!ce) {
-		out.hover = state->hovered ? 1.0f : 0.0f;
-		out.press = state->pressed ? 1.0f : 0.0f;
-		out.focus = state->focused ? 1.0f : 0.0f;
-		out.check = check_target ? 1.0f : 0.0f;
-		return out;
-	}
+	if (!state) return (FluxRecStateAnim) {0};
+	FluxTweenTargets targets = {state->hovered, state->pressed, state->focused, check_target};
+	FluxCacheEntry  *ce      = rc && snap && rc->cache ? flux_rcache_ensure(rc->cache, snap->id) : NULL;
+	if (!ce)
+		return (FluxRecStateAnim) {
+		  .hover = targets.hover, .press = targets.press, .focus = targets.focus, .check = targets.check};
 
 	FluxTweenChannels channels = {&ce->hover_anim, &ce->press_anim, &ce->focus_anim, &ce->check_anim};
-	FluxTweenTargets  targets  = {state->hovered, state->pressed, state->focused, check_target};
 	flux_rec_note_animating(rc, flux_tween_update_states(&channels, targets, rc->now));
-	out.hover = ce->hover_anim.current;
-	out.press = ce->press_anim.current;
-	out.focus = ce->focus_anim.current;
-	out.check = ce->check_anim.current;
-	return out;
+	return (FluxRecStateAnim) {
+	  .hover = ce->hover_anim.current,
+	  .press = ce->press_anim.current,
+	  .focus = ce->focus_anim.current,
+	  .check = ce->check_anim.current};
 }
 
 FluxColor flux_rec_tweenfill(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxColor target) {
-	if (!rc || !snap || !rc->cache) return target;
+	if (!rc || !snap || !rc->cache || flux_rec_theme(rc)->contrast.active) return target;
 	FluxCacheEntry *ce = flux_rcache_ensure(rc->cache, snap->id);
 	if (!ce) return target;
 	FluxColor out = target;
@@ -75,6 +62,9 @@ bool flux_rec_elevation_border(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *bounds, float radius, bool is_accent
 ) {
 	if (!b || !bounds) return false;
+	FluxThemeColors const *t = flux_rec_theme(rc);
+	if (t->contrast.active)
+		return flux_rec_stroke_rounded(b, bounds, radius, t->contrast.window_text, FLUX_STROKE_WIDTH);
 	FluxColor secondary  = flux_elevation_secondary(rc, is_accent);
 	FluxColor primary    = flux_elevation_primary(rc, is_accent);
 	bool      flip       = !rc || !rc->is_dark || is_accent;

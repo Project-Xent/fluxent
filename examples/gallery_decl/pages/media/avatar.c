@@ -1,14 +1,10 @@
 #include "gallery.h"
-
-static XtkEl *avatar(XtkUi *ui, XtkPersonPictureDesc desc) {
-	if (desc.size <= 0.0f) desc.size = 72.0f;
-	return xtk_avatar(ui, desc);
-}
+#include "gallery_assets.h"
 
 static XtkEl *avatar_labeled(XtkUi *ui, char const *caption, XtkPersonPictureDesc desc) {
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 8, .align = XENT_FLEX_ALIGN_CENTER},
-	  xtk_kids(avatar(ui, desc), xtk_text(ui, caption, (XtkTextDesc) {.size = 12}))
+	  xtk_kids(xtk_avatar(ui, desc), xtk_text(ui, caption, (XtkTextDesc) {.size = 12}))
 	);
 }
 
@@ -38,11 +34,23 @@ XtkEl *page_person_picture(XtkUi *ui, Model const *m) {
 		  xtk_row(
 			ui, (XtkStackDesc) {.gap = 24, .align = XENT_FLEX_ALIGN_START, .wrap = XENT_FLEX_WRAP},
 			xtk_kids(
-			  avatar_labeled(ui, "Number", (XtkPersonPictureDesc) {.display_name = "Ada Lovelace", .badge_number = 4}),
+			  avatar_labeled(
+				ui, "Number",
+				(XtkPersonPictureDesc) {.display_name = "Ada Lovelace", .badge_number = 4, .badge_text = "messages"}
+			  ),
 			  avatar_labeled(
 				ui, "Overflow", (XtkPersonPictureDesc) {.display_name = "Grace Hopper", .badge_number = 128}
 			  ),
-			  avatar_labeled(ui, "Glyph", (XtkPersonPictureDesc) {.display_name = "Alan Turing", .badge_glyph = "Mail"})
+			  avatar_labeled(
+				ui, "Glyph", (XtkPersonPictureDesc) {.display_name = "Alan Turing", .badge_glyph = "Mail"}
+			  ),
+			  avatar_labeled(
+				ui, "Image",
+				(XtkPersonPictureDesc) {
+				  .display_name = "Katherine Johnson",
+				  .badge_image  = gallery_wallpaper(),
+				  .badge_text   = "landscape photo"}
+			  )
 			)
 		  )
 		),
@@ -51,7 +59,7 @@ XtkEl *page_person_picture(XtkUi *ui, Model const *m) {
 		  xtk_card(
 			ui, (XtkStackDesc) {.gap = 16, .align = XENT_FLEX_ALIGN_CENTER},
 			xtk_kids(
-			  avatar(
+			  xtk_avatar(
 				ui,
 				(XtkPersonPictureDesc) {
 				  .display_name = "Fluxent User",

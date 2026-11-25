@@ -344,117 +344,85 @@ static FluxTeachingTipPlacement tip_solve(TipGeom const *g, FluxTeachingTipPlace
 	return FLUX_TIP_PLACE_AUTO;
 }
 
-static FluxPoint tip_origin_targeted(TipGeom const *g, FluxTeachingTipPlacement p) {
-	FluxRect const *t       = &g->tgt;
-	float           w       = g->tip_w;
-	float           h       = g->tip_h;
-	float           m       = g->margin;
-	float           cx      = t->x + t->w * 0.5f;
-	float           cy      = t->y + t->h * 0.5f;
-	float           top_y   = t->y - h - m;
-	float           bot_y   = t->y + t->h + m;
-	float           left_x  = t->x - w - m;
-	float           right_x = t->x + t->w + m;
+typedef enum TipAlign
+{
+	TIP_NEAR,
+	TIP_MIDDLE,
+	TIP_FAR,
+} TipAlign;
 
-	switch (p) {
-	case FLUX_TIP_PLACE_TOP          : return (FluxPoint) {cx - w * 0.5f, top_y};
-	case FLUX_TIP_PLACE_BOTTOM       : return (FluxPoint) {cx - w * 0.5f, bot_y};
-	case FLUX_TIP_PLACE_LEFT         : return (FluxPoint) {left_x, cy - h * 0.5f};
-	case FLUX_TIP_PLACE_RIGHT        : return (FluxPoint) {right_x, cy - h * 0.5f};
-	case FLUX_TIP_PLACE_TOP_RIGHT    : return (FluxPoint) {cx - TIP_TAIL_CENTER, top_y};
-	case FLUX_TIP_PLACE_TOP_LEFT     : return (FluxPoint) {cx - w + TIP_TAIL_CENTER, top_y};
-	case FLUX_TIP_PLACE_BOTTOM_RIGHT : return (FluxPoint) {cx - TIP_TAIL_CENTER, bot_y};
-	case FLUX_TIP_PLACE_BOTTOM_LEFT  : return (FluxPoint) {cx - w + TIP_TAIL_CENTER, bot_y};
-	case FLUX_TIP_PLACE_LEFT_TOP     : return (FluxPoint) {left_x, cy - h + TIP_TAIL_CENTER};
-	case FLUX_TIP_PLACE_LEFT_BOTTOM  : return (FluxPoint) {left_x, cy - TIP_TAIL_CENTER};
-	case FLUX_TIP_PLACE_RIGHT_TOP    : return (FluxPoint) {right_x, cy - h + TIP_TAIL_CENTER};
-	case FLUX_TIP_PLACE_RIGHT_BOTTOM : return (FluxPoint) {right_x, cy - TIP_TAIL_CENTER};
-	default                          : return (FluxPoint) {cx - w * 0.5f, t->y + t->h * 0.5f - h - m};
-	}
+typedef struct TipPlacement {
+	TipAlign x;
+	TipAlign y;
+	uint8_t  tail_edge;
+} TipPlacement;
+
+static TipPlacement tip_placement(FluxTeachingTipPlacement p) {
+	static TipPlacement const placements [] = {
+	  [FLUX_TIP_PLACE_TOP]          = {TIP_MIDDLE, TIP_NEAR,   FLUX_TIP_TAIL_EDGE_BOTTOM},
+	  [FLUX_TIP_PLACE_BOTTOM]       = {TIP_MIDDLE, TIP_FAR,    FLUX_TIP_TAIL_EDGE_TOP   },
+	  [FLUX_TIP_PLACE_LEFT]         = {TIP_NEAR,   TIP_MIDDLE, FLUX_TIP_TAIL_EDGE_RIGHT },
+	  [FLUX_TIP_PLACE_RIGHT]        = {TIP_FAR,    TIP_MIDDLE, FLUX_TIP_TAIL_EDGE_LEFT  },
+	  [FLUX_TIP_PLACE_TOP_RIGHT]    = {TIP_FAR,    TIP_NEAR,   FLUX_TIP_TAIL_EDGE_BOTTOM},
+	  [FLUX_TIP_PLACE_TOP_LEFT]     = {TIP_NEAR,   TIP_NEAR,   FLUX_TIP_TAIL_EDGE_BOTTOM},
+	  [FLUX_TIP_PLACE_BOTTOM_RIGHT] = {TIP_FAR,    TIP_FAR,    FLUX_TIP_TAIL_EDGE_TOP   },
+	  [FLUX_TIP_PLACE_BOTTOM_LEFT]  = {TIP_NEAR,   TIP_FAR,    FLUX_TIP_TAIL_EDGE_TOP   },
+	  [FLUX_TIP_PLACE_LEFT_TOP]     = {TIP_NEAR,   TIP_NEAR,   FLUX_TIP_TAIL_EDGE_RIGHT },
+	  [FLUX_TIP_PLACE_LEFT_BOTTOM]  = {TIP_NEAR,   TIP_FAR,    FLUX_TIP_TAIL_EDGE_RIGHT },
+	  [FLUX_TIP_PLACE_RIGHT_TOP]    = {TIP_FAR,    TIP_NEAR,   FLUX_TIP_TAIL_EDGE_LEFT  },
+	  [FLUX_TIP_PLACE_RIGHT_BOTTOM] = {TIP_FAR,    TIP_FAR,    FLUX_TIP_TAIL_EDGE_LEFT  },
+	  [FLUX_TIP_PLACE_CENTER]       = {TIP_MIDDLE, TIP_MIDDLE, FLUX_TIP_TAIL_EDGE_BOTTOM},
+	};
+	if (p != FLUX_TIP_PLACE_AUTO && ( unsigned ) p < sizeof(placements) / sizeof(placements [0])) return placements [p];
+	return (TipPlacement) {TIP_MIDDLE, TIP_FAR, FLUX_TIP_TAIL_EDGE_NONE};
 }
 
-static FluxPoint tip_origin_untargeted(TipGeom const *g, FluxTeachingTipPlacement p) {
-	float e  = TIP_EDGE_MARGIN + g->margin;
-	float x0 = g->win.x + e;
-	float y0 = g->win.y + e;
-	float x1 = g->win.x + g->win.w - g->tip_w - e;
-	float y1 = g->win.y + g->win.h - g->tip_h - e;
-	float xc = g->win.x + (g->win.w - g->tip_w) * 0.5f;
-	float yc = g->win.y + (g->win.h - g->tip_h) * 0.5f;
-
-	switch (p) {
-	case FLUX_TIP_PLACE_TOP          : return (FluxPoint) {xc, y0};
-	case FLUX_TIP_PLACE_LEFT         : return (FluxPoint) {x0, yc};
-	case FLUX_TIP_PLACE_RIGHT        : return (FluxPoint) {x1, yc};
-	case FLUX_TIP_PLACE_TOP_LEFT     :
-	case FLUX_TIP_PLACE_LEFT_TOP     : return (FluxPoint) {x0, y0};
-	case FLUX_TIP_PLACE_TOP_RIGHT    :
-	case FLUX_TIP_PLACE_RIGHT_TOP    : return (FluxPoint) {x1, y0};
-	case FLUX_TIP_PLACE_BOTTOM_LEFT  :
-	case FLUX_TIP_PLACE_LEFT_BOTTOM  : return (FluxPoint) {x0, y1};
-	case FLUX_TIP_PLACE_BOTTOM_RIGHT :
-	case FLUX_TIP_PLACE_RIGHT_BOTTOM : return (FluxPoint) {x1, y1};
-	case FLUX_TIP_PLACE_CENTER       : return (FluxPoint) {xc, yc};
-	default                          : return (FluxPoint) {xc, y1};
-	}
+static bool tip_tail_on_side(TipPlacement p) {
+	return p.tail_edge == FLUX_TIP_TAIL_EDGE_LEFT || p.tail_edge == FLUX_TIP_TAIL_EDGE_RIGHT;
 }
 
-static uint8_t tip_tail_edge_for(FluxTeachingTipPlacement p) {
-	switch (p) {
-	case FLUX_TIP_PLACE_TOP          :
-	case FLUX_TIP_PLACE_TOP_LEFT     :
-	case FLUX_TIP_PLACE_TOP_RIGHT    :
-	case FLUX_TIP_PLACE_CENTER       : return FLUX_TIP_TAIL_EDGE_BOTTOM;
-	case FLUX_TIP_PLACE_BOTTOM       :
-	case FLUX_TIP_PLACE_BOTTOM_LEFT  :
-	case FLUX_TIP_PLACE_BOTTOM_RIGHT : return FLUX_TIP_TAIL_EDGE_TOP;
-	case FLUX_TIP_PLACE_LEFT         :
-	case FLUX_TIP_PLACE_LEFT_TOP     :
-	case FLUX_TIP_PLACE_LEFT_BOTTOM  : return FLUX_TIP_TAIL_EDGE_RIGHT;
-	case FLUX_TIP_PLACE_RIGHT        :
-	case FLUX_TIP_PLACE_RIGHT_TOP    :
-	case FLUX_TIP_PLACE_RIGHT_BOTTOM : return FLUX_TIP_TAIL_EDGE_LEFT;
-	default                          : return FLUX_TIP_TAIL_EDGE_NONE;
+static FluxPoint tip_origin_targeted(TipGeom const *g, TipPlacement p) {
+	FluxRect const *t = &g->tgt;
+	float           w = g->tip_w, h = g->tip_h, m = g->margin;
+	float           cx = t->x + t->w * 0.5f, cy = t->y + t->h * 0.5f;
+	if (tip_tail_on_side(p)) {
+		float const x [] = {t->x - w - m, cx - w * 0.5f, t->x + t->w + m};
+		float const y [] = {cy - h + TIP_TAIL_CENTER, cy - h * 0.5f, cy - TIP_TAIL_CENTER};
+		return (FluxPoint) {x [p.x], y [p.y]};
 	}
+	float const x [] = {cx - w + TIP_TAIL_CENTER, cx - w * 0.5f, cx - TIP_TAIL_CENTER};
+	float const y [] = {t->y - h - m, cy - h - m, t->y + t->h + m};
+	return (FluxPoint) {x [p.x], y [p.y]};
 }
 
-static float tip_tail_center_for(FluxTipRuntime const *rt, FluxTeachingTipPlacement p) {
-	switch (p) {
-	case FLUX_TIP_PLACE_TOP_RIGHT    :
-	case FLUX_TIP_PLACE_BOTTOM_RIGHT : return TIP_TAIL_CENTER;
-	case FLUX_TIP_PLACE_TOP_LEFT     :
-	case FLUX_TIP_PLACE_BOTTOM_LEFT  : return rt->tip_w - TIP_TAIL_CENTER;
-	case FLUX_TIP_PLACE_LEFT_TOP     :
-	case FLUX_TIP_PLACE_RIGHT_TOP    : return rt->tip_h - TIP_TAIL_CENTER;
-	case FLUX_TIP_PLACE_LEFT_BOTTOM  :
-	case FLUX_TIP_PLACE_RIGHT_BOTTOM : return TIP_TAIL_CENTER;
-	case FLUX_TIP_PLACE_LEFT         :
-	case FLUX_TIP_PLACE_RIGHT        : return rt->tip_h * 0.5f;
-	default                          : return rt->tip_w * 0.5f;
-	}
+static FluxPoint tip_origin_untargeted(TipGeom const *g, TipPlacement p) {
+	FluxRect const *win  = &g->win;
+	float           e    = TIP_EDGE_MARGIN + g->margin;
+	float const     x [] = {win->x + e, win->x + (win->w - g->tip_w) * 0.5f, win->x + win->w - g->tip_w - e};
+	float const     y [] = {win->y + e, win->y + (win->h - g->tip_h) * 0.5f, win->y + win->h - g->tip_h - e};
+	return (FluxPoint) {x [p.x], y [p.y]};
 }
 
-static FluxPoint tip_scale_center_for(FluxTipRuntime const *rt, FluxTeachingTipPlacement p, bool tail) {
-	float w = rt->tip_w;
-	float h = rt->tip_h;
-	if (!tail) return (FluxPoint) {w * 0.5f, h * 0.5f};
+static float tip_tail_offset(float extent, TipAlign align, float inset) {
+	float const offsets [] = {extent - inset, extent * 0.5f, inset};
+	return offsets [align];
+}
 
-	switch (p) {
-	case FLUX_TIP_PLACE_TOP          :
-	case FLUX_TIP_PLACE_CENTER       : return (FluxPoint) {w * 0.5f, h - TIP_TAIL_BAND};
-	case FLUX_TIP_PLACE_BOTTOM       : return (FluxPoint) {w * 0.5f, TIP_TAIL_BAND};
-	case FLUX_TIP_PLACE_LEFT         : return (FluxPoint) {w - TIP_TAIL_BAND, h * 0.5f};
-	case FLUX_TIP_PLACE_RIGHT        : return (FluxPoint) {TIP_TAIL_BAND, h * 0.5f};
-	case FLUX_TIP_PLACE_TOP_RIGHT    : return (FluxPoint) {TIP_SCALE_CORNER, h - TIP_TAIL_BAND};
-	case FLUX_TIP_PLACE_TOP_LEFT     : return (FluxPoint) {w - TIP_SCALE_CORNER, h - TIP_TAIL_BAND};
-	case FLUX_TIP_PLACE_BOTTOM_RIGHT : return (FluxPoint) {TIP_SCALE_CORNER, TIP_TAIL_BAND};
-	case FLUX_TIP_PLACE_BOTTOM_LEFT  : return (FluxPoint) {w - TIP_SCALE_CORNER, TIP_TAIL_BAND};
-	case FLUX_TIP_PLACE_LEFT_TOP     : return (FluxPoint) {w - TIP_TAIL_BAND, h - TIP_SCALE_CORNER};
-	case FLUX_TIP_PLACE_LEFT_BOTTOM  : return (FluxPoint) {w - TIP_TAIL_BAND, TIP_SCALE_CORNER};
-	case FLUX_TIP_PLACE_RIGHT_TOP    : return (FluxPoint) {TIP_TAIL_BAND, h - TIP_SCALE_CORNER};
-	case FLUX_TIP_PLACE_RIGHT_BOTTOM : return (FluxPoint) {TIP_TAIL_BAND, TIP_SCALE_CORNER};
-	default                          : return (FluxPoint) {w * 0.5f, h * 0.5f};
+static void tip_set_tail(FluxTipRuntime *rt, TipPlacement p, bool visible) {
+	float w = rt->tip_w, h = rt->tip_h;
+	bool  side      = tip_tail_on_side(p);
+	rt->tail_edge   = visible ? p.tail_edge : FLUX_TIP_TAIL_EDGE_NONE;
+	rt->tail_center = side ? tip_tail_offset(h, p.y, TIP_TAIL_CENTER) : tip_tail_offset(w, p.x, TIP_TAIL_CENTER);
+	rt->scale_cx    = w * 0.5f;
+	rt->scale_cy    = h * 0.5f;
+	if (rt->tail_edge == FLUX_TIP_TAIL_EDGE_NONE) return;
+	if (side) {
+		rt->scale_cx = p.tail_edge == FLUX_TIP_TAIL_EDGE_LEFT ? TIP_TAIL_BAND : w - TIP_TAIL_BAND;
+		rt->scale_cy = tip_tail_offset(h, p.y, TIP_SCALE_CORNER);
+		return;
 	}
+	rt->scale_cx = tip_tail_offset(w, p.x, TIP_SCALE_CORNER);
+	rt->scale_cy = p.tail_edge == FLUX_TIP_TAIL_EDGE_TOP ? TIP_TAIL_BAND : h - TIP_TAIL_BAND;
 }
 
 static FluxTeachingTipPlacement tip_flow_placement(FluxTeachingTipPlacement p) {
@@ -521,6 +489,18 @@ static void tip_place_parts(FluxTipRuntime *rt) {
 	if (nd) nd->uia = m->light_dismiss ? &tip_window_uia : &tip_pane_uia;
 }
 
+static FluxTeachingTipPlacement tip_effective_placement(
+  FluxTipRuntime *rt, TipGeom *g, float scale, FluxTeachingTipPlacement preferred, bool targeted
+) {
+	if (targeted) {
+		FluxRect a = flux_binding_screen_anchor(rt->window, rt->ctx, rt->store, rt->target);
+		g->tgt     = (FluxRect) {a.x / scale, a.y / scale, a.w / scale, a.h / scale};
+		return tip_solve(g, preferred);
+	}
+	if (g->tip_w > g->win.w || g->tip_h > g->win.h) return FLUX_TIP_PLACE_AUTO;
+	return preferred == FLUX_TIP_PLACE_AUTO ? FLUX_TIP_PLACE_BOTTOM : preferred;
+}
+
 static bool tip_position(FluxTipRuntime *rt) {
 	float    scale                    = tip_owner_scale(rt);
 	TipGeom  g                        = {0};
@@ -533,30 +513,15 @@ static bool tip_position(FluxTipRuntime *rt) {
 	bool                     targeted = !rt->model.untargeted && rt->target != XENT_NODE_INVALID;
 	bool                     rtl      = xent_resolved_dir(rt->ctx, rt->node) == XENT_DIRECTION_RTL;
 	FluxTeachingTipPlacement pref     = rtl ? tip_flow_placement(rt->model.preferred) : rt->model.preferred;
-	FluxTeachingTipPlacement eff      = pref;
-	FluxPoint                origin;
+	FluxTeachingTipPlacement eff      = tip_effective_placement(rt, &g, scale, pref, targeted);
+	if (eff == FLUX_TIP_PLACE_AUTO) return false;
 
-	if (targeted) {
-		FluxRect a = flux_binding_screen_anchor(rt->window, rt->ctx, rt->store, rt->target);
-		g.tgt      = (FluxRect) {a.x / scale, a.y / scale, a.w / scale, a.h / scale};
-		eff        = tip_solve(&g, pref);
-		if (eff == FLUX_TIP_PLACE_AUTO) return false;
-		origin = tip_origin_targeted(&g, eff);
-	}
-	else {
-		if (rt->tip_w > g.win.w || rt->tip_h > g.win.h) return false;
-		origin = tip_origin_untargeted(&g, eff);
-		if (eff == FLUX_TIP_PLACE_AUTO) eff = FLUX_TIP_PLACE_BOTTOM;
-	}
-
-	bool tail           = rt->model.tail_visibility == FLUX_TIP_TAIL_VISIBLE
+	TipPlacement p      = tip_placement(eff);
+	FluxPoint    origin = targeted ? tip_origin_targeted(&g, p) : tip_origin_untargeted(&g, p);
+	bool         tail   = rt->model.tail_visibility == FLUX_TIP_TAIL_VISIBLE
 	                   || (rt->model.tail_visibility == FLUX_TIP_TAIL_AUTO && targeted);
 	rt->model.effective = eff;
-	rt->tail_edge       = tail ? tip_tail_edge_for(eff) : FLUX_TIP_TAIL_EDGE_NONE;
-	rt->tail_center     = tip_tail_center_for(rt, eff);
-	FluxPoint sc        = tip_scale_center_for(rt, eff, tail);
-	rt->scale_cx        = sc.x;
-	rt->scale_cy        = sc.y;
+	tip_set_tail(rt, p, tail);
 	if (rtl) tip_logical_tail(rt);
 
 	tip_place_parts(rt);
@@ -565,6 +530,19 @@ static bool tip_position(FluxTipRuntime *rt) {
 	FluxRect anchor = {origin.x * scale, origin.y * scale, 0.0f, 0.0f};
 	flux_popup_show(rt->popup, anchor, FLUX_PLACEMENT_BOTTOM);
 	return true;
+}
+
+static void tip_uia_opened(FluxTipRuntime *rt) {
+	char text [512];
+	snprintf(text, sizeof(text), "Press F6 to go to new notification, %s.", rt->model.title ? rt->model.title : "");
+	flux_uia_notify(
+	  rt->store, rt->surface, FLUX_UIA_NOTE_OTHER, FLUX_UIA_PROC_CURRENT_RECENT, text, "TeachingTipOpenedActivityId"
+	);
+	if (rt->model.light_dismiss) flux_uia_note(rt->store, rt->surface, -1, FLUX_UIA_EVT_WINDOW_OPENED);
+}
+
+static void tip_uia_closed(FluxTipRuntime const *rt) {
+	if (rt->model.light_dismiss) flux_uia_note(rt->store, rt->surface, -1, FLUX_UIA_EVT_WINDOW_CLOSED);
 }
 
 static void tip_restore_focus(FluxTipRuntime *rt) {
@@ -593,6 +571,7 @@ static bool tip_anim_finish(FluxTipRuntime *rt) {
 		void                      *notify_ctx                                    = rt->model.close_ctx;
 		FluxTeachingTipCloseReason reason                                        = rt->close_reason;
 		flux_popup_dismiss(rt->popup);
+		tip_uia_closed(rt);
 		tip_restore_focus(rt);
 		rt = tip_runtime(store, node);
 		if (!rt) return false;
@@ -645,6 +624,23 @@ static void tip_anim_start(FluxTipRuntime *rt, bool expand) {
 	flux_anim_register(rt, tip_anim_step);
 }
 
+static void tip_open_failed(FluxTipRuntime *rt) {
+	void  (*notify)(void *, FluxTeachingTipCloseReason) = rt->model.on_close;
+	void *notify_ctx                                    = rt->model.close_ctx;
+	rt->model.effective                                 = FLUX_TIP_PLACE_AUTO;
+	tip_route_close(rt, FLUX_TIP_CLOSE_PROGRAMMATIC);
+	if (notify) notify(notify_ctx, FLUX_TIP_CLOSE_PROGRAMMATIC);
+}
+
+static FluxTipRuntime *tip_focus_on_open(FluxTipRuntime *rt) {
+	if (!rt->model.light_dismiss || !rt->input) return rt;
+	FluxStore *store = rt->store;
+	XentNodeId node  = rt->node;
+	rt->prev_focus   = flux_input_focus(rt->input);
+	flux_input_setfocus(rt->input, node, false);
+	return tip_runtime(store, node);
+}
+
 static void tip_open(FluxTipRuntime *rt) {
 	if (rt->anim_expand || rt->anim_contract) {
 		rt->pending_hide = false;
@@ -656,21 +652,14 @@ static void tip_open(FluxTipRuntime *rt) {
 	tip_layout(rt);
 	flux_popup_setdismissoutside(rt->popup, rt->model.light_dismiss);
 	if (!tip_position(rt)) {
-		rt->model.effective = FLUX_TIP_PLACE_AUTO;
-		tip_route_close(rt, FLUX_TIP_CLOSE_PROGRAMMATIC);
-		if (rt->model.on_close) rt->model.on_close(rt->model.close_ctx, FLUX_TIP_CLOSE_PROGRAMMATIC);
+		tip_open_failed(rt);
 		return;
 	}
 
 	rt->model.open = true;
-	if (rt->model.light_dismiss && rt->input) {
-		FluxStore *store = rt->store;
-		XentNodeId node  = rt->node;
-		rt->prev_focus   = flux_input_focus(rt->input);
-		flux_input_setfocus(rt->input, rt->node, false);
-		rt = tip_runtime(store, node);
-		if (!rt) return;
-	}
+	tip_uia_opened(rt);
+	rt = tip_focus_on_open(rt);
+	if (!rt) return;
 	tip_anim_start(rt, true);
 	tip_repaint_owner(rt);
 }
@@ -702,6 +691,7 @@ static void tip_dismissed(void *ctx) {
 	flux_anim_unregister(rt);
 	rt->cur_sx = 1.0f;
 	rt->cur_sy = 1.0f;
+	tip_uia_closed(rt);
 	tip_restore_focus(rt);
 	rt = tip_runtime(store, node);
 	if (!rt) return;
@@ -740,7 +730,7 @@ void flux_snap_teachtip(FluxSnapCtx const *ctx) {
 	bool                   is_dark = false;
 	tip_resolve_theme(rt, &theme, &is_dark);
 	FluxColor bg = theme->solid_background_tertiary;
-	if (rt->model.light_dismiss)
+	if (!theme->contrast.active && rt->model.light_dismiss)
 		bg = flux_popup_acrylictint(rt->popup, is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : bg);
 	rt->paint = (FluxTeachingTipPaintInfo) {
 	  .model       = &rt->model,
@@ -826,6 +816,12 @@ static XentNodeId tip_button_part(FluxTipRuntime *rt, void (*click)(void *), cha
 	if (n == XENT_NODE_INVALID || !icon) return n;
 	flux_prop_button_style(rt->store, n, FLUX_BUTTON_SUBTLE);
 	flux_prop_button_icon(rt->store, n, icon);
+	FluxNodeData *nd = flux_store_find(rt->store, n);
+	if (nd && nd->component_data) {
+		FluxButtonData *button     = ( FluxButtonData * ) nd->component_data;
+		button->teaching_tip_close = true;
+		button->font_size          = 16.0f / FLUX_BTN_ICON_SIZE_MUL;
+	}
 	return n;
 }
 

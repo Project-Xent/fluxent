@@ -3,6 +3,7 @@
 #include "runtime/flux_time.h"
 #include "store/flux_node_data.h"
 #include "controls/data/flux_scroll_data.h"
+#include "input/flux_input_internal.h"
 
 #include <dwmapi.h>
 #include <stdlib.h>
@@ -57,7 +58,8 @@ static bool popup_tree_wheeling(FluxNodeData const *nd) {
 static bool popup_tree_sync(FluxPopupTree *tree, XentNodeId node) {
 	FluxNodeData *nd = flux_store_find(tree->store, node);
 	bool          synced
-	  = nd && (nd->component_type == FLUX_CONTROL_LOOPING_SELECTOR || nd->component_type == FLUX_CONTROL_SCROLL);
+	  = nd
+	 && (nd->component_type == FLUX_CONTROL_LOOPING_SELECTOR || nd->component_type == FLUX_CONTROL_SCROLL || nd->component_type == FLUX_CONTROL_PROGRESS);
 	FluxControlModule const *m = synced ? flux_module_get(nd->component_type) : NULL;
 	uint32_t frame             = m && m->tree && m->tree->frame ? m->tree->frame(tree->ctx, tree->store, node, nd) : 0u;
 	bool     busy              = (frame & FLUX_FRAME_REDRAW) || popup_tree_wheeling(nd);
@@ -100,5 +102,8 @@ bool flux_popup_tree_paint(FluxPopupTree *tree, FluxPopup *popup, FluxRenderCtx 
 	tree->last_frame       = now;
 	flux_rcache_begin(tree->cache);
 	flux_engine_execute(tree->engine, &rc);
+	FluxInput     *input = flux_store_input(tree->store);
+	FluxUiaContext info  = {tree->ctx, tree->root, flux_popup_hwnd(popup), tree->store, tree->text};
+	if (input) flux_access_keys_paint(&input->access_keys, &info, input, &rc);
 	return animating || syncing;
 }

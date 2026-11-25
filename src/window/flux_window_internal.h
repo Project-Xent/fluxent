@@ -11,8 +11,16 @@
 
 bool flux_window_ime_message(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT *result);
 void flux_window_setmaxbutton(FluxWindow *win, FluxRect bounds);
+bool flux_window_caption_bounds(FluxWindow *win, FluxRect *bounds);
 void flux_window_redraw_after(FluxWindow *win, double seconds);
 void flux_window_applyframe(FluxWindow *win, bool deferred);
+bool flux_taskbar_message(FluxWindow *win, UINT msg, WPARAM wp);
+void flux_taskbar_destroy(FluxWindow *win);
+bool flux_tray_message(FluxWindow *win, UINT msg, WPARAM wp, LPARAM lp);
+void flux_tray_destroy_window(FluxWindow *win);
+
+typedef struct FluxTaskbar  FluxTaskbar;
+typedef struct FluxTrayIcon FluxTrayIcon;
 
 struct FluxWindow {
 	HWND                 hwnd;
@@ -29,6 +37,15 @@ struct FluxWindow {
 	HCURSOR              cursor_hand;
 	HCURSOR              cursor_sizewe;
 	FluxMenu            *active_menu;
+	FluxTaskbar         *taskbar;
+	UINT                 taskbar_button_created;
+	bool                 taskbar_ready;
+	FluxTrayIcon        *tray_icons;
+	UINT                 tray_next_id;
+	UINT                 taskbar_created;
+	HACCEL               accelerators;
+	FluxAcceleratorFn    on_accelerator;
+	void                *accelerator_ctx;
 
 	uint32_t             primary_touch_pid;
 	uint32_t             mouse_buttons;
@@ -48,8 +65,11 @@ struct FluxWindow {
 	void                *pointer_ctx;
 	FluxKeyFn            on_key;
 	void                *key_ctx;
+	bool                 key_repeated;
 	FluxCharFn           on_char;
 	void                *char_ctx;
+	bool                 (*on_syschar)(void *ctx, wchar_t ch);
+	void                 (*on_key_cancel)(void *ctx);
 	FluxImeCompositionFn on_ime_composition;
 	void                *ime_composition_ctx;
 	FluxSettingChangedFn on_setting_changed;
@@ -65,6 +85,7 @@ struct FluxWindow {
 
 	bool                 title_bar_active;
 	bool                 title_bar_extended;
+	bool                 title_bar_native_buttons;
 	FluxRect             title_bar_drag;
 	FluxRect             title_bar_max;
 	bool                 title_bar_max_pressed;

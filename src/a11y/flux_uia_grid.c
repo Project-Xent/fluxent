@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_grid
 #include "a11y/flux_uia_object.h"
 #include "a11y/flux_uia_ids.h"
 #include "controls/flux_module.h"
@@ -152,9 +151,16 @@ static HRESULT STDMETHODCALLTYPE tbl_rows(ITableProvider *p, SAFEARRAY **out) {
 	return uia_grid_run(FLUX_UIA_SELF(p, lpVtblTable), 0, 0, out);
 }
 
+static int uia_grid_base(FluxUia const *self) {
+	FluxUiaSub const *s = uia_grid_sub(self);
+	return s ? s->column_head : 0;
+}
+
 static HRESULT STDMETHODCALLTYPE tbl_cols(ITableProvider *p, SAFEARRAY **out) {
-	FluxUia *self = FLUX_UIA_SELF(p, lpVtblTable);
-	return uia_grid_run(self, FLUX_UIA_SUB_HEAD, flux_uia_sub_heads(self), out);
+	FluxUia *self  = FLUX_UIA_SELF(p, lpVtblTable);
+	int      base  = uia_grid_base(self);
+	int      count = flux_uia_sub_heads(self) - base;
+	return uia_grid_run(self, FLUX_UIA_SUB_HEAD + base, count > 0 ? count : 0, out);
 }
 
 static HRESULT STDMETHODCALLTYPE tbl_major(ITableProvider *p, enum RowOrColumnMajor *out) {
@@ -195,8 +201,9 @@ static HRESULT STDMETHODCALLTYPE ti_rows(ITableItemProvider *p, SAFEARRAY **out)
 static HRESULT STDMETHODCALLTYPE ti_cols(ITableItemProvider *p, SAFEARRAY **out) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblTableItem);
 	int      row = 0, col = 0;
-	bool     has = uia_grid_cell(self, &row, &col) && col < flux_uia_sub_heads(self);
-	return uia_grid_run(self, FLUX_UIA_SUB_HEAD + col, has ? 1 : 0, out);
+	int      base = uia_grid_base(self);
+	bool     has  = uia_grid_cell(self, &row, &col) && base + col < flux_uia_sub_heads(self);
+	return uia_grid_run(self, FLUX_UIA_SUB_HEAD + base + col, has ? 1 : 0, out);
 }
 
 ITableItemProviderVtbl const flux_uia_tableitem_vtbl = {

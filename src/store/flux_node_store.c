@@ -1,6 +1,7 @@
 #include "fluxent/flux_node_store.h"
 #include "store/flux_node_data.h"
 #include "runtime/flux_str.h"
+#include "a11y/flux_uia_app.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,9 @@ struct FluxStore {
 	XentNodeId       *lifted;
 	uint32_t          nlifted;
 	uint32_t          lifted_cap;
+	FluxUiaNote      *notes;
+	uint32_t          nnotes;
+	uint32_t          notes_cap;
 };
 
 static uint32_t ns_hash(XentNodeId id, uint32_t cap) {
@@ -99,6 +103,8 @@ static void node_data_destroy_component(FluxNodeData *d) {
 	flux_str_free(d->tooltip_text);
 	flux_str_free(d->drag_text);
 	flux_str_free(d->drag_files);
+	flux_uia_props_free(d->a11y);
+	d->a11y         = NULL;
 	d->tooltip_text = NULL;
 	d->drag_text    = NULL;
 	d->drag_files   = NULL;
@@ -182,6 +188,8 @@ void flux_store_destroy(FluxStore *store) {
 		if (store->slots [i].tag == FLUX_NS_OCCUPIED) node_data_destroy_component(&store->slots [i].data);
 	free(store->slots);
 	free(store->lifted);
+	flux_store_clearnotes(store);
+	free(store->notes);
 	free(store);
 }
 
@@ -336,4 +344,63 @@ void flux_node_adoptdl(FluxStore *store, XentNodeId node, XentDl *list) {
 XentDl const *flux_node_dl(FluxStore const *store, XentNodeId node) {
 	FluxNodeData *nd = flux_store_find(( FluxStore * ) store, node);
 	return nd ? nd->display_list : NULL;
+}
+
+#define FLUX_UIA_NOTE_LIMIT 256u
+
+static FluxUiaNote *note_push(FluxStore *store) {
+	if (!store || store->nnotes >= FLUX_UIA_NOTE_LIMIT) return NULL;
+	if (store->nnotes == store->notes_cap) {
+		uint32_t     cap   = store->notes_cap ? store->notes_cap * 2u : 8u;
+		FluxUiaNote *items = ( FluxUiaNote * ) realloc(store->notes, sizeof(*items) * cap);
+		if (!items) return NULL;
+		store->notes     = items;
+		store->notes_cap = cap;
+	}
+	FluxUiaNote *n = &store->notes [store->nnotes++];
+	*n             = (FluxUiaNote) {0};
+	return n;
+}
+
+void flux_uia_note(FluxStore *store, XentNodeId node, int sub, int event) {
+	FluxUiaNote *n = node != XENT_NODE_INVALID ? note_push(store) : NULL;
+	if (!n) return;
+	n->node  = node;
+	n->sub   = sub;
+	n->event = event;
+}
+
+void flux_uia_retarget_notes(FluxStore *store, XentNodeId from, XentNodeId to) {
+	if (!store || from == XENT_NODE_INVALID || to == XENT_NODE_INVALID) return;
+	for (uint32_t i = 0; i < store->nnotes; i++)
+		if (store->notes [i].node == from) store->notes [i].node = to;
+}
+
+void flux_uia_noteprop(FluxStore *store, XentNodeId node, int property, double old_v, double new_v) {
+	FluxUiaNote *n = node != XENT_NODE_INVALID ? note_push(store) : NULL;
+	if (!n) return;
+	*n = (FluxUiaNote) {.node = node, .sub = -1, .event = -property, .old_v = old_v, .new_v = new_v};
+}
+
+void flux_uia_notify(
+  FluxStore *store, XentNodeId node, int kind, int processing, char const *text, char const *activity
+) {
+	FluxUiaNote *n = node != XENT_NODE_INVALID ? note_push(store) : NULL;
+	if (!n) return;
+	*n = (FluxUiaNote) {node, -1, 20035, kind, processing, flux_str_dup(text ? text : ""), flux_str_dup(activity)};
+}
+
+uint32_t           flux_store_nnotes(FluxStore const *store) { return store ? store->nnotes : 0u; }
+
+FluxUiaNote const *flux_store_note(FluxStore const *store, uint32_t i) {
+	return store && i < store->nnotes ? &store->notes [i] : NULL;
+}
+
+void flux_store_clearnotes(FluxStore *store) {
+	if (!store) return;
+	for (uint32_t i = 0; i < store->nnotes; i++) {
+		free(store->notes [i].text);
+		free(store->notes [i].activity);
+	}
+	store->nnotes = 0u;
 }

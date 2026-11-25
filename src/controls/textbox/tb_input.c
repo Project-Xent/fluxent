@@ -57,14 +57,12 @@ static float tb_reserved_trailing_w(FluxTextBoxInputData const *tb, FluxControlT
 	bool show_clear  = tb_show_trailing_button(tb, nd, false);
 	bool show_reveal = tb_show_trailing_button(tb, nd, true);
 
-	switch (ct) {
-	case FLUX_CONTROL_NUMBER_BOX :
+	if (ct == FLUX_CONTROL_NUMBER_BOX)
 		return (tb->nb->spin_placement == 2 ? FLUX_NUMBER_BOX_SPIN_W : 0.0f)
 		     + (show_clear ? FLUX_NUMBER_BOX_DELETE_BTN_W : 0.0f);
-	case FLUX_CONTROL_TEXT_INPUT   : return show_clear ? FLUX_TEXTBOX_ACTION_BUTTON_W : 0.0f;
-	case FLUX_CONTROL_PASSWORD_BOX : return show_reveal ? FLUX_PASSWORD_REVEAL_BTN_W : 0.0f;
-	default                        : return 0.0f;
-	}
+	if (ct == FLUX_CONTROL_PASSWORD_BOX && show_reveal) return FLUX_PASSWORD_REVEAL_BTN_W;
+	if (ct != FLUX_CONTROL_TEXT_INPUT) return 0.0f;
+	return tb->base.query_reserve + (show_clear ? tb_clear_button_width(tb->base.suggest_editor) : 0.0f);
 }
 
 float tb_text_max_w(FluxTextBoxInputData *tb, FluxControlType ct) {
@@ -339,17 +337,18 @@ static void tb_clear_text(FluxTextBoxInputData *tb) {
 static bool tb_handle_delete_button(FluxTextBoxInputData *tb, FluxControlType ct, float local_x) {
 	if (ct != FLUX_CONTROL_TEXT_INPUT && ct != FLUX_CONTROL_NUMBER_BOX) return false;
 
-	float del_w = (ct == FLUX_CONTROL_NUMBER_BOX) ? FLUX_NUMBER_BOX_DELETE_BTN_W : FLUX_TEXTBOX_ACTION_BUTTON_W;
+	float del_w
+	  = ct == FLUX_CONTROL_NUMBER_BOX ? FLUX_NUMBER_BOX_DELETE_BTN_W : tb_clear_button_width(tb->base.suggest_editor);
 	float del_right_offset
 	  = (ct == FLUX_CONTROL_NUMBER_BOX && tb->nb->spin_placement == 2) ? FLUX_NUMBER_BOX_SPIN_W : 0.0f;
-	FluxNodeData *nd       = flux_store_find(tb->store, tb->node);
-	bool          show_del = tb->buffer && tb->buf_len > 0 && nd && nd->state.focused && !tb->base.readonly;
+	del_right_offset       += tb->base.query_reserve;
+	FluxNodeData *nd        = flux_store_find(tb->store, tb->node);
+	bool          show_del  = tb->buffer && tb->buf_len > 0 && nd && nd->state.focused && !tb->base.readonly;
 	if (!show_del) return false;
 
 	XentRect rect = {0};
 	xent_layout_rect(tb->ctx, tb->node, &rect);
-	float delete_x = rect.w - del_w - del_right_offset;
-	if (local_x < delete_x || local_x >= delete_x + del_w) return false;
+	if (!tb_clear_button_hit(local_x, rect.w, del_w, del_right_offset)) return false;
 
 	tb_clear_text(tb);
 	return true;
@@ -374,6 +373,59 @@ static void tb_prepare_number_pointer(FluxTextBoxInputData *tb) {
 	if (!nb_is_number_box(tb)) return;
 	tb->nb->focus_from_click = true;
 	tb_leave_number_step(tb);
+}
+
+void nb_finish_spin(FluxTextBoxInputData *tb) {
+	if (!tb->nb) return;
+	flux_repeat_timer_stop(&tb->nb->spin_timer);
+	tb->nb->spin_direction = 0;
+}
+
+static int nb_pointer_spin(FluxTextBoxInputData *tb, float x, float y) {
+	if (!tb->nb || tb->nb->spin_placement != FLUX_NB_SPIN_INLINE) return 0;
+	XentRect rect = {0};
+	xent_layout_rect(tb->ctx, tb->node, &rect);
+	return nb_inline_spin_at(x, y, rect.w, rect.h);
+}
+
+static void nb_repeat_spin(void *ctx) {
+	FluxTextBoxInputData *tb        = ctx;
+	int                   direction = tb->nb->spin_direction;
+	if (!tb->base.enabled
+	    || tb->nb->spin_placement != FLUX_NB_SPIN_INLINE
+	    || !direction
+	    || !nb_spin_enabled(tb->nb, direction > 0))
+	{
+		flux_repeat_timer_stop(&tb->nb->spin_timer);
+		return;
+	}
+	if (tb->app) flux_app_redraw(tb->app);
+	nb_step_value(tb, direction * tb->nb->small_change);
+}
+
+static void nb_arm_spin(FluxTextBoxInputData *tb) {
+	flux_repeat_timer_start(&tb->nb->spin_timer, 500, 33, nb_repeat_spin, tb);
+}
+
+static bool nb_press_spin(FluxTextBoxInputData *tb, float x, float y) {
+	int direction = nb_pointer_spin(tb, x, y);
+	if (!direction) return false;
+	if (!nb_spin_enabled(tb->nb, direction > 0)) return true;
+	tb_leave_number_step(tb);
+	tb->dragging           = false;
+	tb->nb->spin_direction = direction;
+	nb_arm_spin(tb);
+	nb_repeat_spin(tb);
+	return true;
+}
+
+static bool nb_move_spin(FluxTextBoxInputData *tb, float x, float y) {
+	if (!tb->nb || !tb->nb->spin_direction) return false;
+	int  direction = nb_pointer_spin(tb, x, y);
+	bool inside    = direction == tb->nb->spin_direction && nb_spin_enabled(tb->nb, direction > 0);
+	if (!inside) flux_repeat_timer_stop(&tb->nb->spin_timer);
+	else if (!flux_repeat_timer_running(&tb->nb->spin_timer)) nb_arm_spin(tb);
+	return true;
 }
 
 static void tb_apply_click_selection(FluxTextBoxInputData *tb, uint32_t byte_pos, int click_count) {
@@ -552,7 +604,8 @@ void tb_on_char(void *ctx, wchar_t ch) {
 
 void tb_on_pointer_move(void *ctx, float local_x, float local_y) {
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
-	FluxText             *tr = tb->app ? flux_app_text(tb->app) : NULL;
+	if (nb_move_spin(tb, local_x, local_y)) return;
+	FluxText *tr = tb->app ? flux_app_text(tb->app) : NULL;
 	if (!tb->base.enabled || !tr) return;
 
 	uint32_t        old_cursor = tb->base.cursor_position;
@@ -567,8 +620,9 @@ void tb_on_pointer_move(void *ctx, float local_x, float local_y) {
 
 void tb_on_pointer_down(void *ctx, float local_x, float local_y, int click_count) {
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
-	FluxText             *tr = tb->app ? flux_app_text(tb->app) : NULL;
-	if (!tb->base.enabled || !tr) return;
+	if (!tb->base.enabled || nb_press_spin(tb, local_x, local_y)) return;
+	FluxText *tr = tb->app ? flux_app_text(tb->app) : NULL;
+	if (!tr) return;
 
 	uint32_t        old_cursor = tb->base.cursor_position;
 	FluxControlType ct         = flux_node_type(tb->store, tb->node);
@@ -587,6 +641,7 @@ void tb_on_pointer_down(void *ctx, float local_x, float local_y, int click_count
 void tb_on_pointer_finish(void *ctx) {
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
 	if (!tb) return;
+	nb_finish_spin(tb);
 	tb->dragging = false;
 	if (flux_node_type(tb->store, tb->node) == FLUX_CONTROL_PASSWORD_BOX) {
 		tb_clamp_scroll(tb);
@@ -718,7 +773,8 @@ void tb_on_focus(void *ctx) {
 
 void tb_on_blur(void *ctx) {
 	FluxTextBoxInputData *tb = ( FluxTextBoxInputData * ) ctx;
-	FluxNodeData         *nd = flux_store_find(tb->store, tb->node);
+	nb_finish_spin(tb);
+	FluxNodeData *nd = flux_store_find(tb->store, tb->node);
 	if (nd) nd->state.focused = 0;
 	tb->base.selection_start    = tb->base.cursor_position;
 	tb->base.selection_end      = tb->base.cursor_position;

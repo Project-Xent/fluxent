@@ -13,7 +13,13 @@
 #include <cwinrt/hstring.h>
 #include <cwinrt/Windows.Globalization.NumberFormatting.h>
 
-bool                           nb_is_number_box(FluxTextBoxInputData *tb) { return tb->nb != NULL; }
+bool nb_is_number_box(FluxTextBoxInputData *tb) { return tb->nb != NULL; }
+
+bool nb_spin_enabled(FluxNBExt const *nb, bool up) {
+	if (!nb || isnan(nb->value)) return false;
+	if (nb->is_wrap_enabled || nb->validation != 0) return true;
+	return up ? nb->value < nb->maximum : nb->value > nb->minimum;
+}
 
 static WGLNU_DecimalFormatter *g_nb_formatter;
 static bool                    g_nb_formatter_ready;

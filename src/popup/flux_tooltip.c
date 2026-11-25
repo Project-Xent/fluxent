@@ -7,6 +7,7 @@
 #include "runtime/flux_str.h"
 #include "a11y/flux_uia.h"
 #include "popup/flux_popup_tree.h"
+#include "theme/flux_theme_contrast.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -246,8 +247,15 @@ static void tooltip_ensure_brush(FluxTooltip *tt, ID2D1DeviceContext *d2d) {
 
 static void tooltip_resolve_colors(FluxTooltip const *tt, FluxColor *bg, FluxColor *border, FluxColor *text_color) {
 	FluxThemeColors const *theme = tt->theme;
+	if (flux_theme_systemcontrast()) {
+		FluxContrastColors p = flux_theme_contrast_colors();
+		*bg                  = p.window;
+		*border              = p.window_text;
+		*text_color          = p.window_text;
+		return;
+	}
 
-	*bg                          = tt->is_dark ? flux_color_rgb(44, 44, 44) : flux_color_rgb(249, 249, 249);
+	*bg = tt->is_dark ? flux_color_rgb(44, 44, 44) : flux_color_rgb(249, 249, 249);
 	if (tt->is_dark) *border = flux_color_rgba(0, 0, 0, 0x33);
 	else *border = flux_color_rgba(0, 0, 0, 0x0f);
 	if (theme) *text_color = theme->text_primary;

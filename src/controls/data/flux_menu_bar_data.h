@@ -22,6 +22,7 @@ typedef struct FluxMenuBarItem {
 	FluxMenuItemVisual visual;
 	FluxMenuBarData   *bar;
 	XentNodeId         node;
+	XentNodeId         access_key_source;
 	FluxMenu          *flyout;
 	int                index;
 	bool               owns_flyout;

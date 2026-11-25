@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_items
 #include "a11y/flux_uia_object.h"
 #include "a11y/flux_uia_ids.h"
 #include "controls/flux_module.h"
@@ -117,8 +116,9 @@ static ULONG STDMETHODCALLTYPE virt_release(IVirtualizedItemProvider *p) {
 }
 
 static HRESULT STDMETHODCALLTYPE virt_realize(IVirtualizedItemProvider *p) {
-	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblVirtual);
-	FluxUiaHooks const *h    = flux_module_uia(self->info.store, self->node);
+	FluxUia *self = FLUX_UIA_SELF(p, lpVtblVirtual);
+	flux_uia_dirty(&self->info);
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
 	if (self->sub >= 0 && h && h->sub && h->sub->realize) h->sub->realize(self->info.store, self->node, self->sub);
 	return S_OK;
 }

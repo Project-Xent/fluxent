@@ -90,6 +90,7 @@ void flux_prop_numberbox_value(FluxStore *store, XentNodeId id, double value);
 void flux_prop_numberbox_range(FluxStore *store, XentNodeId id, double min_val, double max_val);
 
 void flux_prop_numberbox_step(FluxStore *store, XentNodeId id, double step);
+void flux_prop_numberbox_changes(FluxStore *store, XentNodeId id, double small_step, double large_step);
 
 void flux_prop_numberbox_enabled(FluxStore *store, XentNodeId id, bool enabled);
 

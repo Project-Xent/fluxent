@@ -695,6 +695,13 @@ void flux_loopitem_uia_name(FluxStore *store, XentNodeId node, char *out, size_t
 	flux_uia_name_copy(ok && ld->items [at] ? ld->items [at] : "", out, size);
 }
 
+bool flux_loopitem_uia_concealed(FluxStore *store, XentNodeId node) {
+	FluxLoopingItemData const *cell = looping_cell(store, node);
+	FluxLoopingData const     *ld   = cell ? cell->owner : NULL;
+	if (!ld || ld->item_count <= 0 || cell->visual < 0) return true;
+	return !ld->should_loop && cell->visual >= ld->item_count;
+}
+
 bool flux_looping_uia_subselected(FluxStore *store, XentNodeId node, int sub) {
 	FluxLoopingRuntime *rt = looping_uia(store, node);
 	return rt && sub == rt->base.selected;

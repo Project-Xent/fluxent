@@ -28,7 +28,7 @@ static XtkTreeNodeDesc const kTreeRoots [] = {
 };
 
 XtkEl *page_tree_view(XtkUi *ui, Model const *m) {
-	char const *sel = m->tree_sel >= 0 ? xtk_fmt(ui, "Selected flat row: %d", m->tree_sel) : "Nothing selected.";
+	char const *sel = m->tree_sel > 0 ? xtk_fmt(ui, "Selected flat row: %d", m->tree_sel - 1) : "Nothing selected.";
 	char const *inv
 	  = m->tree_invoke >= 0 ? xtk_fmt(ui, "Last invoked: %d", m->tree_invoke) : "Double-click a row to invoke.";
 	XtkTreeNodeDesc roots [3];

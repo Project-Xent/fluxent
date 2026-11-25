@@ -1,5 +1,6 @@
 #include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_host_menu.h"
+#include "a11y/flux_uia_app.h"
 
 #include "bridge/flux_internal.h"
 #include "controls/behavior/flux_flyout_binding.h"
@@ -203,6 +204,27 @@ void flux_host_menuitem_set_enabled(FluxStore *store, XentNodeId node, bool enab
 	if (item) item->enabled = enabled;
 }
 
+static void menu_fly_append(FluxHostMenuFlyData *fly, FluxHostMenuItemData *item, XentNodeId child) {
+	item->parent = fly->node;
+	if (!item->label) {
+		flux_menu_addsep(fly->menu);
+		return;
+	}
+	char glyph [8] = {0};
+	if (item->icon) flux_icon_to_utf8(flux_icon_lookup(item->icon), glyph, sizeof(glyph));
+	flux_menu_additem(
+	  fly->menu, &(FluxMenuItemDef) {
+				   .type         = FLUX_MENU_ITEM_NORMAL,
+				   .label        = item->label,
+				   .icon_glyph   = glyph [0] ? glyph : NULL,
+				   .access_key   = flux_uia_apptext(fly->store, child, FLUX_A11Y_ACCESS_KEY),
+				   .enabled      = item->enabled,
+				   .on_click     = menu_item_invoke,
+				   .on_click_ctx = item,
+				 }
+	);
+}
+
 static void menu_fly_fill(FluxHostMenuFlyData *fly) {
 	if (!fly->menu) return;
 	flux_menu_clear(fly->menu);
@@ -210,24 +232,7 @@ static void menu_fly_fill(FluxHostMenuFlyData *fly) {
 	  child               = xent_node_next(fly->ctx, child))
 	{
 		FluxHostMenuItemData *item = menu_item_data(fly->store, child);
-		if (!item) continue;
-		item->parent = fly->node;
-		if (!item->label) {
-			flux_menu_addsep(fly->menu);
-			continue;
-		}
-		char glyph [8] = {0};
-		if (item->icon) flux_icon_to_utf8(flux_icon_lookup(item->icon), glyph, sizeof(glyph));
-		flux_menu_additem(
-		  fly->menu, &(FluxMenuItemDef) {
-					   .type         = FLUX_MENU_ITEM_NORMAL,
-					   .label        = item->label,
-					   .icon_glyph   = glyph [0] ? glyph : NULL,
-					   .enabled      = item->enabled,
-					   .on_click     = menu_item_invoke,
-					   .on_click_ctx = item,
-					 }
-		);
+		if (item) menu_fly_append(fly, item, child);
 	}
 }
 
@@ -252,7 +257,7 @@ void flux_host_menu_sync_bar(FluxStore *store, XentNodeId node) {
 	  child               = xent_node_next(ctx, child))
 	{
 		FluxHostMenuFlyData *fly = menu_fly_data(store, child);
-		if (fly) flux_menubar_add_menu_ref(store, node, fly->title ? fly->title : "", fly->menu);
+		if (fly) flux_menubar_add_menu_ref(store, node, fly->title ? fly->title : "", fly->menu, child);
 	}
 }
 

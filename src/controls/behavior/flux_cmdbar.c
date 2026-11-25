@@ -1,3 +1,5 @@
+#include "a11y/flux_uia_app.h"
+#include "a11y/flux_uia_ids.h"
 #include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_cmdbar_internal.h"
 #include "controls/factory/flux_control_build.h"
@@ -491,6 +493,7 @@ void flux_cmdbar_open(FluxCmdBarData *b, bool open, bool user, bool keyboard) {
 	b->open      = open;
 	b->keyboard  = keyboard;
 	b->focus_row = -1;
+	flux_uia_note(b->store, b->node, -1, open ? FLUX_UIA_EVT_MENU_OPENED : FLUX_UIA_EVT_MENU_CLOSED);
 	( void ) cmdbar_sync(b);
 	if (open) {
 		b->open_up = !space_below(b);
@@ -669,7 +672,6 @@ static bool make_parts(FluxCmdBarData *b) {
 	  .on_blur_ctx         = b,
 	};
 	xent_sem_setrole(b->ctx, b->more, XENT_SEM_ROLE_BUTTON);
-	xent_sem_setlabel(b->ctx, b->more, "See more");
 	return true;
 }
 
@@ -884,13 +886,59 @@ static FluxCmdBarData *cmdbar_of(FluxStore *store, XentNodeId node) {
 	return bar_data(store, node);
 }
 
+static int bar_primary_set(FluxCmdBarData const *b, XentNodeId node, int *pos) {
+	int n = 0;
+	for (XentNodeId c = xent_node_first(b->ctx, b->primary); c != XENT_NODE_INVALID; c = xent_node_next(b->ctx, c)) {
+		FluxAppBarItemData const *d = flux_cmdbar_item(b->store, c);
+		if (!d || in_overflow(b, d) || d->kind == FLUX_APPBAR_SEPARATOR) continue;
+		n++;
+		if (c == node) *pos = n;
+	}
+	return n;
+}
+
+bool flux_appbar_uia_setinfo(FluxStore *store, XentNodeId node, int *pos, int *size, int *level) {
+	( void ) level;
+	FluxAppBarItemData *d = flux_cmdbar_item(store, node);
+	FluxCmdBarData     *b = d ? item_bar(d) : NULL;
+	if (!b || in_overflow(b, d)) return false;
+	*size = bar_primary_set(b, node, pos) + (b->more_shown ? 1 : 0);
+	return true;
+}
+
+bool flux_appbar_uia_concealed(FluxStore *store, XentNodeId node) {
+	FluxAppBarItemData *d = flux_cmdbar_item(store, node);
+	FluxCmdBarData     *b = d ? item_bar(d) : NULL;
+	return b && in_overflow(b, d);
+}
+
+bool flux_cmdmore_uia_setinfo(FluxStore *store, XentNodeId node, int *pos, int *size, int *level) {
+	( void ) level;
+	FluxCmdBarData *b = cmdbar_of(store, node);
+	if (!b || !b->more_shown) return false;
+	*pos = *size = bar_primary_set(b, XENT_NODE_INVALID, pos) + 1;
+	return true;
+}
+
 int flux_cmdbar_uia_expand(FluxStore *store, XentNodeId node) {
 	FluxCmdBarData *b = cmdbar_of(store, node);
-	if (!b || !b->more_shown) return 3;
-	return b->open ? 1 : 0;
+	return b && b->open ? 1 : 0;
 }
 
 void flux_cmdbar_uia_toggle(FluxStore *store, XentNodeId node) {
 	FluxCmdBarData *b = cmdbar_of(store, node);
-	if (b && b->more_shown) flux_cmdbar_open(b, !b->open, true, true);
+	if (b) flux_cmdbar_open(b, !b->open, true, true);
+}
+
+unsigned flux_cmdbar_uia_live(FluxStore *store, XentNodeId node) {
+	FluxCmdBarData *b = cmdbar_of(store, node);
+	return b && b->open ? ~0u : ~( unsigned ) FLUX_UIA_P_WINDOW;
+}
+
+void flux_cmdmore_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxCmdBarData *b     = cmdbar_of(store, node);
+	char const     *owner = b ? flux_uia_apptext(store, b->node, FLUX_A11Y_NAME) : NULL;
+	bool            open  = b && b->open;
+	if (owner && owner [0]) snprintf(out, size, open ? "Less app bar for %s" : "More options for %s", owner);
+	else snprintf(out, size, "%s", open ? "Less app bar" : "More options");
 }

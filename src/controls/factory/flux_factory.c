@@ -284,6 +284,19 @@ XentNodeId flux_switch_init(FluxToggleDesc const *info) {
 	return create_toggle_node(info, FLUX_CONTROL_SWITCH);
 }
 
+void flux_progress_sync(XentCtx *ctx, XentNodeId node, FluxNodeData *nd) {
+	FluxProgressData *data = nd->component_data;
+	if (!data) return;
+	FluxThemeColors const *theme          = data->theme ? flux_theme_colors(data->theme) : flux_theme_defaults();
+	float                  default_border = theme->contrast.active ? 1.0f : 0.0f;
+	float                  border         = data->border_width > 0.0f ? data->border_width : default_border;
+	nd->visuals.border_width              = border;
+	float height                          = 3.0f + data->padding.top + data->padding.bottom + 2.0f * border;
+	if (data->layout_height == height) return;
+	data->layout_height = height;
+	xent_setminsize(ctx, node, (XentSize) {0.0f, height});
+}
+
 XentNodeId flux_progress_init(FluxProgressDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
@@ -302,11 +315,13 @@ XentNodeId flux_progress_init(FluxProgressDesc const *info) {
 	pd->min_value              = info->min_value;
 	pd->max_value              = info->max_value;
 	pd->indeterminate          = false;
+	pd->theme                  = info->theme;
 
 	nd->component_data         = pd;
 	nd->destroy_component_data = free;
 
 	xent_setsize(info->ctx, node, (XentSize) {NAN, 3.0f});
+	flux_progress_sync(info->ctx, node, nd);
 	return node;
 }
 
@@ -414,10 +429,12 @@ void flux_prop_image_nine(FluxStore *store, XentNodeId id, XtkPropertyId prop, f
 	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || nd->component_type != FLUX_CONTROL_IMAGE) return;
 	XentInsets *n = &(( FluxImageData * ) nd->component_data)->nine;
-	if (prop == XTK_PROP_NINE_GRID_LEFT) n->left = value;
-	else if (prop == XTK_PROP_NINE_GRID_TOP) n->top = value;
-	else if (prop == XTK_PROP_NINE_GRID_RIGHT) n->right = value;
-	else n->bottom = value;
+	switch (prop) {
+	case XTK_PROP_NINE_GRID_LEFT  : n->left = value; break;
+	case XTK_PROP_NINE_GRID_TOP   : n->top = value; break;
+	case XTK_PROP_NINE_GRID_RIGHT : n->right = value; break;
+	default                       : n->bottom = value; break;
+	}
 }
 
 void flux_prop_image_stretch(FluxStore *store, XentNodeId id, FluxImageStretch stretch) {

@@ -7,8 +7,10 @@
 #include "render/flux_fluent.h"
 #include "render/flux_render_internal.h"
 #include "render/flux_scroll_geom.h"
+#include "theme/flux_theme_contrast.h"
 #include "store/flux_node_data.h"
 #include "fluxent/flux_input.h"
+#include "a11y/flux_uia.h"
 
 #ifndef COBJMACROS
   #define COBJMACROS
@@ -57,6 +59,8 @@ struct FluxPopup {
 
 	FluxPopupDismissFn    dismiss_cb;
 	void                 *dismiss_ctx;
+	FluxPopupOwnerPressFn owner_press;
+	void                 *owner_press_ctx;
 
 	FluxPopupPaintFn      paint_cb;
 	void                 *paint_ctx;
@@ -284,24 +288,68 @@ static void popup_clamp_content_height(FluxPopup const *popup, RECT const *work,
 	if (*content_h > work_h_dip) *content_h = work_h_dip;
 }
 
-static bool          popup_anchor_is_control(FluxRect const *anchor) { return anchor->w > 0.5f || anchor->h > 0.5f; }
+float flux_popup_fit_content_height(FluxPopup const *popup, float height) {
+	RECT work = popup_owner_work_rect(popup);
+	popup_clamp_content_height(popup, &work, popup_scale_for_owner(popup), &height);
+	return height;
+}
+
+static bool popup_anchor_is_control(FluxRect const *anchor) { return anchor->w > 0.5f || anchor->h > 0.5f; }
+
+static FluxPlacement const kPopupMirror [] = {
+  [FLUX_PLACEMENT_BOTTOM]            = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_TOP]               = FLUX_PLACEMENT_TOP,
+  [FLUX_PLACEMENT_LEFT]              = FLUX_PLACEMENT_RIGHT,
+  [FLUX_PLACEMENT_RIGHT]             = FLUX_PLACEMENT_LEFT,
+  [FLUX_PLACEMENT_AUTO]              = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_BOTTOM_EDGE_LEFT]  = FLUX_PLACEMENT_BOTTOM_EDGE_RIGHT,
+  [FLUX_PLACEMENT_BOTTOM_EDGE_RIGHT] = FLUX_PLACEMENT_BOTTOM_EDGE_LEFT,
+  [FLUX_PLACEMENT_TOP_EDGE_LEFT]     = FLUX_PLACEMENT_TOP_EDGE_RIGHT,
+  [FLUX_PLACEMENT_TOP_EDGE_RIGHT]    = FLUX_PLACEMENT_TOP_EDGE_LEFT,
+  [FLUX_PLACEMENT_RIGHT_EDGE_TOP]    = FLUX_PLACEMENT_LEFT_EDGE_TOP,
+  [FLUX_PLACEMENT_LEFT_EDGE_TOP]     = FLUX_PLACEMENT_RIGHT_EDGE_TOP,
+};
+
+static FluxPlacement const kPopupFlip [] = {
+  [FLUX_PLACEMENT_BOTTOM]            = FLUX_PLACEMENT_TOP,
+  [FLUX_PLACEMENT_TOP]               = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_LEFT]              = FLUX_PLACEMENT_RIGHT,
+  [FLUX_PLACEMENT_RIGHT]             = FLUX_PLACEMENT_LEFT,
+  [FLUX_PLACEMENT_AUTO]              = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_BOTTOM_EDGE_LEFT]  = FLUX_PLACEMENT_TOP_EDGE_LEFT,
+  [FLUX_PLACEMENT_BOTTOM_EDGE_RIGHT] = FLUX_PLACEMENT_TOP_EDGE_RIGHT,
+  [FLUX_PLACEMENT_TOP_EDGE_LEFT]     = FLUX_PLACEMENT_BOTTOM_EDGE_LEFT,
+  [FLUX_PLACEMENT_TOP_EDGE_RIGHT]    = FLUX_PLACEMENT_BOTTOM_EDGE_RIGHT,
+  [FLUX_PLACEMENT_RIGHT_EDGE_TOP]    = FLUX_PLACEMENT_LEFT_EDGE_TOP,
+  [FLUX_PLACEMENT_LEFT_EDGE_TOP]     = FLUX_PLACEMENT_RIGHT_EDGE_TOP,
+};
+
+static FluxPlacement const kPopupSide [] = {
+  [FLUX_PLACEMENT_BOTTOM]            = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_TOP]               = FLUX_PLACEMENT_TOP,
+  [FLUX_PLACEMENT_LEFT]              = FLUX_PLACEMENT_LEFT,
+  [FLUX_PLACEMENT_RIGHT]             = FLUX_PLACEMENT_RIGHT,
+  [FLUX_PLACEMENT_AUTO]              = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_BOTTOM_EDGE_LEFT]  = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_BOTTOM_EDGE_RIGHT] = FLUX_PLACEMENT_BOTTOM,
+  [FLUX_PLACEMENT_TOP_EDGE_LEFT]     = FLUX_PLACEMENT_TOP,
+  [FLUX_PLACEMENT_TOP_EDGE_RIGHT]    = FLUX_PLACEMENT_TOP,
+  [FLUX_PLACEMENT_RIGHT_EDGE_TOP]    = FLUX_PLACEMENT_RIGHT,
+  [FLUX_PLACEMENT_LEFT_EDGE_TOP]     = FLUX_PLACEMENT_LEFT,
+};
+
+static FluxPlacement popup_side(FluxPlacement placement) {
+	return ( unsigned ) placement <= FLUX_PLACEMENT_LEFT_EDGE_TOP ? kPopupSide [placement] : FLUX_PLACEMENT_BOTTOM;
+}
 
 static FluxPlacement popup_effective_placement(FluxPlacement placement, bool rtl) {
+	if (( unsigned ) placement > FLUX_PLACEMENT_LEFT_EDGE_TOP) return FLUX_PLACEMENT_BOTTOM;
 	if (placement == FLUX_PLACEMENT_AUTO) return FLUX_PLACEMENT_BOTTOM;
-	if (rtl && placement == FLUX_PLACEMENT_LEFT) return FLUX_PLACEMENT_RIGHT;
-	if (rtl && placement == FLUX_PLACEMENT_RIGHT) return FLUX_PLACEMENT_LEFT;
-	return placement;
+	return rtl ? kPopupMirror [placement] : placement;
 }
 
 static FluxPlacement popup_flip_placement(FluxPlacement placement) {
-	switch (placement) {
-	case FLUX_PLACEMENT_BOTTOM : return FLUX_PLACEMENT_TOP;
-	case FLUX_PLACEMENT_TOP    : return FLUX_PLACEMENT_BOTTOM;
-	case FLUX_PLACEMENT_RIGHT  : return FLUX_PLACEMENT_LEFT;
-	case FLUX_PLACEMENT_LEFT   : return FLUX_PLACEMENT_RIGHT;
-	case FLUX_PLACEMENT_AUTO   :
-	default                    : return FLUX_PLACEMENT_BOTTOM;
-	}
+	return ( unsigned ) placement <= FLUX_PLACEMENT_LEFT_EDGE_TOP ? kPopupFlip [placement] : FLUX_PLACEMENT_BOTTOM;
 }
 
 typedef struct PopupPositionParams {
@@ -360,7 +408,30 @@ static PopupPoint popup_position_left(PopupPositionParams const *p, bool anchore
 	};
 }
 
+static PopupPoint popup_position_edge(PopupPositionParams const *p) {
+	FluxRect const *a     = p->anchor;
+	int             gap   = ( int ) (4 * p->scale + 0.5f);
+	int             left  = ( int ) a->x;
+	int             right = ( int ) (a->x + a->w) - p->pw;
+	int             below = ( int ) (a->y + a->h) + gap;
+	int             above = ( int ) a->y - p->ph - gap;
+	switch (p->placement) {
+	case FLUX_PLACEMENT_BOTTOM_EDGE_LEFT  : return (PopupPoint) {left, below};
+	case FLUX_PLACEMENT_BOTTOM_EDGE_RIGHT : return (PopupPoint) {right, below};
+	case FLUX_PLACEMENT_TOP_EDGE_LEFT     : return (PopupPoint) {left, above};
+	case FLUX_PLACEMENT_TOP_EDGE_RIGHT    : return (PopupPoint) {right, above};
+	case FLUX_PLACEMENT_RIGHT_EDGE_TOP    : return (PopupPoint) {( int ) (a->x + a->w) + gap, ( int ) a->y};
+	default                               : return (PopupPoint) {( int ) a->x - p->pw - gap, ( int ) a->y};
+	}
+}
+
 static void popup_compute_position(PopupPositionParams const *p, int *x, int *y) {
+	if (p->placement >= FLUX_PLACEMENT_BOTTOM_EDGE_LEFT) {
+		PopupPoint edge = popup_position_edge(p);
+		*x              = edge.x;
+		*y              = edge.y;
+		return;
+	}
 	bool       anchored = popup_anchor_is_control(p->anchor);
 	PopupPoint point    = {( int ) p->anchor->x, ( int ) (p->anchor->y + p->anchor->h)};
 
@@ -377,7 +448,7 @@ static void popup_compute_position(PopupPositionParams const *p, int *x, int *y)
 }
 
 static bool popup_needs_flip(PopupPositionParams const *p, RECT const *work, int x, int y) {
-	switch (p->placement) {
+	switch (popup_side(p->placement)) {
 	case FLUX_PLACEMENT_BOTTOM : return y + p->ph > work->bottom;
 	case FLUX_PLACEMENT_TOP    : return y < work->top;
 	case FLUX_PLACEMENT_RIGHT  : return x + p->pw > work->right;
@@ -563,6 +634,16 @@ static void  popup_apply_menu_frame(FluxPopup *popup, float t) {
 	);
 }
 
+static POINT popup_flyout_offset(FluxPlacement placement, int offset) {
+	switch (popup_side(placement)) {
+	case FLUX_PLACEMENT_BOTTOM : return (POINT) {0, -offset};
+	case FLUX_PLACEMENT_TOP    : return (POINT) {0, offset};
+	case FLUX_PLACEMENT_RIGHT  : return (POINT) {-offset, 0};
+	case FLUX_PLACEMENT_LEFT   : return (POINT) {offset, 0};
+	default                    : return (POINT) {0, 0};
+	}
+}
+
 static void popup_apply_flyout_frame(FluxPopup *popup, float t) {
 	if (!popup || !popup->popup_hwnd) return;
 
@@ -570,19 +651,11 @@ static void popup_apply_flyout_frame(FluxPopup *popup, float t) {
 	float scale     = dpi > 0 ? dpi / FLUX_DPI_BASE : 1.0f;
 	int   offset_px = ( int ) (POPUP_FLYOUT_OFFSET_DIP * scale + 0.5f);
 	int   from      = ( int ) ((1.0f - t) * ( float ) offset_px + 0.5f);
-	int   dx = 0, dy = 0;
-
-	switch (popup->anim.final_placement) {
-	case FLUX_PLACEMENT_BOTTOM : dy = -from; break;
-	case FLUX_PLACEMENT_TOP    : dy = +from; break;
-	case FLUX_PLACEMENT_RIGHT  : dx = -from; break;
-	case FLUX_PLACEMENT_LEFT   : dx = +from; break;
-	default                    : break;
-	}
+	POINT delta     = popup_flyout_offset(popup->anim.final_placement, from);
 
 	SetWindowPos(
-	  popup->popup_hwnd, HWND_TOPMOST, popup->anim.final_x + dx, popup->anim.final_y + dy, popup->anim.final_pw,
-	  popup->anim.final_ph, SWP_NOACTIVATE | SWP_NOREDRAW
+	  popup->popup_hwnd, HWND_TOPMOST, popup->anim.final_x + delta.x, popup->anim.final_y + delta.y,
+	  popup->anim.final_pw, popup->anim.final_ph, SWP_NOACTIVATE | SWP_NOREDRAW
 	);
 
 	BYTE alpha = ( BYTE ) (t * 255.0f + 0.5f);
@@ -668,6 +741,10 @@ static void popup_start_open_animation(FluxPopup *popup) {
 	flux_anim_register(&popup->anim, popup_anim_step);
 }
 
+static void popup_repaint_host(FluxPopup const *popup) {
+	if (popup->owner_hwnd && popup->host_owner != XENT_NODE_INVALID) InvalidateRect(popup->owner_hwnd, NULL, FALSE);
+}
+
 void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement) {
 	if (!popup) return;
 
@@ -680,6 +757,7 @@ void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement)
 	popup_start_open_animation(popup);
 	ShowWindow(popup->popup_hwnd, SW_SHOWNOACTIVATE);
 	InvalidateRect(popup->popup_hwnd, NULL, FALSE);
+	popup_repaint_host(popup);
 }
 
 static bool popup_start_close_animation(FluxPopup *popup) {
@@ -702,6 +780,7 @@ void flux_popup_dismiss(FluxPopup *popup) {
 		popup_stop_animation(popup);
 		ShowWindow(popup->popup_hwnd, SW_HIDE);
 	}
+	popup_repaint_host(popup);
 	if (popup->dismiss_cb) popup->dismiss_cb(popup->dismiss_ctx);
 }
 
@@ -721,16 +800,16 @@ FluxPopupMenuTransition flux_popup_menutransition(FluxPopup const *popup, float 
 	  .clip_translate_y    = 0.0f,
 	};
 	if (!popup || !popup->anim.active || popup->anim.style != FLUX_POPUP_ANIM_MENU) return tr;
-	if (popup->anim.final_placement != FLUX_PLACEMENT_TOP && popup->anim.final_placement != FLUX_PLACEMENT_BOTTOM)
-		return tr;
+	FluxPlacement side = popup_side(popup->anim.final_placement);
+	if (side != FLUX_PLACEMENT_TOP && side != FLUX_PLACEMENT_BOTTOM) return tr;
 
 	float progress         = popup_clampf(popup->anim.progress, 0.0f, 1.0f);
 	float remaining        = opened_length * POPUP_MENU_CLOSED_SCALE * (1.0f - progress);
-	float direction        = popup->anim.final_placement == FLUX_PLACEMENT_BOTTOM ? 1.0f : -1.0f;
+	float direction        = side == FLUX_PLACEMENT_BOTTOM ? 1.0f : -1.0f;
 
 	tr.active              = true;
 	tr.border_scale_y      = 1.0f - POPUP_MENU_CLOSED_SCALE * (1.0f - progress);
-	tr.border_center_y     = popup->anim.final_placement == FLUX_PLACEMENT_TOP ? opened_length : 0.0f;
+	tr.border_center_y     = side == FLUX_PLACEMENT_TOP ? opened_length : 0.0f;
 	tr.content_translate_y = direction * remaining;
 	tr.clip_translate_y    = -tr.content_translate_y;
 	return tr;
@@ -796,6 +875,31 @@ bool flux_popup_lightdismissvisible(HWND owner_hwnd) {
 		if (p && p->is_visible && p->dismiss_on_outside && p->owner_hwnd == owner_hwnd) return true;
 	}
 	return false;
+}
+
+bool flux_popup_commandbar_access_scope(HWND owner, FluxUiaContext *info) {
+	for (int i = 0; i < g_popup_registry_count; i++) {
+		FluxPopup const *p = g_popup_registry [i];
+		if (!p->is_visible || p->owner_hwnd != owner || !p->tree) continue;
+		if (flux_node_type(p->store, p->content_root) != FLUX_CONTROL_CMDBAR_OVERFLOW) continue;
+		*info = (FluxUiaContext) {p->ctx, p->content_root, p->popup_hwnd, p->store, NULL};
+		return true;
+	}
+	return false;
+}
+
+void flux_popup_onownerpress(FluxPopup *popup, FluxPopupOwnerPressFn cb, void *ctx) {
+	popup->owner_press     = cb;
+	popup->owner_press_ctx = ctx;
+}
+
+bool flux_popup_ownerpress_passes(HWND owner, XentNodeId node) {
+	for (int i = 0; i < g_popup_registry_count; i++) {
+		FluxPopup const *p = g_popup_registry [i];
+		if (!p || !p->is_visible || !p->dismiss_on_outside || p->owner_hwnd != owner) continue;
+		if (!p->owner_press || !p->owner_press(p->owner_press_ctx, node)) return false;
+	}
+	return true;
 }
 
 void flux_popup_dismissowner(HWND owner_hwnd) {
@@ -991,7 +1095,8 @@ static LRESULT popup_on_paint(HWND hwnd, FluxPopup *popup) {
 		return 0;
 	}
 
-	popup->acrylic_active = flux_gfx_enable_acrylic(popup->graphics, POPUP_ACRYLIC_BLUR);
+	float blur            = flux_theme_systemcontrast() ? 0.0f : POPUP_ACRYLIC_BLUR;
+	popup->acrylic_active = flux_gfx_enable_acrylic(popup->graphics, blur);
 
 	flux_gfx_setopacity(popup->graphics, popup_picker_opacity(popup));
 	flux_gfx_begin(popup->graphics);
@@ -1070,11 +1175,19 @@ static bool popup_handle_system_message(PopupWindowMessage const *m, LRESULT *re
 	}
 }
 
+static bool popup_theme_changed(UINT msg) {
+	return msg == WM_SYSCOLORCHANGE || msg == WM_SETTINGCHANGE || msg == WM_THEMECHANGED;
+}
+
 static LRESULT CALLBACK popup_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 	FluxPopup         *popup   = ( FluxPopup * ) ( LONG_PTR ) GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 	LRESULT            result  = 0;
 	PopupWindowMessage message = {hwnd, popup, msg, wp, lp};
 
+	if (popup_theme_changed(msg)) {
+		InvalidateRect(hwnd, NULL, FALSE);
+		return 0;
+	}
 	if (popup_handle_mouse_message(&message, &result)) return result;
 	if (popup_handle_system_message(&message, &result)) return result;
 
@@ -1129,6 +1242,19 @@ bool flux_popup_sethost(FluxPopup *popup, FluxInput *input, XentNodeId owner) {
 	if (nd) nd->uia_popup = popup->content_root;
 	flux_popup_onmouse(popup, popup_host_mouse, NULL);
 	return true;
+}
+
+void flux_popup_rebind(FluxPopup *popup, XentNodeId owner) {
+	if (!popup || !popup->store || popup->content_root == XENT_NODE_INVALID) return;
+	FluxNodeData *root = flux_store_find(popup->store, popup->content_root);
+	FluxNodeData *nd   = flux_store_find(popup->store, owner);
+	if (!root || !nd) return;
+	FluxNodeData *old = flux_store_find(popup->store, popup->host_owner);
+	if (old && old != nd && old->uia_popup == popup->content_root) old->uia_popup = XENT_NODE_INVALID;
+	popup->host_owner = owner;
+	root->popup       = popup;
+	root->uia_owner   = owner;
+	nd->uia_popup     = popup->content_root;
 }
 
 void flux_popup_setscale(FluxPopup *popup, float sx, float sy, float cx, float cy) {

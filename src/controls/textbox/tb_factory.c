@@ -102,6 +102,7 @@ void tb_destroy(void *component_data) {
 	free(tb->buffer);
 	free(tb->flat_buffer);
 	free(tb->ime_buf);
+	nb_finish_spin(tb);
 	free(tb->nb);
 	free(tb);
 }

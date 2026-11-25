@@ -57,6 +57,7 @@ typedef struct FluxAutoSuggestDesc {
 } FluxAutoSuggestDesc;
 
 XentNodeId flux_suggest_init(FluxAutoSuggestDesc const *info);
+void       flux_suggest_sync(XentCtx *ctx, XentNodeId node, FluxNodeData *nd);
 
 void       flux_suggest_set_suggestions(FluxStore *store, XentNodeId asb, char const *const *items, int count);
 
@@ -95,6 +96,7 @@ void       flux_dialog_unmount(FluxStore *store, XentNodeId dialog);
 void       flux_dialog_retarget(XentCtx *ctx, FluxStore *store, XentNodeId dst);
 
 void       flux_dialog_sync_host(FluxStore *store, XentNodeId dialog, bool open);
+void       flux_dialog_setdefaultbutton(FluxStore *store, XentNodeId dialog, XtkDialogButton button);
 void       flux_dialog_configure(
   FluxStore *store, XentNodeId dialog, char const *title, char const *primary, char const *secondary, char const *close,
   float width, float content_height
@@ -115,6 +117,7 @@ typedef struct FluxInfoBarDesc {
 } FluxInfoBarDesc;
 
 XentNodeId flux_infobar_init(FluxInfoBarDesc const *info);
+void       flux_infobar_frame(FluxStore *store, XentNodeId node);
 
 typedef struct FluxTeachingTipDesc {
 	XentCtx                 *ctx;

@@ -5,6 +5,8 @@
 #include <fluxent/flux_host.h>
 #include <fluxent/flux_node_store.h>
 #include "store/flux_node_data.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_module.h"
 #include <xtk/xtk_catalog.h>
 
 static bool check_control(FluxControlType type) {
@@ -97,8 +99,10 @@ activation_route_nav(XtkHost *host, FluxNodeData *data, ActivationState const *b
 
 void flux_input_route_activation(XtkHost *host, FluxStore *store, XentNodeId node, XtkEventCause cause) {
 	if (!host || !store || node == XENT_NODE_INVALID) return;
-	FluxNodeData   *data   = flux_store_find(store, node);
-	ActivationState before = activation_state(data);
+	FluxNodeData       *data   = flux_store_find(store, node);
+	ActivationState     before = activation_state(data);
+	FluxUiaHooks const *uia    = flux_module_uia(store, node);
+	if (uia && uia->invoked) flux_uia_note(store, node, -1, FLUX_UIA_EVT_INVOKED);
 	if (before.handled) data->behavior.on_click(data->behavior.on_click_ctx);
 	data = flux_store_find(store, node);
 	if (activation_route_nav(host, data, &before, cause)) return;

@@ -25,6 +25,8 @@ typedef struct FluxTextBoxData {
 	bool           readonly;
 	bool           multiline;
 	bool           combo_editor;
+	bool           suggest_editor;
+	float          query_reserve;
 
 	wchar_t const *composition_text;
 	uint32_t       composition_length;

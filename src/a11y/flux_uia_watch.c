@@ -1,6 +1,9 @@
 #include "a11y/flux_uia_doc.h"
 #include "a11y/flux_uia_ids.h"
 #include "a11y/flux_uia_tree.h"
+#include "store/flux_node_data.h"
+#include "controls/flux_control_uia.h"
+#include "controls/flux_module.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -11,18 +14,24 @@
 #define WATCH_PROP_RANGE         30047
 #define WATCH_PROP_EXPAND        30070
 #define WATCH_PROP_TOGGLE        30086
+#define WATCH_PROP_SELECTED      30079
+#define WATCH_PROP_SCROLL_FIRST  30053
+#define WATCH_PAT_SCROLL         10004
 #define WATCH_PAT_SELECTION      10001
 #define WATCH_PAT_VALUE          10002
 #define WATCH_PAT_RANGE          10003
 #define WATCH_PAT_EXPAND         10005
 #define WATCH_PAT_SELECTION_ITEM 10010
 #define WATCH_PAT_TOGGLE         10015
+#define WATCH_PAT_TEXT           10014
+#define WATCH_PAT_TEXT2          10024
 #define WATCH_EVT_ADDED          20010
 #define WATCH_EVT_REMOVED        20011
 #define WATCH_EVT_SELECTED       20012
 #define WATCH_EVT_INVALIDATED    20013
 #define WATCH_EVT_TEXT_SELECTION 20014
 #define WATCH_EVT_TEXT_CHANGED   20015
+#define WATCH_EVT_NOTIFICATION   20035
 #define WATCH_BULK_LIMIT         20
 
 enum
@@ -35,6 +44,12 @@ enum
 	W_SELECTION = 1u << 5,
 	W_TEXT      = 1u << 6,
 	W_EDIT      = 1u << 7,
+	W_SCROLL    = 1u << 8,
+};
+
+enum
+{
+	WATCH_SCROLL_VALUES = 6,
 };
 
 typedef struct WatchEntry {
@@ -47,11 +62,12 @@ typedef struct WatchEntry {
 	uint32_t   text;
 	uint32_t   tsel;
 	double     range;
+	double     scroll [WATCH_SCROLL_VALUES];
 	int        toggle;
 	int        expand;
 	uint8_t    enabled;
 	uint8_t    selected;
-	uint8_t    has;
+	uint16_t   has;
 } WatchEntry;
 
 typedef struct WatchTable {
@@ -199,11 +215,32 @@ static void watch_read_selection(FluxUia *p, WatchEntry *e) {
 	ISelectionItemProvider_Release(s);
 }
 
+static void watch_read_scroll(FluxUia *p, WatchEntry *e) {
+	IScrollProvider *s = ( IScrollProvider * ) watch_pattern(p, WATCH_PAT_SCROLL);
+	BOOL             h = FALSE, v = FALSE;
+	if (!s) return;
+	IScrollProvider_get_HorizontalScrollPercent(s, &e->scroll [0]);
+	IScrollProvider_get_HorizontalViewSize(s, &e->scroll [1]);
+	IScrollProvider_get_VerticalScrollPercent(s, &e->scroll [2]);
+	IScrollProvider_get_VerticalViewSize(s, &e->scroll [3]);
+	IScrollProvider_get_HorizontallyScrollable(s, &h);
+	IScrollProvider_get_VerticallyScrollable(s, &v);
+	e->scroll [4]  = h ? 1.0 : 0.0;
+	e->scroll [5]  = v ? 1.0 : 0.0;
+	e->has        |= W_SCROLL;
+	IScrollProvider_Release(s);
+}
+
+static bool watch_has_pattern(FluxUia *p, PATTERNID id) {
+	IUnknown *u = watch_pattern(p, id);
+	if (u) u->lpVtbl->Release(u);
+	return u != NULL;
+}
+
 static void watch_read_text(FluxUia *p, WatchEntry *e) {
-	unsigned patterns = flux_uia_patterns(&p->info, p->node);
-	if (p->sub >= 0 || !(patterns & FLUX_UIA_P_TEXT)) return;
+	if (!watch_has_pattern(p, WATCH_PAT_TEXT)) return;
 	if (!flux_uia_doc_state(&p->info, p->node, &e->text, &e->tsel)) return;
-	e->has |= (patterns & FLUX_UIA_P_TEXT2) ? W_TEXT | W_EDIT : W_TEXT;
+	e->has |= watch_has_pattern(p, WATCH_PAT_TEXT2) ? W_TEXT | W_EDIT : W_TEXT;
 }
 
 static void watch_read(FluxUia *p, WatchEntry *e) {
@@ -215,6 +252,7 @@ static void watch_read(FluxUia *p, WatchEntry *e) {
 	watch_read_value(p, e);
 	watch_read_selection(p, e);
 	watch_read_text(p, e);
+	watch_read_scroll(p, e);
 }
 
 static void watch_raise_variant(FluxUia *p, PROPERTYID id, VARIANT old_v, VARIANT new_v) {
@@ -249,14 +287,36 @@ static void watch_raise_value(FluxUia *p) {
 	IValueProvider_Release(v);
 }
 
-static void watch_raise_range(FluxUia *p, double old_d, double new_d) {
+static void watch_raise_range_id(FluxUia *p, PROPERTYID id, double old_d, double new_d) {
 	VARIANT o = {.vt = VT_R8}, n = {.vt = VT_R8};
 	o.dblVal = old_d;
 	n.dblVal = new_d;
-	watch_raise_variant(p, WATCH_PROP_RANGE, o, n);
+	watch_raise_variant(p, id, o, n);
+}
+
+static void watch_raise_range(FluxUia *p, double old_d, double new_d) {
+	watch_raise_range_id(p, WATCH_PROP_RANGE, old_d, new_d);
 }
 
 static bool watch_both(WatchEntry const *a, WatchEntry const *b, unsigned bit) { return (a->has & b->has & bit) != 0u; }
+
+static void watch_raise_bool(FluxUia *p, PROPERTYID id, bool old_b, bool new_b) {
+	VARIANT o = {.vt = VT_BOOL}, n = {.vt = VT_BOOL};
+	o.boolVal = old_b ? VARIANT_TRUE : VARIANT_FALSE;
+	n.boolVal = new_b ? VARIANT_TRUE : VARIANT_FALSE;
+	watch_raise_variant(p, id, o, n);
+}
+
+static void watch_raise_scroll(FluxUia *p, WatchEntry const *o, WatchEntry const *n) {
+	static PROPERTYID const ids [WATCH_SCROLL_VALUES] = {
+	  WATCH_PROP_SCROLL_FIRST, WATCH_PROP_SCROLL_FIRST + 1, WATCH_PROP_SCROLL_FIRST + 2, WATCH_PROP_SCROLL_FIRST + 3,
+	  WATCH_PROP_SCROLL_FIRST + 4, WATCH_PROP_SCROLL_FIRST + 5};
+	if (!watch_both(o, n, W_SCROLL)) return;
+	for (int i = 0; i < 4; i++)
+		if (o->scroll [i] != n->scroll [i]) watch_raise_range_id(p, ids [i], o->scroll [i], n->scroll [i]);
+	for (int i = 4; i < WATCH_SCROLL_VALUES; i++)
+		if (o->scroll [i] != n->scroll [i]) watch_raise_bool(p, ids [i], o->scroll [i] != 0.0, n->scroll [i] != 0.0);
+}
 
 static void watch_raise_props(FluxUia *p, WatchEntry const *o, WatchEntry const *n) {
 	if (o->name != n->name) watch_raise_current(p, WATCH_PROP_NAME);
@@ -298,13 +358,30 @@ static void watch_note_change(FluxUiaWatch *w, WatchEntry const *n) {
 	w->changes [w->nchanges++] = (WatchChange) {n->container, n->node, n->sub, n->selected != 0u};
 }
 
-static void watch_compare(FluxUiaWatch *w, FluxUia *p, WatchEntry const *now) {
+static bool watch_per_item(FluxUiaContext const *info, XentNodeId container) {
+	FluxUiaHooks const *h = container ? flux_module_uia(info->store, container) : NULL;
+	return h && h->select_mode && (h->select_mode(info->store, container) & FLUX_UIA_SEL_EACH);
+}
+
+static void watch_compare_selection(
+  FluxUiaWatch *w, FluxUiaContext const *info, FluxUia *p, WatchEntry const *old, WatchEntry const *now
+) {
+	if (!watch_both(old, now, W_SELITEM) || old->selected == now->selected) return;
+	bool selected = now->selected != 0u;
+	if (watch_per_item(info, now->container))
+		UiaRaiseAutomationEvent(watch_simple(p), selected ? WATCH_EVT_ADDED : WATCH_EVT_REMOVED);
+	else watch_note_change(w, now);
+	watch_raise_bool(p, WATCH_PROP_SELECTED, !selected, selected);
+}
+
+static void watch_compare(FluxUiaWatch *w, FluxUiaContext const *info, FluxUia *p, WatchEntry const *now) {
 	WatchEntry const *old = w->primed ? watch_find(&w->prev, now->node, now->sub) : NULL;
 	if (!old) return;
 	watch_raise_props(p, old, now);
 	watch_raise_text(p, old, now);
+	watch_raise_scroll(p, old, now);
+	watch_compare_selection(w, info, p, old, now);
 	if (now->sub < 0 && old->kids != now->kids) watch_raise_structure(p);
-	if (watch_both(old, now, W_SELITEM) && old->selected != now->selected) watch_note_change(w, now);
 }
 
 static uint32_t
@@ -329,7 +406,7 @@ watch_visit(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, int su
 	WatchEntry now = {.node = node, .container = container, .sub = sub};
 	watch_read(p, &now);
 	if (sub < 0) now.kids = watch_children(w, info, node, (now.has & W_SELECTION) ? node : container);
-	watch_compare(w, p, &now);
+	watch_compare(w, info, p, &now);
 	if (watch_grow(&w->cur)) watch_insert(&w->cur, &now);
 	flux_uia_release(p);
 	return ( uint32_t ) (node * 2654435761u) ^ ( uint32_t ) (sub + 1);
@@ -397,6 +474,44 @@ static void watch_selection(FluxUiaWatch *w, FluxUiaContext const *info) {
 	w->nchanges = 0u;
 }
 
+static BSTR watch_bstr(char const *utf8) {
+	int  n = utf8 ? MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0) : 0;
+	BSTR s = n > 0 ? SysAllocStringLen(NULL, ( UINT ) (n - 1)) : NULL;
+	if (s) MultiByteToWideChar(CP_UTF8, 0, utf8, -1, s, n);
+	return s;
+}
+
+static void watch_raise_notification(IRawElementProviderSimple *provider, FluxUiaNote const *n) {
+	BSTR text = watch_bstr(n->text), activity = watch_bstr(n->activity);
+	if (!activity) activity = SysAllocString(L"");
+	UiaRaiseNotificationEvent(
+	  provider, ( enum NotificationKind ) n->kind, ( enum NotificationProcessing ) n->processing, text, activity
+	);
+	SysFreeString(text);
+	SysFreeString(activity);
+}
+
+static void watch_raise_note(FluxUiaContext const *info, FluxUiaNote const *n) {
+	if (!xent_node_valid(info->ctx, n->node)) return;
+	FluxUia *p = n->sub < 0 ? flux_uia_alloc(info, n->node) : flux_uia_alloc_sub(info, n->node, n->sub);
+	if (!p) return;
+	if (n->event < 0) {
+		VARIANT o = {.vt = VT_R8}, v = {.vt = VT_R8};
+		o.dblVal = n->old_v;
+		v.dblVal = n->new_v;
+		UiaRaiseAutomationPropertyChangedEvent(watch_simple(p), -n->event, o, v);
+	}
+	else if (n->event == WATCH_EVT_NOTIFICATION) watch_raise_notification(watch_simple(p), n);
+	else UiaRaiseAutomationEvent(watch_simple(p), n->event);
+	flux_uia_release(p);
+}
+
+static void watch_notes(FluxUiaContext const *info, bool listening) {
+	for (uint32_t i = 0; listening && i < flux_store_nnotes(info->store); i++)
+		watch_raise_note(info, flux_store_note(info->store, i));
+	flux_store_clearnotes(info->store);
+}
+
 static void watch_reset(FluxUiaWatch *w) {
 	watch_clear(&w->prev);
 	watch_clear(&w->cur);
@@ -414,9 +529,16 @@ void          flux_uia_watch_destroy(FluxUiaWatch *w) {
 	free(w);
 }
 
+void flux_uia_watch_flush(FluxUiaContext const *info) {
+	if (!info || !info->ctx || !info->store) return;
+	watch_notes(info, UiaClientsAreListening());
+}
+
 void flux_uia_watch_pump(FluxUiaWatch *w, FluxUiaContext const *info) {
 	if (!w || !info || !info->ctx || info->root == XENT_NODE_INVALID) return;
-	if (!UiaClientsAreListening()) {
+	bool listening = UiaClientsAreListening();
+	watch_notes(info, listening);
+	if (!listening) {
 		if (w->primed) watch_reset(w);
 		return;
 	}

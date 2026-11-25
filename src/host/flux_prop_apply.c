@@ -154,7 +154,9 @@ void flux_prop_text_content(FluxStore *store, XentNodeId id, char const *content
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT)) return;
 	flux_str_replace(&(( FluxTextData * ) nd->component_data)->content, content);
-	xent_settext(flux_store_ctx(store), id, content ? content : "");
+	XentCtx *ctx = flux_store_ctx(store);
+	xent_settext(ctx, id, content ? content : "");
+	xent_sem_setlabel(ctx, id, content ? content : "");
 }
 
 void flux_prop_text_fontsize(FluxStore *store, XentNodeId id, float size) {
@@ -372,6 +374,13 @@ void flux_prop_numberbox_step(FluxStore *store, XentNodeId id, double step) {
 	if (!tb) return;
 	tb->nb->small_change = step;
 	tb->nb->large_change = step * 10.0;
+}
+
+void flux_prop_numberbox_changes(FluxStore *store, XentNodeId id, double small_step, double large_step) {
+	FluxTextBoxInputData *tb = numberbox_data(store, id);
+	if (!tb) return;
+	tb->nb->small_change = small_step;
+	tb->nb->large_change = large_step;
 }
 
 void flux_prop_numberbox_spin_enabled(FluxStore *store, XentNodeId id, bool enabled) {

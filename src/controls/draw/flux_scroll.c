@@ -5,6 +5,8 @@
 #include <math.h>
 #include <string.h>
 
+#define SCROLL_TRACK_RADIUS 6.0f
+
 static bool scroll_is_active(FluxRenderSnap const *snap) {
 	return snap->u.scroll.drag_axis != 0
 	    || snap->u.scroll.v_up_pressed
@@ -68,7 +70,7 @@ static FluxColor with_alpha_mul(FluxColor c, float mul) {
 }
 
 typedef struct {
-	FluxColor track_bg, thumb, thumb_hover, thumb_press, arrow, arrow_press, btn_hover_bg, btn_press_bg;
+	FluxColor track, thumb, thumb_hover, thumb_press, arrow, arrow_hover, arrow_press, btn_hover_bg, btn_press_bg;
 } ScrollOverlayColors;
 
 typedef struct {
@@ -77,20 +79,44 @@ typedef struct {
 	FluxScrollBarGeom const *geom;
 	float                    mx, my;
 	bool                     mouse_ok;
+	bool                     contrast;
 	float                    expanded;
 	ScrollOverlayColors      colors;
 } ScrollRec;
 
-static ScrollOverlayColors scroll_overlay_colors(FluxThemeColors const *t) {
+static ScrollOverlayColors scroll_contrast_colors(FluxContrastColors const *p, bool enabled) {
+	if (!enabled) {
+		FluxColor gray = with_alpha_mul(p->gray_text, 0.5f);
+		return (ScrollOverlayColors) {
+		  .thumb       = gray,
+		  .thumb_hover = gray,
+		  .thumb_press = gray,
+		  .arrow       = gray,
+		  .arrow_hover = gray,
+		  .arrow_press = gray};
+	}
 	return (ScrollOverlayColors) {
-	  t ? t->subtle_fill_secondary : flux_color_rgba(0, 0, 0, 20),
-	  t ? t->ctrl_strong_fill_default : flux_color_rgba(0, 0, 0, 140),
-	  t ? t->text_secondary : flux_color_rgba(0, 0, 0, 170),
-	  t ? t->text_tertiary : flux_color_rgba(0, 0, 0, 120),
-	  t ? t->text_secondary : flux_color_rgba(0, 0, 0, 170),
-	  t ? t->text_tertiary : flux_color_rgba(0, 0, 0, 120),
-	  t ? t->subtle_fill_secondary : flux_color_rgba(0, 0, 0, 30),
-	  t ? t->subtle_fill_tertiary : flux_color_rgba(0, 0, 0, 20),
+	  .track       = p->window,
+	  .thumb       = p->button_text,
+	  .thumb_hover = p->button_text,
+	  .thumb_press = p->button_text,
+	  .arrow       = p->button_text,
+	  .arrow_hover = p->highlight,
+	  .arrow_press = p->highlight};
+}
+
+static ScrollOverlayColors scroll_overlay_colors(FluxThemeColors const *t, bool enabled) {
+	if (t->contrast.active) return scroll_contrast_colors(&t->contrast, enabled);
+	return (ScrollOverlayColors) {
+	  .track        = t->subtle_fill_secondary,
+	  .thumb        = t->ctrl_strong_fill_default,
+	  .thumb_hover  = t->text_secondary,
+	  .thumb_press  = t->text_tertiary,
+	  .arrow        = t->text_secondary,
+	  .arrow_hover  = t->text_secondary,
+	  .arrow_press  = t->text_tertiary,
+	  .btn_hover_bg = t->subtle_fill_secondary,
+	  .btn_press_bg = t->subtle_fill_tertiary,
 	};
 }
 
@@ -99,7 +125,7 @@ static bool rec_button(ScrollRec const *dc, FluxRect const *r, wchar_t const *gl
 	bool ok = true;
 	if (pressed) ok = flux_rec_fill_rect(dc->b, r, with_alpha_mul(dc->colors.btn_press_bg, dc->expanded));
 	else if (hovered) ok = flux_rec_fill_rect(dc->b, r, with_alpha_mul(dc->colors.btn_hover_bg, dc->expanded));
-	FluxColor arrow = pressed ? dc->colors.arrow_press : dc->colors.arrow;
+	FluxColor arrow = pressed ? dc->colors.arrow_press : hovered ? dc->colors.arrow_hover : dc->colors.arrow;
 	return ok && flux_rec_arrow_wc(dc->b, r, glyph, 8.0f, with_alpha_mul(arrow, dc->expanded));
 }
 
@@ -142,39 +168,41 @@ static bool rec_thumb(ScrollRec const *dc, FluxRect const *bar, FluxRect const *
 	}
 	scroll_apply_mini_padding(&thumb, base_thumb, vertical, dc->expanded);
 	float thumb_alpha = 0.45f + 0.55f * dc->expanded;
-	if (drag || hover) thumb_alpha = 1.0f;
+	if (dc->contrast || drag || hover) thumb_alpha = 1.0f;
 	float radius = (vertical ? thumb.w : thumb.h) * 0.5f;
 	return flux_rec_fill_rounded(dc->b, &thumb, radius, with_alpha_mul(tc, thumb_alpha));
 }
 
+static bool rec_scroll_track(ScrollRec const *dc, FluxRect const *bar) {
+	if (dc->expanded <= 0.05f) return true;
+	if (dc->contrast)
+		return flux_rec_fill_rounded(dc->b, bar, SCROLL_TRACK_RADIUS, with_alpha_mul(dc->colors.track, dc->expanded));
+	return flux_rec_fill_rect(dc->b, bar, with_alpha_mul(dc->colors.track, dc->expanded * 0.35f));
+}
+
 static bool rec_vertical(ScrollRec const *dc) {
-	FluxScrollBarGeom const *g  = dc->geom;
-	bool                     ok = true;
-	if (dc->expanded > 0.05f)
-		ok = flux_rec_fill_rect(dc->b, &g->v_bar, with_alpha_mul(dc->colors.track_bg, dc->expanded * 0.35f));
-	bool up_h = dc->mouse_ok && flux_rect_contains(&g->v_up_btn, dc->mx, dc->my);
-	bool dn_h = dc->mouse_ok && flux_rect_contains(&g->v_dn_btn, dc->mx, dc->my);
-	ok        = ok && rec_button(dc, &g->v_up_btn, L"\xEDDB", up_h, dc->snap->u.scroll.v_up_pressed);
-	ok        = ok && rec_button(dc, &g->v_dn_btn, L"\xEDDC", dn_h, dc->snap->u.scroll.v_dn_pressed);
+	FluxScrollBarGeom const *g    = dc->geom;
+	bool                     ok   = rec_scroll_track(dc, &g->v_bar);
+	bool                     up_h = dc->mouse_ok && flux_rect_contains(&g->v_up_btn, dc->mx, dc->my);
+	bool                     dn_h = dc->mouse_ok && flux_rect_contains(&g->v_dn_btn, dc->mx, dc->my);
+	ok = ok && rec_button(dc, &g->v_up_btn, L"\xEDDB", up_h, dc->snap->u.scroll.v_up_pressed);
+	ok = ok && rec_button(dc, &g->v_dn_btn, L"\xEDDC", dn_h, dc->snap->u.scroll.v_dn_pressed);
 	return ok && rec_thumb(dc, &g->v_bar, &g->v_thumb, 1);
 }
 
 static bool rec_horizontal(ScrollRec const *dc) {
-	FluxScrollBarGeom const *g  = dc->geom;
-	bool                     ok = true;
-	if (dc->expanded > 0.05f)
-		ok = flux_rec_fill_rect(dc->b, &g->h_bar, with_alpha_mul(dc->colors.track_bg, dc->expanded * 0.35f));
-	bool lf_h = dc->mouse_ok && flux_rect_contains(&g->h_lf_btn, dc->mx, dc->my);
-	bool rg_h = dc->mouse_ok && flux_rect_contains(&g->h_rg_btn, dc->mx, dc->my);
-	ok        = ok && rec_button(dc, &g->h_lf_btn, L"\xEDD9", lf_h, dc->snap->u.scroll.h_lf_pressed);
-	ok        = ok && rec_button(dc, &g->h_rg_btn, L"\xEDDA", rg_h, dc->snap->u.scroll.h_rg_pressed);
+	FluxScrollBarGeom const *g    = dc->geom;
+	bool                     ok   = rec_scroll_track(dc, &g->h_bar);
+	bool                     lf_h = dc->mouse_ok && flux_rect_contains(&g->h_lf_btn, dc->mx, dc->my);
+	bool                     rg_h = dc->mouse_ok && flux_rect_contains(&g->h_rg_btn, dc->mx, dc->my);
+	ok = ok && rec_button(dc, &g->h_lf_btn, L"\xEDD9", lf_h, dc->snap->u.scroll.h_lf_pressed);
+	ok = ok && rec_button(dc, &g->h_rg_btn, L"\xEDDA", rg_h, dc->snap->u.scroll.h_rg_pressed);
 	return ok && rec_thumb(dc, &g->h_bar, &g->h_thumb, 2);
 }
 
 XentDl *flux_scroll_overlay_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	( void ) state;
 	float               expanded = scroll_animated_expansion(rc, snap, bounds);
 	FluxScrollBarGeom   g;
 	FluxScrollGeomInput input
@@ -189,15 +217,17 @@ XentDl *flux_scroll_overlay_record(
 
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
-	ScrollRec dc = {
+	FluxThemeColors const *t  = flux_rec_theme(rc);
+	ScrollRec              dc = {
 	  .b        = b,
 	  .snap     = snap,
 	  .geom     = &g,
 	  .mx       = snap->u.scroll.mouse_local_x,
 	  .my       = snap->u.scroll.mouse_local_y,
 	  .mouse_ok = snap->u.scroll.mouse_over != 0,
+	  .contrast = t->contrast.active,
 	  .expanded = expanded,
-	  .colors   = scroll_overlay_colors(flux_rec_theme(rc)),
+	  .colors   = scroll_overlay_colors(t, state->enabled != 0),
 	};
 	bool ok = true;
 	if (show_v) ok = rec_vertical(&dc);
@@ -216,6 +246,10 @@ typedef struct {
 } ScrollBarPalette;
 
 static ScrollBarPalette scroll_bar_palette(FluxThemeColors const *t, bool enabled) {
+	if (t->contrast.active) {
+		ScrollOverlayColors c = scroll_contrast_colors(&t->contrast, enabled);
+		return (ScrollBarPalette) {c.thumb, c.arrow, c.arrow_hover, c.track};
+	}
 	if (!enabled)
 		return (ScrollBarPalette) {
 		  t->ctrl_strong_fill_disabled, t->ctrl_strong_fill_disabled, t->ctrl_strong_fill_disabled,
@@ -288,6 +322,7 @@ typedef struct {
 	FluxRect                     bar;
 	float                        hover_x, hover_y;
 	bool                         vertical;
+	bool                         contrast;
 	float                        expanded;
 } ScrollBarRec;
 
@@ -313,8 +348,11 @@ static bool scroll_bar_rec_thumb(ScrollBarRec const *dc) {
 
 static bool scroll_bar_rec_mouse(ScrollBarRec const *dc) {
 	bool ok = true;
-	if (dc->expanded > 0.005f)
-		ok = flux_rec_fill_rect(dc->b, &dc->bar, with_alpha_mul(dc->palette.track, dc->expanded));
+	if (dc->expanded > 0.005f) {
+		FluxColor fill = with_alpha_mul(dc->palette.track, dc->expanded);
+		ok             = dc->contrast ? flux_rec_fill_rounded(dc->b, &dc->bar, SCROLL_TRACK_RADIUS, fill)
+		                              : flux_rec_fill_rect(dc->b, &dc->bar, fill);
+	}
 	wchar_t const *dec = dc->vertical ? L"\xEDDB" : L"\xEDD9";
 	wchar_t const *inc = dc->vertical ? L"\xEDDC" : L"\xEDDA";
 	ok                 = ok && scroll_bar_rec_button(dc, &dc->parts->dec_btn, dec, dc->sb->dec_pressed);
@@ -338,6 +376,7 @@ bool flux_rec_scrollbar_mouse(
 	  .hover_x  = hover_x,
 	  .hover_y  = hover_y,
 	  .vertical = model->vertical,
+	  .contrast = t->contrast.active,
 	  .expanded = expanded,
 	};
 	return scroll_bar_rec_mouse(&dc);
@@ -357,16 +396,18 @@ XentDl *flux_scroll_bar_record(
 	FluxScrollBarModel model    = {sb->minimum, sb->maximum, sb->value, sb->viewport, vertical};
 	FluxScrollBarParts parts    = {0};
 	flux_scroll_bar_parts(&parts, bounds, &model, touch ? 0.0f : 1.0f);
+	FluxThemeColors const *t  = flux_rec_theme(rc);
 
-	ScrollBarRec dc = {
+	ScrollBarRec           dc = {
 	  .b        = b,
 	  .sb       = sb,
 	  .parts    = &parts,
-	  .palette  = scroll_bar_palette(flux_rec_theme(rc), state->enabled),
+	  .palette  = scroll_bar_palette(t, state->enabled),
 	  .bar      = *bounds,
 	  .hover_x  = snap->hover_local_x,
 	  .hover_y  = snap->hover_local_y,
 	  .vertical = vertical,
+	  .contrast = t->contrast.active,
 	  .expanded = expanded,
 	};
 	bool ok = touch ? scroll_bar_rec_touch(b, bounds, &parts, vertical, dc.palette.thumb) : scroll_bar_rec_mouse(&dc);

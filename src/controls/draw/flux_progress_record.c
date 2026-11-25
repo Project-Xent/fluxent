@@ -49,6 +49,10 @@ static bool progress_clipped(ProgressCtx const *c, FluxRect const *bars, int n, 
 	return xent_dl_popclip(c->b) && ok;
 }
 
+static FluxColor progress_foreground(FluxThemeColors const *theme) {
+	return theme->contrast.active ? theme->contrast.highlight : theme->accent_default;
+}
+
 static bool progress_loop(ProgressCtx const *c, double phase) {
 	float    w        = c->bounds->w;
 	float    t1       = flux_cubic_bezier(progress_unit(( float ) (phase / 1.5)), 0.4f, 0.0f, 0.6f, 1.0f);
@@ -58,7 +62,7 @@ static bool progress_loop(ProgressCtx const *c, double phase) {
 	  progress_bar(c, w * 0.6f * (-1.5f + 3.16f * t2), w * 0.6f),
 	};
 	progress_keep_animating(c, true);
-	return progress_clipped(c, bars, 2, c->t->accent_default);
+	return progress_clipped(c, bars, 2, progress_foreground(c->t));
 }
 
 static bool progress_indeterminate(ProgressCtx const *c) {
@@ -70,10 +74,17 @@ static bool progress_indeterminate(ProgressCtx const *c) {
 	float    u   = flux_cubic_bezier(progress_unit(( float ) (c->age / 0.333)), 1.0f, 0.0f, 1.0f, 1.0f);
 	FluxRect bar = progress_bar(c, c->bounds->w * 1.2f * u, c->bounds->w * 0.6f);
 	progress_keep_animating(c, true);
-	return progress_clipped(c, &bar, 1, c->t->accent_default);
+	return progress_clipped(c, &bar, 1, progress_foreground(c->t));
+}
+
+static FluxColor progress_contrast_tint(FluxContrastColors const *p, uint32_t state) {
+	if (state == PB_PAUSED || state == PB_IND_PAUSED) return p->window_text;
+	if (state == PB_ERROR || state == PB_IND_ERROR) return p->hotlight;
+	return p->highlight;
 }
 
 static FluxColor progress_state_tint(ProgressCtx const *c, uint32_t state) {
+	if (c->t->contrast.active) return progress_contrast_tint(&c->t->contrast, state);
 	bool dark = c->rc && c->rc->is_dark;
 	if (state == PB_PAUSED || state == PB_IND_PAUSED)
 		return dark ? flux_color_rgba(0xfc, 0xe1, 0x00, 0xff) : flux_color_rgba(0x9d, 0x5d, 0x00, 0xff);
@@ -153,7 +164,8 @@ static bool progress_determinate(ProgressCtx const *c, FluxRenderSnap const *sna
 	float                       cy    = c->bounds->y + c->bounds->h * 0.5f;
 	float                       track_h = fminf(c->bounds->h, 1.0f);
 	FluxRect                    track   = {c->bounds->x, cy - track_h * 0.5f, c->bounds->w, track_h};
-	FluxColor                   tc      = progress_fade(c->t->ctrl_strong_stroke_default, progress_track_opacity(c));
+	FluxColor track_color = c->t->contrast.active ? c->t->contrast.window : c->t->ctrl_strong_stroke_default;
+	FluxColor tc          = progress_fade(track_color, progress_track_opacity(c));
 	if (!flux_rec_fill_rounded(c->b, &track, 0.5f, tc)) return false;
 	if (width <= 0.0f) return true;
 	FluxRect fill = progress_bar(c, shift, width);
@@ -177,7 +189,8 @@ bool flux_rec_build_progress(
 	FluxVisualState const      *vs     = flux_rec_vstate(rc, snap, state);
 	FluxThemeColors const      *theme  = flux_rec_theme(rc);
 	float                       border = fminf(snap->border_width, fminf(bounds->w, bounds->h) * 0.5f);
-	if (!flux_rec_stroke_rounded(b, bounds, 1.5f, theme->ctrl_stroke_default, border)) return false;
+	FluxColor outline = theme->contrast.active ? theme->contrast.window_text : theme->ctrl_stroke_default;
+	if (!flux_rec_stroke_rounded(b, bounds, 1.5f, outline, border)) return false;
 
 	FluxRect content = progress_content_bounds(bounds, p->padding, border);
 	if (content.w <= 0.0f || content.h <= 0.0f) return true;
@@ -256,6 +269,23 @@ static RingArc ring_determinate(FluxRenderCtx const *rc, FluxRenderSnap const *s
 	return (RingArc) {0.0f, ring_determinate_trim(shown), 0.0f, 14.16f * size / 32.0f, 2.655f * size / 32.0f};
 }
 
+static bool ring_draw(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *bounds, RingArc const *arc) {
+	if (arc->radius < 1.0f) return true;
+	float                  cx       = bounds->x + bounds->w * 0.5f;
+	float                  cy       = bounds->y + bounds->h * 0.5f;
+	float                  diameter = arc->radius * 2.0f;
+	FluxThemeColors const *theme    = flux_rec_theme(rc);
+	if (theme->contrast.active
+	    && !flux_rec_stroke_circle(b, cx, cy, diameter, theme->contrast.button_face, arc->stroke))
+		return false;
+	float sweep = (arc->to - arc->from) * 360.0f;
+	if (sweep <= 0.01f) return true;
+	if (sweep >= 360.0f) return flux_rec_stroke_circle(b, cx, cy, diameter, progress_foreground(theme), arc->stroke);
+	FluxRect ring = {cx - arc->radius, cy - arc->radius, diameter, diameter};
+	float    from = arc->from * 360.0f + arc->rotation - 90.0f;
+	return flux_rec_stroke_arc(b, &ring, from, sweep, progress_foreground(theme), arc->stroke, XENT_STROKE_CAP_ROUND);
+}
+
 bool flux_rec_progressring(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds
 ) {
@@ -268,16 +298,7 @@ bool flux_rec_progressring(
 	float    size  = bounds->w < bounds->h ? bounds->w : bounds->h;
 	RingArc  a     = state == RING_INDETERMINATE ? ring_indeterminate(phase, size) : ring_determinate(rc, snap, size);
 	if (state == RING_INDETERMINATE) flux_rec_note_animating(rc, true);
-	float sweep = (a.to - a.from) * 360.0f;
-	if (sweep <= 0.01f || a.radius < 1.0f) return true;
-	if (sweep > 359.99f) sweep = 359.99f;
-	float    cx   = bounds->x + bounds->w * 0.5f;
-	float    cy   = bounds->y + bounds->h * 0.5f;
-	FluxRect ring = {cx - a.radius, cy - a.radius, a.radius * 2.0f, a.radius * 2.0f};
-	float    from = a.from * 360.0f + a.rotation - 90.0f;
-	return flux_rec_stroke_arc(
-	  b, &ring, from, sweep, flux_rec_theme(rc)->accent_default, a.stroke, XENT_STROKE_CAP_ROUND
-	);
+	return ring_draw(b, rc, bounds, &a);
 }
 
 static bool badge_number(XentDlBuilder *b, FluxRect const *bounds, int value, FluxColor accent, FluxColor text) {
@@ -310,8 +331,8 @@ badge_icon(XentDlBuilder *b, FluxRect const *bounds, char const *icon_name, Flux
 
 bool flux_rec_badge(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
 	FluxThemeColors const *t      = flux_rec_theme(rc);
-	FluxColor              accent = t->accent_default;
-	FluxColor              text   = t->text_on_accent_primary;
+	FluxColor              accent = t->contrast.active ? t->contrast.highlight : t->accent_default;
+	FluxColor              text   = t->contrast.active ? t->contrast.highlight_text : t->text_on_accent_primary;
 
 	switch (snap->u.info_badge.mode) {
 	case FLUX_BADGE_DOT :

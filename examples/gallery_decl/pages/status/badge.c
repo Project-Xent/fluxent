@@ -15,8 +15,14 @@ XtkEl *page_badge(XtkUi *ui, Model const *m) {
 				xtk_badge(ui, (XtkBadgeDesc) {0}),
 				xtk_badge(ui, (XtkBadgeDesc) {.mode = XTK_BADGE_NUMBER, .value = m->badge_value}),
 				xtk_badge(ui, (XtkBadgeDesc) {.mode = XTK_BADGE_ICON, .icon = "Mail"}),
-				xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Add", .click = xtk_msg_i(MSG_BADGE_DELTA, 1)}),
-				xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Minus", .click = xtk_msg_i(MSG_BADGE_DELTA, -1)})
+				xtk_automation(
+				  ui, xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Add", .click = xtk_msg_i(MSG_BADGE_DELTA, 1)}),
+				  &(XtkAutomation) {.name = "Add"}
+				),
+				xtk_automation(
+				  ui, xtk_button(ui, NULL, (XtkButtonDesc) {.icon = "Minus", .click = xtk_msg_i(MSG_BADGE_DELTA, -1)}),
+				  &(XtkAutomation) {.name = "Minus"}
+				)
 			  )
 			),
 			xtk_fmt(ui, "Badge value: %d", m->badge_value), NULL

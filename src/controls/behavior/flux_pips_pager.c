@@ -1,4 +1,7 @@
 #include "controls/behavior/flux_flip_internal.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/behavior/flux_uia_part.h"
+#include "controls/flux_module.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_nav.h"
@@ -63,12 +66,16 @@ static int pips_hit(FluxPipsPagerData const *pd, float x, float y) {
 	return pd->window_start + slot;
 }
 
+static void pips_parts_sync(FluxPipsPagerData *pd);
+
 static void pips_select(FluxPipsPagerData *pd, int index) {
 	if (index < 0) index = 0;
 	if (index > pd->count - 1) index = pd->count - 1;
 	if (index < 0 || index == pd->selected) return;
+	flux_uia_noteprop(pd->store, pd->node, FLUX_UIA_PROP_SELECTION, pd->selected, index);
 	pd->selected = index;
 	pips_center_window(pd);
+	pips_parts_sync(pd);
 	XtkHost *host = flux_store_host(pd->store);
 	if (host) {
 		XtkEvent event = {
@@ -93,25 +100,33 @@ static void pips_pointer_down(void *ctx, float x, float y, int clicks) {
 	pd->pressed_nav        = hit == -2 ? 1 : hit == -3 ? 2 : 0;
 }
 
+static void pips_activate_nav(FluxPipsPagerData *pd, int part, int hit) {
+	if (hit == -2 && part == 1) {
+		flux_uia_note(pd->store, pd->prev, -1, FLUX_UIA_EVT_INVOKED);
+		pips_select(pd, pd->selected - 1);
+		return;
+	}
+	if (hit != -3 || part != 2) return;
+	flux_uia_note(pd->store, pd->next, -1, FLUX_UIA_EVT_INVOKED);
+	pips_select(pd, pd->selected + 1);
+}
+
 static void pips_click(void *ctx) {
 	FluxPipsPagerData *pd          = ( FluxPipsPagerData * ) ctx;
 	FluxNodeData      *nd          = flux_store_find(pd->store, pd->node);
 	int                hit         = nd ? pips_hit(pd, nd->hover_local_x, nd->hover_local_y) : -1;
 	int                pressed_pip = pd->pressed_pip;
 	int                pressed_nav = pd->pressed_nav;
-	int                selected    = pd->selected;
 	pd->pressed_pip                = -1;
 	pd->pressed_nav                = 0;
 
 	if (hit >= 0 && hit == pressed_pip) {
+		if (hit - pd->window_start < pd->npips)
+			flux_uia_note(pd->store, pd->pips [hit - pd->window_start], -1, FLUX_UIA_EVT_INVOKED);
 		pips_select(pd, hit);
 		return;
 	}
-	if (hit == -2 && pressed_nav == 1) {
-		pips_select(pd, selected - 1);
-		return;
-	}
-	if (hit == -3 && pressed_nav == 2) pips_select(pd, selected + 1);
+	pips_activate_nav(pd, pressed_nav, hit);
 }
 
 static void pips_cancel(void *ctx) {
@@ -144,6 +159,127 @@ static bool pips_key(void *ctx, FluxKey key, bool down) {
 	return false;
 }
 
+static FluxPipsPagerData *pips_of_part(FluxStore *store, XentNodeId part, int *index) {
+	XentNodeId owner = flux_uia_part_owner(store, part, index);
+	return owner != XENT_NODE_INVALID ? pips_data(store, owner) : NULL;
+}
+
+static bool pips_uia_go(FluxStore *store, XentNodeId part) {
+	int                index = 0;
+	FluxPipsPagerData *pd    = pips_of_part(store, part, &index);
+	if (!pd) return false;
+	if (index == -2) pips_select(pd, pd->selected - 1);
+	else if (index == -3) pips_select(pd, pd->selected + 1);
+	else pips_select(pd, index);
+	return true;
+}
+
+static void pips_uia_name(FluxStore *store, XentNodeId part, char *out, size_t size) {
+	int index = 0;
+	( void ) pips_of_part(store, part, &index);
+	if (index == -2) snprintf(out, size, "Previous Page");
+	else if (index == -3) snprintf(out, size, "Next Page");
+	else snprintf(out, size, "Page %d", index + 1);
+}
+
+static bool pips_uia_selected(FluxStore *store, XentNodeId part) {
+	int                index = 0;
+	FluxPipsPagerData *pd    = pips_of_part(store, part, &index);
+	return pd && index >= 0 && index == pd->selected;
+}
+
+static bool pips_uia_setinfo(FluxStore *store, XentNodeId part, int *pos, int *size, int *level) {
+	( void ) level;
+	int                index = 0;
+	FluxPipsPagerData *pd    = pips_of_part(store, part, &index);
+	if (!pd || index < 0) return false;
+	*pos  = index + 1;
+	*size = pd->count;
+	return true;
+}
+
+static FluxUiaHooks const pips_uia_nav = {
+  .role     = FLUX_UIA_BUTTON,
+  .patterns = FLUX_UIA_P_INVOKE,
+  .invoked  = true,
+  .klass    = L"Button",
+  .invoke   = pips_uia_go,
+  .name     = pips_uia_name};
+static FluxUiaHooks const pips_uia_pip = {
+  .role     = FLUX_UIA_BUTTON,
+  .patterns = FLUX_UIA_P_INVOKE,
+  .invoked  = true,
+  .klass    = L"Button",
+  .invoke   = pips_uia_go,
+  .name     = pips_uia_name,
+  .selected = pips_uia_selected,
+  .setinfo  = pips_uia_setinfo};
+static FluxUiaHooks const pips_uia_pane  = {.role = FLUX_UIA_PANE, .klass = L"ScrollViewer"};
+static FluxUiaHooks const pips_uia_group = {.role = FLUX_UIA_GROUP};
+
+static XentRect           pips_local(FluxPipsPagerData const *pd, float along, float length) {
+	return pd->vertical ? (XentRect) {0.0f, along, PIP_MAIN, length} : (XentRect) {along, 0.0f, length, PIP_MAIN};
+}
+
+static void pips_parts_count(FluxPipsPagerData *pd, int want) {
+	if (want == pd->npips) return;
+	for (int i = want; i < pd->npips; i++) xent_node_destroy(pd->ctx, pd->pips [i]);
+	XentNodeId *grow
+	  = want > pd->npips ? ( XentNodeId * ) realloc(pd->pips, sizeof(XentNodeId) * ( size_t ) want) : pd->pips;
+	if (!grow && want > 0) return;
+	pd->pips = grow;
+	for (int i = pd->npips; i < want; i++) {
+		pd->pips [i] = flux_uia_part(pd->ctx, pd->store, pd->node, pd->group, i);
+		flux_uia_part_hooks(pd->store, pd->pips [i], &pips_uia_pip);
+	}
+	pd->npips = want;
+}
+
+static void pips_parts_sync(FluxPipsPagerData *pd) {
+	int       visible = pips_visible(pd);
+	float     strip   = ( float ) visible * PIP_CROSS;
+	float     start   = pips_strip_offset(pd);
+	bool      nav     = pips_nav_shown(pd);
+	XentPoint zero    = {0.0f, 0.0f};
+	if (!pd->group) return;
+	pips_parts_count(pd, visible);
+	flux_uia_part_place(pd->ctx, pd->prev, nav ? pips_local(pd, 0.0f, PIP_NAV) : (XentRect) {0}, zero);
+	flux_uia_part_place(pd->ctx, pd->next, nav ? pips_local(pd, start + strip, PIP_NAV) : (XentRect) {0}, zero);
+	flux_uia_part_place(pd->ctx, pd->pane, pips_local(pd, start, strip), zero);
+	flux_uia_part_place(pd->ctx, pd->group, pips_local(pd, 0.0f, strip), zero);
+	for (int i = 0; i < pd->npips; i++) {
+		FluxNodeData *nd = flux_store_find(pd->store, pd->pips [i]);
+		if (nd) nd->uia_part = pd->window_start + i;
+		flux_uia_part_place(pd->ctx, pd->pips [i], pips_local(pd, ( float ) i * PIP_CROSS, PIP_CROSS), zero);
+	}
+	flux_uia_part_label(pd->ctx, pd->prev, NULL, pd->selected > 0);
+	flux_uia_part_label(pd->ctx, pd->next, NULL, pd->selected < pd->count - 1);
+}
+
+static void pips_parts_make(FluxPipsPagerData *pd) {
+	pd->prev  = flux_uia_part(pd->ctx, pd->store, pd->node, pd->node, -2);
+	pd->pane  = flux_uia_part(pd->ctx, pd->store, pd->node, pd->node, -4);
+	pd->group = pd->pane ? flux_uia_part(pd->ctx, pd->store, pd->node, pd->pane, -5) : XENT_NODE_INVALID;
+	pd->next  = flux_uia_part(pd->ctx, pd->store, pd->node, pd->node, -3);
+	flux_uia_part_hooks(pd->store, pd->prev, &pips_uia_nav);
+	flux_uia_part_hooks(pd->store, pd->next, &pips_uia_nav);
+	flux_uia_part_hooks(pd->store, pd->pane, &pips_uia_pane);
+	flux_uia_part_hooks(pd->store, pd->group, &pips_uia_group);
+	pips_parts_sync(pd);
+}
+
+static void pips_destroy(void *data) {
+	FluxPipsPagerData *pd = ( FluxPipsPagerData * ) data;
+	if (pd) free(pd->pips);
+	free(pd);
+}
+
+void flux_pips_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	( void ) store;
+	( void ) node;
+	snprintf(out, size, "Pager");
+}
+
 XentNodeId flux_pips_init(FluxPipsPagerDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 
@@ -167,7 +303,7 @@ XentNodeId flux_pips_init(FluxPipsPagerDesc const *info) {
 	pd->on_select_ctx                = info->userdata;
 
 	nd->component_data               = pd;
-	nd->destroy_component_data       = free;
+	nd->destroy_component_data       = pips_destroy;
 	nd->behavior.on_pointer_down     = pips_pointer_down;
 	nd->behavior.on_pointer_down_ctx = pd;
 	nd->behavior.on_click            = pips_click;
@@ -180,6 +316,7 @@ XentNodeId flux_pips_init(FluxPipsPagerDesc const *info) {
 	xent_set_focusable(info->ctx, node, true);
 	xent_sem_setrole(info->ctx, node, XENT_SEM_ROLE_CONTAINER);
 	pips_apply_size(pd);
+	pips_parts_make(pd);
 	return node;
 }
 
@@ -190,6 +327,7 @@ void flux_pips_configure(FluxStore *store, XentNodeId pips, int count, int selec
 	if (max_visible <= 0) max_visible = 5;
 	if (selected > count - 1) selected = count - 1;
 	if (selected < 0) selected = count > 0 ? 0 : -1;
+	if (selected != pd->selected) flux_uia_noteprop(store, pips, FLUX_UIA_PROP_SELECTION, pd->selected, selected);
 
 	pd->count       = count;
 	pd->selected    = selected;
@@ -197,6 +335,7 @@ void flux_pips_configure(FluxStore *store, XentNodeId pips, int count, int selec
 	pd->nav_vis     = ( uint8_t ) nav_vis;
 	pips_center_window(pd);
 	pips_apply_size(pd);
+	pips_parts_sync(pd);
 }
 
 void flux_pips_set_vertical(FluxStore *store, XentNodeId pips, bool vertical) {
@@ -204,6 +343,7 @@ void flux_pips_set_vertical(FluxStore *store, XentNodeId pips, bool vertical) {
 	if (!pd || pd->vertical == vertical) return;
 	pd->vertical = vertical;
 	pips_apply_size(pd);
+	pips_parts_sync(pd);
 }
 
 void flux_pips_set_count(FluxStore *store, XentNodeId pips, int count) {

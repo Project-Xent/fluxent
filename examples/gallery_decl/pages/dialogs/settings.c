@@ -1,7 +1,8 @@
 #include "gallery.h"
 
-XtkEl *page_settings(XtkUi *ui, Model const *m) {
-	( void ) m;
+static char const *const kNavStyles [] = {"Left", "Top"};
+
+XtkEl                   *page_settings(XtkUi *ui, Model const *m) {
 	bool dark = flux_theme_systemdark();
 	return xtk_column(
 	  ui, (XtkStackDesc) {.gap = 20, .align = XENT_FLEX_ALIGN_STRETCH},
@@ -20,9 +21,19 @@ XtkEl *page_settings(XtkUi *ui, Model const *m) {
 		xtk_card(
 		  ui, (XtkStackDesc) {0},
 		  xtk_kids(
+			xtk_text(ui, "Navigation style", (XtkTextDesc) {.size = 16, .weight = FLUX_FONT_SEMI_BOLD}),
+			xtk_combo(
+			  ui, "Navigation style",
+			  (XtkComboDesc) {.items = kNavStyles, .nitem = 2, .sel = m->nav_style, .select = xtk_msg(MSG_NAV_STYLE)}
+			)
+		  )
+		),
+		xtk_card(
+		  ui, (XtkStackDesc) {0},
+		  xtk_kids(
 			xtk_text(ui, "About", (XtkTextDesc) {.size = 16, .weight = FLUX_FONT_SEMI_BOLD}),
 			xtk_text(
-			  ui, "FluXent Gallery — fluxent 0.3.1, declarative layer over retained controls.",
+			  ui, "FluXent Gallery — fluxent " GALLERY_VERSION ", declarative layer over retained controls.",
 			  (XtkTextDesc) {.size = 13}
 			),
 			xtk_link(ui, "Source code", (XtkHyperlinkDesc) {.url = "https://github.com/Project-Xent"})

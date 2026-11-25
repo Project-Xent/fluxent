@@ -331,6 +331,22 @@ bool flux_slider_thumb(FluxStore *store, XentNodeId id, int thumb, float *value,
 	return true;
 }
 
+bool flux_slider_uia_range(FluxStore *store, XentNodeId id, double *value, double *min, double *max) {
+	FluxSliderInputData *sid = slider_input(store, id);
+	if (!sid || sid->base.is_range) return false;
+	*value = sid->base.current_value;
+	*min   = sid->base.min_value;
+	*max   = sid->base.max_value;
+	return true;
+}
+
+void flux_slider_uia_set(FluxStore *store, XentNodeId id, double value) {
+	FluxSliderInputData *sid = slider_input(store, id);
+	if (!sid || sid->base.is_range) return;
+	slider_set_live(&sid->base, ( float ) value);
+	slider_commit(sid, ( float ) value);
+}
+
 bool flux_slider_userthumb(FluxStore *store, XentNodeId id, int thumb, float value) {
 	FluxSliderInputData *sid = slider_input(store, id);
 	if (!sid || thumb < 0 || thumb > 1) return false;
@@ -381,4 +397,21 @@ void flux_slider_uia_name(FluxStore *store, XentNodeId node, int sub, char *out,
 bool flux_slider_uia_focused(FluxStore *store, XentNodeId node, int sub) {
 	FluxSliderData const *sd = slider_range(store, node);
 	return sd && sd->active_thumb == sub;
+}
+
+void flux_slider_uia_steps(FluxStore *store, XentNodeId node, double *small_step, double *large_step) {
+	FluxSliderInputData *sid = slider_input(store, node);
+	if (!sid) return;
+	*small_step = sid->base.small_change;
+	*large_step = sid->base.large_change;
+}
+
+int flux_slider_uia_orient(FluxStore *store, XentNodeId node) {
+	FluxSliderInputData *sid = slider_input(store, node);
+	return sid && sid->base.vertical ? FLUX_UIA_VERTICAL : FLUX_UIA_HORIZONTAL;
+}
+
+void flux_slider_uia_focus(FluxStore *store, XentNodeId node, int sub) {
+	FluxSliderInputData *sid = slider_input(store, node);
+	if (sid && sid->base.is_range && (sub == 0 || sub == 1)) sid->base.active_thumb = ( uint8_t ) sub;
 }

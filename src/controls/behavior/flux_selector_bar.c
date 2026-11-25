@@ -1,4 +1,7 @@
 #include "controls/flux_control_uia.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_module.h"
+#include "controls/behavior/flux_uia_part.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/factory/flux_init_container.h"
 #include "store/flux_node_data.h"
@@ -14,6 +17,7 @@
 #include <xtk/xtk_catalog.h>
 #include "fluxent/flux_window.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
 
@@ -134,6 +138,23 @@ static void sb_data_destroy(void *component_data) {
 	free(b);
 }
 
+static FluxUiaHooks const sb_uia_presenter = {.role = FLUX_UIA_PANE, .patterns = FLUX_UIA_P_SCROLL, .klass = L""};
+static FluxUiaHooks const sb_uia_repeater  = {.role = FLUX_UIA_GROUP, .klass = L""};
+
+static XentNodeId         sb_host_create(FluxSelectorBarDesc const *info, XentNodeId viewport) {
+	if (viewport == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+	XentNodeId host = flux_factory_create_node(info->ctx, info->store, viewport, FLUX_CONTROL_CONTAINER);
+	if (host == XENT_NODE_INVALID) return XENT_NODE_INVALID;
+	xent_setproto(info->ctx, host, XENT_PROTOCOL_FLEX);
+	xent_setflexdir(info->ctx, host, XENT_FLEX_ROW);
+	xent_setitems(info->ctx, host, XENT_FLEX_ALIGN_STRETCH);
+	xent_setfit(info->ctx, host, true, true);
+	xent_setshrink(info->ctx, host, 0.0f);
+	flux_uia_part_hooks(info->store, viewport, &sb_uia_presenter);
+	flux_uia_part_hooks(info->store, host, &sb_uia_repeater);
+	return host;
+}
+
 static XentNodeId sb_viewport_create(FluxSelectorBarDesc const *info, XentNodeId root) {
 	XentNodeId viewport
 	  = flux_scroll_init(&(FluxContainerDesc) {.ctx = info->ctx, .store = info->store, .parent = root});
@@ -151,7 +172,7 @@ static XentNodeId sb_viewport_create(FluxSelectorBarDesc const *info, XentNodeId
 
 static bool
 sb_item_create(FluxSelectorBarData *b, int index, XentNodeId *out_node, FluxSelectorBarItemData **out_data) {
-	XentNodeId node = flux_factory_create_node(b->ctx, b->store, b->viewport, FLUX_CONTROL_SELECTOR_BAR_ITEM);
+	XentNodeId node = flux_factory_create_node(b->ctx, b->store, b->host, FLUX_CONTROL_SELECTOR_BAR_ITEM);
 	if (node == XENT_NODE_INVALID) return false;
 	FluxNodeData            *nd = flux_store_find(b->store, node);
 	FluxSelectorBarItemData *it = nd ? ( FluxSelectorBarItemData * ) calloc(1, sizeof(*it)) : NULL;
@@ -227,6 +248,13 @@ static bool sb_items_create(
 	return true;
 }
 
+static void sb_initial_selection(FluxSelectorBarData *b, int selected) {
+	if (selected < 0 || selected >= b->count) return;
+	b->selected                       = selected;
+	b->item_data [selected]->selected = true;
+	b->item_data [selected]->pill_t   = 1.0f;
+}
+
 XentNodeId flux_selector_init(FluxSelectorBarDesc const *info) {
 	if (!info || !info->ctx || !info->store) return XENT_NODE_INVALID;
 	int        count = info->item_count < 0 ? 0 : info->item_count;
@@ -234,14 +262,13 @@ XentNodeId flux_selector_init(FluxSelectorBarDesc const *info) {
 	XentNodeId root  = flux_factory_create_node(info->ctx, info->store, info->parent, FLUX_CONTROL_SELECTOR_BAR);
 	if (root == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 	XentNodeId viewport = sb_viewport_create(info, root);
-	if (viewport == XENT_NODE_INVALID) return flux_factory_fail_node(info->ctx, info->store, root);
+	XentNodeId host     = sb_host_create(info, viewport);
+	if (host == XENT_NODE_INVALID) return flux_factory_fail_node(info->ctx, info->store, root);
 
-	FluxNodeData        *nd = flux_store_find(info->store, root);
-	FluxSelectorBarData *b  = nd ? ( FluxSelectorBarData * ) calloc(1, sizeof(*b)) : NULL;
-	if (!nd || !b) {
-		free(b);
-		return flux_factory_fail_node(info->ctx, info->store, root);
-	}
+	FluxNodeData *nd = flux_store_find(info->store, root);
+	if (!nd) return flux_factory_fail_node(info->ctx, info->store, root);
+	FluxSelectorBarData *b = calloc(1, sizeof(*b));
+	if (!b) return flux_factory_fail_node(info->ctx, info->store, root);
 
 	b->ctx                     = info->ctx;
 	b->store                   = info->store;
@@ -249,6 +276,7 @@ XentNodeId flux_selector_init(FluxSelectorBarDesc const *info) {
 	b->window                  = info->window;
 	b->root                    = root;
 	b->viewport                = viewport;
+	b->host                    = host;
 	b->count                   = count;
 	b->selected                = -1;
 	b->anim_item               = -1;
@@ -265,11 +293,7 @@ XentNodeId flux_selector_init(FluxSelectorBarDesc const *info) {
 	xent_setitems(info->ctx, root, XENT_FLEX_ALIGN_STRETCH);
 	xent_sem_setrole(info->ctx, root, XENT_SEM_ROLE_CONTAINER);
 
-	if (info->selected >= 0 && info->selected < count) {
-		b->selected                             = info->selected;
-		b->item_data [info->selected]->selected = true;
-		b->item_data [info->selected]->pill_t   = 1.0f;
-	}
+	sb_initial_selection(b, info->selected);
 	return root;
 }
 
@@ -300,6 +324,14 @@ void flux_selector_set_items(FluxStore *store, XentNodeId bar, XtkSelectorItem c
 	b->selected  = -1;
 	b->anim_item = -1;
 	if (selected >= 0 && selected < count) sb_select(b, selected, false);
+}
+
+void flux_selector_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxNodeData                  *nd = flux_store_find(store, node);
+	FluxSelectorBarItemData const *it = nd && nd->component_type == FLUX_CONTROL_SELECTOR_BAR_ITEM
+	                                    ? ( FluxSelectorBarItemData const * ) nd->component_data
+	                                    : NULL;
+	snprintf(out, size, "%s", it && it->text && it->text [0] ? it->text : "SelectorBarItem");
 }
 
 bool flux_selector_uia_selected(FluxStore *store, XentNodeId node) {

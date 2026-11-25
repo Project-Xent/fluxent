@@ -14,7 +14,7 @@ typedef struct FluxSelectorBarData FluxSelectorBarData;
 typedef struct FluxSelectorBarItemData {
 	FluxSelectorBarData *bar;
 	int                  index;
-	char                *text;
+	char const          *text;
 	uint32_t             icon_glyph;
 	bool                 disabled;
 	bool                 selected;
@@ -28,6 +28,7 @@ typedef struct FluxSelectorBarData {
 	FluxWindow               *window;
 	XentNodeId                root;
 	XentNodeId                viewport;
+	XentNodeId                host;
 
 	int                       count;
 	int                       selected;

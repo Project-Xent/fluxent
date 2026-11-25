@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_selection
 #include "a11y/flux_uia_object.h"
 #include "a11y/flux_uia_ids.h"
 #include "a11y/flux_uia_tree.h"
@@ -24,12 +23,21 @@ static bool uia_item_selected(FluxUiaContext const *info, XentNodeId node, int s
 	return h && h->selected ? h->selected(info->store, node) : xent_sem_selected(info->ctx, node);
 }
 
+static bool uia_shared(FluxUiaContext const *info, XentNodeId node) {
+	FluxUiaHooks const *h = flux_module_uia(info->store, node);
+	return h && h->select_shared;
+}
+
+static bool uia_owns_selection(FluxUiaContext const *info, XentNodeId node) {
+	return (flux_uia_patterns(info, node) & FLUX_UIA_P_SELECTION) && !uia_shared(info, node);
+}
+
 static XentNodeId uia_container_of(FluxUiaContext const *info, XentNodeId node, int sub) {
 	if (sub >= 0 && (flux_uia_patterns(info, node) & FLUX_UIA_P_SELECTION)) return node;
 	XentNodeId p = node;
 	while (p != XENT_NODE_INVALID && p != info->root) {
 		p = flux_uia_parent(info, p);
-		if (p != XENT_NODE_INVALID && (flux_uia_patterns(info, p) & FLUX_UIA_P_SELECTION)) return p;
+		if (p != XENT_NODE_INVALID && uia_owns_selection(info, p)) return p;
 	}
 	return XENT_NODE_INVALID;
 }
@@ -45,8 +53,9 @@ static HRESULT uia_sub_select(FluxUia *self, FluxUiaHooks const *h, int op) {
 }
 
 static HRESULT uia_select_op(ISelectionItemProvider *p, int op) {
-	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblSelection);
-	FluxUiaHooks const *h    = flux_module_uia(self->info.store, self->node);
+	FluxUia *self = FLUX_UIA_SELF(p, lpVtblSelection);
+	flux_uia_dirty(&self->info);
+	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 	if (self->sub >= 0) return uia_sub_select(self, h, op);
 	if (h && h->select) return h->select(self->info.store, self->node, op) ? S_OK : UIA_E_INVALIDOPERATION;
@@ -122,10 +131,11 @@ static void uia_collect_subs(FluxUiaContext const *info, XentNodeId node, UiaNod
 static void uia_collect(FluxUiaContext const *info, XentNodeId parent, UiaNodeList *out) {
 	uia_collect_subs(info, parent, out);
 	for (XentNodeId c = flux_uia_first(info, parent); c != XENT_NODE_INVALID; c = flux_uia_next(info, c)) {
-		unsigned patterns = flux_uia_patterns(info, c);
-		if ((patterns & FLUX_UIA_P_SELECTION_ITEM) && uia_item_selected(info, c, -1) && !uia_list_push(out, c, -1))
-			return;
-		if (!(patterns & FLUX_UIA_P_SELECTION)) uia_collect(info, c, out);
+		unsigned            patterns = flux_uia_patterns(info, c);
+		FluxUiaHooks const *h        = flux_module_uia(info->store, c);
+		bool                item     = (patterns & FLUX_UIA_P_SELECTION_ITEM) || (h && h->selected);
+		if (item && uia_item_selected(info, c, -1) && !uia_list_push(out, c, -1)) return;
+		if (!(patterns & FLUX_UIA_P_SELECTION) || (h && h->select_shared)) uia_collect(info, c, out);
 	}
 }
 
@@ -142,10 +152,11 @@ static ULONG STDMETHODCALLTYPE sc_release(ISelectionProvider *p) {
 }
 
 static HRESULT STDMETHODCALLTYPE sc_get_selection(ISelectionProvider *p, SAFEARRAY **out) {
-	FluxUia    *self = FLUX_UIA_SELF(p, lpVtblSelectionC);
-	UiaNodeList list = {0};
+	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblSelectionC);
+	FluxUiaHooks const *h    = flux_module_uia(self->info.store, self->node);
+	UiaNodeList         list = {0};
 	if (!out) return E_POINTER;
-	uia_collect(&self->info, self->node, &list);
+	if (!h || !h->unlisted) uia_collect(&self->info, self->node, &list);
 	*out = SafeArrayCreateVector(VT_UNKNOWN, 0, list.count);
 	for (LONG i = 0; *out && i < ( LONG ) list.count; i++) {
 		IRawElementProviderSimple *item = uia_simple(&self->info, list.items [i].node, list.items [i].sub);

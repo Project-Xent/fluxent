@@ -50,9 +50,10 @@ static float tb_text_reserved_width(FluxTextBoxInputData const *tb, FluxControlT
 	if (ct == FLUX_CONTROL_NUMBER_BOX)
 		return (tb->nb && tb->nb->spin_placement == FLUX_NB_SPIN_INLINE ? FLUX_NUMBER_BOX_SPIN_W : 0.0f)
 		     + (tb_textbox_show_delete(tb, ct, nd) ? FLUX_NUMBER_BOX_DELETE_BTN_W : 0.0f);
-	if (tb_textbox_show_delete(tb, ct, nd)) return FLUX_TEXTBOX_ACTION_BUTTON_W;
+	if (tb_textbox_show_delete(tb, ct, nd))
+		return tb_clear_button_width(tb->base.suggest_editor) + tb->base.query_reserve;
 	if (tb_password_show_reveal(tb, ct, nd)) return FLUX_PASSWORD_REVEAL_BTN_W;
-	return 0.0f;
+	return tb->base.query_reserve;
 }
 
 static float tb_visible_text_width(FluxTextBoxInputData *tb, XentRect const *rect) {

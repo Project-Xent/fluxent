@@ -30,7 +30,6 @@ typedef struct {
 	FluxColor track_bg;
 	FluxColor val;
 	FluxColor thumb_fill;
-	FluxColor thumb_stroke;
 	FluxColor inner;
 } SliderColors;
 
@@ -40,9 +39,10 @@ static float slider_thumb_value(FluxSliderSnapshot const *s, FluxControlState co
 	return held ? s->range_live [i] : s->range_value [i];
 }
 
-static SliderGeom slider_geom(FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state) {
+static SliderGeom
+slider_geom(FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state, float track_height) {
 	FluxSliderSnapshot const *s = &snap->u.slider;
-	SliderGeom                g = {.track_h = 4.0f, .thumb_outer = FLUX_SLIDER_THUMB_OUTER};
+	SliderGeom                g = {.track_h = track_height, .thumb_outer = FLUX_SLIDER_THUMB_OUTER};
 	g.line                      = flux_slider_line(bounds->x, bounds->y, bounds->w, bounds->h, s->vertical);
 	g.range                     = s->max_value - s->min_value;
 	g.thumbs                    = s->is_range ? 2 : 1;
@@ -77,8 +77,7 @@ static bool  slider_draw_tick_run(
 }
 
 static bool slider_draw_ticks(
-  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, SliderGeom const *g,
-  FluxControlState const *state
+  XentDlBuilder *b, FluxRenderSnap const *snap, SliderGeom const *g, FluxColor inline_fill, FluxColor outside_fill
 ) {
 	float frequency = snap->u.slider.slider_tick_frequency;
 	if (frequency <= 0.0f || g->range <= 0.0f || g->line.length <= 0.0f) return true;
@@ -94,31 +93,38 @@ static bool slider_draw_ticks(
 		interval_px *= ( float ) ratio;
 		count       /= ratio;
 	}
-	count                            += 1;
+	count           += 1;
 
-	FluxThemeColors const *t          = flux_rec_theme(rc);
-	FluxColor              outside    = state->enabled ? t->ctrl_strong_fill_default : t->ctrl_strong_fill_disabled;
-	float                  near_edge  = slider_track_edge(g);
-	float                  bar_h      = 4.0f;
-	float                  gap        = 4.0f;
-	bool                   ok         = true;
+	float near_edge  = slider_track_edge(g);
+	float bar_h      = 4.0f;
+	float gap        = 4.0f;
+	bool  ok         = true;
 	if (placement == FLUX_TICK_INLINE)
-		ok = slider_draw_tick_run(b, g, near_edge, g->track_h, count, interval_px, t->ctrl_fill_input_active);
+		ok = slider_draw_tick_run(b, g, near_edge, g->track_h, count, interval_px, inline_fill);
 	if (ok && (placement == FLUX_TICK_TOP_LEFT || placement == FLUX_TICK_OUTSIDE))
-		ok = slider_draw_tick_run(b, g, near_edge - gap - bar_h, bar_h, count, interval_px, outside);
+		ok = slider_draw_tick_run(b, g, near_edge - gap - bar_h, bar_h, count, interval_px, outside_fill);
 	if (ok && (placement == FLUX_TICK_BOTTOM_RIGHT || placement == FLUX_TICK_OUTSIDE))
-		ok = slider_draw_tick_run(b, g, near_edge + g->track_h + gap, bar_h, count, interval_px, outside);
+		ok = slider_draw_tick_run(b, g, near_edge + g->track_h + gap, bar_h, count, interval_px, outside_fill);
 	return ok;
 }
 
+static SliderColors slider_contrast_colors(FluxContrastColors const *p, FluxControlState const *state) {
+	FluxColor inner = state->pressed ? p->hotlight : state->hovered ? p->highlight : p->button_text;
+	return (SliderColors) {
+	  .track_bg   = state->enabled ? p->button_text : p->gray_text,
+	  .val        = state->enabled ? p->highlight : p->gray_text,
+	  .thumb_fill = p->button_text,
+	  .inner      = state->enabled ? inner : p->gray_text};
+}
+
 static SliderColors slider_colors(FluxThemeColors const *t, FluxControlState const *state) {
+	if (t->contrast.active) return slider_contrast_colors(&t->contrast, state);
 	SliderColors c = {
-	  .track_bg     = t->ctrl_strong_fill_default,
-	  .thumb_fill   = t->ctrl_solid_fill_default,
-	  .thumb_stroke = t->ctrl_stroke_default,
-	  .val          = state->pressed ? t->accent_tertiary
-	                : state->hovered ? t->accent_secondary
-	                                 : t->accent_default,
+	  .track_bg   = t->ctrl_strong_fill_default,
+	  .thumb_fill = t->ctrl_solid_fill_default,
+	  .val        = state->pressed ? t->accent_tertiary
+	              : state->hovered ? t->accent_secondary
+	                               : t->accent_default,
 	};
 	if (!state->enabled) {
 		c.track_bg = t->ctrl_strong_fill_disabled;
@@ -188,7 +194,7 @@ static bool slider_draw_thumb(
 	float     d     = g->thumb_outer * 2.0f;
 	FluxRect  outer = {at.x - g->thumb_outer, at.y - g->thumb_outer, d, d};
 	if (!flux_rec_fill_rounded(b, &outer, 10.0f, c->thumb_fill)) return false;
-	if (!flux_rec_elevation_border(b, rc, &outer, 10.0f, false)) return false;
+	if (!flux_rec_theme(rc)->contrast.active && !flux_rec_elevation_border(b, rc, &outer, 10.0f, false)) return false;
 	return flux_rec_fill_circle(b, at.x, at.y, FLUX_SLIDER_INNER_THUMB * scale, c->inner);
 }
 
@@ -197,11 +203,12 @@ bool flux_rec_build_slider(
   FluxControlState const *state
 ) {
 	if (snap->u.slider.color_picker) return flux_colorpicker_slider_record(b, rc, snap, bounds, state);
-	SliderGeom   geom   = slider_geom(snap, bounds, state);
-	SliderColors colors = slider_colors(flux_rec_theme(rc), state);
+	FluxThemeColors const *theme  = flux_rec_theme(rc);
+	SliderGeom             geom   = slider_geom(snap, bounds, state, theme->contrast.active ? 2.0f : 4.0f);
+	SliderColors           colors = slider_colors(theme, state);
 
-	bool         ok     = slider_draw_track(b, &geom, &colors);
-	if (ok) ok = slider_draw_ticks(b, rc, snap, &geom, state);
+	bool                   ok     = slider_draw_track(b, &geom, &colors);
+	if (ok) ok = slider_draw_ticks(b, snap, &geom, theme->ctrl_fill_input_active, colors.track_bg);
 
 	int   hot        = slider_hot_thumb(snap, bounds, &geom, state);
 	float hot_scale  = slider_thumb_scale(rc, snap, state);
@@ -237,9 +244,18 @@ static double rating_preview_value(FluxRenderSnap const *snap, FluxControlState 
 
 static FluxColor rating_fill_color(FluxThemeColors const *t, FluxControlState const *state, bool hovering, bool set) {
 	if (!state->enabled) return t->text_disabled;
+	if (t->contrast.active) return set ? t->contrast.highlight : t->contrast.button_text;
 	if (hovering && !set) return t->ctrl_alt_fill_tertiary;
 	if (set || hovering) return t->accent_default;
 	return t->text_primary;
+}
+
+static FluxColor rating_unselected_color(FluxThemeColors const *theme) {
+	return theme->contrast.active ? theme->contrast.button_text : theme->text_secondary;
+}
+
+static double rating_display_value(FluxRenderSnap const *snap) {
+	return snap->u.rating.value >= 0.0 ? snap->u.rating.value : fmax(0.0, snap->u.rating.placeholder_value);
 }
 
 static bool rating_draw_stars(
@@ -254,17 +270,14 @@ static bool rating_draw_stars(
 	float     strip_w   = ( float ) max * size + ( float ) (max - 1) * gap;
 	double    hover_v   = rating_preview_value(snap, state, strip_w);
 	bool      hovering  = hover_v >= 0.0;
-	double    fill_v    = hovering                                ? hover_v
-	                    : has_value                               ? snap->u.rating.value
-	                    : snap->u.rating.placeholder_value >= 0.0 ? snap->u.rating.placeholder_value
-	                                                              : 0.0;
+	double    fill_v    = hovering ? hover_v : rating_display_value(snap);
 	FluxColor fill      = rating_fill_color(t, state, hovering, has_value);
 	wchar_t   unset [2] = {( wchar_t ) snap->u.rating.unset_glyph, 0};
 	wchar_t   set [2]   = {( wchar_t ) snap->u.rating.set_glyph, 0};
 
 	for (int i = 0; i < max; i++) {
 		FluxRect box = {bounds->x + ( float ) i * (size + gap), y, size, size};
-		if (!flux_rec_glyph_wc(b, &box, unset, size, t->text_secondary)) return false;
+		if (!flux_rec_glyph_wc(b, &box, unset, size, rating_unselected_color(t))) return false;
 		if (!rating_star_fill(b, &box, fill_v, i, set, size, fill)) return false;
 	}
 	return true;

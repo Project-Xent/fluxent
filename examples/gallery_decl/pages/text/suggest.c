@@ -56,7 +56,7 @@ XtkEl *page_autosuggest(XtkUi *ui, Model const *m) {
 					.content     = m->asb_text,
 					.suggestions = filtered,
 					.nitem       = count,
-					.query_icon  = "Find",
+					.query_icon  = "Search",
 					.on_text     = xtk_msg(MSG_ASB_TEXT),
 					.query       = xtk_msg(MSG_ASB_QUERY),
 					.on_chosen   = xtk_msg(MSG_ASB_CHOSEN),

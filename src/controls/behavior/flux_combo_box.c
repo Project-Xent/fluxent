@@ -2,7 +2,9 @@
   #define COBJMACROS
 #endif
 
+#include "a11y/flux_uia_ids.h"
 #include "controls/flux_control_uia.h"
+#include "controls/flux_module.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "bridge/flux_internal.h"
@@ -25,6 +27,7 @@
 
 #include <math.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
@@ -158,15 +161,27 @@ static FluxColor combo_item_fill(FluxThemeColors const *t, bool selected, bool h
 	return flux_color_rgba(0, 0, 0, 0);
 }
 
-static bool combo_rec_item_label(
-  XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *item, char const *label, bool pressed
-) {
+typedef struct FluxComboItemColors {
+	FluxColor fill;
+	FluxColor text;
+	FluxColor pill;
+} FluxComboItemColors;
+
+static FluxComboItemColors
+combo_item_contrast(FluxContrastColors const *p, FluxControlState const *state, bool selected) {
+	if (state && !state->enabled) return (FluxComboItemColors) {{0}, p->gray_text, p->highlight};
+	bool hot = state && (state->hovered || state->pressed);
+	if (selected || hot) return (FluxComboItemColors) {p->highlight, p->highlight_text, p->highlight};
+	return (FluxComboItemColors) {{0}, p->button_text, p->highlight};
+}
+
+static bool combo_rec_item_label(XentDlBuilder *b, FluxRect const *item, char const *label, FluxColor color) {
 	if (!label || !label [0]) return true;
 	FluxRect tr = {item->x + CB_ITEM_PAD_LEFT, item->y + 5.0f, item->w - CB_ITEM_PAD_LEFT - 4.0f, item->h - 12.0f};
 	if (tr.w <= 0.0f) return true;
 	XentTextStyle style
 	  = {.font_size = FLUX_FONT_SIZE_DEFAULT, .font_weight = FLUX_FONT_REGULAR, .h_align = 0u, .v_align = 1u};
-	return flux_rec_text_ex(b, &tr, label, &style, pressed ? t->text_secondary : t->text_primary);
+	return flux_rec_text_ex(b, &tr, label, &style, color);
 }
 
 #define CB_PILL_SQUASH_MS 167.0f
@@ -177,6 +192,12 @@ static float combo_pill_scale(uint32_t press_tick, bool pressed) {
 	return 1.0f - 0.375f * flux_cubic_bezier(t > 1.0f ? 1.0f : t, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
+static bool combo_rec_pill(XentDlBuilder *b, FluxRect const *item, float scale, FluxColor color) {
+	float    h    = CB_PILL_H * scale;
+	FluxRect pill = {item->x, item->y + (item->h - h) * 0.5f, CB_PILL_W, h};
+	return flux_rec_fill_rounded(b, &pill, CB_PILL_CORNER, color);
+}
+
 XentDl *flux_comboitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
@@ -184,18 +205,17 @@ XentDl *flux_comboitem_record(
 	if (!b) return NULL;
 	FluxThemeColors const       *t    = flux_rec_theme(rc);
 	FluxComboItemSnapshot const *s    = &snap->u.combo_item;
-	bool                         down = state && state->pressed;
+	bool                         down = state && state->enabled && state->pressed;
 	FluxRect                     item = {
 	  bounds->x + CB_ITEM_MARGIN_X, bounds->y + CB_ITEM_MARGIN_Y, bounds->w - 2.0f * CB_ITEM_MARGIN_X,
 	  bounds->h - 2.0f * CB_ITEM_MARGIN_Y};
-	FluxColor fill = combo_item_fill(t, s->selected, state && state->hovered, down);
-	bool      ok   = flux_color_af(fill) <= 0.0f || flux_rec_fill_rounded(b, &item, CB_ITEM_CORNER, fill);
-	if (ok && s->selected) {
-		float    h    = CB_PILL_H * combo_pill_scale(s->press_tick, down);
-		FluxRect pill = {item.x, item.y + (item.h - h) * 0.5f, CB_PILL_W, h};
-		ok            = flux_rec_fill_rounded(b, &pill, CB_PILL_CORNER, t->accent_default);
-	}
-	ok = ok && combo_rec_item_label(b, t, &item, s->label, down);
+	FluxComboItemColors colors = {
+	  combo_item_fill(t, s->selected, state && state->hovered, down), down ? t->text_secondary : t->text_primary,
+	  t->accent_default};
+	if (t->contrast.active) colors = combo_item_contrast(&t->contrast, state, s->selected);
+	bool ok = flux_color_af(colors.fill) <= 0.0f || flux_rec_fill_rounded(b, &item, CB_ITEM_CORNER, colors.fill);
+	ok      = ok && (!s->selected || combo_rec_pill(b, &item, combo_pill_scale(s->press_tick, down), colors.pill));
+	ok      = ok && combo_rec_item_label(b, &item, s->label, colors.text);
 	if (ok && s->focus) ok = flux_rec_focus_rect(b, t, &item, CB_ITEM_CORNER);
 	return flux_rec_finish(b, ok);
 }
@@ -497,9 +517,13 @@ static void combo_list_layout(FluxComboRuntime *rt) {
 	combo_resolve_theme(rt, &theme, &is_dark);
 	FluxNodeData *root = flux_store_find(rt->store, rt->list_root);
 	if (root) {
-		FluxColor bg                = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
-		root->visuals.background    = flux_popup_acrylictint(rt->popup, bg);
-		root->visuals.border_color  = is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
+		FluxColor bg               = is_dark ? flux_color_rgb(0x2c, 0x2c, 0x2c) : flux_color_rgb(0xf9, 0xf9, 0xf9);
+		root->visuals.background   = flux_popup_acrylictint(rt->popup, bg);
+		root->visuals.border_color = is_dark ? flux_color_rgba(0, 0, 0, 0x33) : flux_color_rgba(0, 0, 0, 0x0f);
+		if (theme->contrast.active) {
+			root->visuals.background   = theme->contrast.button_face;
+			root->visuals.border_color = theme->contrast.button_text;
+		}
 		root->visuals.border_width  = CB_BORDER;
 		root->visuals.corner_radius = CB_CORNER;
 	}
@@ -511,14 +535,23 @@ static void combo_list_layout(FluxComboRuntime *rt) {
 	xent_layout(rt->ctx, rt->list_root, rt->width, rt->height);
 }
 
+static FluxUiaHooks const combo_popup_hidden = {.role = FLUX_UIA_HIDDEN};
+
+static void               combo_hide_popup_chrome(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (nd) nd->uia = &combo_popup_hidden;
+}
+
 static bool combo_list_build(FluxComboRuntime *rt) {
 	rt->list_root = flux_factory_create_node(rt->ctx, rt->store, XENT_NODE_INVALID, FLUX_CONTROL_CONTAINER);
 	if (!rt->list_root) return false;
 	xent_setproto(rt->ctx, rt->list_root, XENT_PROTOCOL_ABSOLUTE);
 	FluxNodeData *root = flux_store_find(rt->store, rt->list_root);
 	if (root) root->focus_passive = true;
+	combo_hide_popup_chrome(rt->store, rt->list_root);
 	rt->list_scroll
 	  = flux_scroll_init(&(FluxContainerDesc) {.ctx = rt->ctx, .store = rt->store, .parent = rt->list_root});
+	combo_hide_popup_chrome(rt->store, rt->list_scroll);
 	return rt->list_scroll
 	    && flux_popup_setcontent(rt->popup, rt->ctx, rt->store, rt->list_root)
 	    && (!rt->input || flux_popup_sethost(rt->popup, rt->input, rt->node));
@@ -1116,6 +1149,13 @@ char const *flux_combo_text(FluxStore *store, XentNodeId id) {
 	return rt->model.editable ? combo_editor_text(rt) : combo_selected_text(rt);
 }
 
+void flux_combo_uia_name(FluxStore *store, XentNodeId id, char *out, size_t size) {
+	FluxComboRuntime *rt = combo_runtime(store, id);
+	char const       *ph = rt ? rt->model.placeholder : NULL;
+	if (!out || size == 0) return;
+	snprintf(out, size, "%s", ph && ph [0] ? ph : "");
+}
+
 static void combo_apply_min_width(FluxComboRuntime *rt) {
 	if (!rt->text || rt->node == XENT_NODE_INVALID) return;
 	FluxTextStyle ts;
@@ -1242,6 +1282,15 @@ void flux_combo_uia_toggle(FluxStore *store, XentNodeId node) {
 	if (rt) combo_toggle(rt);
 }
 
+bool flux_comboitem_uia_setinfo(FluxStore *store, XentNodeId node, int *pos, int *size, int *level) {
+	( void ) level;
+	FluxComboItem const *it = combo_item_of(store, node);
+	if (!it || !it->rt) return false;
+	*pos  = it->index + 1;
+	*size = it->rt->model.item_count;
+	return true;
+}
+
 bool flux_comboitem_uia_selected(FluxStore *store, XentNodeId node) {
 	FluxComboItem const *it = combo_item_of(store, node);
 	return it && it->index == it->rt->model.selected_index;
@@ -1249,13 +1298,7 @@ bool flux_comboitem_uia_selected(FluxStore *store, XentNodeId node) {
 
 bool flux_comboitem_uia_select(FluxStore *store, XentNodeId node, int op) {
 	FluxComboItem const *it = combo_item_of(store, node);
-	if (!it || op == FLUX_UIA_SEL_REMOVE) return it && it->index != it->rt->model.selected_index;
-	FluxComboRuntime *rt = it->rt;
-	if (it->index == rt->model.selected_index) return true;
-	combo_set_selected(rt, it->index);
-	combo_update_layout_text(rt);
-	combo_repaint_owner(rt);
-	combo_repaint_popup(rt);
-	combo_notify(rt, it->index);
+	if (!it || !it->rt || op == FLUX_UIA_SEL_REMOVE) return it && it->rt && it->index != it->rt->model.selected_index;
+	combo_commit(it->rt, it->index);
 	return true;
 }

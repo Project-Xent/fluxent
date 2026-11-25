@@ -1,3 +1,4 @@
+#include "controls/flux_module.h"
 #include "a11y/flux_uia_ids.h"
 #include "controls/flux_control_uia.h"
 #include "controls/behavior/flux_calendar.h"
@@ -7,6 +8,7 @@
 #include "bridge/flux_internal.h"
 #include "runtime/flux_date.h"
 #include "runtime/flux_time.h"
+#include <limits.h>
 #include "runtime/flux_anim_driver.h"
 #include <fluxent/flux_input.h>
 
@@ -277,20 +279,46 @@ static void calendar_remove(FluxCalendarData *d, int date) {
 	d->selected_count = kept;
 }
 
-static void calendar_select(FluxCalendarData *d, int date) {
+#define CAL_NO_DATE    INT_MIN
+#define CAL_BULK_LIMIT 20
+
+static void calendar_uia_event(FluxCalendarData *d, int date, int event) {
+	int index = flux_calendar_index_of(d, d->view, date);
+	if (index >= 0 && index < flux_calendar_size(d, d->view)) flux_uia_note(d->store, d->node, index, event);
+}
+
+static void calendar_uia_changed(FluxCalendarData *d, int added, int removed, int removed_count) {
+	int changed = (added != CAL_NO_DATE) + removed_count;
+	if (d->view != FLUX_CAL_MONTH || changed == 0) return;
+	bool single = added != CAL_NO_DATE && d->selected_count == 1;
+	if (!single && changed > CAL_BULK_LIMIT) {
+		flux_uia_note(d->store, d->node, -1, FLUX_UIA_EVT_SEL_INVALID);
+		return;
+	}
+	int event = single ? FLUX_UIA_EVT_SEL_ELEMENT : FLUX_UIA_EVT_SEL_ADDED;
+	if (added != CAL_NO_DATE) calendar_uia_event(d, added, event);
+	if (removed_count == 1) calendar_uia_event(d, removed, FLUX_UIA_EVT_SEL_REMOVED);
+}
+
+static void calendar_select_from(FluxCalendarData *d, int date, int removed, int removed_count) {
 	if (d->mode == XTK_CALENDAR_NONE) return;
 	if (flux_calendar_is_selected(d, date)) {
 		calendar_remove(d, date);
 		calendar_notify(d, date, false);
+		calendar_uia_changed(d, CAL_NO_DATE, date, 1);
 		return;
 	}
 	if (d->mode == XTK_CALENDAR_SINGLE && d->selected_count == 1) {
-		int old           = d->selected [0];
+		removed           = d->selected [0];
+		removed_count     = 1;
 		d->selected_count = 0;
-		calendar_notify(d, old, false);
+		calendar_notify(d, removed, false);
 	}
 	if (calendar_append(d, date)) calendar_notify(d, date, true);
+	calendar_uia_changed(d, date, removed, removed_count);
 }
+
+static void calendar_select(FluxCalendarData *d, int date) { calendar_select_from(d, date, CAL_NO_DATE, 0); }
 
 static void calendar_activate(FluxCalendarData *d, int index, bool keyboard) {
 	int date = flux_calendar_date_at(d, d->view, index);
@@ -346,13 +374,27 @@ static void calendar_navigate(FluxCalendarData *d, bool forward) {
 	calendar_scroll_to(d, ( float ) calendar_row_of(d, d->view, flux_calendar_index_of(d, d->view, target)), true);
 }
 
+static void calendar_nav_notify(FluxCalendarData const *d) {
+	char text [96];
+	flux_calendar_header(d, calendar_now(), text, sizeof(text));
+	flux_uia_notify(
+	  d->store, d->node, FLUX_UIA_NOTE_ACTION_COMPLETED, FLUX_UIA_PROC_MOST_RECENT, text,
+	  "CalenderViewNavigationButtonCompleted"
+	);
+}
+
 static void calendar_invoke(FluxCalendarData *d, int part, bool keyboard) {
+	int head = part == FLUX_CAL_HEADER ? 0 : (part == FLUX_CAL_PREV ? 1 : (part == FLUX_CAL_NEXT ? 2 : -1));
+	if (head >= 0) flux_uia_note(d->store, d->node, FLUX_UIA_SUB_HEAD + head, FLUX_UIA_EVT_INVOKED);
 	if (part >= 0) {
 		calendar_activate(d, part, keyboard);
 		return;
 	}
 	if (part == FLUX_CAL_HEADER) calendar_set_view(d, d->view + 1, keyboard);
-	if (part == FLUX_CAL_PREV || part == FLUX_CAL_NEXT) calendar_navigate(d, part == FLUX_CAL_NEXT);
+	if (part == FLUX_CAL_PREV || part == FLUX_CAL_NEXT) {
+		calendar_navigate(d, part == FLUX_CAL_NEXT);
+		calendar_nav_notify(d);
+	}
 }
 
 static bool calendar_part_enabled(FluxCalendarData const *d, int part, double now) {
@@ -745,11 +787,24 @@ static FluxCalendarGeom calendar_geom_at(FluxCalendarData const *d, XentRect con
 	return flux_calendar_layout(d, d->view, &bounds);
 }
 
+#define CAL_BUTTONS 3
+
+static int const kCalButtons [CAL_BUTTONS] = {FLUX_CAL_HEADER, FLUX_CAL_PREV, FLUX_CAL_NEXT};
+
+static int       calendar_button_of(int sub) {
+	int head = sub - FLUX_UIA_SUB_HEAD;
+	return sub >= FLUX_UIA_SUB_HEAD && sub < FLUX_UIA_SUB_LONE && head < CAL_BUTTONS ? kCalButtons [head]
+	                                                                                 : FLUX_CAL_NONE;
+}
+
 int flux_calendar_uia_kind(FluxStore *store, XentNodeId node, int sub, unsigned *patterns) {
 	FluxCalendarData *d     = calendar_data(store, node);
 	bool              month = d && d->view == FLUX_CAL_MONTH;
 	*patterns               = 0u;
 	if (sub >= FLUX_UIA_SUB_LONE) return FLUX_UIA_CUSTOM;
+	if (calendar_button_of(sub) != FLUX_CAL_NONE) *patterns = FLUX_UIA_P_INVOKE;
+	if (calendar_button_of(sub) != FLUX_CAL_NONE) return FLUX_UIA_BUTTON;
+	if (sub >= FLUX_UIA_SUB_HEAD) *patterns = FLUX_UIA_P_TEXT;
 	if (sub >= FLUX_UIA_SUB_HEAD) return FLUX_UIA_TEXT;
 	*patterns = (month ? FLUX_UIA_P_SELECTION_ITEM : FLUX_UIA_P_INVOKE)
 	          | FLUX_UIA_P_TABLE_ITEM
@@ -765,6 +820,13 @@ bool flux_calendar_uia_span(FluxStore *store, XentNodeId node, int *first, int *
 	return true;
 }
 
+static bool calendar_button_rect(FluxCalendarData const *d, int part, XentRect *rect) {
+	FluxCalendarGeom g = calendar_geom_at(d, rect);
+	FluxRect         r = part == FLUX_CAL_HEADER ? g.header : (part == FLUX_CAL_PREV ? g.prev : g.next);
+	*rect              = (XentRect) {r.x, r.y, r.w, r.h};
+	return true;
+}
+
 static bool calendar_head_rect(FluxCalendarData const *d, int head, XentRect *rect) {
 	FluxCalendarGeom g = calendar_geom_at(d, rect);
 	float            w = g.weekdays.w / 7.0f;
@@ -775,7 +837,8 @@ static bool calendar_head_rect(FluxCalendarData const *d, int head, XentRect *re
 bool flux_calendar_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect *rect) {
 	FluxCalendarData *d = calendar_data(store, node);
 	if (!d || sub >= FLUX_UIA_SUB_LONE) return false;
-	if (sub >= FLUX_UIA_SUB_HEAD) return calendar_head_rect(d, sub - FLUX_UIA_SUB_HEAD, rect);
+	if (calendar_button_of(sub) != FLUX_CAL_NONE) return calendar_button_rect(d, calendar_button_of(sub), rect);
+	if (sub >= FLUX_UIA_SUB_HEAD) return calendar_head_rect(d, sub - FLUX_UIA_SUB_HEAD - CAL_BUTTONS, rect);
 	FluxCalendarGeom g      = calendar_geom_at(d, rect);
 	int              slot   = sub + flux_calendar_start(d, d->view);
 	float            rowpos = flux_calendar_rowpos(d, d->view, calendar_now());
@@ -784,9 +847,36 @@ bool flux_calendar_uia_rect(FluxStore *store, XentNodeId node, int sub, XentRect
 	return true;
 }
 
+bool flux_calendar_uia_text(FluxStore *store, XentNodeId node, int sub, FluxUiaTextView *out) {
+	FluxCalendarData *d    = calendar_data(store, node);
+	int               head = sub - FLUX_UIA_SUB_HEAD - CAL_BUTTONS;
+	XentRect          r    = {0};
+	if (!d || sub >= FLUX_UIA_SUB_LONE || head < 0 || head >= 7) return false;
+	xent_layout_rect(flux_store_ctx(store), node, &r);
+	calendar_head_rect(d, head, &r);
+	*out = (FluxUiaTextView) {
+	  .text     = d->weekday [(d->first_day + head) % 7],
+	  .layout_w = r.w,
+	  .clip     = {0.0f, 0.0f, r.w, r.h},
+	  .readonly = true
+    };
+	out->style.font_size   = 12.0f;
+	out->style.font_weight = FLUX_FONT_SEMI_BOLD;
+	out->style.text_align  = FLUX_TEXT_CENTER;
+	out->style.vert_align  = FLUX_TEXT_VCENTER;
+	return true;
+}
+
 static void calendar_lone_name(int key, char *out, size_t size) {
 	if (flux_date_month(key) == 0) flux_locale_formattemplate(key + 101, L"year", out, size);
 	else flux_locale_formattemplate(key, L"month year", out, size);
+}
+
+static void calendar_uia_date_name(FluxCalendarData const *d, int sub, char *out, size_t size) {
+	int date = flux_calendar_date_at(d, d->view, sub);
+	if (d->view == FLUX_CAL_MONTH) snprintf(out, size, "%d", flux_date_day(date));
+	else if (d->view == FLUX_CAL_YEAR) flux_locale_formatdate(date, L"MMMM", out, size);
+	else snprintf(out, size, "%d", flux_date_year(date));
 }
 
 void flux_calendar_uia_name(FluxStore *store, XentNodeId node, int sub, char *out, size_t size) {
@@ -796,23 +886,50 @@ void flux_calendar_uia_name(FluxStore *store, XentNodeId node, int sub, char *ou
 		calendar_lone_name(sub - FLUX_UIA_SUB_LONE, out, size);
 		return;
 	}
+	int part = calendar_button_of(sub);
+	if (part == FLUX_CAL_HEADER) flux_calendar_header(d, calendar_now(), out, size);
+	if (part == FLUX_CAL_PREV || part == FLUX_CAL_NEXT)
+		snprintf(out, size, "%s", part == FLUX_CAL_PREV ? "Previous" : "Next");
+	if (part != FLUX_CAL_NONE) return;
 	if (sub >= FLUX_UIA_SUB_HEAD) {
-		snprintf(out, size, "%s", d->weekday [(d->first_day + sub - FLUX_UIA_SUB_HEAD) % 7]);
+		snprintf(out, size, "%s", d->weekday [(d->first_day + sub - FLUX_UIA_SUB_HEAD - CAL_BUTTONS) % 7]);
 		return;
 	}
-	int date = flux_calendar_date_at(d, d->view, sub);
-	if (d->view == FLUX_CAL_MONTH) snprintf(out, size, "%d", flux_date_day(date));
-	else if (d->view == FLUX_CAL_YEAR) flux_locale_formatdate(date, L"MMMM", out, size);
-	else snprintf(out, size, "%d", flux_date_year(date));
+	calendar_uia_date_name(d, sub, out, size);
 }
 
 bool flux_calendar_uia_focused(FluxStore *store, XentNodeId node, int sub) {
-	FluxCalendarData *d = calendar_data(store, node);
-	return d && d->focus == sub;
+	FluxCalendarData *d    = calendar_data(store, node);
+	int               part = calendar_button_of(sub);
+	if (d && part != FLUX_CAL_NONE) return d->focus == part;
+	return d && sub < FLUX_UIA_SUB_HEAD && d->focus == sub;
+}
+
+bool flux_calendar_uia_enabled(FluxStore *store, XentNodeId node, int sub) {
+	FluxCalendarData *d    = calendar_data(store, node);
+	int               part = calendar_button_of(sub);
+	return !d || part == FLUX_CAL_NONE || calendar_part_enabled(d, part, calendar_now());
+}
+
+void flux_calendar_uia_focus(FluxStore *store, XentNodeId node, int sub) {
+	FluxCalendarData *d    = calendar_data(store, node);
+	int               part = calendar_button_of(sub);
+	if (d && part != FLUX_CAL_NONE && calendar_part_enabled(d, part, calendar_now())) {
+		d->focus        = part;
+		d->focus_visual = true;
+		return;
+	}
+	if (d && sub >= 0 && sub < flux_calendar_size(d, d->view)) calendar_focus_index(d, sub);
 }
 
 bool flux_calendar_uia_invoke(FluxStore *store, XentNodeId node, int sub) {
-	FluxCalendarData *d = calendar_data(store, node);
+	FluxCalendarData *d    = calendar_data(store, node);
+	int               part = calendar_button_of(sub);
+	if (d && part != FLUX_CAL_NONE) {
+		if (!calendar_part_enabled(d, part, calendar_now())) return false;
+		calendar_invoke(d, part, false);
+		return true;
+	}
 	if (!d || d->view == FLUX_CAL_MONTH || sub < 0 || sub >= flux_calendar_size(d, d->view)) return false;
 	calendar_activate(d, sub, false);
 	return true;
@@ -833,10 +950,13 @@ static void calendar_clear(FluxCalendarData *d) {
 bool flux_calendar_uia_select(FluxStore *store, XentNodeId node, int sub, int op) {
 	FluxCalendarData *d = calendar_data(store, node);
 	if (!d || d->view != FLUX_CAL_MONTH || sub < 0 || sub >= flux_calendar_size(d, d->view)) return false;
-	int  date = flux_calendar_date_at(d, d->view, sub);
-	bool want = op != FLUX_UIA_SEL_REMOVE;
+	int  date    = flux_calendar_date_at(d, d->view, sub);
+	bool want    = op != FLUX_UIA_SEL_REMOVE;
+	int  removed = d->selected_count == 1 && d->selected [0] != date ? d->selected [0] : CAL_NO_DATE;
+	int  count   = removed != CAL_NO_DATE ? 1 : 0;
+	if (op == FLUX_UIA_SEL_SELECT && flux_calendar_is_selected(d, date) && d->selected_count == 1) return true;
 	if (op == FLUX_UIA_SEL_SELECT) calendar_clear(d);
-	if (flux_calendar_is_selected(d, date) != want) calendar_select(d, date);
+	if (flux_calendar_is_selected(d, date) != want) calendar_select_from(d, date, removed, count);
 	return true;
 }
 
@@ -847,7 +967,8 @@ unsigned flux_calendar_uia_mode(FluxStore *store, XentNodeId node) {
 
 int flux_calendar_uia_heads(FluxStore *store, XentNodeId node) {
 	FluxCalendarData *d = calendar_data(store, node);
-	return d && d->view == FLUX_CAL_MONTH ? 7 : 0;
+	if (!d) return 0;
+	return CAL_BUTTONS + (d->view == FLUX_CAL_MONTH ? 7 : 0);
 }
 
 bool flux_calendar_uia_grid(FluxStore *store, XentNodeId node, int *rows, int *cols) {

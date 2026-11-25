@@ -15,11 +15,24 @@ typedef struct CalItemState {
 
 static FluxColor cal_clear(void) { return flux_color_rgba(0, 0, 0, 0); }
 
+static FluxColor cal_contrast_item_fill(FluxContrastColors const *p, CalItemState const *s) {
+	if (s->today) return p->highlight;
+	if (!s->enabled) return cal_clear();
+	if (s->pressed || s->hovered) return p->window;
+	return s->out_of_scope ? p->button_face : cal_clear();
+}
+
 static FluxColor cal_item_fill(FluxThemeColors const *t, CalItemState const *s) {
 	if (!s->enabled) return s->today ? t->accent_disabled : cal_clear();
 	if (s->today) return s->pressed ? t->accent_tertiary : (s->hovered ? t->accent_secondary : t->accent_default);
 	if (s->pressed) return t->subtle_fill_tertiary;
 	return s->hovered ? t->subtle_fill_secondary : cal_clear();
+}
+
+static FluxColor cal_contrast_item_border(FluxContrastColors const *p, CalItemState const *s) {
+	if (!s->enabled) return s->today || s->selected ? p->gray_text : cal_clear();
+	if (s->today) return cal_clear();
+	return s->selected || s->pressed || s->hovered ? p->highlight : cal_clear();
 }
 
 static FluxColor cal_item_border(FluxThemeColors const *t, CalItemState const *s) {
@@ -39,10 +52,29 @@ static FluxColor cal_item_text_enabled(FluxThemeColors const *t, CalItemState co
 	return t->text_primary;
 }
 
+static FluxColor cal_contrast_item_text(FluxContrastColors const *p, CalItemState const *s) {
+	if (s->today) return p->highlight_text;
+	if (!s->enabled) return p->gray_text;
+	if (s->selected || s->pressed) return p->highlight;
+	return s->out_of_scope ? p->hotlight : p->button_text;
+}
+
 static FluxColor cal_item_text(FluxThemeColors const *t, CalItemState const *s) {
 	if (s->enabled) return cal_item_text_enabled(t, s);
 	if (s->today) return t->text_on_accent_primary;
 	return s->selected ? t->accent_text_disabled : t->text_disabled;
+}
+
+typedef struct CalItemColors {
+	FluxColor fill, border, text;
+} CalItemColors;
+
+static CalItemColors cal_item_colors(FluxThemeColors const *t, CalItemState const *s) {
+	FluxContrastColors const *p = &t->contrast;
+	if (p->active)
+		return (CalItemColors) {
+		  cal_contrast_item_fill(p, s), cal_contrast_item_border(p, s), cal_contrast_item_text(p, s)};
+	return (CalItemColors) {cal_item_fill(t, s), cal_item_border(t, s), cal_item_text(t, s)};
 }
 
 static void cal_item_strings(int view, int date, bool label, char *main, char *sub, size_t size) {
@@ -89,19 +121,29 @@ static CalItemState cal_item_state(CalPaint const *p, int view, int index, int d
 	  .enabled      = p->state->enabled != 0};
 }
 
+static bool cal_record_day_focus(XentDlBuilder *b, FluxContrastColors const *p, FluxRect const *item, float radius) {
+	FluxRect outer = {item->x - 3.0f, item->y - 3.0f, item->w + 6.0f, item->h + 6.0f};
+	FluxRect inner = {item->x - 1.0f, item->y - 1.0f, item->w + 2.0f, item->h + 2.0f};
+	return flux_rec_stroke_rounded(b, &outer, radius + 2.0f, p->window_text, 2.0f)
+	    && flux_rec_stroke_rounded(b, &inner, radius + 0.5f, p->window, 1.0f);
+}
+
 static bool cal_record_item(XentDlBuilder *b, CalPaint const *p, int view, int index, FluxRect const *cell) {
-	int          date   = flux_calendar_date_at(p->d, view, index);
-	CalItemState s      = cal_item_state(p, view, index, date);
-	FluxRect     item   = flux_calendar_item(cell, view);
-	float        radius = flux_calendar_radius(&item);
-	bool         ok     = flux_rec_fill_rounded(b, &item, radius, cal_item_fill(p->t, &s));
-	ok                  = ok && flux_rec_stroke_rounded(b, &item, radius - 0.5f, cal_item_border(p->t, &s), 1.0f);
+	int           date   = flux_calendar_date_at(p->d, view, index);
+	CalItemState  s      = cal_item_state(p, view, index, date);
+	FluxRect      item   = flux_calendar_item(cell, view);
+	float         radius = flux_calendar_radius(&item);
+	CalItemColors colors = cal_item_colors(p->t, &s);
+	bool          ok     = flux_rec_fill_rounded(b, &item, radius, colors.fill);
+	ok                   = ok && flux_rec_stroke_rounded(b, &item, radius - 0.5f, colors.border, 1.0f);
 	if (ok && s.today && s.selected) {
-		FluxRect inner = {item.x + 1.0f, item.y + 1.0f, item.w - 2.0f, item.h - 2.0f};
-		ok             = flux_rec_stroke_rounded(b, &inner, radius - 1.5f, p->t->text_on_accent_primary, 1.0f);
+		FluxRect  inner = {item.x + 1.0f, item.y + 1.0f, item.w - 2.0f, item.h - 2.0f};
+		FluxColor ink   = p->t->contrast.active ? p->t->contrast.highlight_text : p->t->text_on_accent_primary;
+		ok              = flux_rec_stroke_rounded(b, &inner, radius - 1.5f, ink, 1.0f);
 	}
-	ok = ok && cal_item_texts(b, &item, view, date, p->d->group_label, cal_item_text(p->t, &s));
+	ok = ok && cal_item_texts(b, &item, view, date, p->d->group_label, colors.text);
 	if (!ok || view != p->d->view || p->d->focus != index || !p->d->focus_visual || !p->state->focused) return ok;
+	if (p->t->contrast.active && view == FLUX_CAL_MONTH) return cal_record_day_focus(b, &p->t->contrast, &item, radius);
 	FluxRect ring = {item.x - 1.0f, item.y - 1.0f, item.w + 2.0f, item.h + 2.0f};
 	return flux_rec_focus_rect(b, p->t, &ring, radius + 1.0f);
 }
@@ -121,10 +163,13 @@ static bool cal_record_panel(XentDlBuilder *b, CalPaint const *p, int view, Flux
 }
 
 static bool cal_record_weekdays(XentDlBuilder *b, CalPaint const *p, FluxRect const *row) {
-	FluxColor     color = p->state->enabled ? p->t->text_primary : p->t->text_disabled;
-	XentTextStyle style = {.font_size = 12.0f, .font_weight = 600u, .h_align = 1u, .v_align = 1u};
-	float         w     = row->w / 7.0f;
-	bool          ok    = true;
+	FluxContrastColors const *contrast = &p->t->contrast;
+	FluxColor                 normal   = contrast->active ? contrast->hotlight : p->t->text_primary;
+	FluxColor                 disabled = contrast->active ? contrast->gray_text : p->t->text_disabled;
+	FluxColor                 color    = p->state->enabled ? normal : disabled;
+	XentTextStyle             style    = {.font_size = 12.0f, .font_weight = 600u, .h_align = 1u, .v_align = 1u};
+	float                     w        = row->w / 7.0f;
+	bool                      ok       = true;
 	for (int i = 0; ok && i < 7; ++i) {
 		FluxRect col = {row->x + ( float ) i * w, row->y, w, row->h};
 		ok           = flux_rec_text_ex(b, &col, p->d->weekday [(p->d->first_day + i) % 7], &style, color);
@@ -173,12 +218,11 @@ static bool cal_record_views(XentDlBuilder *b, CalPaint const *p, FluxRect const
 }
 
 static bool cal_record_frame(XentDlBuilder *b, FluxThemeColors const *t, FluxRect const *bounds, float rule_y) {
-	bool ok = flux_rec_fill_rounded(b, bounds, FLUX_CORNER_RADIUS, t->ctrl_fill_input_active);
-	ok      = ok && flux_rec_stroke_rounded(b, bounds, FLUX_CORNER_RADIUS, t->ctrl_stroke_default, FLUX_CAL_BORDER);
-	return ok
-	    && flux_rec_fill_rect(
-		  b, &(FluxRect) {bounds->x + 1.0f, rule_y, bounds->w - 2.0f, 1.0f}, t->ctrl_stroke_default
-		);
+	FluxColor fill   = t->contrast.active ? t->contrast.button_face : t->ctrl_fill_input_active;
+	FluxColor stroke = t->contrast.active ? t->contrast.button_text : t->ctrl_stroke_default;
+	bool      ok     = flux_rec_fill_rounded(b, bounds, FLUX_CORNER_RADIUS, fill);
+	ok               = ok && flux_rec_stroke_rounded(b, bounds, FLUX_CORNER_RADIUS, stroke, FLUX_CAL_BORDER);
+	return ok && flux_rec_fill_rect(b, &(FluxRect) {bounds->x + 1.0f, rule_y, bounds->w - 2.0f, 1.0f}, stroke);
 }
 
 typedef struct CalButton {
@@ -188,18 +232,28 @@ typedef struct CalButton {
 	char const *text;
 } CalButton;
 
-static FluxColor cal_button_fg(FluxThemeColors const *t, CalButton const *btn, bool pressed) {
+static FluxColor cal_button_fg(FluxThemeColors const *t, CalButton const *btn, bool hovered, bool pressed) {
+	if (t->contrast.active) {
+		FluxColor active = hovered ? t->contrast.highlight_text : t->contrast.button_text;
+		return btn->enabled ? active : t->contrast.gray_text;
+	}
 	bool header = btn->part == FLUX_CAL_HEADER;
 	if (!btn->enabled) return header ? t->text_disabled : t->ctrl_strong_fill_disabled;
 	if (!header) return t->ctrl_strong_fill_default;
 	return pressed ? t->text_secondary : t->text_primary;
 }
 
+static FluxColor cal_button_fill(FluxThemeColors const *t, bool hovered, bool pressed) {
+	if (!hovered) return cal_clear();
+	if (t->contrast.active) return t->contrast.highlight;
+	return pressed ? t->subtle_fill_tertiary : t->subtle_fill_secondary;
+}
+
 static bool cal_record_button(XentDlBuilder *b, CalPaint const *p, CalButton const *btn, float alpha) {
 	bool      hovered = btn->enabled && p->d->hover == btn->part;
 	bool      pressed = hovered && p->d->pressed == btn->part;
-	FluxColor fill    = pressed ? p->t->subtle_fill_tertiary : (hovered ? p->t->subtle_fill_secondary : cal_clear());
-	FluxColor fg      = cal_button_fg(p->t, btn, pressed);
+	FluxColor fill    = cal_button_fill(p->t, hovered, pressed);
+	FluxColor fg      = cal_button_fg(p->t, btn, hovered, pressed);
 	bool      ok      = flux_rec_fill_rounded(b, &btn->rect, FLUX_CORNER_RADIUS, fill);
 	if (btn->part == FLUX_CAL_HEADER) {
 		FluxRect      text  = {btn->rect.x + 8.0f, btn->rect.y + 7.0f, btn->rect.w - 16.0f, btn->rect.h - 15.0f};

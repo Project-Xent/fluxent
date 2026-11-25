@@ -7,6 +7,8 @@ local libs = {
     "cwinrt-bindings-ui-composition",
     "cwinrt-bindings-ui-composition-interactions",
     "cwinrt-bindings-ui-viewmanagement",
+    "cwinrt-bindings-ui-notifications",
+    "cwinrt-bindings-data-xml-dom",
     "cwinrt-bindings-globalization",
     "cwinrt-bindings-globalization-datetimeformatting",
     "cwinrt-bindings-globalization-numberformatting",

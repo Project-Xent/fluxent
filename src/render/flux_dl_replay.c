@@ -369,23 +369,27 @@ static bool xtk_stroke_arc(FluxBackendXtkState *S, XentDlCmd const *cmd) {
 	return true;
 }
 
-static ID2D1PathGeometry *xtk_tab_selected_path(FluxBackendXtkState *S, XentRect bounds) {
-	if (bounds.w < 2.0f * FLUX_TAB_SELECTED_CORNER || bounds.h < FLUX_TAB_SELECTED_CORNER + FLUX_TAB_SELECTED_FLARE)
-		return NULL;
+static ID2D1PathGeometry *xtk_open_shape_path(FluxBackendXtkState *S, ID2D1GeometrySink **sink) {
 	ID2D1Factory *factory = NULL;
 	ID2D1RenderTarget_GetFactory(FLUX_RT(S->rc), &factory);
 	if (!factory) return NULL;
 	ID2D1PathGeometry *geo = NULL;
-	if (FAILED(ID2D1Factory_CreatePathGeometry(factory, &geo)) || !geo) {
-		ID2D1Factory_Release(factory);
-		return NULL;
-	}
-	ID2D1GeometrySink *sink = NULL;
-	if (FAILED(ID2D1PathGeometry_Open(geo, &sink)) || !sink) {
+	HRESULT            hr  = ID2D1Factory_CreatePathGeometry(factory, &geo);
+	ID2D1Factory_Release(factory);
+	if (FAILED(hr) || !geo) return NULL;
+	if (FAILED(ID2D1PathGeometry_Open(geo, sink)) || !*sink) {
 		ID2D1PathGeometry_Release(geo);
-		ID2D1Factory_Release(factory);
 		return NULL;
 	}
+	return geo;
+}
+
+static ID2D1PathGeometry *xtk_tab_selected_path(FluxBackendXtkState *S, XentRect bounds) {
+	if (bounds.w < 2.0f * FLUX_TAB_SELECTED_CORNER || bounds.h < FLUX_TAB_SELECTED_CORNER + FLUX_TAB_SELECTED_FLARE)
+		return NULL;
+	ID2D1GeometrySink *sink = NULL;
+	ID2D1PathGeometry *geo  = xtk_open_shape_path(S, &sink);
+	if (!geo) return NULL;
 	float            f = FLUX_TAB_SELECTED_FLARE, c = FLUX_TAB_SELECTED_CORNER;
 	float            x0 = bounds.x, x1 = bounds.x + bounds.w, y0 = bounds.y, y1 = bounds.y + bounds.h;
 	D2D1_ARC_SEGMENT arc = {
@@ -420,13 +424,106 @@ static ID2D1PathGeometry *xtk_tab_selected_path(FluxBackendXtkState *S, XentRect
 	ID2D1GeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
 	ID2D1GeometrySink_Close(sink);
 	ID2D1GeometrySink_Release(sink);
-	ID2D1Factory_Release(factory);
 	return geo;
 }
 
+static void xtk_tab_selected_arc(ID2D1GeometrySink *sink, float x, float y, float dir) {
+	ID2D1GeometrySink_BeginFigure(sink, flux_point(x, y), D2D1_FIGURE_BEGIN_FILLED);
+	ID2D1GeometrySink_AddBezier(
+	  sink, &(D2D1_BEZIER_SEGMENT) {
+			  {x,                  y + 1.19469f},
+              {x + dir * 0.52376f, y + 2.26706f},
+              {x + dir * 1.35418f, y + 3.0f    }
+    }
+	);
+	ID2D1GeometrySink_AddLine(sink, flux_point(x + dir * 4.0f, y + 3.0f));
+	ID2D1GeometrySink_AddBezier(
+	  sink, &(D2D1_BEZIER_SEGMENT) {
+			  {x + dir * 2.34315f, y + 3.0f    },
+              {x + dir,            y + 1.65685f},
+              {x + dir,            y           }
+    }
+	);
+	ID2D1GeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+}
+
+static ID2D1PathGeometry *xtk_tab_selected_arcs(FluxBackendXtkState *S, XentRect bounds) {
+	ID2D1GeometrySink *sink = NULL;
+	ID2D1PathGeometry *geo  = xtk_open_shape_path(S, &sink);
+	if (!geo) return NULL;
+	float y = bounds.y + bounds.h - FLUX_TAB_SELECTED_FLARE;
+	xtk_tab_selected_arc(sink, bounds.x, y, -1.0f);
+	xtk_tab_selected_arc(sink, bounds.x + bounds.w, y, 1.0f);
+	ID2D1GeometrySink_Close(sink);
+	ID2D1GeometrySink_Release(sink);
+	return geo;
+}
+
+static void xtk_down_chevron_outline(ID2D1GeometrySink *sink, float x, float y) {
+	ID2D1GeometrySink_SetFillMode(sink, D2D1_FILL_MODE_WINDING);
+	ID2D1GeometrySink_BeginFigure(sink, flux_point(x - 3.854f, y - 2.104f), D2D1_FIGURE_BEGIN_FILLED);
+	ID2D1GeometrySink_AddBezier(
+	  sink, &(D2D1_BEZIER_SEGMENT) {
+			  {x - 3.659f, y - 2.299f},
+              {x - 3.341f, y - 2.299f},
+              {x - 3.146f, y - 2.104f}
+    }
+	);
+	ID2D1GeometrySink_AddLine(sink, flux_point(x, y + 1.043f));
+	ID2D1GeometrySink_AddLine(sink, flux_point(x + 3.146f, y - 2.104f));
+	ID2D1GeometrySink_AddBezier(
+	  sink, &(D2D1_BEZIER_SEGMENT) {
+			  {x + 3.341f, y - 2.299f},
+              {x + 3.659f, y - 2.299f},
+              {x + 3.854f, y - 2.104f}
+    }
+	);
+	ID2D1GeometrySink_AddBezier(
+	  sink, &(D2D1_BEZIER_SEGMENT) {
+			  {x + 4.049f, y - 1.909f},
+              {x + 4.049f, y - 1.591f},
+              {x + 3.854f, y - 1.396f}
+    }
+	);
+	ID2D1GeometrySink_AddLine(sink, flux_point(x + 0.354f, y + 2.104f));
+	ID2D1GeometrySink_AddBezier(
+	  sink, &(D2D1_BEZIER_SEGMENT) {
+			  {x + 0.159f, y + 2.299f},
+              {x - 0.159f, y + 2.299f},
+              {x - 0.354f, y + 2.104f}
+    }
+	);
+	ID2D1GeometrySink_AddLine(sink, flux_point(x - 3.854f, y - 1.396f));
+	ID2D1GeometrySink_AddBezier(
+	  sink, &(D2D1_BEZIER_SEGMENT) {
+			  {x - 4.049f, y - 1.591f},
+              {x - 4.049f, y - 1.909f},
+              {x - 3.854f, y - 2.104f}
+    }
+	);
+	ID2D1GeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+}
+
+static ID2D1PathGeometry *xtk_down_chevron_path(FluxBackendXtkState *S, XentRect bounds) {
+	ID2D1GeometrySink *sink = NULL;
+	ID2D1PathGeometry *geo  = xtk_open_shape_path(S, &sink);
+	if (!geo) return NULL;
+	xtk_down_chevron_outline(sink, bounds.x + bounds.w * 0.5f, bounds.y + bounds.h * 0.5f);
+	HRESULT hr = ID2D1GeometrySink_Close(sink);
+	ID2D1GeometrySink_Release(sink);
+	if (SUCCEEDED(hr)) return geo;
+	ID2D1PathGeometry_Release(geo);
+	return NULL;
+}
+
 static bool xtk_fill_shape(FluxBackendXtkState *S, XentDlCmd const *cmd) {
-	if (cmd->u.shape.shape != FLUX_SHAPE_TAB_SELECTED_FRAME) return true;
-	ID2D1PathGeometry *geo = xtk_tab_selected_path(S, cmd->u.shape.bounds);
+	ID2D1PathGeometry *geo;
+	switch (cmd->u.shape.shape) {
+	case FLUX_SHAPE_TAB_SELECTED_FRAME : geo = xtk_tab_selected_path(S, cmd->u.shape.bounds); break;
+	case FLUX_SHAPE_TAB_SELECTED_ARCS  : geo = xtk_tab_selected_arcs(S, cmd->u.shape.bounds); break;
+	case FLUX_SHAPE_DOWN_CHEVRON       : geo = xtk_down_chevron_path(S, cmd->u.shape.bounds); break;
+	default                            : return true;
+	}
 	if (!geo) return false;
 	flux_set_brush(S->rc, xtk_color_to_flux(cmd->u.shape.color));
 	ID2D1RenderTarget_FillGeometry(FLUX_RT(S->rc), ( ID2D1Geometry * ) geo, ( ID2D1Brush * ) S->rc->brush, NULL);

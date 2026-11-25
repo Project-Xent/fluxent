@@ -8,6 +8,7 @@
 #include "controls/factory/flux_init_nav.h"
 #include "fluxent/flux_window.h"
 #include "controls/data/flux_menu_bar_data.h"
+#include "a11y/flux_uia_app.h"
 
 #include <float.h>
 #include <math.h>
@@ -161,7 +162,7 @@ XentNodeId flux_menubar_content_node(FluxStore *store, XentNodeId bar) {
 	return d ? d->wire_host : XENT_NODE_INVALID;
 }
 
-static bool menu_bar_add(FluxMenuBarData *d, char const *title, FluxMenu *flyout, bool owns_flyout) {
+static bool menu_bar_add(FluxMenuBarData *d, char const *title, FluxMenu *flyout, bool owns_flyout, XentNodeId source) {
 	if (!d || d->count >= FLUX_MENU_BAR_MAX_ITEMS || !title) return false;
 
 	XentNodeId item = flux_factory_create_node(d->ctx, d->store, d->items_host, FLUX_CONTROL_MENU_BAR_ITEM);
@@ -183,6 +184,7 @@ static bool menu_bar_add(FluxMenuBarData *d, char const *title, FluxMenu *flyout
 	FluxMenuBarItem *slot             = &d->items [d->count];
 	slot->bar                         = d;
 	slot->node                        = item;
+	slot->access_key_source           = source;
 	slot->visual.label                = flux_str_dup(title);
 	slot->flyout                      = flyout;
 	slot->index                       = d->count;
@@ -213,21 +215,28 @@ FluxMenu *flux_menubar_add_menu(FluxStore *store, XentNodeId bar, char const *ti
 	if (!flyout) return NULL;
 	flux_menu_setthememanager(flyout, d->theme);
 	flux_menu_settext(flyout, d->text);
-	if (!menu_bar_add(d, title, flyout, true)) {
+	if (!menu_bar_add(d, title, flyout, true, XENT_NODE_INVALID)) {
 		flux_menu_destroy(flyout);
 		return NULL;
 	}
 	return flyout;
 }
 
-bool flux_menubar_add_menu_ref(FluxStore *store, XentNodeId bar, char const *title, FluxMenu *flyout) {
+bool flux_menubar_add_menu_ref(
+  FluxStore *store, XentNodeId bar, char const *title, FluxMenu *flyout, XentNodeId source
+) {
 	FluxMenuBarData *d = menu_bar_data(store, bar);
-	return d && menu_bar_add(d, title, flyout, false);
+	return d && menu_bar_add(d, title, flyout, false, source);
 }
 
 static FluxMenuBarItem *menubar_item(FluxStore *store, XentNodeId node) {
 	FluxNodeData *nd = flux_store_find(store, node);
 	return nd && nd->behavior.on_click == menu_bar_item_click ? ( FluxMenuBarItem * ) nd->behavior.on_click_ctx : NULL;
+}
+
+char const *flux_menubar_item_access_key(FluxStore *store, XentNodeId node) {
+	FluxMenuBarItem *it = menubar_item(store, node);
+	return it ? flux_uia_apptext(store, it->access_key_source, FLUX_A11Y_ACCESS_KEY) : NULL;
 }
 
 int flux_menubar_uia_expand(FluxStore *store, XentNodeId node) {

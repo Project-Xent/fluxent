@@ -4,6 +4,7 @@
 #include "runtime/flux_str.h"
 
 #include "controls/factory/flux_init_nav.h"
+#include "popup/flux_menu_internal.h"
 #include "fluxent/flux_input.h"
 #include "fluxent/flux_menu.h"
 #include "fluxent/flux_window.h"
@@ -130,27 +131,46 @@ void flux_breadcrumb_sync(XentCtx *ctx, XentNodeId bar, struct FluxNodeData *nd)
 	bc_repaint(d);
 }
 
-static void bc_flyout_click(void *ctx) {
-	FluxBreadcrumbFlyoutSlot *slot = ( FluxBreadcrumbFlyoutSlot * ) ctx;
-	FluxBreadcrumbBarData    *d    = slot->bar;
-	if (d->on_item_clicked) d->on_item_clicked(d->on_item_clicked_ctx, slot->index);
+static void bc_select(FluxBreadcrumbBarData *d, int index) {
+	if (d->disabled || index < 0 || index >= d->count) return;
+	FluxStore *store = d->store;
+	XentNodeId root  = d->root;
+	if (d->on_item_clicked) d->on_item_clicked(d->on_item_clicked_ctx, index);
+	XtkHost *host = flux_store_host(store);
+	if (!host || bc_data(store, root) != d) return;
+	XtkEvent event = {
+	  .id             = XTK_EVENT_SELECT,
+	  .target         = ( XtkCtrl ) root,
+	  .source         = ( XtkCtrl ) root,
+	  .current_target = ( XtkCtrl ) root,
+	  .phase          = XTK_EVENT_PHASE_TARGET,
+	  .cause          = XTK_EVENT_CAUSE_USER,
+	  .payload        = {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = index},
+	};
+	flux_host_route(host, &event);
 }
 
-static void bc_open_flyout(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
-	FluxBreadcrumbBarData *d = it->bar;
-	if (!d->window || !d->ellipsis_rendered) return;
-	if (!d->flyout) {
-		d->flyout = flux_menu_create(d->window);
-		if (!d->flyout) return;
-		flux_menu_setthememanager(d->flyout, d->theme);
-		flux_menu_settext(d->flyout, d->text);
-	}
+static void bc_flyout_click(void *ctx) {
+	FluxBreadcrumbFlyoutSlot const *slot = ctx;
+	bc_select(slot->bar, slot->index);
+}
+
+static bool bc_prepare_flyout(FluxBreadcrumbBarData *d) {
+	if (d->flyout) return true;
+	d->flyout = flux_menu_create(d->window);
+	if (!d->flyout) return false;
+	d->flyout->breadcrumb = true;
+	flux_menu_setanim(d->flyout, FLUX_POPUP_ANIM_FLYOUT);
+	flux_menu_setthememanager(d->flyout, d->theme);
+	flux_menu_settext(d->flyout, d->text);
+	return true;
+}
+
+static bool bc_fill_flyout(FluxBreadcrumbBarData *d) {
 	flux_menu_clear(d->flyout);
-	int hidden = d->first_rendered - 1;
-	for (int row = 0; row < hidden; row++) {
-		int index            = hidden - 1 - row;
+	for (int index = d->first_rendered - 2; index >= 0; index--) {
 		d->fly_slots [index] = (FluxBreadcrumbFlyoutSlot) {d, index};
-		flux_menu_additem(
+		int row              = flux_menu_additem(
 		  d->flyout, &(FluxMenuItemDef) {
 					   .type         = FLUX_MENU_ITEM_NORMAL,
 					   .label        = d->labels [index],
@@ -159,7 +179,18 @@ static void bc_open_flyout(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
 					   .on_click_ctx = &d->fly_slots [index],
 					 }
 		);
+		if (row < 0) {
+			flux_menu_clear(d->flyout);
+			return false;
+		}
 	}
+	return true;
+}
+
+static void bc_open_flyout(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
+	FluxBreadcrumbBarData *d = it->bar;
+	if (!d->window || !d->ellipsis_rendered || !bc_prepare_flyout(d)) return;
+	if (flux_menu_visible(d->flyout) || !bc_fill_flyout(d)) return;
 	FluxRect anchor = flux_binding_screen_anchor(d->window, d->ctx, d->store, it->node);
 	flux_menu_setrtl(d->flyout, xent_resolved_dir(d->ctx, it->node) == XENT_DIRECTION_RTL);
 	flux_menu_bind(d->flyout, d->store, it->node);
@@ -169,24 +200,8 @@ static void bc_open_flyout(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
 static void bc_invoke(FluxBreadcrumbItem *it, FluxMenuInputKind input) {
 	FluxBreadcrumbBarData *d = it->bar;
 	if (d->disabled) return;
-	if (it->elem == 0) {
-		bc_open_flyout(it, input);
-		return;
-	}
-	int index = it->elem - 1;
-	if (d->on_item_clicked) d->on_item_clicked(d->on_item_clicked_ctx, index);
-	XtkHost *host = flux_store_host(d->store);
-	if (!host) return;
-	XtkEvent event = {
-	  .id             = XTK_EVENT_SELECT,
-	  .target         = ( XtkCtrl ) d->root,
-	  .source         = ( XtkCtrl ) d->root,
-	  .current_target = ( XtkCtrl ) d->root,
-	  .phase          = XTK_EVENT_PHASE_TARGET,
-	  .cause          = XTK_EVENT_CAUSE_USER,
-	  .payload        = {.kind = XTK_EVENT_PAYLOAD_I32, .u.i32 = index},
-	};
-	flux_host_route(host, &event);
+	if (it->elem == 0) bc_open_flyout(it, input);
+	else bc_select(d, it->elem - 1);
 }
 
 static void bc_item_click(void *ctx) {

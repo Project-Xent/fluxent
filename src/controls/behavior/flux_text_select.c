@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "controls/behavior/flux_text_select.h"
 #include "controls/flux_module.h"
 
@@ -119,6 +120,11 @@ void flux_text_select_wire(FluxNodeData *nd, FluxTextData *td, bool selectable) 
 static FluxTextData *text_uia_data(FluxStore *store, XentNodeId node) {
 	FluxNodeData *nd = flux_store_find(store, node);
 	return nd && nd->component_type == FLUX_CONTROL_TEXT ? ( FluxTextData * ) nd->component_data : NULL;
+}
+
+void flux_text_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxTextData *td = text_uia_data(store, node);
+	if (td && td->content) snprintf(out, size, "%s", td->content);
 }
 
 bool flux_text_uia_view(FluxStore *store, XentNodeId node, FluxUiaTextView *out) {

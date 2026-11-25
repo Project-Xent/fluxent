@@ -19,8 +19,12 @@ bool page_settings_build(PageBuild *b) {
 	XtkNodeRef flow
 	  = section(b, parent, "Layout direction", "Mirrors the whole window, as an Arabic or Hebrew UI would.");
 	page_checkbox(b, flow, "Right to left", b->app->model.rtl, MSG_RTL);
-	XtkNodeRef about
-	  = section(b, parent, "About", "FluXent Gallery — fluxent 0.3.1, imperative transactions over retained controls.");
+	XtkNodeRef nav = section(b, parent, "Navigation style", "Moves the navigation pane to the top of the window.");
+	page_checkbox(b, nav, "Top navigation", b->app->model.nav_style != 0, MSG_NAV_STYLE);
+	XtkNodeRef about = section(
+	  b, parent, "About",
+	  "FluXent Gallery — fluxent " GALLERY_VERSION ", imperative transactions over retained controls."
+	);
 	xtk_link_create(
 	  &b->txn, about,
 	  &(XtkLinkProps) {

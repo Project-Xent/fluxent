@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_text
 #include "a11y/flux_uia_doc.h"
 #include "store/flux_node_data.h"
 
@@ -15,13 +14,13 @@ static ULONG STDMETHODCALLTYPE text_addref(ITextProvider2 *p) { return flux_uia_
 static ULONG STDMETHODCALLTYPE text_release(ITextProvider2 *p) { return flux_uia_release(text_self(p)); }
 
 static bool                    text_open(FluxUia *self, UiaDoc *doc) {
-	if (flux_uia_doc_open(&self->info, self->node, doc)) return true;
+	if (flux_uia_doc_open(&self->info, self->node, self->sub, doc)) return true;
 	flux_uia_doc_close(doc);
 	return false;
 }
 
 static ITextRangeProvider *text_range(FluxUia const *self, uint32_t start, uint32_t end) {
-	return flux_uia_range_new(&self->info, self->node, start, end);
+	return flux_uia_range_new(&self->info, self->node, self->sub, start, end);
 }
 
 static HRESULT text_one(FluxUia const *self, uint32_t start, uint32_t end, ITextRangeProvider **out) {

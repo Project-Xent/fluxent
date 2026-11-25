@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_expand
 #include "a11y/flux_uia_object.h"
 #include "controls/flux_module.h"
 
@@ -8,8 +7,9 @@ static FluxUiaHooks const *uia_expand_hooks(FluxUia const *self) {
 }
 
 static HRESULT uia_expand_to(IExpandCollapseProvider *p, int want) {
-	FluxUia            *self = FLUX_UIA_SELF(p, lpVtblExpand);
-	FluxUiaHooks const *h    = uia_expand_hooks(self);
+	FluxUia *self = FLUX_UIA_SELF(p, lpVtblExpand);
+	flux_uia_dirty(&self->info);
+	FluxUiaHooks const *h = uia_expand_hooks(self);
 	if (!h) return UIA_E_ELEMENTNOTAVAILABLE;
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 	int state = h->expand(self->info.store, self->node);

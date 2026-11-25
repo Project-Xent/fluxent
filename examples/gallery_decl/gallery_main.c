@@ -1,4 +1,5 @@
 #include "gallery.h"
+#include "gallery_assets.h"
 
 #include <fluxent/flux_window.h>
 
@@ -96,6 +97,7 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_PERSON_PICTURE]  = page_person_picture,
   [PAGE_PAGER]           = page_pager,
   [PAGE_SPLIT_VIEW]      = page_split_view,
+  [PAGE_NAVIGATION_VIEW] = page_navigation_view,
   [PAGE_TITLE_BAR]       = page_title_bar,
   [PAGE_DRAG_DROP]       = page_drag_drop,
   [PAGE_MATERIALS]       = page_materials,
@@ -145,6 +147,23 @@ XtkEl *gallery_decl_page_view(XtkUi *ui, void *model) {
 	);
 }
 
+static XtkEl *gallery_control_search(XtkUi *ui, Model const *m) {
+	char const *items [CONTROL_SEARCH_LIMIT];
+	int         count  = gallery_search_items(m->control_query, items);
+	XtkEl      *search = xtk_suggest(
+	  ui, "Search controls",
+	  (XtkAutoSuggestDesc) {
+		.content     = m->control_query,
+		.suggestions = items,
+		.nitem       = count,
+		.query_icon  = "Search",
+		.on_text     = xtk_msg(MSG_CONTROL_SEARCH_TEXT),
+		.query       = xtk_msg(MSG_CONTROL_SEARCH_QUERY),
+	  }
+	);
+	return xtk_keyed(ui, "control-search", xtk_nav_slot(ui, XTK_NAV_SLOT_SEARCH, search));
+}
+
 XtkEl *gallery_decl_view(XtkUi *ui, void *model) {
 	Model *m = ( Model * ) model;
 	return xtk_grow(
@@ -154,11 +173,14 @@ XtkEl *gallery_decl_view(XtkUi *ui, void *model) {
 		  .items            = kNavItems,
 		  .nitem            = PAGE_COUNT,
 		  .sel              = m->page,
-		  .window_title_bar = true,
+		  .pane_mode        = m->nav_style ? XTK_NAV_PANE_TOP : XTK_NAV_PANE_AUTO,
+		  .window_title_bar = XTK_NAV_TITLE_BAR_TALL,
+		  .back_button      = XTK_NAV_BACK_COLLAPSED,
 		  .app_title        = "FluXent Gallery",
 		  .select           = xtk_msg(MSG_NAV),
+		  .hide_settings    = true,
 		},
-		xtk_kids(gallery_decl_page_view(ui, model))
+		xtk_kids(gallery_control_search(ui, m), gallery_decl_page_view(ui, model))
 	  ),
 	  1.0f
 	);
@@ -182,5 +204,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	  .backdrop = ( FluxBackdropType ) model.backdrop,
 	  .on_start = gallery_on_start,
 	};
-	return flux_run(&cfg, &model, gallery_decl_update, gallery_decl_view);
+	gallery_assets_init();
+	int rc = flux_run(&cfg, &model, gallery_decl_update, gallery_decl_view);
+	gallery_assets_clear();
+	return rc;
 }

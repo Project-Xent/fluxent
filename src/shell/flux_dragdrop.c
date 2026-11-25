@@ -1,4 +1,5 @@
 #include "shell/flux_dragdrop.h"
+#include "a11y/flux_uia_ids.h"
 #include "shell/flux_data_internal.h"
 #include "bridge/flux_internal.h"
 #include "controls/data/flux_scroll_data.h"
@@ -25,6 +26,7 @@ struct FluxDragDrop {
 	IDropTargetHelper *helper;
 	FluxData          *data;
 	XentNodeId         hover;
+	XentNodeId         source;
 	bool               registered;
 	bool               disposed;
 	ULONG              refs;
@@ -77,12 +79,38 @@ static void route(FluxDragDrop const *dd, XentNodeId node, XtkEventId id, XtkEve
 	g_delivering = previous;
 }
 
+static XentNodeId drag_visible(FluxDragDrop const *dd, XentNodeId node) {
+	XentCtx *ctx = flux_store_ctx(dd->env.store);
+	if (flux_node_type(dd->env.store, node) == FLUX_CONTROL_TEXT) return node;
+	for (XentNodeId c = xent_node_first(ctx, node); c != XENT_NODE_INVALID; c = xent_node_next(ctx, c)) {
+		XentNodeId hit = drag_visible(dd, c);
+		if (hit != XENT_NODE_INVALID) return hit;
+	}
+	return XENT_NODE_INVALID;
+}
+
+static void note_drag(FluxDragDrop const *dd, XentNodeId node, int event) {
+	if (!node_alive(dd, node)) return;
+	XentNodeId at = drag_visible(dd, node);
+	flux_uia_note(dd->env.store, at != XENT_NODE_INVALID ? at : node, -1, event);
+}
+
 static void set_hover(FluxDragDrop *dd, XentNodeId node) {
 	if (node == dd->hover) return;
 	XentNodeId old = dd->hover;
 	dd->hover      = node;
+	if (old != XENT_NODE_INVALID) note_drag(dd, old, FLUX_UIA_EVT_DRAG_LEAVE);
+	if (node != XENT_NODE_INVALID) note_drag(dd, node, FLUX_UIA_EVT_DRAG_ENTER);
 	route(dd, old, XTK_EVENT_DRAG_HOVER, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_BOOL, .u.b = false});
 	route(dd, node, XTK_EVENT_DRAG_HOVER, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_BOOL, .u.b = true});
+}
+
+static void finish_hover(FluxDragDrop *dd, bool dropped) {
+	XentNodeId old = dd->hover;
+	dd->hover      = XENT_NODE_INVALID;
+	if (old == XENT_NODE_INVALID) return;
+	note_drag(dd, old, dropped ? FLUX_UIA_EVT_DROPPED : FLUX_UIA_EVT_DRAG_LEAVE);
+	route(dd, old, XTK_EVENT_DRAG_HOVER, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_BOOL, .u.b = false});
 }
 
 static float scroll_step(float at, float start, float extent) {
@@ -129,8 +157,8 @@ static XentNodeId track(FluxDragDrop *dd, POINTL pt, DWORD *effect) {
 	return *effect ? target : XENT_NODE_INVALID;
 }
 
-static void end_session(FluxDragDrop *dd) {
-	set_hover(dd, XENT_NODE_INVALID);
+static void end_session(FluxDragDrop *dd, bool dropped) {
+	finish_hover(dd, dropped);
 	flux_data_destroy(dd->data);
 	dd->data = NULL;
 	if (!dd->disposed) flux_window_redraw(dd->env.window);
@@ -201,7 +229,7 @@ static HRESULT STDMETHODCALLTYPE target_over(IDropTarget *self, DWORD keys, POIN
 static HRESULT STDMETHODCALLTYPE target_leave(IDropTarget *self) {
 	FluxDragDrop *dd = owner_of(self);
 	if (dd->helper) IDropTargetHelper_DragLeave(dd->helper);
-	end_session(dd);
+	end_session(dd, false);
 	return S_OK;
 }
 
@@ -211,9 +239,9 @@ static HRESULT STDMETHODCALLTYPE target_drop(
 	( void ) keys;
 	FluxDragDrop *dd     = owner_of(self);
 	XentNodeId    target = track(dd, pt, effect);
-	if (dd->helper) IDropTargetHelper_Drop(dd->helper, obj, ( POINT * ) &pt, *effect);
 	if (target != XENT_NODE_INVALID && !deliver(dd, target)) *effect = DROPEFFECT_NONE;
-	end_session(dd);
+	if (dd->helper) IDropTargetHelper_Drop(dd->helper, obj, ( POINT * ) &pt, *effect);
+	end_session(dd, target != XENT_NODE_INVALID && *effect != DROPEFFECT_NONE);
 	return S_OK;
 }
 
@@ -244,12 +272,17 @@ static void drag_start(void *ctx, XentNodeId source) {
 	FluxNodeData *nd  = node_alive(dd, source) ? flux_store_find(dd->env.store, source) : NULL;
 	FluxData     *src = nd && GetKeyState(VK_LBUTTON) < 0 ? source_data(nd) : NULL;
 	if (!src) return;
+	dd->source = source;
+	note_drag(dd, source, FLUX_UIA_EVT_DRAG_START);
 	IDropTarget_AddRef(( IDropTarget * ) &dd->target);
 	ReleaseCapture();
 	DWORD   effect = DROPEFFECT_NONE;
 	HRESULT hr     = SHDoDragDrop(
 	  dd->hwnd, flux_data_object(src), NULL, DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect
 	);
+	bool dropped = hr == DRAGDROP_S_DROP && effect != DROPEFFECT_NONE;
+	note_drag(dd, source, dropped ? FLUX_UIA_EVT_DRAG_COMPLETE : FLUX_UIA_EVT_DRAG_CANCEL);
+	dd->source = XENT_NODE_INVALID;
 	if (!dd->disposed && (hr == DRAGDROP_S_DROP || hr == DRAGDROP_S_CANCEL)) {
 		XtkEventPayload done = {
 		  .kind  = XTK_EVENT_PAYLOAD_I32,
@@ -267,6 +300,7 @@ FluxDragDrop *flux_dragdrop_create(FluxDragDropEnv const *env) {
 	dd->refs   = 1;
 	dd->target = (DropTarget) {&kTargetVtbl, dd};
 	dd->hover  = XENT_NODE_INVALID;
+	dd->source = XENT_NODE_INVALID;
 	dd->env    = *env;
 	dd->hwnd   = hwnd;
 	if (FAILED(CoCreateInstance(

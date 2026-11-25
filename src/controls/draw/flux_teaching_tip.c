@@ -77,21 +77,13 @@ static TtTail tt_tail_points(FluxTeachingTipPaintInfo const *info) {
 	return t;
 }
 
-static bool tt_rec_tail(XentDlBuilder *b, FluxTeachingTipPaintInfo const *info, FluxColor fill) {
+static bool tt_rec_tail(XentDlBuilder *b, FluxTeachingTipPaintInfo const *info, FluxColor fill, FluxColor border) {
 	if (info->tail_edge == FLUX_TIP_TAIL_EDGE_NONE) return true;
-	TtTail t  = tt_tail_points(info);
-	bool   ok = flux_rec_fill_triangle(b, t.base_a.x, t.base_a.y, t.apex.x, t.apex.y, t.base_b.x, t.base_b.y, fill);
-	if (ok)
-		ok = xent_dl_strokeline(
-		  b, t.base_a.x, t.base_a.y, t.apex.x, t.apex.y, flux_rec_xcolor(tt_border_color()), TT_BORDER,
-		  XENT_STROKE_CAP_FLAT
-		);
-	if (ok)
-		ok = xent_dl_strokeline(
-		  b, t.apex.x, t.apex.y, t.base_b.x, t.base_b.y, flux_rec_xcolor(tt_border_color()), TT_BORDER,
-		  XENT_STROKE_CAP_FLAT
-		);
-	return ok;
+	TtTail    t   = tt_tail_points(info);
+	XentColor ink = flux_rec_xcolor(border);
+	return flux_rec_fill_triangle(b, t.base_a.x, t.base_a.y, t.apex.x, t.apex.y, t.base_b.x, t.base_b.y, fill)
+	    && xent_dl_strokeline(b, t.base_a.x, t.base_a.y, t.apex.x, t.apex.y, ink, TT_BORDER, XENT_STROKE_CAP_FLAT)
+	    && xent_dl_strokeline(b, t.apex.x, t.apex.y, t.base_b.x, t.base_b.y, ink, TT_BORDER, XENT_STROKE_CAP_FLAT);
 }
 
 static bool tt_rec_highlight(XentDlBuilder *b, FluxTeachingTipPaintInfo const *info, FluxRect const *card, bool dark) {
@@ -129,16 +121,14 @@ tt_rec_icon(XentDlBuilder *b, FluxRenderCtx const *rc, FluxTeachingTipPaintInfo 
 static XentDl *tt_record(FluxRenderCtx const *rc, FluxTeachingTipPaintInfo const *info) {
 	XentDlBuilder *b = xent_dl_begin();
 	if (!b) return NULL;
+	FluxContrastColors const *p      = &flux_rec_theme(rc)->contrast;
+	FluxColor                 border = p->active ? p->window_text : tt_border_color();
 	FluxRect card = {TT_TAIL_BAND, TT_TAIL_BAND, info->tip_w - 2.0f * TT_TAIL_BAND, info->tip_h - 2.0f * TT_TAIL_BAND};
-	bool     ok   = flux_rec_fill_rounded(b, &card, TT_CORNER, info->background);
-	if (ok) {
-		float    half  = TT_BORDER * 0.5f;
-		FluxRect inset = {card.x + half, card.y + half, card.w - half * 2.0f, card.h - half * 2.0f};
-		ok             = flux_rec_stroke_rounded(b, &inset, TT_CORNER, tt_border_color(), TT_BORDER);
-	}
-	if (ok) ok = tt_rec_tail(b, info, info->background);
-	if (ok) ok = tt_rec_highlight(b, info, &card, rc->is_dark);
-	if (ok) ok = tt_rec_icon(b, rc, info, &card);
+	bool     ok   = flux_rec_fill_rounded(b, &card, TT_CORNER, info->background)
+	             && flux_rec_stroke_rounded(b, &card, TT_CORNER - 0.5f, border, TT_BORDER)
+	             && tt_rec_tail(b, info, info->background, border);
+	ok            = ok && (p->active || tt_rec_highlight(b, info, &card, rc->is_dark));
+	ok            = ok && tt_rec_icon(b, rc, info, &card);
 	return flux_rec_finish(b, ok);
 }
 

@@ -1,5 +1,7 @@
 #include "controls/flux_control_uia.h"
+#include "bridge/flux_internal.h"
 #include "controls/factory/flux_factory.h"
+#include "input/flux_input_internal.h"
 #include "store/flux_node_data.h"
 #include "controls/factory/flux_init_container.h"
 
@@ -10,6 +12,48 @@ static FluxSplitViewData *split_data(FluxStore *store, XentNodeId id) {
 	FluxNodeData *nd = flux_store_find(store, id);
 	if (!nd || nd->component_type != FLUX_CONTROL_SPLIT_VIEW || !nd->component_data) return NULL;
 	return ( FluxSplitViewData * ) nd->component_data;
+}
+
+static void split_clear_dismiss(FluxSplitViewData *d) {
+	if (d->dismiss_pane == XENT_NODE_INVALID) return;
+	d->dismiss_pane = XENT_NODE_INVALID;
+	flux_input_set_dismiss_layer(flux_store_input(d->store), d->node, XENT_NODE_INVALID);
+}
+
+static void split_restore_focus(FluxSplitViewData const *d) {
+	FluxInput *input = flux_store_input(d->store);
+	if (!input || !input_within(d->ctx, flux_input_focus(input), d->dismiss_pane)) return;
+	if (flux_input_focuswithin(input, d->previous_focus, true)) return;
+	if (flux_input_focuswithin(input, xent_node_first(d->ctx, d->node), true)) return;
+	flux_input_setfocus(input, XENT_NODE_INVALID, true);
+}
+
+static void split_light_dismiss(FluxStore *store, XentNodeId node) {
+	FluxSplitViewData *d = split_data(store, node);
+	if (!d || !d->pane_open || !flux_splitview_is_overlay(d->display_mode)) return;
+	d->pane_open = false;
+	split_restore_focus(d);
+	d = split_data(store, node);
+	if (!d || d->pane_open) return;
+	split_clear_dismiss(d);
+	XtkHost *host = flux_store_host(store);
+	if (host)
+		flux_input_route_event(
+		  host, node, XTK_EVENT_OPEN, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_BOOL}, XTK_EVENT_CAUSE_USER
+		);
+}
+
+static void split_sync_dismiss(FluxSplitViewData *d, XentNodeId pane, bool active) {
+	if (!active || pane == XENT_NODE_INVALID) {
+		split_clear_dismiss(d);
+		return;
+	}
+	if (d->dismiss_pane == pane) return;
+	FluxInput *input = flux_store_input(d->store);
+	if (!flux_input_set_dismiss_action(input, d->node, pane, split_light_dismiss)) return;
+	d->dismiss_pane    = pane;
+	XentNodeId focused = flux_input_focus(input);
+	d->previous_focus  = input_within(d->ctx, focused, pane) ? XENT_NODE_INVALID : focused;
 }
 
 static void split_wrap_layout(XentCtx *ctx, XentNodeId n) {
@@ -110,12 +154,15 @@ split_layout_pane(XentCtx *ctx, FluxSplitViewData *d, XentNodeId pane, SplitGeom
 	if (pane == XENT_NODE_INVALID) return;
 	xent_setpos(ctx, pane, (XentPoint) {g->pane_x, 0.0f});
 	xent_setsize(ctx, pane, (XentSize) {g->pane_w, height});
+	xent_setcollapsed(ctx, pane, g->pane_w <= 0.0f);
 	FluxSplitPaneData *pd = split_pane_data(d, pane);
 	if (!pd) return;
-	pd->overlay   = g->overlay;
-	pd->open      = d->pane_open;
-	pd->placement = d->placement;
-	pd->divider   = g->pane_w > 0.5f;
+	pd->overlay      = g->overlay;
+	pd->open         = d->pane_open;
+	pd->placement    = d->placement;
+	pd->divider      = g->pane_w > 0.5f;
+	FluxNodeData *nd = flux_store_find(d->store, pane);
+	nd->tab_cycle    = pd->overlay && pd->open;
 }
 
 void flux_splitview_sync(XentCtx *ctx, XentNodeId node, struct FluxNodeData *nd) {
@@ -124,17 +171,23 @@ void flux_splitview_sync(XentCtx *ctx, XentNodeId node, struct FluxNodeData *nd)
 	if (!d || !xent_layout_rect(ctx, node, &r) || r.w <= 0.0f || r.h <= 0.0f) return;
 
 	XentNodeId content = xent_node_first(ctx, node);
-	if (content == XENT_NODE_INVALID) return;
+	if (content == XENT_NODE_INVALID) {
+		split_clear_dismiss(d);
+		return;
+	}
 	XentNodeId    pane = xent_node_next(ctx, content);
 	SplitGeometry g    = split_geometry(d, r.w);
 	xent_setpos(ctx, content, (XentPoint) {g.content_x, 0.0f});
 	xent_setsize(ctx, content, (XentSize) {g.content_w, r.h});
 	split_layout_pane(ctx, d, pane, &g, r.h);
+	split_sync_dismiss(d, pane, g.overlay && d->pane_open && g.pane_w > 0.0f);
 }
 
 void flux_splitview_setopen(FluxStore *store, XentNodeId id, bool open) {
 	FluxSplitViewData *d = split_data(store, id);
-	if (d) d->pane_open = open;
+	if (!d) return;
+	d->pane_open = open;
+	if (!open) split_clear_dismiss(d);
 }
 
 void flux_splitview_configure(
@@ -143,9 +196,17 @@ void flux_splitview_configure(
 	FluxSplitViewData *d = split_data(store, id);
 	if (!d) return;
 	d->display_mode = ( uint8_t ) display_mode;
-	d->placement    = ( uint8_t ) placement;
+	if (!flux_splitview_is_overlay(d->display_mode)) split_clear_dismiss(d);
+	d->placement = ( uint8_t ) placement;
 	if (open_len > 0.0f) d->open_len = open_len;
 	if (compact_len > 0.0f) d->compact_len = compact_len;
+}
+
+bool flux_splitview_uia_admits(FluxStore *store, XentNodeId node, XentNodeId child) {
+	( void ) node;
+	FluxNodeData            *nd = flux_store_find(store, child);
+	FluxSplitPaneData const *pd = nd && nd->component_type == FLUX_CONTROL_SPLIT_VIEW_PANE ? nd->component_data : NULL;
+	return !pd || pd->divider;
 }
 
 unsigned flux_splitpane_uia_live(FluxStore *store, XentNodeId node) {

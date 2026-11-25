@@ -18,9 +18,13 @@
 XentDl *flux_container_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
-	( void ) rc;
 	( void ) state;
 	FLUX_REC_BEGIN();
+	FluxThemeColors const *theme = flux_rec_theme(rc);
+	if (snap->dialog_surface == FLUX_DIALOG_SURFACE_SMOKE && theme->contrast.active) {
+		FluxColor smoke = {(theme->contrast.window.rgba & 0xffffff00u) | 0xccu};
+		FLUX_REC_END(flux_rec_fill_rect(b, bounds, smoke));
+	}
 	bool ok = flux_rec_fill_bg(b, snap, bounds) && flux_rec_stroke_border(b, snap, bounds);
 	FLUX_REC_END(ok);
 }
@@ -70,10 +74,21 @@ static bool text_draw_selection(
 	return true;
 }
 
+static FluxColor text_item_contrast_color(FluxThemeColors const *theme, FluxItemTextColor kind) {
+	switch (kind) {
+	case FLUX_ITEM_TEXT_BUTTON    : return theme->contrast.button_text;
+	case FLUX_ITEM_TEXT_WINDOW    : return theme->contrast.window_text;
+	case FLUX_ITEM_TEXT_HIGHLIGHT : return theme->contrast.highlight_text;
+	case FLUX_ITEM_TEXT_DISABLED  : return theme->contrast.gray_text;
+	default                       : return theme->text_primary;
+	}
+}
+
 static FluxColor text_record_color(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state) {
 	FluxThemeColors const *t = flux_rec_theme(rc);
 	if (state && !state->enabled) return t->text_disabled;
-	return flux_color_af(snap->u.text.text_color) > 0.0f ? snap->u.text.text_color : t->text_primary;
+	if (flux_color_af(snap->u.text.text_color) > 0.0f) return snap->u.text.text_color;
+	return t->contrast.active ? text_item_contrast_color(t, snap->u.text.item_color) : t->text_primary;
 }
 
 static XentTextStyle text_record_style(FluxRenderSnap const *snap) {
@@ -131,8 +146,13 @@ XentDl *flux_card_record(
 	FluxThemeColors const *t      = flux_rec_theme(rc);
 	float                  radius = snap->corner_radius > 0.0f ? snap->corner_radius : 8.0f;
 	FluxColor              bg     = snap->background.rgba ? snap->background : t->card_bg_default;
-	bool                   ok     = flux_rec_fill_rounded(b, bounds, radius, bg);
-	if (ok) ok = flux_rec_stroke_rounded(b, bounds, radius, t->card_stroke_default, 1.0f);
+	float                  stroke = 1.0f;
+	if (snap->dialog_surface == FLUX_DIALOG_SURFACE_CARD) {
+		bg = t->solid_background;
+		if (t->contrast.active) stroke = 2.0f;
+	}
+	bool ok = flux_rec_fill_rounded(b, bounds, radius, bg);
+	if (ok) ok = flux_rec_stroke_rounded(b, bounds, radius, t->card_stroke_default, stroke);
 	FLUX_REC_END(ok);
 }
 
@@ -140,6 +160,11 @@ static FluxColor hyperlink_text_color(
   FluxThemeColors const *t, FluxRenderSnap const *snap, FluxControlState const *state, FluxRecStateAnim anim
 ) {
 	if (state && !state->enabled) return t->text_disabled;
+	if (t->contrast.active) {
+		if (state && state->pressed) return t->contrast.highlight;
+		if (state && state->hovered) return t->contrast.window_text;
+		return t->contrast.hotlight;
+	}
 	if (flux_color_af(snap->u.button.text_color) > 0.0f) return snap->u.button.text_color;
 	return flux_anim_lerp_color(
 	  flux_anim_lerp_color(t->accent_default, t->accent_secondary, anim.hover), t->accent_tertiary, anim.press
@@ -150,6 +175,7 @@ static bool hyperlink_hover_bg(
   XentDlBuilder *b, FluxRect const *bounds, float radius, FluxControlState const *state, FluxThemeColors const *t,
   FluxRecStateAnim anim
 ) {
+	if (t->contrast.active) return flux_rec_fill_rounded(b, bounds, radius, t->contrast.window);
 	if (!state || !state->enabled) return true;
 	float bg_t = anim.hover > anim.press ? anim.hover : anim.press;
 	if (bg_t <= 0.001f) return true;
@@ -389,11 +415,34 @@ XentDl *flux_dialogbody_record(
 	FLUX_REC_END(flux_rec_dialogbody(b, rc, bounds));
 }
 
+XentDl *flux_flyout_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	( void ) snap;
+	( void ) state;
+	FluxThemeColors const *t      = flux_rec_theme(rc);
+	float                  stroke = t->contrast.active ? 2.0f : FLUX_STROKE_WIDTH;
+	FluxRect inset = {bounds->x + stroke / 2.0f, bounds->y + stroke / 2.0f, bounds->w - stroke, bounds->h - stroke};
+	FLUX_REC_BEGIN();
+	FLUX_REC_END(
+	  flux_rec_fill_rounded(b, bounds, FLUX_FLYOUT_CORNER, t->flyout_background)
+	  && flux_rec_stroke_rounded(b, &inset, FLUX_FLYOUT_CORNER, t->flyout_border, stroke)
+	);
+}
+
 XentDl *flux_listitem_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
 	FLUX_REC_BEGIN();
 	FLUX_REC_END(flux_rec_listitem(b, rc, snap, bounds, state));
+}
+
+XentDl *flux_listitem_overlay_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	if (!state->focused || !state->enabled || !flux_rec_theme(rc)->contrast.active) return NULL;
+	FLUX_REC_BEGIN();
+	FLUX_REC_END(flux_rec_listitem_focus(b, rc, snap, bounds));
 }
 
 XentDl *flux_list_overlay_record(
@@ -488,14 +537,6 @@ XentDl *flux_nav_record(
 	( void ) state;
 	FLUX_REC_BEGIN();
 	FLUX_REC_END(flux_rec_nav(b, rc, snap, bounds));
-}
-
-XentDl *flux_nav_overlay_record(
-  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
-) {
-	( void ) state;
-	FLUX_REC_BEGIN();
-	FLUX_REC_END(flux_rec_nav_overlay(b, rc, snap, bounds));
 }
 
 XentDl *flux_navitem_record(

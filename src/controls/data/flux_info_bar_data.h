@@ -17,6 +17,7 @@ typedef struct FluxInfoBarData {
 	char const         *message;
 	bool                is_open;
 	bool                is_closable;
+	bool                notify_open;
 	void                (*on_close)(void *ctx);
 	void               *on_close_ctx;
 	void               *layout_ctx;

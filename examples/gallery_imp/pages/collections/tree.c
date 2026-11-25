@@ -4,7 +4,7 @@ static XtkTreeNodeDesc const kDocs []     = {{.text = "Proposal.docx"}, {.text =
 static XtkTreeNodeDesc const kPictures [] = {{.text = "Vacation"}, {.text = "Screenshots"}};
 
 static char const           *select_text(GalleryApp *g) {
-	return g->model.tree_sel >= 0 ? gallery_fmt(g, "Selected flat row: %d", g->model.tree_sel) : "Nothing selected.";
+	return g->model.tree_sel > 0 ? gallery_fmt(g, "Selected flat row: %d", g->model.tree_sel - 1) : "Nothing selected.";
 }
 
 static char const *invoke_text(GalleryApp *g) {
@@ -42,12 +42,12 @@ bool page_tree_view_build(PageBuild *b) {
 	  &(XtkTreeProps) {
 		.set   = XTK_TREE_H_MASK | XTK_TREE_SEL_MASK | XTK_TREE_ITEMH_MASK,
 		.h     = 280.0f,
-		.sel   = m->tree_sel,
+		.sel   = m->tree_sel - 1,
 		.itemh = 28.0f,
 	  }
 	);
 	XtkNodeRef ref = xtk_ref_local(tree);
-	xtk_txn_settree(&b->txn, ref, &(XtkTreeDesc) {.roots = roots, .nroot = 3, .sel = m->tree_sel});
+	xtk_txn_settree(&b->txn, ref, &(XtkTreeDesc) {.roots = roots, .nroot = 3});
 	page_on(b, tree, XTK_EVENT_TREE_SELECT, MSG_TREE_SELECT, 0);
 	page_on(b, tree, XTK_EVENT_TREE_EXPAND, MSG_TREE_EXPAND, 0);
 	xtk_tree_oninvoke(&b->txn, ref, page_post, page_bind(b, MSG_TREE_INVOKE));

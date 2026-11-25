@@ -9,7 +9,7 @@
 
 typedef struct FluxStore FluxStore;
 
-#define FLUX_PP_DEFAULT_SIZE   72.0f
+#define FLUX_PP_DEFAULT_SIZE   96.0f
 #define FLUX_PP_INITIALS_RATIO 0.42f
 #define FLUX_PP_BADGE_RATIO    0.5f
 #define FLUX_PP_BADGE_FONT     0.6f
@@ -17,19 +17,21 @@ typedef struct FluxStore FluxStore;
 #define FLUX_PP_GLYPH_GROUP    0xe716u
 
 typedef struct FluxPersonPictureData {
-	XentCtx   *ctx;
-	FluxStore *store;
-	XentNodeId node;
+	XentCtx    *ctx;
+	FluxStore  *store;
+	XentNodeId  node;
 
-	float      diameter;
-	char      *display_name;
-	char      *initials;
-	char      *image_path;
-	char      *badge_glyph;
-	int        badge_number;
-	bool       is_group;
+	float       diameter;
+	char       *display_name;
+	char       *initials;
+	char       *image_path;
+	char       *badge_glyph;
+	char const *badge_image_path;
+	char const *badge_text;
+	int         badge_number;
+	bool        is_group;
 
-	char       resolved [12];
+	char        resolved [12];
 } FluxPersonPictureData;
 
 #endif

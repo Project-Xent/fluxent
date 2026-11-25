@@ -12,5 +12,8 @@
 #include "flux_host.h"
 #include "flux_filedialog.h"
 #include "flux_data.h"
+#include "flux_taskbar.h"
+#include "flux_tray.h"
+#include "flux_toast.h"
 
 #endif

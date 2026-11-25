@@ -5,12 +5,14 @@
 #include "controls/data/flux_picker_data.h"
 
 struct FluxPickerOps {
-	float width;
-	void  (*face)(FluxPickerData *pd);
-	void  (*fill)(FluxPickerData *pd, FluxPickerFlyout *fly);
-	void  (*load)(FluxPickerData *pd);
-	void  (*select)(FluxPickerData *pd, int column, int index);
-	int   (*accept)(FluxPickerData *pd);
+	float       width;
+	void        (*face)(FluxPickerData *pd);
+	void        (*fill)(FluxPickerData *pd, FluxPickerFlyout *fly);
+	void        (*load)(FluxPickerData *pd);
+	void        (*select)(FluxPickerData *pd, int column, int index);
+	int         (*accept)(FluxPickerData *pd);
+	void        (*spoken)(FluxPickerData const *pd, char *out, size_t size);
+	char const *kind;
 };
 
 bool flux_picker_setup(

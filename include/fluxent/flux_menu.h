@@ -75,6 +75,7 @@ typedef struct FluxMenuItemDef {
 	struct FluxMenu *submenu;
 
 	char const      *radio_group;
+	char const      *access_key;
 } FluxMenuItemDef;
 
 typedef struct FluxMenu  FluxMenu;

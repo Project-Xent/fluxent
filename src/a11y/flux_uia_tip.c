@@ -1,17 +1,6 @@
-#ifndef COBJMACROS
-  #define COBJMACROS
-#endif
-#ifndef CINTERFACE
-  #define CINTERFACE
-#endif
-
+#include "a11y/flux_uia_sdk.h"
 #include "a11y/flux_uia.h"
 #include "a11y/flux_uia_ids.h"
-
-#include <windows.h>
-#include <oleauto.h>
-#include <uiautomationcore.h>
-#include <uiautomationcoreapi.h>
 
 #include <stdlib.h>
 

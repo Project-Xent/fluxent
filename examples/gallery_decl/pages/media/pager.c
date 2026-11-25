@@ -8,7 +8,7 @@ XtkEl *page_pager(XtkUi *ui, Model const *m) {
 		  ui, "PagerControl",
 		  "A numeric/arrow pager (distinct from the dot PipsPager): "
 		  "First/Previous/Next/Last buttons around a number panel with ellipses, "
-		  "or a compact page-of-total label."
+		  "a NumberBox, or a ComboBox."
 		),
 		example(
 		  ui, "Number panel (32 pages) with First/Last buttons.",
@@ -20,8 +20,9 @@ XtkEl *page_pager(XtkUi *ui, Model const *m) {
 				(XtkPagerDesc) {
 				  .nitem        = 32,
 				  .sel          = m->pager_page,
-				  .first_button = XTK_PAGER_BUTTON_AUTO,
-				  .last_button  = XTK_PAGER_BUTTON_AUTO,
+				  .display_mode = XTK_PAGER_DISPLAY_BUTTON_PANEL,
+				  .first_button = XTK_PAGER_BUTTON_VISIBLE,
+				  .last_button  = XTK_PAGER_BUTTON_VISIBLE,
 				  .select       = xtk_msg(MSG_PAGER_SELECT),
 				}
 			  ),
@@ -30,14 +31,24 @@ XtkEl *page_pager(XtkUi *ui, Model const *m) {
 		  )
 		),
 		example(
-		  ui, "Number-text display.",
+		  ui, "NumberBox display.",
+		  xtk_pager(
+			ui,
+			(XtkPagerDesc) {
+			  .nitem        = 32,
+			  .sel          = m->pager_page,
+			  .display_mode = XTK_PAGER_DISPLAY_NUMBER_BOX,
+			  .select       = xtk_msg(MSG_PAGER_SELECT),
+			}
+		  )
+		),
+		example(
+		  ui, "ComboBox display.",
 		  xtk_pager(
 			ui, (XtkPagerDesc) {
 				  .nitem        = 32,
 				  .sel          = m->pager_page,
-				  .display_mode = XTK_PAGER_DISPLAY_NUMBER_TEXT,
-				  .prefix       = "Page",
-				  .suffix       = "of",
+				  .display_mode = XTK_PAGER_DISPLAY_COMBO_BOX,
 				  .select       = xtk_msg(MSG_PAGER_SELECT),
 				}
 		  )

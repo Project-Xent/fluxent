@@ -5,10 +5,16 @@
 #include "controls/factory/flux_init_container.h"
 #include "controls/factory/flux_init_items.h"
 #include "fluxent/flux_input.h"
+#include "a11y/flux_uia_ids.h"
+#include "controls/flux_module.h"
+#include "controls/behavior/flux_uia_part.h"
 
 #include <stdlib.h>
 
-static void items_view_data_destroy(void *component_data) {
+static FluxUiaHooks const items_uia_presenter = {.role = FLUX_UIA_PANE, .patterns = FLUX_UIA_P_SCROLL, .klass = L""};
+static FluxUiaHooks const items_uia_repeater  = {.role = FLUX_UIA_GROUP, .klass = L""};
+
+static void               items_view_data_destroy(void *component_data) {
 	FluxItemsViewData *d = ( FluxItemsViewData * ) component_data;
 	if (!d) return;
 	flux_list_release(&d->list);
@@ -48,6 +54,8 @@ XentNodeId flux_itemsview_init(FluxItemsViewDesc const *info) {
 	xent_setwpct(info->ctx, host, 1.0f);
 	xent_seth(info->ctx, host, 0.0f);
 	xent_setshrink(info->ctx, host, 0.0f);
+	flux_uia_part_hooks(info->store, scroll, &items_uia_presenter);
+	flux_uia_part_hooks(info->store, host, &items_uia_repeater);
 
 	ld->ctx                  = info->ctx;
 	ld->store                = info->store;

@@ -23,6 +23,7 @@ typedef void              (*FluxKeyFn)(void *ctx, FluxKey key, bool down);
 typedef void              (*FluxCharFn)(void *ctx, wchar_t ch);
 typedef void              (*FluxImeCompositionFn)(void *ctx, wchar_t const *text, int cursor_pos);
 typedef void              (*FluxSettingChangedFn)(void *ctx);
+typedef void              (*FluxAcceleratorFn)(void *ctx, uint16_t command);
 typedef void             *(*FluxUiaProviderFn)(void *ctx, void *hwnd);
 
 typedef struct FluxWindowCfg {
@@ -63,11 +64,13 @@ void                   flux_window_onime(FluxWindow *win, FluxImeCompositionFn c
 void                   flux_window_onsettings(FluxWindow *win, FluxSettingChangedFn cb, void *ctx);
 /** Borrows `ctx` until this callback is replaced or the window is destroyed. */
 void                   flux_window_onuia(FluxWindow *win, FluxUiaProviderFn cb, void *ctx);
+/** Copies the Win32 accelerator table. Borrows ctx until replaced or the window is destroyed. */
+bool flux_window_setaccelerators(FluxWindow *win, ACCEL const *entries, int count, FluxAcceleratorFn cb, void *ctx);
 
-void                   flux_window_setbackdrop(FluxWindow *win, int backdrop_type);
-int                    flux_window_backdrop(FluxWindow const *win);
-void                   flux_window_setdark(FluxWindow *win, bool enabled);
-void                   flux_window_settitle(FluxWindow *win, wchar_t const *title);
+void flux_window_setbackdrop(FluxWindow *win, int backdrop_type);
+int  flux_window_backdrop(FluxWindow const *win);
+void flux_window_setdark(FluxWindow *win, bool enabled);
+void flux_window_settitle(FluxWindow *win, wchar_t const *title);
 
 #define FLUX_WINDOW_MAX_TITLE_BAR_PASS 8
 

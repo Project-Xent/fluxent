@@ -63,7 +63,8 @@ bool page_split_view_build(PageBuild *b) {
 		.placement = m->split_right ? XTK_SPLITVIEW_RIGHT : XTK_SPLITVIEW_LEFT,
 	  }
 	);
-	XtkNodeRef body    = xtk_ref_local(xtk_splitbody_create(&b->txn, xtk_ref_local(view), NULL));
+	XtkNodeRef body = xtk_ref_local(xtk_splitbody_create(&b->txn, xtk_ref_local(view), NULL));
+	xtk_splitview_onopen(&b->txn, xtk_ref_local(view), page_post, page_bind(b, MSG_SPLIT_OPEN));
 	XtkNodeRef pane    = xtk_ref_local(xtk_splitpane_create(&b->txn, xtk_ref_local(view), NULL));
 	XtkNodeRef content = xtk_ref_local(ui_card(&b->txn, body, 12.0f, XENT_FLEX_ALIGN_START, 16.0f));
 	page_button(b, content, "\xE2\x98\xB0 Toggle pane", MSG_SPLIT_TOGGLE, 0);

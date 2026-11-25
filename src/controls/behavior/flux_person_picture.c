@@ -1,9 +1,11 @@
+#include "controls/flux_control_uia.h"
 #include "controls/factory/flux_factory.h"
 #include "store/flux_node_data.h"
 #include "render/flux_icon.h"
 #include "runtime/flux_str.h"
 #include "controls/factory/flux_init_media.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -77,6 +79,8 @@ static void pp_resolve_initials(FluxPersonPictureData *d) {
 
 static void pp_set_badge_glyph(FluxPersonPictureData *d, char const *name) {
 	flux_str_free(d->badge_glyph);
+	flux_str_free(d->badge_image_path);
+	flux_str_free(d->badge_text);
 	d->badge_glyph = NULL;
 	if (!name || !name [0]) return;
 	wchar_t const *cp = flux_icon_lookup(name);
@@ -161,4 +165,36 @@ void flux_avatar_set_badge(FluxStore *store, XentNodeId pp, char const *badge_gl
 void flux_avatar_set_group(FluxStore *store, XentNodeId pp, bool is_group) {
 	FluxPersonPictureData *d = pp_data(store, pp);
 	if (d) d->is_group = is_group;
+}
+
+void flux_avatar_set_badge_image(FluxStore *store, XentNodeId pp, char const *path) {
+	FluxPersonPictureData *d = pp_data(store, pp);
+	if (d) flux_str_replace(&d->badge_image_path, path && path [0] ? path : NULL);
+}
+
+void flux_avatar_set_badge_text(FluxStore *store, XentNodeId pp, char const *text) {
+	FluxPersonPictureData *d = pp_data(store, pp);
+	if (d) flux_str_replace(&d->badge_text, text && text [0] ? text : NULL);
+}
+
+static char const *pp_uia_person(FluxPersonPictureData const *d) {
+	if (d->is_group) return "Group";
+	if (d->display_name && d->display_name [0]) return d->display_name;
+	if (d->initials && d->initials [0]) return d->initials;
+	return "Person";
+}
+
+static char const *pp_uia_badge_text(FluxPersonPictureData const *d) {
+	if (d->badge_text) return d->badge_text;
+	if (d->badge_number <= 0) return "icon";
+	return d->badge_number == 1 ? "item" : "items";
+}
+
+void flux_avatar_uia_name(FluxStore *store, XentNodeId node, char *out, size_t size) {
+	FluxPersonPictureData const *d = pp_data(store, node);
+	if (!d) return;
+	char const *who = pp_uia_person(d);
+	if (d->badge_number > 0) snprintf(out, size, "%s, %d %s", who, d->badge_number, pp_uia_badge_text(d));
+	else if (d->badge_glyph || d->badge_image_path) snprintf(out, size, "%s, %s", who, pp_uia_badge_text(d));
+	else snprintf(out, size, "%s", who);
 }

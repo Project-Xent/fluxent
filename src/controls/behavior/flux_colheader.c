@@ -1,3 +1,4 @@
+#include "a11y/flux_uia_ids.h"
 #include "controls/behavior/flux_colheader.h"
 #include "controls/factory/flux_factory.h"
 #include "controls/data/flux_scroll_data.h"
@@ -283,6 +284,18 @@ static void col_click(void *ctx) {
 	d->press_part         = FLUX_COL_PART_NONE;
 	if (part == FLUX_COL_PART_BUTTON && d->sortable)
 		route(d, XTK_EVENT_INVOKE, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_NONE});
+}
+
+bool flux_colitem_uia_invoke(FluxStore *store, XentNodeId node) {
+	FluxColItemData *d = item_data(store, node);
+	if (!d || !d->sortable) return false;
+	route(d, XTK_EVENT_INVOKE, (XtkEventPayload) {.kind = XTK_EVENT_PAYLOAD_NONE});
+	return true;
+}
+
+unsigned flux_colitem_uia_live(FluxStore *store, XentNodeId node) {
+	FluxColItemData *d = item_data(store, node);
+	return d && d->sortable ? ~0u : ~( unsigned ) FLUX_UIA_P_INVOKE;
 }
 
 static void col_cancel(void *ctx) {

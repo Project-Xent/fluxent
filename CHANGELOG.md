@@ -2,8 +2,16 @@
 
 Entries start at 0.3.1; earlier releases are described by their tags.
 
-## 0.3.4 (unreleased)
+## 0.4.0 (unreleased)
 
+- PersonPicture defaults to 96 DIP and supports circular badge images.
+  Badge text overrides the badge description in UI Automation.
+- BreadcrumbBar overflow uses its own row and flyout styling, including the
+  high-contrast border. Selecting an overflow item delivers the same event
+  and original index as selecting an inline item.
+- overlay and compact-overlay SplitView panes close on a pointer press
+  outside the pane or Escape from within the SplitView. The closing press
+  is consumed and the underlying content stays visible.
 - added programmatic focus: `flux_app_setfocus(app, control)` moves keyboard
   focus to a control after the next layout pass, so a control created in the
   same transaction can take it, and `flux_app_focus(app)` reads it back. A
@@ -32,12 +40,79 @@ Entries start at 0.3.1; earlier releases are described by their tags.
   left, and TeachingTip mirrors its placement as WinUI does. Horizontal
   scrolling starts at the right, and the title bar's window regions mirror.
   Composition mode's horizontal scrolling stays LTR.
+- added NavigationView's Top layout, runtime pane mode changes, and child
+  flyouts for compact panes. Overflow and child flyouts scroll when their
+  contents exceed the available height. Directional keys move focus across
+  the Top pane, and keyboard-opened flyouts take focus and return it to
+  their anchor on Escape.
+- NavigationView shows a built-in Settings item in the footer. Its name is
+  the English string "Settings", its automation id is `SettingsItem`, and
+  its icon is the Settings symbol. On Top it is icon-only and is never moved
+  into the overflow. Selecting it reports index `-2`. Hiding it while
+  selected keeps that index and moves focus to the page content. A footer
+  item the application also names Settings remains a separate item.
+- NavigationView accepts a pane title and slots for the header, custom
+  content, pane footer, and search. An AutoSuggestBox parented to the
+  NavigationView fills the search slot. Top overflow measures those columns
+  from their content width. The custom column keeps a 48 DIP minimum, and
+  the Settings icon's 40 DIP width counts with the footer.
+- added `flux_nav_add_footer_header` for a group header among the footer
+  items. Like menu headers, it collapses while the compact pane is closed.
+- NavigationView's left pane geometry follows WinUI. The SplitView pane
+  border offsets the pane content grid by 1 DIP, which places item
+  backgrounds 4 DIP from the pane edges and the search box 16 DIP from them.
+  The row beside the pane toggle button is at least 40 DIP high, and the
+  pane header starts after the button. Item lists have 2 DIP top and bottom
+  insets, and labels start 4 DIP after the icon column. Group header text is
+  16 DIP from the pane edge. The toggle button keeps its 4,2 padding, and the
+  pane title is vertically centred inside it. The overflow separator spans
+  the pane. The footer viewport height follows WinUI's `UpdatePaneLayout`,
+  which no longer subtracts the pane footer from the footer items' share.
+- NavigationView and Expander use the AnimatedChevronUpDownSmall paths and
+  transitions. ComboBox uses the AnimatedChevronDownSmall path and its press
+  and release animation. These settle directly when Windows animations are
+  disabled.
+- added six edge-aligned `FluxPlacement` values for flyouts. The existing
+  values keep their numeric representation.
+- Windows contrast themes supply the system palette and render window and
+  popup surfaces without Mica or Acrylic. WinUI contrast resources drive
+  control states, borders, and focus visuals across buttons, menus, navigation,
+  lists, tabs, sliders, progress indicators, pickers, and scroll bars.
+  Text entry fields use the system window palette, a 2 DIP focused border,
+  and system highlight colors for selection and selected text.
+- Tab navigation honors explicit indices and tree order, skips hidden and
+  disabled subtrees, and cycles within an open dialog. Closing a dialog
+  restores focus to the previously focused control.
+- UI Automation now exposes text ranges, virtualized items, and grid and table
+  navigation. Popup items participate in their owner's automation tree. Apps
+  can raise automation events and notifications with `flux_app_raiseevent`
+  and `flux_app_raisenotification`.
+- `FluxTextStyle.rtl` sets reading direction for direct text API calls.
+  `flux_text_lines` returns positions and heights for the laid-out lines.
+- PagerControl keeps 32-bit page indices in labels, hit testing, and UI
+  Automation. Page buttons grow to fit large numbers. NumberBox and button
+  panel modes avoid building an unused list of ComboBox entries.
+- Menu flyouts expose keyboard focus on their enabled items to UI Automation.
+  Moving focus scrolls long menus, and Escape returns focus one menu level
+  at a time.
+  Space and Enter show the pressed state and invoke menu commands on release.
+- added the Win32 window accelerator table and Alt access keys. KeyTips
+  follow the visible controls, menu items and CommandBar overflow. A
+  ContentDialog highlights its configured default button and uses it when
+  focused content leaves Enter unhandled.
+- added Windows taskbar progress, overlay icons and thumbnail buttons,
+  notification-area icons with native menus, and desktop toast submission.
 
 ### Breaking changes
 
 | Change | Migration |
 | --- | --- |
 | `flux_host_setfocus` / `flux_host_focus` removed; they never moved keyboard focus | `flux_app_setfocus` / `flux_app_focus` |
+| `FluxNavPaneDisplayMode` follows WinUI's order (Auto, Left, Top, LeftCompact, LeftMinimal) | Use named modes and migrate any stored numeric values |
+| `FluxThemeColors` includes the resolved Windows contrast colors | Rebuild consumers that allocate or pass `FluxThemeColors` |
+| `FluxMenuItemDef` includes an optional `access_key` | Rebuild consumers that pass `FluxMenuItemDef` |
+| `FluxTextStyle` includes `rtl` | Rebuild consumers that embed or pass the struct. Set `rtl` for right-to-left text |
+| NavigationView shows a built-in Settings item and selection can be `-2` | Hide it with `XTK_PROP_SETTINGS_VISIBLE` set to false. `-1` is still no selection. Do not treat every negative index as empty |
 
 ## 0.3.3
 

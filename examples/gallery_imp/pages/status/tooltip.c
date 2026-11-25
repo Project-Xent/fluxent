@@ -50,10 +50,12 @@ bool page_tooltip_build(PageBuild *b) {
 	xtk_button_create(
 	  &b->txn, xtk_ref_local(row),
 	  &(XtkButtonProps) {
-		.set     = XTK_BUTTON_ICON_MASK | XTK_BUTTON_TIP_MASK | XTK_BUTTON_ENABLED_MASK,
-		.icon    = "Save",
-		.tip     = "Icon-only buttons especially need one",
-		.enabled = true,
+		.set       = XTK_BUTTON_ICON_MASK | XTK_BUTTON_TIP_MASK | XTK_BUTTON_ENABLED_MASK | XTK_BUTTON_ANAME_MASK,
+		.icon      = "Save",
+		.tip       = "Icon-only buttons especially need one",
+		.enabled   = true,
+		.aname     = "Save",
+		.aname_len = 4,
 	  }
 	);
 	return true;

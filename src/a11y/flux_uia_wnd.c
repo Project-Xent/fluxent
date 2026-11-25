@@ -1,4 +1,3 @@
-#define UIA_ScrollPatternNoScroll flux_uia_noscroll_wnd
 #include "a11y/flux_uia_object.h"
 #include "controls/flux_module.h"
 
@@ -33,6 +32,7 @@ static HRESULT STDMETHODCALLTYPE wnd_set_state(IWindowProvider *p, enum WindowVi
 static HRESULT STDMETHODCALLTYPE wnd_close(IWindowProvider *p) {
 	FluxUia            *self = NULL;
 	FluxUiaHooks const *h    = uia_window_hooks(p, &self);
+	if (self) flux_uia_dirty(&self->info);
 	if (h && h->close) h->close(self->info.store, self->node);
 	return S_OK;
 }

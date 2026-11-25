@@ -4,12 +4,12 @@
 #include "fluxent/flux_text.h"
 #include "render/flux_render_cache.h"
 #include "render/flux_resource_intern.h"
+#include "text/flux_text_internal.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
-
-#define TB_DELETE_BTN_W 30.0f
 
 typedef struct TextboxComposedContent {
 	char const *content;
@@ -19,6 +19,13 @@ typedef struct TextboxComposedContent {
 	bool        has_composition;
 	bool        has_text;
 } TextboxComposedContent;
+
+typedef struct TextboxTextDraw {
+	FluxRect const               *area;
+	FluxRect                      bounds;
+	XentTextStyle                 style;
+	TextboxComposedContent const *content;
+} TextboxTextDraw;
 
 static uint32_t utf8_bytes_to_utf16_count(char const *s, uint32_t byte_count) {
 	if (!s || byte_count == 0) return 0;
@@ -151,84 +158,154 @@ static bool tb_focus_accent(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect 
 	return xent_dl_popclip(b) && ok;
 }
 
+static FluxColor tb_contrast_border(FluxContrastColors const *p, FluxControlState const *state) {
+	if (!state->enabled) return p->gray_text;
+	return state->focused || state->hovered ? p->highlight : p->button_text;
+}
+
 static bool tb_draw_frame(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *bounds, FluxControlState const *state, float radius
 ) {
 	FluxThemeColors const *t = flux_rec_theme(rc);
+	if (t->contrast.active) {
+		float width = state->enabled && state->focused ? 2.0f : 1.0f;
+		return flux_rec_stroke_rounded(b, bounds, radius, tb_contrast_border(&t->contrast, state), width);
+	}
 	if (!state->enabled) return flux_rec_stroke_rounded(b, bounds, radius, t->ctrl_stroke_default, 1.0f);
 	bool ok = tb_elevation_border(b, rc, bounds, radius, state->focused);
 	if (ok && state->focused) ok = tb_focus_accent(b, rc, bounds, radius);
 	return ok;
 }
 
-static bool tb_draw_selection(
-  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *text_area,
-  FluxControlState const *state, TextboxComposedContent const *content
-) {
-	if (!content->has_text || !state->focused) return true;
-	if (snap->u.textbox.edit.selection_start == snap->u.textbox.edit.selection_end) return true;
-	if (!rc || !rc->text) return true;
-
-	uint32_t a = snap->u.textbox.edit.selection_start;
-	uint32_t e = snap->u.textbox.edit.selection_end;
-	if (a > e) {
-		uint32_t tmp = a;
-		a            = e;
-		e            = tmp;
-	}
+static void
+tb_selection_range(FluxTextSelectionQuery *q, FluxRenderSnap const *snap, TextboxComposedContent const *content) {
+	uint32_t    a         = snap->u.textbox.edit.selection_start;
+	uint32_t    e         = snap->u.textbox.edit.selection_end;
 	char const *committed = snap->u.textbox.text_content;
-	int         sel_s     = ( int ) utf8_bytes_to_utf16_count(committed, a);
-	int         sel_e     = ( int ) utf8_bytes_to_utf16_count(committed, e);
-	if (content->has_composition && sel_s >= content->composition_start_u16) {
-		sel_s += ( int ) snap->u.textbox.edit.composition_length;
-		sel_e += ( int ) snap->u.textbox.edit.composition_length;
-	}
-	else if (content->has_composition && sel_e > content->composition_start_u16) {
-		sel_e += ( int ) snap->u.textbox.edit.composition_length;
-	}
+	q->start              = ( int ) utf8_bytes_to_utf16_count(committed, a <= e ? a : e);
+	q->end                = ( int ) utf8_bytes_to_utf16_count(committed, a <= e ? e : a);
+	if (!content->has_composition) return;
+	int pos = content->composition_start_u16;
+	int len = ( int ) snap->u.textbox.edit.composition_length;
+	if (q->start >= pos) q->start += len;
+	if (q->end > pos) q->end += len;
+}
 
-	FluxTextStyle          hit = tb_hit_style(snap);
-	FluxRect               rects [16];
-	FluxTextSelectionQuery q = {
-	  {rc->text, content->content, &hit, snap_layout_w(snap, text_area)},
-      sel_s, sel_e, rects, 16
-    };
-	uint32_t               n = flux_text_selection(&q);
-	FluxThemeColors const *t = flux_rec_theme(rc);
-	FluxColor sel = flux_color_af(snap->u.textbox.edit.selection_color) > 0.0f ? snap->u.textbox.edit.selection_color
-	                                                                           : t->accent_default;
-	sel.rgba      = (sel.rgba & 0xffffff00u) | 0x66u;
+static FluxColor tb_selection_fill(FluxThemeColors const *t, FluxRenderSnap const *snap) {
+	if (t->contrast.active) return t->contrast.highlight;
+	FluxColor sel = snap->u.textbox.edit.selection_color;
+	if (flux_color_af(sel) <= 0.0f) sel = t->accent_default;
+	sel.rgba = (sel.rgba & 0xffffff00u) | 0x66u;
+	return sel;
+}
+
+static bool tb_draw_selected_rect(
+  XentDlBuilder *b, TextboxTextDraw const *draw, FluxRect const *r, FluxColor fill, FluxContrastColors const *p
+) {
+	if (!flux_rec_fill_rect(b, r, fill)) return false;
+	if (!p->active) return true;
+	if (!xent_dl_pushcliprect(b, flux_rec_xrect(r))) return false;
+	bool ok = flux_rec_text_ex(b, &draw->bounds, draw->content->content, &draw->style, p->highlight_text);
+	return xent_dl_popclip(b) && ok;
+}
+
+static int tb_compare_selection_rects(void const *a, void const *b) {
+	FluxRect const *left  = a;
+	FluxRect const *right = b;
+	if (left->y < right->y) return -1;
+	if (left->y > right->y) return 1;
+	return (left->x > right->x) - (left->x < right->x);
+}
+
+static bool tb_selection_rects_touch(FluxRect const *a, FluxRect const *b) {
+	return a->y == b->y && a->h == b->h && b->x <= a->x + a->w + 0.001f;
+}
+
+static uint32_t tb_merge_selection_rects(FluxRect *rects, uint32_t count) {
+	if (count < 2) return count;
+	qsort(rects, count, sizeof(*rects), tb_compare_selection_rects);
+	uint32_t merged = 0;
+	for (uint32_t i = 1; i < count; i++) {
+		FluxRect *previous = &rects [merged];
+		FluxRect  next     = rects [i];
+		if (tb_selection_rects_touch(previous, &next))
+			previous->w = flux_maxf(previous->w, next.x + next.w - previous->x);
+		else rects [++merged] = next;
+	}
+	return merged + 1;
+}
+
+static bool tb_draw_selection_rects(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, TextboxTextDraw const *draw, FluxRect *rects,
+  uint32_t n
+) {
+	FluxThemeColors const *t    = flux_rec_theme(rc);
+	FluxColor              fill = tb_selection_fill(t, snap);
+	n                           = tb_merge_selection_rects(rects, n);
 	for (uint32_t i = 0; i < n; i++) {
-		FluxRect sr = {
-		  snap_text_x(snap, text_area, rects [i].x, rects [i].w),
-		  text_area->y + rects [i].y - snap->u.textbox.edit.scroll_offset_y, rects [i].w, rects [i].h};
-		if (!flux_rec_fill_rect(b, &sr, sel)) return false;
+		float    x       = snap_text_x(snap, draw->area, rects [i].x, rects [i].w);
+		float    y       = draw->bounds.y + rects [i].y;
+		float    left    = flux_maxf(x, draw->area->x);
+		float    top     = flux_maxf(y, draw->area->y);
+		float    right   = flux_minf(x + rects [i].w, draw->area->x + draw->area->w);
+		float    bottom  = flux_minf(y + rects [i].h, draw->area->y + draw->area->h);
+		FluxRect visible = {left, top, right - left, bottom - top};
+		if (visible.w > 0.0f && visible.h > 0.0f && !tb_draw_selected_rect(b, draw, &visible, fill, &t->contrast))
+			return false;
 	}
 	return true;
 }
 
-static bool tb_draw_composition_underline(
-  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *text_area,
-  FluxControlState const *state, TextboxComposedContent const *content
+static bool tb_draw_selection(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, TextboxTextDraw const *draw,
+  FluxControlState const *state
 ) {
+	if (!state->focused || !rc || !rc->text) return true;
+	if (snap->u.textbox.edit.selection_start == snap->u.textbox.edit.selection_end) return true;
+	FluxTextStyle hit = tb_hit_style(snap);
+	hit.vert_align    = ( FluxTextVAlign ) draw->style.v_align;
+	FluxRect               stack [16];
+	FluxTextSelectionQuery q = {
+	  {rc->text, draw->content->content, &hit, draw->bounds.w},
+      0, 0, stack, 16
+    };
+	tb_selection_range(&q, snap, draw->content);
+
+	uint32_t total;
+	uint32_t count = flux_text_selection_for_height(&q, draw->bounds.h, &total);
+	if (count == total) return tb_draw_selection_rects(b, rc, snap, draw, stack, count);
+	FluxRect *rects = calloc(total, sizeof(*rects));
+	if (!rects) return tb_draw_selection_rects(b, rc, snap, draw, stack, count);
+	q.out_rects = rects;
+	q.max_rects = total;
+	count       = flux_text_selection_for_height(&q, draw->bounds.h, &total);
+	bool ok     = tb_draw_selection_rects(b, rc, snap, draw, rects, count);
+	free(rects);
+	return ok;
+}
+
+static bool tb_draw_composition_underline(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, TextboxTextDraw const *draw,
+  FluxColor foreground
+) {
+	TextboxComposedContent const *content = draw->content;
 	if (!content->has_composition || !content->has_text || !rc || !rc->text) return true;
 
-	int                    comp_end = content->composition_start_u16 + ( int ) snap->u.textbox.edit.composition_length;
-	FluxTextStyle          hit      = tb_hit_style(snap);
+	int           comp_end = content->composition_start_u16 + ( int ) snap->u.textbox.edit.composition_length;
+	FluxTextStyle hit      = tb_hit_style(snap);
+	hit.vert_align         = ( FluxTextVAlign ) draw->style.v_align;
 	FluxRect               rects [16];
 	FluxTextSelectionQuery q = {
-	  {rc->text, content->content, &hit, snap_layout_w(snap, text_area)},
-      content->composition_start_u16, comp_end,
-	  rects, 16
+	  {rc->text, content->content, &hit, draw->bounds.w},
+      content->composition_start_u16, comp_end, rects, 16
     };
-	uint32_t               n  = flux_text_selection(&q);
-	FluxThemeColors const *t  = flux_rec_theme(rc);
-	FluxColor              ul = state->enabled ? t->text_primary : t->text_disabled;
+	uint32_t total;
+	uint32_t n = flux_text_selection_for_height(&q, draw->bounds.h, &total);
 	for (uint32_t i = 0; i < n; i++) {
-		float lx0 = snap_text_x(snap, text_area, rects [i].x, rects [i].w);
-		float ly  = text_area->y + rects [i].y + rects [i].h - snap->u.textbox.edit.scroll_offset_y;
+		float lx0 = snap_text_x(snap, draw->area, rects [i].x, rects [i].w);
+		float ly  = draw->bounds.y + rects [i].y + rects [i].h;
 		float lx1 = lx0 + rects [i].w;
-		if (!flux_rec_line_h(b, lx0, lx1, ly - 0.5f, 1.0f, ul)) return false;
+		if (!flux_rec_line_h(b, lx0, lx1, ly - 0.5f, 1.0f, foreground)) return false;
 	}
 	return true;
 }
@@ -287,6 +364,22 @@ static float tb_clamp_caret_x(FluxRect const *text_area, float x) {
 	return x;
 }
 
+static FluxRect tb_measure_caret(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *text_area, TextboxComposedContent const *content,
+  int caret_u16
+) {
+	float              font_size       = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
+	float              fallback_height = font_size * 1.2f;
+	FluxTextStyle      hit             = tb_hit_style(snap);
+	FluxTextCaretQuery query           = {
+	  {rc->text, content->content, &hit, snap_layout_w(snap, text_area)},
+      caret_u16
+    };
+	FluxRect caret = flux_text_caret(&query);
+	caret.h        = caret.h > 0.0f ? caret.h : fallback_height;
+	return caret;
+}
+
 static bool tb_draw_caret(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *text_area,
   FluxControlState const *state, TextboxComposedContent const *content
@@ -298,56 +391,63 @@ static bool tb_draw_caret(
 	int caret_u16 = tb_caret_index(snap, content);
 	if (!tb_caret_visible(rc, snap, caret_u16)) return true;
 
-	float font_size     = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
-	float caret_h       = font_size * 1.2f;
-	float caret_x_local = 0.0f;
-	float caret_y_local = 0.0f;
-	if (content->has_text) {
-		FluxTextStyle      hit   = tb_hit_style(snap);
-		FluxTextCaretQuery query = {
-		  {rc->text, content->content, &hit, snap_layout_w(snap, text_area)},
-          caret_u16
-        };
-		FluxRect caret = flux_text_caret(&query);
-		if (caret.h > 0.0f) caret_h = caret.h;
-		caret_x_local = caret.x;
-		caret_y_local = caret.y;
-	}
-
-	float caret_y            = content->has_text ? text_area->y + caret_y_local - snap->u.textbox.edit.scroll_offset_y
-	                                             : text_area->y + (text_area->h - caret_h) * 0.5f;
-	float caret_x            = tb_clamp_caret_x(text_area, snap_text_x(snap, text_area, caret_x_local, 1.0f));
-	FluxThemeColors const *t = flux_rec_theme(rc);
+	FluxRect caret   = tb_measure_caret(rc, snap, text_area, content, caret_u16);
+	float    caret_h = caret.h;
+	float    caret_y = text_area->y + caret.y - snap->u.textbox.edit.scroll_offset_y;
+	if (!snap->u.textbox.edit.multiline)
+		caret_y += (text_area->h + snap->u.textbox.edit.scroll_offset_y - caret_h) * 0.5f;
+	float                  caret_x = tb_clamp_caret_x(text_area, snap_text_x(snap, text_area, caret.x, 1.0f));
+	FluxThemeColors const *t       = flux_rec_theme(rc);
 	FluxRect               caret_r = {caret_x, caret_y, 1.0f, caret_h};
 	return flux_rec_fill_rect(b, &caret_r, t->text_primary);
+}
+
+static FluxColor tb_text_foreground(FluxThemeColors const *t, FluxRenderSnap const *snap, bool enabled) {
+	if (t->contrast.active) return enabled ? t->contrast.window_text : t->contrast.gray_text;
+	if (flux_color_af(snap->u.textbox.text_color) > 0.0f) return snap->u.textbox.text_color;
+	return enabled ? t->text_primary : t->text_disabled;
+}
+
+static bool tb_draw_edit_text(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, TextboxTextDraw const *draw,
+  FluxControlState const *state
+) {
+	FluxThemeColors const *t  = flux_rec_theme(rc);
+	FluxColor              fg = tb_text_foreground(t, snap, state->enabled);
+	if (!t->contrast.active && !tb_draw_selection(b, rc, snap, draw, state)) return false;
+	if (!flux_rec_text_ex(b, &draw->bounds, draw->content->content, &draw->style, fg)) return false;
+	if (t->contrast.active && !tb_draw_selection(b, rc, snap, draw, state)) return false;
+	return tb_draw_composition_underline(b, rc, snap, draw, fg);
+}
+
+static bool tb_draw_text_or_placeholder(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, TextboxTextDraw const *draw,
+  FluxControlState const *state
+) {
+	if (draw->content->has_text) return tb_draw_edit_text(b, rc, snap, draw, state);
+	FluxThemeColors const *t  = flux_rec_theme(rc);
+	FluxColor              ph = state->enabled ? t->text_secondary : t->text_disabled;
+	return flux_rec_text_ex(b, draw->area, snap->u.textbox.placeholder, &draw->style, ph);
 }
 
 static bool tb_draw_content(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *text_area,
   FluxControlState const *state
 ) {
-	FluxThemeColors const *t = flux_rec_theme(rc);
 	if (!xent_dl_pushcliprect(b, flux_rec_xrect(text_area))) return false;
 
 	TextboxComposedContent content;
 	tb_prepare_content(&content, snap);
 
-	bool          ok    = true;
-	XentTextStyle style = tb_content_style(snap);
-	if (!content.has_text && snap->u.textbox.placeholder && snap->u.textbox.placeholder [0]) {
-		FluxColor ph = state->enabled ? t->text_secondary : t->text_disabled;
-		ok           = flux_rec_text_ex(b, text_area, snap->u.textbox.placeholder, &style, ph);
-	}
-	if (ok) ok = tb_draw_selection(b, rc, snap, text_area, state, &content);
-	if (ok) ok = tb_draw_composition_underline(b, rc, snap, text_area, state, &content);
-	if (ok && content.has_text) {
-		FluxRect draw = {
+	TextboxTextDraw draw = {
+	  .area = text_area,
+	  .bounds = {
 		  text_area->x - snap->u.textbox.edit.scroll_offset_x, text_area->y - snap->u.textbox.edit.scroll_offset_y,
-		  snap_layout_w(snap, text_area), text_area->h + snap->u.textbox.edit.scroll_offset_y};
-		FluxColor fg = state->enabled ? t->text_primary : t->text_disabled;
-		if (flux_color_af(snap->u.textbox.text_color) > 0.0f) fg = snap->u.textbox.text_color;
-		ok = flux_rec_text_ex(b, &draw, content.content, &style, fg);
-	}
+		  snap_layout_w(snap, text_area), text_area->h + snap->u.textbox.edit.scroll_offset_y},
+	  .style = tb_content_style(snap),
+	  .content = &content,
+	};
+	bool ok = tb_draw_text_or_placeholder(b, rc, snap, &draw, state);
 	if (ok) ok = tb_draw_caret(b, rc, snap, text_area, state, &content);
 	if (!state->focused) tb_reset_caret_blink(rc, snap);
 
@@ -355,21 +455,44 @@ static bool tb_draw_content(
 	return xent_dl_popclip(b) && ok;
 }
 
+static FluxColor
+tb_draw_fill(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state, bool hovered) {
+	FluxThemeColors const *t = flux_rec_theme(rc);
+	( void ) flux_rec_animstate(rc, snap, state, false);
+	FluxColor fill
+	  = t->contrast.active ? t->contrast.window : flux_input_fill_color(t, state->enabled, state->focused, hovered);
+	return flux_rec_tweenfill(rc, snap, fill);
+}
+
+static FluxColor tb_helper_foreground(FluxThemeColors const *t, bool hovered, bool pressed) {
+	FluxContrastColors const *p = &t->contrast;
+	if (!p->active) return pressed ? t->text_tertiary : t->text_secondary;
+	if (pressed) return p->highlight_text;
+	return hovered ? p->highlight : p->button_text;
+}
+
+static bool tb_draw_helper_fill(
+  XentDlBuilder *b, FluxRect const *btn, float radius, FluxThemeColors const *t, bool hovered, bool pressed
+) {
+	if (t->contrast.active) return !pressed || flux_rec_fill_rounded(b, btn, radius, t->contrast.highlight);
+	if (pressed) return flux_rec_fill_rounded(b, btn, radius, t->ctrl_alt_fill_tertiary);
+	return !hovered || flux_rec_fill_rounded(b, btn, radius, t->ctrl_alt_fill_secondary);
+}
+
 static bool tb_draw_delete(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state, float radius, float col0_w, float col1_w
 ) {
-	FluxRect btn = {bounds->x + col0_w, bounds->y + 4.0f, col1_w - 4.0f, bounds->h - 8.0f};
+	float    right_inset = snap->u.textbox.suggest_editor ? 0.0f : 4.0f;
+	FluxRect btn         = {bounds->x + col0_w, bounds->y + 4.0f, col1_w - right_inset, bounds->h - 8.0f};
 	if (btn.w < 0.0f) btn.w = 0.0f;
 	if (btn.h < 0.0f) btn.h = 0.0f;
-	bool                   hovered = state->hovered && snap->hover_local_x >= col0_w;
-	bool                   pressed = hovered && state->pressed;
-	FluxThemeColors const *t       = flux_rec_theme(rc);
-	bool                   ok      = true;
-	if (pressed) ok = flux_rec_fill_rounded(b, &btn, radius, t->ctrl_alt_fill_tertiary);
-	else if (hovered) ok = flux_rec_fill_rounded(b, &btn, radius, t->ctrl_alt_fill_secondary);
-	char const *x  = "\xEE\xA2\x94";
-	FluxColor   ic = pressed ? t->text_tertiary : t->text_secondary;
+	bool hovered             = state->hovered && snap->hover_local_x >= col0_w && snap->hover_local_x < col0_w + col1_w;
+	bool pressed             = hovered && state->pressed;
+	FluxThemeColors const *t = flux_rec_theme(rc);
+	bool                   ok = tb_draw_helper_fill(b, &btn, radius, t, hovered, pressed);
+	char const            *x  = "\xEE\xA2\x94";
+	FluxColor              ic = tb_helper_foreground(t, hovered, pressed);
 	if (ok)
 		ok = flux_rec_text_ex(
 		  b, &btn, x,
@@ -387,18 +510,15 @@ static bool tb_draw_delete(
 }
 
 static bool tb_draw_combo_overlay(
-  XentDlBuilder *b, FluxThemeColors const *t, FluxRenderSnap const *snap, FluxRect const *bounds,
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 ) {
-	bool in_zone = state->hovered && snap->hover_local_x >= bounds->w - FLUX_COMBO_GLYPH_COL;
-	if (in_zone && state->enabled) {
-		FluxRect  ov   = {bounds->x + bounds->w - 34.0f, bounds->y + 4.0f, 30.0f, bounds->h - 8.0f};
-		FluxColor pr   = state->focused ? t->ctrl_alt_fill_quarternary : t->subtle_fill_tertiary;
-		FluxColor fill = state->pressed ? pr : t->subtle_fill_secondary;
-		if (!flux_rec_fill_rounded(b, &ov, 4.0f, fill)) return false;
-	}
-	FluxRect glyph = {bounds->x + bounds->w - 26.0f, bounds->y, 12.0f, bounds->h};
-	return flux_rec_glyph_wc(b, &glyph, L"\xE70D", 12.0f, state->enabled ? t->text_secondary : t->text_disabled);
+	bool in_zone = snap->hover_local_x >= bounds->w - FLUX_COMBO_GLYPH_COL;
+	if (in_zone && !flux_rec_combo_overlay(b, flux_rec_theme(rc), bounds, state)) return false;
+	FluxRect         glyph       = {bounds->x + bounds->w - 26.0f, bounds->y, 12.0f, bounds->h};
+	FluxControlState glyph_state = *state;
+	glyph_state.pressed          = false;
+	return flux_rec_combo_chevron(b, rc, snap->u.textbox.combo_owner, &glyph, &glyph_state);
 }
 
 static bool tb_combo_bare(FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state) {
@@ -416,20 +536,18 @@ bool flux_rec_textbox_frame(
   FluxControlState const *state
 ) {
 	if (bounds->w <= 0.0f || bounds->h <= 0.0f) return true;
-	float                  radius   = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
-	bool                   has_text = snap->u.textbox.text_content && snap->u.textbox.text_content [0];
-	bool                   combo    = snap->u.textbox.combo_editor;
-	bool                   show_del = tb_show_delete(snap, state, has_text);
-	float                  col1_w   = combo ? FLUX_COMBO_EDITOR_RESERVE : show_del ? TB_DELETE_BTN_W : 0.0f;
-	float                  col0_w   = flux_maxf(0.0f, bounds->w - col1_w);
+	float     radius   = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
+	bool      has_text = snap->u.textbox.text_content && snap->u.textbox.text_content [0];
+	bool      combo    = snap->u.textbox.combo_editor;
+	bool      show_del = tb_show_delete(snap, state, has_text);
+	float     col1_w   = combo    ? FLUX_COMBO_EDITOR_RESERVE
+	                   : show_del ? tb_clear_button_width(snap->u.textbox.suggest_editor)
+	                              : 0.0f;
+	float     col0_w   = flux_maxf(0.0f, bounds->w - col1_w - snap->u.textbox.query_reserve);
 
-	FluxThemeColors const *t        = flux_rec_theme(rc);
-	FluxColor              fill     = flux_input_fill_color(t, state->enabled, state->focused, state->hovered);
-	( void ) flux_rec_animstate(rc, snap, state, false);
-	fill      = flux_rec_tweenfill(rc, snap, fill);
-	bool bare = tb_combo_bare(snap, bounds, state);
-	bool ok   = bare || flux_rec_fillsink(b, rc, bounds, radius, fill);
-	if (ok && !bare) ok = tb_draw_frame(b, rc, bounds, state, radius);
+	FluxColor fill     = tb_draw_fill(rc, snap, state, state->hovered);
+	bool      bare     = tb_combo_bare(snap, bounds, state);
+	bool ok = bare || (flux_rec_fillsink(b, rc, bounds, radius, fill) && tb_draw_frame(b, rc, bounds, state, radius));
 
 	FluxRect tb = {
 	  bounds->x + FLUX_TEXTBOX_PAD_L, bounds->y + FLUX_TEXTBOX_PAD_T,
@@ -437,7 +555,7 @@ bool flux_rec_textbox_frame(
 	  flux_maxf(0.0f, bounds->h - FLUX_TEXTBOX_PAD_T - FLUX_TEXTBOX_PAD_B)};
 	if (ok) ok = tb_draw_content(b, rc, snap, &tb, state);
 	if (ok && show_del) ok = tb_draw_delete(b, rc, snap, bounds, state, radius, col0_w, col1_w);
-	if (ok && combo) ok = tb_draw_combo_overlay(b, t, snap, bounds, state);
+	if (ok && combo) ok = tb_draw_combo_overlay(b, rc, snap, bounds, state);
 	return ok;
 }
 
@@ -468,10 +586,8 @@ static bool password_record_reveal(
 	FluxRect btn     = {bounds->x + text_width, bounds->y + 4.0f, FLUX_PASSWORD_REVEAL_BTN_W - 4.0f, bounds->h - 8.0f};
 	bool     hovered = state->hovered && snap->hover_local_x >= text_width;
 	bool     pressed = hovered && state->pressed;
-	bool     ok      = true;
-	if (pressed) ok = flux_rec_fill_rounded(b, &btn, radius, t->ctrl_alt_fill_tertiary);
-	else if (hovered) ok = flux_rec_fill_rounded(b, &btn, radius, t->ctrl_alt_fill_secondary);
-	if (!ok) return false;
+	if (t->contrast.active && snap->u.textbox.is_checked) pressed = true;
+	if (!tb_draw_helper_fill(b, &btn, radius, t, hovered, pressed)) return false;
 
 	XentTextStyle style = {
 	  .font_size   = 12.0f,
@@ -481,7 +597,7 @@ static bool password_record_reveal(
 	  .flags       = XENT_DL_TEXT_ICON,
 	  .font_family = flux_icon_font_family(),
 	};
-	FluxColor color = pressed ? t->text_tertiary : t->text_secondary;
+	FluxColor color = tb_helper_foreground(t, hovered, pressed);
 	return flux_rec_text_ex(b, &btn, "\xEF\x9E\x8D", &style, color);
 }
 
@@ -497,10 +613,8 @@ bool flux_rec_password(
 	float                  col0_w      = flux_maxf(0.0f, bounds->w - col1_w);
 
 	FluxThemeColors const *t           = flux_rec_theme(rc);
-	FluxColor              fill        = flux_input_fill_color(t, state->enabled, state->focused, state->hovered);
-	( void ) flux_rec_animstate(rc, snap, state, false);
-	fill    = flux_rec_tweenfill(rc, snap, fill);
-	bool ok = flux_rec_fillsink(b, rc, bounds, radius, fill);
+	FluxColor              fill        = tb_draw_fill(rc, snap, state, state->hovered);
+	bool                   ok          = flux_rec_fillsink(b, rc, bounds, radius, fill);
 	if (ok) ok = tb_draw_frame(b, rc, bounds, state, radius);
 
 	char           mask_buf [2048];
@@ -537,37 +651,37 @@ static FluxRect        nb_inner(FluxRect const *outer, NbMargins m) {
 	return (FluxRect) {outer->x + m.l, outer->y + m.t, outer->w - m.l - m.r, outer->h - m.t - m.b};
 }
 
-static int nb_hover_zone(float lx, float bounds_w, bool show_delete, bool spin_visible) {
+static int nb_hover_zone(FluxRenderSnap const *snap, FluxRect const *bounds, bool show_delete, bool spin_visible) {
+	float lx       = snap->hover_local_x;
+	float bounds_w = bounds->w;
 	if (lx < 0.0f) return NB_ZONE_NONE;
 	float spin_start = spin_visible ? bounds_w - FLUX_NUMBER_BOX_SPIN_W : bounds_w;
 	float del_start  = show_delete ? spin_start - FLUX_NUMBER_BOX_DELETE_BTN_W : spin_start;
 	if (lx < del_start) return NB_ZONE_TEXT;
-	if (show_delete && lx < spin_start) return NB_ZONE_DELETE;
-	if (!spin_visible || lx < spin_start) return NB_ZONE_TEXT;
-	float up_x0 = spin_start + FLUX_NUMBER_BOX_UP_MARGIN;
-	float up_x1 = up_x0 + FLUX_NUMBER_BOX_SPIN_BTN_W;
-	if (lx >= up_x0 && lx < up_x1) return NB_ZONE_SPIN_UP;
-	float dn_x0 = spin_start + FLUX_NUMBER_BOX_COL_UP_W + FLUX_NUMBER_BOX_DN_MARGIN_L;
-	float dn_x1 = dn_x0 + FLUX_NUMBER_BOX_SPIN_BTN_W;
-	if (lx >= dn_x0 && lx < dn_x1) return NB_ZONE_SPIN_DN;
-	return NB_ZONE_SPIN_GAP;
+	if (lx < spin_start) return NB_ZONE_DELETE;
+	if (!spin_visible) return NB_ZONE_TEXT;
+	static int const spin_zones [] = {NB_ZONE_SPIN_DN, NB_ZONE_SPIN_GAP, NB_ZONE_SPIN_UP};
+	int              spin          = nb_inline_spin_at(lx, snap->hover_local_y, bounds_w, bounds->h);
+	return spin_zones [spin + 1];
 }
 
-static FluxColor nb_action_icon_color(bool enabled, bool pressed, FluxThemeColors const *t) {
+static FluxColor nb_action_icon_color(bool enabled, bool hovered, bool pressed, FluxThemeColors const *t) {
 	if (!enabled) return t->text_disabled;
-	if (pressed) return t->text_tertiary;
-	return t->text_secondary;
+	return tb_helper_foreground(t, hovered, pressed);
 }
 
 static bool nb_draw_inner_button(
-  XentDlBuilder *b, FluxRect const *outer, NbMargins margin, float radius, bool hovered, bool pressed,
+  XentDlBuilder *b, FluxRect const *outer, NbMargins margin, float radius, FluxControlState const *state,
   FluxThemeColors const *t
 ) {
 	FluxRect r = nb_inner(outer, margin);
 	if (r.w <= 0.0f || r.h <= 0.0f) return true;
-	if (pressed) return flux_rec_fill_rounded(b, &r, radius, t->ctrl_alt_fill_tertiary);
-	if (hovered) return flux_rec_fill_rounded(b, &r, radius, t->ctrl_alt_fill_secondary);
-	return true;
+	if (!t->contrast.active) return tb_draw_helper_fill(b, &r, radius, t, state->hovered, state->pressed);
+	if (state->enabled && !state->pressed) return true;
+	r              = nb_inner(&r, (NbMargins) {0.0f, 1.0f, 1.0f, 1.0f});
+	FluxColor fill = state->enabled ? t->contrast.highlight : t->contrast.button_face;
+	if (r.w <= 0.0f || r.h <= 0.0f) return true;
+	return flux_rec_fill_rounded(b, &r, fmaxf(0.0f, radius - 1.0f), fill);
 }
 
 static bool nb_draw_icon(
@@ -594,40 +708,45 @@ static bool nb_draw_delete(
   FluxThemeColors const *t
 ) {
 	FluxRect del_outer = {bounds->x + text_col_w, bounds->y, FLUX_NUMBER_BOX_DELETE_BTN_W, bounds->h};
-	bool     hot       = zone == NB_ZONE_DELETE;
-	bool     press     = hot && pressed;
-	bool     ok        = nb_draw_inner_button(b, &del_outer, NB_INNER_M, radius, hot, press, t);
-	return ok && nb_draw_icon(b, &del_outer, NB_INNER_M, "\xEE\xA2\x94", 12.0f, nb_action_icon_color(true, press, t));
+	FluxRect btn       = nb_inner(&del_outer, NB_INNER_M);
+	if (btn.w <= 0.0f || btn.h <= 0.0f) return true;
+	bool hot   = zone == NB_ZONE_DELETE;
+	bool press = hot && pressed;
+	bool ok    = tb_draw_helper_fill(b, &btn, radius, t, hot, press);
+	return ok && nb_draw_icon(b, &del_outer, NB_INNER_M, "\xEE\xA2\x94", 12.0f, tb_helper_foreground(t, hot, press));
+}
+
+static bool nb_draw_spin_button(
+  XentDlBuilder *b, FluxRect const *box, float radius, FluxControlState state, float font_size,
+  FluxThemeColors const *theme, bool up
+) {
+	NbMargins   margin = up ? NB_UP_M : NB_DN_M;
+	char const *glyph  = up ? "\xEE\x9C\x8E" : "\xEE\x9C\x8D";
+	FluxColor   color  = nb_action_icon_color(state.enabled, state.hovered, state.pressed, theme);
+	return nb_draw_inner_button(b, box, margin, radius, &state, theme)
+	    && nb_draw_icon(b, box, margin, glyph, font_size, color);
+}
+
+static FluxControlState nb_spin_state(bool enabled, bool hovered, bool pressed) {
+	bool hot = enabled && hovered;
+	return (FluxControlState) {.enabled = enabled, .hovered = hot, .pressed = hot && pressed};
 }
 
 static bool nb_draw_spin(
-  XentDlBuilder *b, FluxRect const *bounds, float radius, int zone, bool pressed, FluxRenderSnap const *snap,
-  FluxThemeColors const *t
+  XentDlBuilder *b, FluxRect const *bounds, float radius, int zone, FluxControlState const *state,
+  FluxRenderSnap const *snap, FluxThemeColors const *t
 ) {
-	float    spin_base_x = bounds->x + bounds->w - FLUX_NUMBER_BOX_SPIN_W;
-	FluxRect up_outer    = {spin_base_x, bounds->y, FLUX_NUMBER_BOX_COL_UP_W, bounds->h};
-	FluxRect dn_outer    = {spin_base_x + FLUX_NUMBER_BOX_COL_UP_W, bounds->y, FLUX_NUMBER_BOX_COL_DN_W, bounds->h};
-
-	bool     up_hot      = zone == NB_ZONE_SPIN_UP && snap->u.textbox.nb_up_enabled;
-	bool     dn_hot      = zone == NB_ZONE_SPIN_DN && snap->u.textbox.nb_down_enabled;
-	bool     up_press    = up_hot && pressed;
-	bool     dn_press    = dn_hot && pressed;
-
-	bool     ok          = nb_draw_inner_button(b, &up_outer, NB_UP_M, radius, up_hot, up_press, t);
-	if (ok) ok = nb_draw_inner_button(b, &dn_outer, NB_DN_M, radius, dn_hot, dn_press, t);
-
-	float icon_fs = snap->font_size > 0.0f ? snap->font_size : 14.0f;
-	if (ok)
-		ok = nb_draw_icon(
-		  b, &up_outer, NB_UP_M, "\xEE\x9C\x8E", icon_fs,
-		  nb_action_icon_color(snap->u.textbox.nb_up_enabled, up_press, t)
-		);
-	if (ok)
-		ok = nb_draw_icon(
-		  b, &dn_outer, NB_DN_M, "\xEE\x9C\x8D", icon_fs,
-		  nb_action_icon_color(snap->u.textbox.nb_down_enabled, dn_press, t)
-		);
-	return ok;
+	float            x       = bounds->x + bounds->w - FLUX_NUMBER_BOX_SPIN_W;
+	FluxRect         up      = {x, bounds->y, FLUX_NUMBER_BOX_COL_UP_W, bounds->h};
+	FluxRect         down    = {x + up.w, bounds->y, FLUX_NUMBER_BOX_COL_DN_W, bounds->h};
+	int              pressed = state->pressed ? snap->u.textbox.nb_spin_direction : 0;
+	FluxControlState us
+	  = nb_spin_state(state->enabled && snap->u.textbox.nb_up_enabled, zone == NB_ZONE_SPIN_UP, pressed > 0);
+	FluxControlState ds
+	  = nb_spin_state(state->enabled && snap->u.textbox.nb_down_enabled, zone == NB_ZONE_SPIN_DN, pressed < 0);
+	float icon_fs = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
+	return nb_draw_spin_button(b, &up, radius, us, icon_fs, t, true)
+	    && nb_draw_spin_button(b, &down, radius, ds, icon_fs, t, false);
 }
 
 bool flux_rec_number(
@@ -643,26 +762,19 @@ bool flux_rec_number(
 	float radius       = snap->corner_radius > 0.0f ? snap->corner_radius : FLUX_CORNER_RADIUS;
 
 	int   zone         = NB_ZONE_NONE;
-	if (state->hovered) zone = nb_hover_zone(snap->hover_local_x, bounds->w, show_del, spin_visible);
+	if (state->hovered) zone = nb_hover_zone(snap, bounds, show_del, spin_visible);
 
 	FluxThemeColors const *t          = flux_rec_theme(rc);
 	bool                   chrome_hov = zone == NB_ZONE_TEXT;
-	FluxColor              fill       = flux_input_fill_color(t, state->enabled, state->focused, chrome_hov);
-	( void ) flux_rec_animstate(rc, snap, state, false);
-	fill    = flux_rec_tweenfill(rc, snap, fill);
-	bool ok = flux_rec_fillsink(b, rc, bounds, radius, fill);
+	FluxColor              fill       = tb_draw_fill(rc, snap, state, chrome_hov);
+	bool                   ok         = flux_rec_fillsink(b, rc, bounds, radius, fill);
 	if (ok) ok = tb_draw_frame(b, rc, bounds, state, radius);
 
 	FluxRect tb = {
 	  bounds->x + FLUX_TEXTBOX_PAD_L, bounds->y + FLUX_TEXTBOX_PAD_T,
 	  flux_maxf(0.0f, text_col_w - FLUX_TEXTBOX_PAD_L - FLUX_TEXTBOX_PAD_R),
 	  flux_maxf(0.0f, bounds->h - FLUX_TEXTBOX_PAD_T - FLUX_TEXTBOX_PAD_B)};
-	FluxControlState text_state = *state;
-	if (zone != NB_ZONE_TEXT && !state->focused) text_state.hovered = 0;
-	if (ok) ok = tb_draw_content(b, rc, snap, &tb, &text_state);
-
-	if (!state->enabled) return ok;
-	if (ok && show_del) ok = nb_draw_delete(b, bounds, text_col_w, radius, zone, state->pressed, t);
-	if (ok && spin_visible) ok = nb_draw_spin(b, bounds, radius, zone, state->pressed, snap, t);
-	return ok;
+	if (!ok || !tb_draw_content(b, rc, snap, &tb, state)) return false;
+	if (show_del && !nb_draw_delete(b, bounds, text_col_w, radius, zone, state->pressed, t)) return false;
+	return !spin_visible || nb_draw_spin(b, bounds, radius, zone, state, snap, t);
 }

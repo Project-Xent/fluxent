@@ -53,6 +53,8 @@ static float ovf_scale(FluxCmdBarData const *b, RECT *client) {
 	return dpi ? ( float ) dpi / 96.0f : 1.0f;
 }
 
+static bool       ovf_full_width(float width) { return width > 0.0f && width <= FLUX_CMDBAR_OVF_MAX_W; }
+
 static OvfMetrics ovf_metrics(FluxCmdBarData const *b) {
 	if (b->touch)
 		return (OvfMetrics) {FLUX_CMDBAR_OVF_TOUCH_TOP, FLUX_CMDBAR_OVF_TOUCH_BOT, FLUX_CMDBAR_OVF_TOUCH_MIN_W};
@@ -151,7 +153,7 @@ void flux_cmdbar_ovf_build(FluxCmdBarData *b) {
 	float view_h = ( float ) client.bottom / scale;
 	float min_w  = ovf_metrics(b).min_w;
 	float max_w  = FLUX_CMDBAR_OVF_MAX_W;
-	if (view_w > 0.0f && view_w <= FLUX_CMDBAR_OVF_MAX_W) min_w = max_w = view_w;
+	if (ovf_full_width(view_w)) min_w = max_w = view_w;
 	b->ovf_w    = fminf(fmaxf(content_w(b), min_w), max_w);
 	float last  = b->nrows ? b->rows [b->nrows - 1].y + b->rows [b->nrows - 1].h : 0.0f;
 	b->ovf_h    = last + FLUX_CMDBAR_OVF_PAD_V + FLUX_CMDBAR_OVF_BORDER;
@@ -188,11 +190,6 @@ void flux_cmdbar_ovf_show(FluxCmdBarData *b) {
 	flux_popup_show(b->popup, (FluxRect) {x, anchor.y + dy * scale, 0.0f, 0.0f}, FLUX_PLACEMENT_BOTTOM);
 }
 
-static FluxColor row_fg(FluxThemeColors const *t, bool enabled, bool pressed) {
-	if (!enabled) return t->text_disabled;
-	return pressed ? t->text_secondary : t->text_primary;
-}
-
 static bool row_text(XentDlBuilder *db, FluxRect const *r, char const *s, float size, uint8_t align, FluxColor c) {
 	XentTextStyle style = {.font_size = size, .font_weight = FLUX_FONT_REGULAR, .h_align = align, .v_align = 1u};
 	return !s || flux_rec_text_ex(db, r, s, &style, c);
@@ -217,39 +214,69 @@ static bool row_check(XentDlBuilder *db, RowDraw const *rd, FluxColor c) {
 
 static bool row_hot(RowDraw const *rd) { return rd->state && rd->state->hovered && rd->d->enabled; }
 
-static bool row_chrome(XentDlBuilder *db, RowDraw const *rd, FluxRect const *inner) {
+typedef struct RowColors {
+	FluxColor fill, stroke, text, icon, keys;
+} RowColors;
+
+static RowColors row_contrast_disabled(FluxContrastColors const *p, FluxAppBarItemData const *item) {
+	RowColors c = {.text = p->gray_text, .icon = p->gray_text, .keys = p->gray_text};
+	if (item->kind != FLUX_APPBAR_TOGGLE) return c;
+	c.stroke = p->gray_text;
+	c.fill   = item->checked ? p->gray_text : p->window;
+	if (item->checked) c.icon = p->window;
+	return c;
+}
+
+static RowColors row_contrast(RowDraw const *rd, bool hot, bool pressed) {
+	FluxContrastColors const *p = &rd->t->contrast;
+	if (!rd->d->enabled) return row_contrast_disabled(p, rd->d);
+	FluxColor ink = hot ? p->highlight_text : p->button_text;
+	RowColors c   = {.fill = hot ? p->highlight : (FluxColor) {0}, .text = ink, .icon = ink, .keys = ink};
+	if (rd->d->kind != FLUX_APPBAR_TOGGLE) return c;
+	c.stroke = rd->d->checked && (pressed || !hot) ? p->highlight : p->button_text;
+	return c;
+}
+
+static RowColors row_colors(RowDraw const *rd) {
 	bool hot     = row_hot(rd);
 	bool pressed = hot && rd->state->pressed;
-	bool ok      = true;
-	if (hot)
-		ok = flux_rec_fill_rounded(
-		  db, inner, FLUX_ABB_CORNER, pressed ? rd->t->subtle_fill_tertiary : rd->t->subtle_fill_secondary
-		);
-	if (ok && rd->index == rd->b->focus_row) ok = flux_rec_focus_rect(db, rd->t, inner, FLUX_ABB_CORNER);
-	return ok;
+	if (rd->t->contrast.active) return row_contrast(rd, hot, pressed);
+	FluxThemeColors const *t = rd->t;
+	if (!rd->d->enabled)
+		return (RowColors) {.text = t->text_disabled, .icon = t->text_disabled, .keys = t->text_disabled};
+	FluxColor ink  = pressed ? t->text_secondary : t->text_primary;
+	FluxColor fill = pressed ? t->subtle_fill_tertiary : t->subtle_fill_secondary;
+	return (RowColors) {.fill = hot ? fill : (FluxColor) {0}, .text = ink, .icon = ink, .keys = t->text_secondary};
+}
+
+static bool row_chrome(XentDlBuilder *db, RowDraw const *rd, FluxRect const *inner, RowColors const *colors) {
+	bool ok = flux_rec_fill_rounded(db, inner, FLUX_ABB_CORNER, colors->fill)
+	       && flux_rec_stroke_rounded(db, inner, FLUX_ABB_CORNER - 0.5f, colors->stroke, 1.0f);
+	if (!ok || rd->index != rd->b->focus_row) return ok;
+	return flux_rec_focus_rect(db, rd->t, inner, FLUX_ABB_CORNER);
 }
 
 static bool draw_item(XentDlBuilder *db, RowDraw const *rd) {
 	FluxRect inner
 	  = {rd->row.x + FLUX_CMDBAR_OVF_ITEM_MARGIN, rd->row.y, rd->row.w - 2.0f * FLUX_CMDBAR_OVF_ITEM_MARGIN, rd->row.h};
-	FluxColor fg     = row_fg(rd->t, rd->d->enabled, row_hot(rd) && rd->state->pressed);
+	RowColors c      = row_colors(rd);
 	float     indent = label_indent(rd->b, rd->d);
 	float     accel  = accel_part(rd->b);
 	FluxRect  label  = {rd->row.x + indent, rd->row.y, rd->row.w - indent - FLUX_CMDBAR_OVF_INDENT - accel, rd->row.h};
 	FluxRect  keys
 	  = {rd->row.x + rd->row.w - FLUX_CMDBAR_OVF_INDENT - rd->b->accel_w, rd->row.y, rd->b->accel_w, rd->row.h};
-	FluxColor kc = rd->d->enabled ? rd->t->text_secondary : rd->t->text_disabled;
-	return row_chrome(db, rd, &inner)
-	    && row_check(db, rd, fg)
-	    && row_icon(db, rd, fg)
-	    && row_text(db, &label, rd->d->label, FLUX_CMDBAR_OVF_LABEL_SIZE, 0u, fg)
-	    && row_text(db, &keys, rd->d->accel, FLUX_CMDBAR_OVF_ACCEL_SIZE, 2u, kc);
+	return row_chrome(db, rd, &inner, &c)
+	    && row_check(db, rd, c.text)
+	    && row_icon(db, rd, c.icon)
+	    && row_text(db, &label, rd->d->label, FLUX_CMDBAR_OVF_LABEL_SIZE, 0u, c.text)
+	    && row_text(db, &keys, rd->d->accel, FLUX_CMDBAR_OVF_ACCEL_SIZE, 2u, c.keys);
 }
 
 static bool draw_row(XentDlBuilder *db, RowDraw *rd, FluxCmdBarRow const *row) {
 	if (row->separator) {
-		FluxRect line = {rd->row.x, rd->row.y + FLUX_CMDBAR_OVF_SEP_PAD, rd->row.w, FLUX_ABB_SEP_W};
-		return flux_rec_fill_rect(db, &line, rd->t->divider_stroke_default);
+		FluxRect  line = {rd->row.x, rd->row.y + FLUX_CMDBAR_OVF_SEP_PAD, rd->row.w, FLUX_ABB_SEP_W};
+		FluxColor ink  = rd->t->contrast.active ? rd->t->contrast.button_text : rd->t->divider_stroke_default;
+		return flux_rec_fill_rect(db, &line, ink);
 	}
 	rd->d = flux_cmdbar_item(rd->b->store, row->item);
 	return !rd->d || draw_item(db, rd);
@@ -268,6 +295,19 @@ XentDl *flux_cmdovfrow_record(
 	return flux_rec_finish(db, draw_row(db, &rd, &b->rows [i]));
 }
 
+static bool
+ovf_contrast_frame(XentDlBuilder *db, FluxCmdBarData const *b, FluxContrastColors const *p, FluxRect const *bounds) {
+	if (!flux_rec_fill_rounded(db, bounds, FLUX_CMDBAR_OVF_CORNER, p->button_face)) return false;
+	RECT  client;
+	float scale = ovf_scale(b, &client);
+	if (!ovf_full_width(( float ) client.right / scale))
+		return flux_rec_stroke_rounded(
+		  db, bounds, FLUX_CMDBAR_OVF_CORNER - 0.5f, p->window_text, FLUX_CMDBAR_OVF_BORDER
+		);
+	float y = b->open_up ? bounds->y : bounds->y + bounds->h - FLUX_CMDBAR_OVF_BORDER;
+	return flux_rec_fill_rect(db, &(FluxRect) {bounds->x, y, bounds->w, FLUX_CMDBAR_OVF_BORDER}, p->window_text);
+}
+
 XentDl *flux_cmdovf_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {
@@ -277,9 +317,10 @@ XentDl *flux_cmdovf_record(
 	if (!b || !b->nrows) return NULL;
 	XentDlBuilder *db = xent_dl_begin();
 	if (!db) return NULL;
-	FluxThemeColors const *t    = ovf_theme(b);
-	float                  half = FLUX_CMDBAR_OVF_BORDER * 0.5f;
-	FluxRect               inset
+	FluxThemeColors const *t = ovf_theme(b);
+	if (t->contrast.active) return flux_rec_finish(db, ovf_contrast_frame(db, b, &t->contrast, bounds));
+	float    half = FLUX_CMDBAR_OVF_BORDER * 0.5f;
+	FluxRect inset
 	  = {bounds->x + half, bounds->y + half, bounds->w - FLUX_CMDBAR_OVF_BORDER, bounds->h - FLUX_CMDBAR_OVF_BORDER};
 	FluxColor bg = flux_popup_acrylictint(b->popup, t->flyout_background);
 	bool ok      = flux_rec_fill_rounded(db, bounds, FLUX_CMDBAR_OVF_CORNER, bg)
@@ -314,6 +355,13 @@ static void ovf_row_click(void *ctx) {
 	ovf_activate(r->bar, r->index);
 }
 
+XentNodeId flux_cmdbar_access_source(FluxStore *store, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(store, node);
+	if (!nd || nd->behavior.on_click != ovf_row_click) return XENT_NODE_INVALID;
+	FluxCmdBarOvfRow const *row = nd->behavior.on_click_ctx;
+	return row->bar->rows [row->index].item;
+}
+
 bool flux_cmdovf_wheel(FluxStore *store, XentNodeId node, float delta, float *remaining) {
 	( void ) remaining;
 	FluxNodeData   *nd = flux_store_find(store, node);
@@ -325,12 +373,36 @@ bool flux_cmdovf_wheel(FluxStore *store, XentNodeId node, float delta, float *re
 	return true;
 }
 
-static FluxUiaHooks const ovf_uia_hidden = {.role = FLUX_UIA_HIDDEN};
-static FluxUiaHooks const ovf_uia_button = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_INVOKE};
-static FluxUiaHooks const ovf_uia_toggle = {.role = FLUX_UIA_BUTTON, .patterns = FLUX_UIA_P_TOGGLE};
-static FluxUiaHooks const ovf_uia_sep    = {.role = FLUX_UIA_SEPARATOR};
+static bool ovf_row_setinfo(FluxStore *store, XentNodeId node, int *pos, int *size, int *level) {
+	( void ) level;
+	FluxNodeData const     *nd = flux_store_find(store, node);
+	FluxCmdBarOvfRow const *r  = nd ? ( FluxCmdBarOvfRow const * ) nd->component_data : NULL;
+	if (!r || !r->bar) return false;
+	*size = 0;
+	for (int i = 0; i < r->bar->nrows; i++) {
+		if (r->bar->rows [i].separator) continue;
+		*size += 1;
+		if (i == r->index) *pos = *size;
+	}
+	return true;
+}
 
-static XentNodeId         ovf_part(FluxCmdBarData *b, XentNodeId parent, FluxControlType type) {
+static FluxUiaHooks const ovf_uia_hidden = {.role = FLUX_UIA_HIDDEN};
+static FluxUiaHooks const ovf_uia_button = {
+  .role     = FLUX_UIA_BUTTON,
+  .patterns = FLUX_UIA_P_INVOKE,
+  .invoked  = true,
+  .klass    = L"AppBarButton",
+  .lctype   = L"app bar button",
+  .setinfo  = ovf_row_setinfo};
+static FluxUiaHooks const ovf_uia_toggle = {
+  .role     = FLUX_UIA_BUTTON,
+  .patterns = FLUX_UIA_P_TOGGLE,
+  .klass    = L"AppBarToggleButton",
+  .lctype   = L"app bar toggle button",
+  .setinfo  = ovf_row_setinfo};
+
+static XentNodeId ovf_part(FluxCmdBarData *b, XentNodeId parent, FluxControlType type) {
 	XentNodeId n = flux_factory_create_node(b->ctx, b->store, parent, type);
 	if (n) xent_setproto(b->ctx, n, XENT_PROTOCOL_ABSOLUTE);
 	return n;
@@ -364,7 +436,7 @@ static bool ovf_row_make(FluxCmdBarData *b, int i) {
 	b->ovf_rows [i]             = n;
 	b->ovf_row_data [i]         = (FluxCmdBarOvfRow) {b, i};
 	nd->component_data          = &b->ovf_row_data [i];
-	nd->uia = d ? (d->kind == FLUX_APPBAR_TOGGLE ? &ovf_uia_toggle : &ovf_uia_button) : &ovf_uia_sep;
+	nd->uia = d ? (d->kind == FLUX_APPBAR_TOGGLE ? &ovf_uia_toggle : &ovf_uia_button) : &ovf_uia_hidden;
 	if (!d) return true;
 	nd->behavior.on_click     = ovf_row_click;
 	nd->behavior.on_click_ctx = &b->ovf_row_data [i];

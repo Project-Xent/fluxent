@@ -44,6 +44,7 @@ XtkEl *page_image(XtkUi *ui, Model const *m);
 XtkEl *page_person_picture(XtkUi *ui, Model const *m);
 XtkEl *page_pager(XtkUi *ui, Model const *m);
 XtkEl *page_split_view(XtkUi *ui, Model const *m);
+XtkEl *page_navigation_view(XtkUi *ui, Model const *m);
 XtkEl *page_title_bar(XtkUi *ui, Model const *m);
 XtkEl *page_drag_drop(XtkUi *ui, Model const *m);
 XtkEl *page_materials(XtkUi *ui, Model const *m);

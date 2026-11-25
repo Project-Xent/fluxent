@@ -431,23 +431,30 @@ WUC_Visual         *flux_graphics_composition_root(FluxGfx *gfx) {
 	return gfx ? flux_window_target_root(gfx->window_target) : NULL;
 }
 
+static bool gfx_install_acrylic(FluxGfx *gfx, float blur) {
+	WUC_Brush *backdrop = flux_effect_host_blur(gfx->compositor, blur);
+	if (!backdrop) return false;
+	flux_wintarget_setbackdrop(gfx->window_target, backdrop);
+	if (gfx->plate [2] > 0.0f)
+		flux_wintarget_setplate(
+		  gfx->window_target, gfx->plate [0], gfx->plate [1], gfx->plate [2], gfx->plate [3], gfx->plate [4]
+		);
+	(( IUnknown * ) backdrop)->lpVtbl->Release(( IUnknown * ) backdrop);
+	return true;
+}
+
 bool flux_gfx_enable_acrylic(FluxGfx *gfx, float blur) {
 	if (!gfx || !gfx->composition_mode || !gfx->window_target || !gfx->swap_chain) return false;
-	if (gfx->popup_presented) return gfx->window_acrylic;
-
-	if (FAILED(flux_wintarget_presentchild(gfx->window_target, ( IUnknown * ) gfx->swap_chain))) return false;
+	if (!gfx->popup_presented
+	    && FAILED(flux_wintarget_presentchild(gfx->window_target, ( IUnknown * ) gfx->swap_chain)))
+		return false;
 	gfx->popup_presented = true;
-
-	WUC_Brush *backdrop  = flux_effect_host_blur(gfx->compositor, blur);
-	if (backdrop) {
-		flux_wintarget_setbackdrop(gfx->window_target, backdrop);
-		if (gfx->plate [2] > 0.0f)
-			flux_wintarget_setplate(
-			  gfx->window_target, gfx->plate [0], gfx->plate [1], gfx->plate [2], gfx->plate [3], gfx->plate [4]
-			);
-		(( IUnknown * ) backdrop)->lpVtbl->Release(( IUnknown * ) backdrop);
-		gfx->window_acrylic = true;
+	if (blur <= 0.0f) {
+		if (gfx->window_acrylic) flux_wintarget_setbackdrop(gfx->window_target, NULL);
+		gfx->window_acrylic = false;
+		return false;
 	}
+	if (!gfx->window_acrylic) gfx->window_acrylic = gfx_install_acrylic(gfx, blur);
 	return gfx->window_acrylic;
 }
 

@@ -25,6 +25,8 @@ typedef struct FluxPickerColumnSpec {
 	float              weight;
 	bool               loop;
 	bool               left;
+	char const        *name;
+	char const        *automation_id;
 } FluxPickerColumnSpec;
 
 FluxPickerFlyout *flux_pflyout_create(FluxPickerFlyoutDesc const *desc);

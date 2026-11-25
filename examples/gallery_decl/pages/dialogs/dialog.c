@@ -8,7 +8,7 @@ XtkEl *page_dialog(XtkUi *ui, Model const *m) {
 	  xtk_kids(
 		page_header(ui, "ContentDialog", "A modal dialog controlled by the model: open while a flag is true."),
 		example(
-		  ui, "A dialog with Delete / Cancel buttons.",
+		  ui, "A dialog with Delete / Cancel buttons. Cancel is the default.",
 		  demo_card(
 			ui, xtk_button(ui, "Show dialog", (XtkButtonDesc) {.click = xtk_msg(MSG_DIALOG_OPEN)}),
 			xtk_fmt(ui, "Last result: %s", result), NULL
@@ -17,12 +17,13 @@ XtkEl *page_dialog(XtkUi *ui, Model const *m) {
 		xtk_dialog(
 		  ui, "Delete file?",
 		  (XtkDialogDesc) {
-			.open     = m->dialog_open,
-			.primary  = "Delete",
-			.close    = "Cancel",
-			.w        = 400,
-			.contenth = 56,
-			.result   = xtk_msg(MSG_DIALOG_RESULT)},
+			.open           = m->dialog_open,
+			.primary        = "Delete",
+			.close          = "Cancel",
+			.default_button = XTK_DIALOG_BUTTON_CLOSE,
+			.w              = 400,
+			.contenth       = 56,
+			.result         = xtk_msg(MSG_DIALOG_RESULT)},
 		  xtk_kids(
 			xtk_text(ui, "This file will be permanently removed. This cannot be undone.", (XtkTextDesc) {.size = 14})
 		  )

@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <string.h>
+
 static void home_card(PageBuild *b, XtkNodeRef parent, char const *icon, char const *title, char const *body) {
 	XtkLocalId card = xtk_card_create(
 	  &b->txn, parent,
@@ -26,10 +28,12 @@ static void home_card(PageBuild *b, XtkNodeRef parent, char const *icon, char co
 	xtk_button_create(
 	  &b->txn, ref,
 	  &(XtkButtonProps) {
-		.set     = XTK_BUTTON_ICON_MASK | XTK_BUTTON_STYLE_MASK | XTK_BUTTON_ENABLED_MASK,
-		.icon    = icon,
-		.style   = XTK_BUTTON_SUBTLE,
-		.enabled = false,
+		.set       = XTK_BUTTON_ICON_MASK | XTK_BUTTON_STYLE_MASK | XTK_BUTTON_ENABLED_MASK | XTK_BUTTON_ANAME_MASK,
+		.icon      = icon,
+		.style     = XTK_BUTTON_SUBTLE,
+		.enabled   = false,
+		.aname     = title,
+		.aname_len = ( uint32_t ) strlen(title),
 	  }
 	);
 	xtk_text_create(

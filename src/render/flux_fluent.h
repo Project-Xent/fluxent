@@ -49,7 +49,6 @@
 
 #define FLUX_SCROLLBAR_SIZE            12.0f
 #define FLUX_SCROLLBAR_PAD             2.0f
-#define FLUX_SCROLLBAR_MIN_THUMB       20.0f
 #define FLUX_SCROLL_VIS_EPS            0.5f
 
 #define FLUX_TEXTBOX_PAD_L             10.0f

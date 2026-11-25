@@ -67,6 +67,13 @@ bool flux_rec_scrollbar_mouse(
 );
 
 FluxVisualState *flux_rec_vstate(FluxRenderCtx const *rc, FluxRenderSnap const *snap, uint32_t state);
+bool             flux_rec_up_down_chevron(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *box,
+  FluxControlState const *state, bool expanded, FluxColor fg
+);
+bool flux_rec_combo_chevron(
+  XentDlBuilder *b, FluxRenderCtx const *rc, uint64_t id, FluxRect const *box, FluxControlState const *state
+);
 
 FluxRecStateAnim flux_rec_animstate(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state, bool check_target
@@ -129,6 +136,9 @@ bool flux_rec_build_combo(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 );
+bool flux_rec_combo_overlay(
+  XentDlBuilder *b, FluxThemeColors const *theme, FluxRect const *bounds, FluxControlState const *state
+);
 bool flux_rec_split(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
@@ -167,14 +177,14 @@ bool flux_rec_listitem(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 );
+bool flux_rec_listitem_focus(
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds
+);
 bool flux_rec_treeitem(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
 );
 bool flux_rec_nav(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds);
-bool flux_rec_nav_overlay(
-  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds
-);
 bool flux_rec_navitem(
   XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state

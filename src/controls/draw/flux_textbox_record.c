@@ -313,13 +313,14 @@ static bool tb_draw_composition_underline(
 static XentTextStyle tb_content_style(FluxRenderSnap const *snap) {
 	float size      = snap->font_size > 0.0f ? snap->font_size : FLUX_FONT_SIZE_DEFAULT;
 	bool  multiline = snap->u.textbox.edit.multiline;
+	bool  icon      = flux_utf8_is_icon_glyph(snap->u.textbox.text_content);
 	return (XentTextStyle) {
 	  .font_size   = size,
 	  .font_weight = 400u,
 	  .h_align     = 0u,
 	  .v_align     = multiline ? 0u : 1u,
-	  .flags       = multiline ? XENT_DL_TEXT_WRAP : 0u,
-	  .font_family = snap->u.textbox.font_family,
+	  .flags       = (multiline ? XENT_DL_TEXT_WRAP : 0u) | (icon ? XENT_DL_TEXT_ICON : 0u),
+	  .font_family = icon ? flux_icon_font_family() : snap->u.textbox.font_family,
 	};
 }
 

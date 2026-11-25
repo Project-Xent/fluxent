@@ -11,6 +11,7 @@
 #include "controls/draw/flux_control_draw.h"
 #include "controls/draw/flux_control_record_internal.h"
 #include "render/flux_fluent.h"
+#include "render/flux_icon.h"
 #include "runtime/flux_anim_driver.h"
 #include "runtime/flux_str.h"
 
@@ -179,8 +180,15 @@ static bool combo_rec_item_label(XentDlBuilder *b, FluxRect const *item, char co
 	if (!label || !label [0]) return true;
 	FluxRect tr = {item->x + CB_ITEM_PAD_LEFT, item->y + 5.0f, item->w - CB_ITEM_PAD_LEFT - 4.0f, item->h - 12.0f};
 	if (tr.w <= 0.0f) return true;
-	XentTextStyle style
-	  = {.font_size = FLUX_FONT_SIZE_DEFAULT, .font_weight = FLUX_FONT_REGULAR, .h_align = 0u, .v_align = 1u};
+	bool          icon = flux_utf8_is_icon_glyph(label);
+	XentTextStyle style = {
+	  .font_size   = FLUX_FONT_SIZE_DEFAULT,
+	  .font_weight = FLUX_FONT_REGULAR,
+	  .h_align     = 0u,
+	  .v_align     = 1u,
+	  .flags       = icon ? XENT_DL_TEXT_ICON : 0u,
+	  .font_family = icon ? flux_icon_font_family() : NULL,
+	};
 	return flux_rec_text_ex(b, &tr, label, &style, color);
 }
 
@@ -306,6 +314,8 @@ static float combo_dropdown_width(FluxComboRuntime const *rt, float base_w) {
 	float pad      = 2.0f * (CB_BORDER + CB_ITEM_MARGIN_X) + CB_ITEM_PAD_LEFT + 4.0f;
 	for (int i = 0; i < rt->model.item_count; i++) {
 		if (!rt->model.items [i]) continue;
+		bool icon = flux_utf8_is_icon_glyph(rt->model.items [i]);
+		ts.font_family = icon ? flux_icon_font_family() : NULL;
 		float w = flux_text_measure(rt->text, rt->model.items [i], &ts, 0).w + pad;
 		if (w > base_w) base_w = w;
 	}

@@ -1,5 +1,5 @@
 set_project("fluxent")
-set_version(os.getenv("XENT_VERSION") or "0.3.3")
+set_version(os.getenv("XENT_VERSION") or "0.4.0")
 set_languages("c23")
 add_rules("mode.debug", "mode.release")
 if is_plat("mingw") and is_mode("release") then

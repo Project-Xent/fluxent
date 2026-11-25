@@ -94,7 +94,7 @@ end
 function main(...)
     local args = {...}
     local root = os.projectdir()
-    local version = os.getenv("XENT_VERSION") or "0.3.3"
+    local version = os.getenv("XENT_VERSION") or "0.4.0"
     local mingw = mingw_root()
     local archs = #args > 0 and args or {"x86_64", "arm64"}
     for _, arch in ipairs(archs) do

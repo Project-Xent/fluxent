@@ -2,7 +2,7 @@
 
 Entries start at 0.3.1; earlier releases are described by their tags.
 
-## 0.4.0 (unreleased)
+## 0.4.0
 
 - PersonPicture defaults to 96 DIP and supports circular badge images.
   Badge text overrides the badge description in UI Automation.

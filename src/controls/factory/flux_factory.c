@@ -10,6 +10,7 @@
 #include "controls/factory/flux_init_media.h"
 #include "controls/factory/flux_init_value.h"
 #include "render/flux_engine.h"
+#include "render/flux_icon.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -172,6 +173,7 @@ XentNodeId flux_text_init(FluxTextDesc const *info) {
 	if (node == XENT_NODE_INVALID) return XENT_NODE_INVALID;
 
 	xent_settext(info->ctx, node, info->content ? info->content : "");
+	xent_setfontfamily(info->ctx, node, flux_text_font_family(info->content, NULL));
 	if (info->font_size > 0.0f) xent_setfontsize(info->ctx, node, info->font_size);
 	xent_setlinebreak(info->ctx, node, XENT_LINEBREAK_WORDWRAP);
 

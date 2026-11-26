@@ -16,20 +16,31 @@ static bool inline flux_utf8_is_icon_glyph(char const *s) {
 	if (c0 < 0x80) {
 		cp = c0;
 		n  = 1;
-	} else if ((c0 & 0xe0) == 0xc0 && s [1]) {
+	}
+	else if ((c0 & 0xe0) == 0xc0 && s [1]) {
 		cp = ( unsigned ) (c0 & 0x1f);
 		cp = (cp << 6) | ( unsigned ) (( unsigned char ) s [1] & 0x3f);
 		n  = 2;
-	} else if ((c0 & 0xf0) == 0xe0 && s [1] && s [2]) {
+	}
+	else if ((c0 & 0xf0) == 0xe0 && s [1] && s [2]) {
 		cp = ( unsigned ) (c0 & 0x0f);
 		cp = (cp << 6) | ( unsigned ) (( unsigned char ) s [1] & 0x3f);
 		cp = (cp << 6) | ( unsigned ) (( unsigned char ) s [2] & 0x3f);
 		n  = 3;
-	} else {
-		return false;
 	}
+	else { return false; }
 	if (s [n] != '\0') return false;
 	return cp >= 0xe000u && cp <= 0xf8ffu;
+}
+
+/** Effective family for `text`: the icon font for a lone PUA glyph, otherwise `configured`. */
+static char const inline *flux_text_font_family(char const *text, char const *configured) {
+	return flux_utf8_is_icon_glyph(text) ? flux_icon_font_family() : configured;
+}
+
+static bool inline flux_is_icon_font_family(char const *family) {
+	char const *icon = flux_icon_font_family();
+	return family && family [0] && icon && strcmp(family, icon) == 0;
 }
 
 typedef struct FluxIconEntry {

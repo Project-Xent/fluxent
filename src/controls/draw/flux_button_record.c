@@ -383,14 +383,14 @@ static bool combo_record_text(XentDlBuilder *b, FluxRect const *bounds, char con
 	  = {bounds->x + REC_CB_PAD_LEFT, bounds->y, bounds->w - REC_CB_PAD_LEFT - FLUX_COMBO_GLYPH_COL, bounds->h};
 	if (tr.w <= 0.0f) return true;
 	if (!xent_dl_pushcliprect(b, flux_rec_xrect(&tr))) return false;
-	bool          icon = flux_utf8_is_icon_glyph(text);
-	XentTextStyle style = {
+	char const   *family = flux_text_font_family(text, NULL);
+	XentTextStyle style  = {
 	  .font_size   = FLUX_FONT_SIZE_DEFAULT,
 	  .font_weight = 400u,
 	  .h_align     = 0u,
 	  .v_align     = 1u,
-	  .flags       = icon ? XENT_DL_TEXT_ICON : 0u,
-	  .font_family = icon ? flux_icon_font_family() : NULL,
+	  .flags       = family ? XENT_DL_TEXT_ICON : 0u,
+	  .font_family = family,
 	};
 	bool ok = flux_rec_text_ex(b, &tr, text, &style, color);
 	return xent_dl_popclip(b) && ok;

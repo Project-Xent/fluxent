@@ -6,6 +6,7 @@
 #include "controls/textbox/tb_internal.h"
 #include "controls/factory/flux_factory.h"
 #include "render/flux_fluent.h"
+#include "render/flux_icon.h"
 #include "runtime/flux_str.h"
 
 #include <xent/xent.h>
@@ -153,9 +154,11 @@ void flux_prop_slider_value(FluxStore *store, XentNodeId id, float value) {
 void flux_prop_text_content(FluxStore *store, XentNodeId id, char const *content) {
 	FluxNodeData *nd = component_node(store, id);
 	if (!nd || !FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_TEXT)) return;
-	flux_str_replace(&(( FluxTextData * ) nd->component_data)->content, content);
+	FluxTextData *td = ( FluxTextData * ) nd->component_data;
+	flux_str_replace(&td->content, content);
 	XentCtx *ctx = flux_store_ctx(store);
 	xent_settext(ctx, id, content ? content : "");
+	xent_setfontfamily(ctx, id, flux_text_font_family(td->content, td->font_family));
 	xent_sem_setlabel(ctx, id, content ? content : "");
 }
 

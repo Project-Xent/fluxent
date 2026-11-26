@@ -32,7 +32,7 @@ XentDl *flux_container_record(
 static FluxTextStyle text_hit_style(FluxRenderSnap const *snap) {
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_family = snap->u.text.font_family;
+	ts.font_family = flux_text_font_family(snap->u.text.text_content, snap->u.text.font_family);
 	ts.font_size   = snap->font_size > 0.0f ? snap->font_size : 14.0f;
 	ts.font_weight = snap->u.text.font_weight > 0 ? snap->u.text.font_weight : FLUX_FONT_REGULAR;
 	ts.text_align  = snap->u.text.text_alignment;
@@ -92,24 +92,18 @@ static FluxColor text_record_color(FluxRenderCtx const *rc, FluxRenderSnap const
 }
 
 static XentTextStyle text_record_style(FluxRenderSnap const *snap) {
-	bool     icon  = flux_utf8_is_icon_glyph(snap->u.text.text_content);
-	uint32_t flags = snap->u.text.word_wrap ? XENT_DL_TEXT_WRAP : 0u;
-	if (icon) flags |= XENT_DL_TEXT_ICON;
-	else if (
-	  snap->u.text.font_family && snap->u.text.font_family [0] && flux_icon_font_family()
-	  && strcmp(snap->u.text.font_family, flux_icon_font_family()) == 0
-	) {
-		flags |= XENT_DL_TEXT_ICON;
-	}
+	char const *family = flux_text_font_family(snap->u.text.text_content, snap->u.text.font_family);
+	uint32_t    flags  = snap->u.text.word_wrap ? XENT_DL_TEXT_WRAP : 0u;
+	if (flux_is_icon_font_family(family)) flags |= XENT_DL_TEXT_ICON;
 	return (XentTextStyle) {
 	  .font_size   = snap->font_size > 0.0f ? snap->font_size : 14.0f,
 	  .font_weight = snap->u.text.font_weight > 0 ? ( uint16_t ) snap->u.text.font_weight : 400u,
-	  .h_align     = icon ? 1u : ( uint8_t ) snap->u.text.text_alignment,
-	  .v_align     = icon ? 1u : ( uint8_t ) snap->u.text.text_vert_alignment,
+	  .h_align     = ( uint8_t ) snap->u.text.text_alignment,
+	  .v_align     = ( uint8_t ) snap->u.text.text_vert_alignment,
 	  .flags       = flags,
 	  .max_lines   = snap->u.text.max_lines,
 	  .trim        = snap->u.text.trim,
-	  .font_family = icon ? flux_icon_font_family() : snap->u.text.font_family,
+	  .font_family = family,
 	};
 }
 

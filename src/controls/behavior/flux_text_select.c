@@ -3,6 +3,7 @@
 #include "controls/flux_module.h"
 
 #include "render/flux_fluent.h"
+#include "render/flux_icon.h"
 #include "fluxent/flux_data.h"
 #include "text/flux_utf.h"
 
@@ -11,7 +12,7 @@
 static FluxTextStyle text_select_style(FluxTextData const *td) {
 	FluxTextStyle ts;
 	memset(&ts, 0, sizeof(ts));
-	ts.font_family = td->font_family;
+	ts.font_family = flux_text_font_family(td->content, td->font_family);
 	ts.font_size   = td->font_size > 0.0f ? td->font_size : 14.0f;
 	ts.font_weight = td->font_weight > 0 ? td->font_weight : FLUX_FONT_REGULAR;
 	ts.text_align  = td->alignment;

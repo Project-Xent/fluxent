@@ -180,14 +180,14 @@ static bool combo_rec_item_label(XentDlBuilder *b, FluxRect const *item, char co
 	if (!label || !label [0]) return true;
 	FluxRect tr = {item->x + CB_ITEM_PAD_LEFT, item->y + 5.0f, item->w - CB_ITEM_PAD_LEFT - 4.0f, item->h - 12.0f};
 	if (tr.w <= 0.0f) return true;
-	bool          icon = flux_utf8_is_icon_glyph(label);
-	XentTextStyle style = {
+	char const   *family = flux_text_font_family(label, NULL);
+	XentTextStyle style  = {
 	  .font_size   = FLUX_FONT_SIZE_DEFAULT,
 	  .font_weight = FLUX_FONT_REGULAR,
 	  .h_align     = 0u,
 	  .v_align     = 1u,
-	  .flags       = icon ? XENT_DL_TEXT_ICON : 0u,
-	  .font_family = icon ? flux_icon_font_family() : NULL,
+	  .flags       = family ? XENT_DL_TEXT_ICON : 0u,
+	  .font_family = family,
 	};
 	return flux_rec_text_ex(b, &tr, label, &style, color);
 }
@@ -265,11 +265,13 @@ static void combo_update_layout_text(FluxComboRuntime *rt) {
 	char const *text = combo_selected_text(rt);
 	if (rt->model.editable) {
 		xent_settext(rt->ctx, rt->node, "");
+		xent_setfontfamily(rt->ctx, rt->node, NULL);
 		if (text) combo_editor_write(rt, text);
 		return;
 	}
 	if (!text || !text [0]) text = rt->model.placeholder;
 	xent_settext(rt->ctx, rt->node, text);
+	xent_setfontfamily(rt->ctx, rt->node, flux_text_font_family(text, NULL));
 }
 
 static void combo_set_selected(FluxComboRuntime *rt, int index) {
@@ -314,9 +316,8 @@ static float combo_dropdown_width(FluxComboRuntime const *rt, float base_w) {
 	float pad      = 2.0f * (CB_BORDER + CB_ITEM_MARGIN_X) + CB_ITEM_PAD_LEFT + 4.0f;
 	for (int i = 0; i < rt->model.item_count; i++) {
 		if (!rt->model.items [i]) continue;
-		bool icon = flux_utf8_is_icon_glyph(rt->model.items [i]);
-		ts.font_family = icon ? flux_icon_font_family() : NULL;
-		float w = flux_text_measure(rt->text, rt->model.items [i], &ts, 0).w + pad;
+		ts.font_family = flux_text_font_family(rt->model.items [i], NULL);
+		float w        = flux_text_measure(rt->text, rt->model.items [i], &ts, 0).w + pad;
 		if (w > base_w) base_w = w;
 	}
 	return base_w;

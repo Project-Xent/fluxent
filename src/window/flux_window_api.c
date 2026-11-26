@@ -178,16 +178,32 @@ void flux_window_settitlebar(FluxWindow *win, FluxRect drag, FluxRect const *pas
 		flux_window_applyframe(win, true);
 }
 
+bool flux_window_is_chromeless(HWND hwnd) {
+	LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+	return (style & WS_POPUP) && !(style & WS_CAPTION);
+}
+
+void flux_window_apply_margins(FluxWindow const *win, bool backdrop_active) {
+	MARGINS m = {0, 0, 0, 0};
+	if (win->title_bar_extended) { m = (MARGINS) {0, 0, 1, 0}; }
+	else if (backdrop_active && flux_window_is_chromeless(win->hwnd)) {
+		/* DWM SYSTEMBACKDROP requires sheet-of-glass margins on chromeless popups. */
+		m = (MARGINS) {-1, -1, -1, -1};
+	}
+	DwmExtendFrameIntoClientArea(win->hwnd, &m);
+}
+
 void flux_window_applyframe(FluxWindow *win, bool deferred) {
 	if (!win || !win->hwnd) return;
 	/* DWM animates minimize and maximize only for a WS_CAPTION window, so keep the caption. Drop WS_SYSMENU instead:
 	 * with it, the window has system caption buttons, and Snap Layouts opens only over those, which the one-pixel frame
 	 * below leaves no room for. Without it, the flyout follows HTMAXBUTTON from the hit test. */
-	MARGINS  m          = win->title_bar_extended ? (MARGINS) {0, 0, 1, 0} : (MARGINS) {0, 0, 0, 0};
 	LONG_PTR style      = GetWindowLongPtrW(win->hwnd, GWL_STYLE);
-	LONG_PTR next_style = (win->title_bar_extended ? style & ~WS_SYSMENU : style | WS_SYSMENU) | WS_CAPTION;
+	LONG_PTR next_style = style;
+	if (!flux_window_is_chromeless(win->hwnd) || win->title_bar_extended)
+		next_style = (win->title_bar_extended ? style & ~WS_SYSMENU : style | WS_SYSMENU) | WS_CAPTION;
 	if (next_style != style) SetWindowLongPtrW(win->hwnd, GWL_STYLE, next_style);
-	DwmExtendFrameIntoClientArea(win->hwnd, &m);
+	flux_window_apply_margins(win, win->config.backdrop != 0);
 	if (deferred) {
 		PostMessageW(win->hwnd, FLUX_WM_APPLY_FRAME, 0, 0);
 		return;
@@ -229,3 +245,9 @@ void flux_window_setmenu(FluxWindow *win, FluxMenu *menu) {
 }
 
 FluxMenu *flux_window_menu(FluxWindow *win) { return win ? win->active_menu : NULL; }
+
+void      flux_window_settext(FluxWindow *win, struct FluxText *text) {
+	if (win) win->text = text;
+}
+
+struct FluxText *flux_window_text(FluxWindow const *win) { return win ? win->text : NULL; }

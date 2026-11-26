@@ -54,7 +54,7 @@ static HRESULT uia_sub_select(FluxUia *self, FluxUiaHooks const *h, int op) {
 
 static HRESULT uia_select_op(ISelectionItemProvider *p, int op) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblSelection);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE);
 	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 	if (self->sub >= 0) return uia_sub_select(self, h, op);

@@ -114,22 +114,33 @@ int flux_utf8_to_wchar(char const *utf8, wchar_t *out, int out_cap) {
 
 bool flux_wide_buffer_from_utf8(FluxWideBuffer *buf, char const *utf8) {
 	memset(buf, 0, sizeof(*buf));
-	if (utf8 && utf8 [0] == '\0') {
+	if (!utf8 || utf8 [0] == '\0') {
 		buf->text      = buf->stack;
 		buf->stack [0] = L'\0';
 		return true;
 	}
 
-	int needed = flux_utf8_to_wchar(utf8, NULL, 0);
-	if (needed <= 0) return false;
+	int stack_cap = ( int ) (sizeof(buf->stack) / sizeof(buf->stack [0]));
+	int n         = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, buf->stack, stack_cap);
+	if (n > 0) {
+		buf->text = buf->stack;
+		buf->len  = n - 1;
+		return true;
+	}
+	if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) return false;
 
-	buf->text = (needed <= ( int ) (sizeof(buf->stack) / sizeof(buf->stack [0])))
-	            ? buf->stack
-	            : ( wchar_t * ) malloc(sizeof(wchar_t) * ( size_t ) needed);
+	int needed = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, NULL, 0);
+	if (needed <= 0) return false;
+	buf->text = ( wchar_t * ) malloc(sizeof(wchar_t) * ( size_t ) needed);
 	if (!buf->text) return false;
 
-	flux_utf8_to_wchar(utf8, buf->text, needed);
-	buf->len = needed - 1;
+	n = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, buf->text, needed);
+	if (n <= 0) {
+		free(buf->text);
+		buf->text = NULL;
+		return false;
+	}
+	buf->len = n - 1;
 	return true;
 }
 

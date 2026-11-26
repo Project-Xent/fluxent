@@ -309,7 +309,7 @@ XentCtx *flux_host_context(XtkHost *host) {
 void flux_host_destroy(XtkHost *host) {
 	FluxHostState *R = flux_host_state(host);
 	if (!R) return;
-	for (uint32_t i = 0; i < R->prop_count; i++)
+	for (uint32_t i = 0; i < R->prop_cap; i++)
 		if (R->props [i].live) flux_host_value_clear(&R->props [i].value);
 	xtk_alloc_free(R->props);
 	xtk_alloc_free(R->subs);

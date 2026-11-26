@@ -39,10 +39,73 @@ typedef struct FluxBackendXtkState {
 	D2D1_MATRIX_3X2_F    xform_stack [32];
 	uint32_t             xform_depth;
 	uint8_t              clip_kind [FLUX_XTK_CLIP_CAP];
+	bool                 clip_owned [FLUX_XTK_CLIP_CAP];
 	ID2D1Geometry       *clip_geometry [FLUX_XTK_CLIP_CAP];
 	uint32_t             clip_depth;
 	XtkBackend           backend;
 } FluxBackendXtkState;
+
+#define FLUX_REPLAY_GRAD_CAP  32
+#define FLUX_REPLAY_RRECT_CAP 64
+
+typedef struct ReplayGradEntry {
+	uint32_t                  s0_bits;
+	uint32_t                  s1_bits;
+	XentColor                 c0;
+	XentColor                 c1;
+	uint64_t                  last_tick;
+	ID2D1LinearGradientBrush *brush;
+} ReplayGradEntry;
+
+typedef struct ReplayRRectEntry {
+	uint32_t                       x_bits;
+	uint32_t                       y_bits;
+	uint32_t                       w_bits;
+	uint32_t                       h_bits;
+	uint32_t                       r_bits;
+	uint64_t                       last_tick;
+	ID2D1RoundedRectangleGeometry *geo;
+} ReplayRRectEntry;
+
+static struct {
+	ID2D1Factory     *factory;
+	ID2D1Device      *grad_device;
+	ID2D1StrokeStyle *strokes [3];
+	ReplayGradEntry   grads [FLUX_REPLAY_GRAD_CAP];
+	ReplayRRectEntry  rrects [FLUX_REPLAY_RRECT_CAP];
+	uint64_t          tick;
+} g_rcache;
+
+static uint32_t replay_fbits(float v) {
+	uint32_t b;
+	memcpy(&b, &v, sizeof(b));
+	return b;
+}
+
+static void rcache_sync_factory(ID2D1Factory *factory) {
+	if (g_rcache.factory == factory) return;
+	for (int i = 0; i < 3; i++) {
+		if (g_rcache.strokes [i]) ID2D1StrokeStyle_Release(g_rcache.strokes [i]);
+		g_rcache.strokes [i] = NULL;
+	}
+	for (int i = 0; i < FLUX_REPLAY_RRECT_CAP; i++) {
+		if (g_rcache.rrects [i].geo) ID2D1RoundedRectangleGeometry_Release(g_rcache.rrects [i].geo);
+		g_rcache.rrects [i].geo = NULL;
+	}
+	g_rcache.factory = factory;
+}
+
+static void rcache_sync_device(ID2D1DeviceContext *dc) {
+	ID2D1Device *dev = NULL;
+	if (dc) ID2D1DeviceContext_GetDevice(dc, &dev);
+	if (dev) ID2D1Device_Release(dev);
+	if (g_rcache.grad_device == dev) return;
+	for (int i = 0; i < FLUX_REPLAY_GRAD_CAP; i++) {
+		if (g_rcache.grads [i].brush) ID2D1LinearGradientBrush_Release(g_rcache.grads [i].brush);
+		g_rcache.grads [i].brush = NULL;
+	}
+	g_rcache.grad_device = dev;
+}
 
 static FluxBackendXtkState *xtk_state(XtkBackend *backend) {
 	return backend ? ( FluxBackendXtkState * ) backend->impl : NULL;
@@ -95,7 +158,8 @@ static void xtk_draw_text(FluxBackendXtkState *S, XentDl const *list, XentDlCmd 
 	D2D1_MATRIX_3X2_F t;
 	ID2D1RenderTarget_GetTransform(FLUX_RT(S->rc), &t);
 	float             cx2     = 2.0f * bounds.x + bounds.w;
-	D2D1_MATRIX_3X2_F flipped = {-t._11, -t._12, t._21, t._22, cx2 * t._11 + t._31, cx2 * t._12 + t._32};
+	D2D1_MATRIX_3X2_F flipped = {
+	  ._11 = -t._11, ._12 = -t._12, ._21 = t._21, ._22 = t._22, ._31 = cx2 * t._11 + t._31, ._32 = cx2 * t._12 + t._32};
 	ID2D1RenderTarget_SetTransform(FLUX_RT(S->rc), &flipped);
 	flux_text_draw(S->rc->text, FLUX_RT(S->rc), text, &bounds, &style);
 	ID2D1RenderTarget_SetTransform(FLUX_RT(S->rc), &t);
@@ -129,9 +193,43 @@ static bool xtk_fill_triangle(FluxBackendXtkState *S, XentDlCmd const *cmd) {
 	return true;
 }
 
-static ID2D1LinearGradientBrush *xtk_make_linear_brush(
+static bool             color_eq(XentColor a, XentColor b) { return memcmp(&a, &b, sizeof(a)) == 0; }
+
+static ReplayGradEntry *rcache_find_or_evict_grad(uint32_t s0b, uint32_t s1b, XentColor c0, XentColor c1) {
+	int      slot   = 0;
+	uint64_t oldest = UINT64_MAX;
+	for (int i = 0; i < FLUX_REPLAY_GRAD_CAP; i++) {
+		ReplayGradEntry *e = &g_rcache.grads [i];
+		if (e->brush && e->s0_bits == s0b && e->s1_bits == s1b && color_eq(e->c0, c0) && color_eq(e->c1, c1)) return e;
+		if (!e->brush) {
+			slot = i;
+			break;
+		}
+		if (e->last_tick < oldest) {
+			oldest = e->last_tick;
+			slot   = i;
+		}
+	}
+	if (g_rcache.grads [slot].brush) {
+		ID2D1LinearGradientBrush_Release(g_rcache.grads [slot].brush);
+		g_rcache.grads [slot].brush = NULL;
+	}
+	return &g_rcache.grads [slot];
+}
+
+static ID2D1LinearGradientBrush *xtk_get_linear_brush(
   FluxRenderCtx const *rc, float x0, float y0, float x1, float y1, float s0, float s1, XentColor c0, XentColor c1
 ) {
+	rcache_sync_device(rc->d2d);
+	uint32_t         s0b = replay_fbits(s0);
+	uint32_t         s1b = replay_fbits(s1);
+	ReplayGradEntry *e   = rcache_find_or_evict_grad(s0b, s1b, c0, c1);
+	if (e->brush) {
+		e->last_tick = ++g_rcache.tick;
+		ID2D1LinearGradientBrush_SetStartPoint(e->brush, flux_point(x0, y0));
+		ID2D1LinearGradientBrush_SetEndPoint(e->brush, flux_point(x1, y1));
+		return e->brush;
+	}
 	D2D1_GRADIENT_STOP stops [2];
 	stops [0].position                      = s0;
 	stops [0].color                         = flux_d2d_color(xtk_color_to_flux(c0));
@@ -151,12 +249,13 @@ static ID2D1LinearGradientBrush *xtk_make_linear_brush(
 	ID2D1LinearGradientBrush *grad = NULL;
 	ID2D1RenderTarget_CreateLinearGradientBrush(FLUX_RT(rc), &gp, &bp, collection, &grad);
 	ID2D1GradientStopCollection_Release(collection);
+	if (grad) *e = (ReplayGradEntry) {s0b, s1b, c0, c1, ++g_rcache.tick, grad};
 	return grad;
 }
 
 static bool xtk_stroke_rounded_linear(FluxBackendXtkState *S, XentDlCmd const *cmd) {
 	if (cmd->u.linear.stroke_width <= 0.0f) return true;
-	ID2D1LinearGradientBrush *grad = xtk_make_linear_brush(
+	ID2D1LinearGradientBrush *grad = xtk_get_linear_brush(
 	  S->rc, cmd->u.linear.x0, cmd->u.linear.y0, cmd->u.linear.x1, cmd->u.linear.y1, cmd->u.linear.s0, cmd->u.linear.s1,
 	  cmd->u.linear.c0, cmd->u.linear.c1
 	);
@@ -171,12 +270,11 @@ static bool xtk_stroke_rounded_linear(FluxBackendXtkState *S, XentDlCmd const *c
 	ID2D1RenderTarget_DrawRoundedRectangle(
 	  FLUX_RT(S->rc), &rr, ( ID2D1Brush * ) grad, cmd->u.linear.stroke_width, NULL
 	);
-	ID2D1LinearGradientBrush_Release(grad);
 	return true;
 }
 
 static bool xtk_fill_rect_linear(FluxBackendXtkState *S, XentDlCmd const *cmd) {
-	ID2D1LinearGradientBrush *grad = xtk_make_linear_brush(
+	ID2D1LinearGradientBrush *grad = xtk_get_linear_brush(
 	  S->rc, cmd->u.linear.x0, cmd->u.linear.y0, cmd->u.linear.x1, cmd->u.linear.y1, cmd->u.linear.s0, cmd->u.linear.s1,
 	  cmd->u.linear.c0, cmd->u.linear.c1
 	);
@@ -185,7 +283,6 @@ static bool xtk_fill_rect_linear(FluxBackendXtkState *S, XentDlCmd const *cmd) {
 	  cmd->u.linear.rect.x, cmd->u.linear.rect.y, cmd->u.linear.rect.x + cmd->u.linear.rect.w,
 	  cmd->u.linear.rect.y + cmd->u.linear.rect.h};
 	ID2D1RenderTarget_FillRectangle(FLUX_RT(S->rc), &r, ( ID2D1Brush * ) grad);
-	ID2D1LinearGradientBrush_Release(grad);
 	return true;
 }
 
@@ -200,13 +297,14 @@ static D2D1_LAYER_PARAMETERS xtk_layer_parameters(void) {
 	D2D1_LAYER_PARAMETERS lp = {0};
 	lp.contentBounds         = (D2D1_RECT_F) {-1.0e9f, -1.0e9f, 1.0e9f, 1.0e9f};
 	lp.maskAntialiasMode     = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
-	lp.maskTransform         = (D2D1_MATRIX_3X2_F) {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+	lp.maskTransform         = (D2D1_MATRIX_3X2_F) {._11 = 1.0f, ._22 = 1.0f};
 	lp.opacity               = 1.0f;
 	return lp;
 }
 
 static D2D1_MATRIX_3X2_F xtk_affine_to_d2d(XentAffine2 const *m) {
-	return (D2D1_MATRIX_3X2_F) {m->m00, m->m10, m->m01, m->m11, m->m02, m->m12};
+	return (D2D1_MATRIX_3X2_F) {
+	  ._11 = m->m00, ._12 = m->m10, ._21 = m->m01, ._22 = m->m11, ._31 = m->m02, ._32 = m->m12};
 }
 
 static D2D1_MATRIX_3X2_F xtk_mul_affine(D2D1_MATRIX_3X2_F a, D2D1_MATRIX_3X2_F b) {
@@ -225,6 +323,7 @@ static bool xtk_push_clip_rect(FluxBackendXtkState *S, XentRect rect) {
 	D2D1_RECT_F clip = flux_d2d_rect(&(FluxRect) {rect.x, rect.y, rect.w, rect.h});
 	ID2D1RenderTarget_PushAxisAlignedClip(FLUX_RT(S->rc), &clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 	S->clip_kind [S->clip_depth]      = ( uint8_t ) FLUX_XTK_CLIP_RECT;
+	S->clip_owned [S->clip_depth]     = false;
 	S->clip_geometry [S->clip_depth]  = NULL;
 	S->clip_depth                    += 1u;
 	return true;
@@ -244,9 +343,45 @@ static bool xtk_push_clip_ellipse(FluxBackendXtkState *S, XentRect bounds) {
 	lp.geometricMask         = ( ID2D1Geometry * ) geo;
 	ID2D1RenderTarget_PushLayer(FLUX_RT(S->rc), &lp, NULL);
 	S->clip_kind [S->clip_depth]      = ( uint8_t ) FLUX_XTK_CLIP_ELLIPSE;
+	S->clip_owned [S->clip_depth]     = true;
 	S->clip_geometry [S->clip_depth]  = ( ID2D1Geometry * ) geo;
 	S->clip_depth                    += 1u;
 	return true;
+}
+
+static ID2D1RoundedRectangleGeometry *xtk_get_rrect_geo(ID2D1Factory *factory, XentRect rect, float radius) {
+	rcache_sync_factory(factory);
+	uint32_t xb = replay_fbits(rect.x), yb = replay_fbits(rect.y);
+	uint32_t wb = replay_fbits(rect.w), hb = replay_fbits(rect.h), rb = replay_fbits(radius);
+	int      slot   = 0;
+	uint64_t oldest = UINT64_MAX;
+	for (int i = 0; i < FLUX_REPLAY_RRECT_CAP; i++) {
+		ReplayRRectEntry *e = &g_rcache.rrects [i];
+		if (e->geo && e->x_bits == xb && e->y_bits == yb && e->w_bits == wb && e->h_bits == hb && e->r_bits == rb) {
+			e->last_tick = ++g_rcache.tick;
+			return e->geo;
+		}
+		if (!e->geo) {
+			slot = i;
+			break;
+		}
+		if (e->last_tick < oldest) {
+			oldest = e->last_tick;
+			slot   = i;
+		}
+	}
+	if (g_rcache.rrects [slot].geo) {
+		ID2D1RoundedRectangleGeometry_Release(g_rcache.rrects [slot].geo);
+		g_rcache.rrects [slot].geo = NULL;
+	}
+	D2D1_ROUNDED_RECT rr = {
+	  {rect.x, rect.y, rect.x + rect.w, rect.y + rect.h},
+      radius, radius
+    };
+	ID2D1RoundedRectangleGeometry *geo = NULL;
+	if (FAILED(ID2D1Factory_CreateRoundedRectangleGeometry(factory, &rr, &geo)) || !geo) return NULL;
+	g_rcache.rrects [slot] = (ReplayRRectEntry) {xb, yb, wb, hb, rb, ++g_rcache.tick, geo};
+	return geo;
 }
 
 static bool xtk_push_clip_rounded(FluxBackendXtkState *S, XentRect rect, float radius) {
@@ -254,21 +389,14 @@ static bool xtk_push_clip_rounded(FluxBackendXtkState *S, XentRect rect, float r
 	ID2D1Factory *factory = NULL;
 	ID2D1RenderTarget_GetFactory(FLUX_RT(S->rc), &factory);
 	if (!factory) return false;
-	D2D1_ROUNDED_RECT rr;
-	rr.rect.left                       = rect.x;
-	rr.rect.top                        = rect.y;
-	rr.rect.right                      = rect.x + rect.w;
-	rr.rect.bottom                     = rect.y + rect.h;
-	rr.radiusX                         = radius;
-	rr.radiusY                         = radius;
-	ID2D1RoundedRectangleGeometry *geo = NULL;
-	HRESULT                        hr  = ID2D1Factory_CreateRoundedRectangleGeometry(factory, &rr, &geo);
+	ID2D1RoundedRectangleGeometry *geo = xtk_get_rrect_geo(factory, rect, radius);
 	ID2D1Factory_Release(factory);
-	if (FAILED(hr) || !geo) return false;
+	if (!geo) return false;
 	D2D1_LAYER_PARAMETERS lp = xtk_layer_parameters();
 	lp.geometricMask         = ( ID2D1Geometry * ) geo;
 	ID2D1RenderTarget_PushLayer(FLUX_RT(S->rc), &lp, NULL);
 	S->clip_kind [S->clip_depth]      = ( uint8_t ) FLUX_XTK_CLIP_ROUNDED;
+	S->clip_owned [S->clip_depth]     = false;
 	S->clip_geometry [S->clip_depth]  = ( ID2D1Geometry * ) geo;
 	S->clip_depth                    += 1u;
 	return true;
@@ -278,12 +406,13 @@ static bool xtk_pop_clip(FluxBackendXtkState *S) {
 	if (S->clip_depth == 0u) return false;
 	S->clip_depth                    -= 1u;
 	uint8_t        kind               = S->clip_kind [S->clip_depth];
+	bool           owned              = S->clip_owned [S->clip_depth];
 	ID2D1Geometry *geometry           = S->clip_geometry [S->clip_depth];
 	S->clip_geometry [S->clip_depth]  = NULL;
 	if (kind == FLUX_XTK_CLIP_RECT) ID2D1RenderTarget_PopAxisAlignedClip(FLUX_RT(S->rc));
 	else {
 		ID2D1RenderTarget_PopLayer(FLUX_RT(S->rc));
-		if (geometry) ID2D1Geometry_Release(geometry);
+		if (owned && geometry) ID2D1Geometry_Release(geometry);
 	}
 	return true;
 }
@@ -300,24 +429,22 @@ static bool xtk_push_transform(FluxBackendXtkState *S, XentAffine2 const *m) {
 }
 
 static ID2D1StrokeStyle *xtk_stroke_style_for_cap(ID2D1Factory *factory, XentStrokeCap cap) {
+	rcache_sync_factory(factory);
+	int idx = (cap == XENT_STROKE_CAP_ROUND) ? 1 : (cap == XENT_STROKE_CAP_SQUARE ? 2 : 0);
+	if (g_rcache.strokes [idx]) return g_rcache.strokes [idx];
 	D2D1_STROKE_STYLE_PROPERTIES ssp;
 	memset(&ssp, 0, sizeof(ssp));
-	D2D1_CAP_STYLE cap_style = D2D1_CAP_STYLE_FLAT;
-	switch (cap) {
-	case XENT_STROKE_CAP_ROUND  : cap_style = D2D1_CAP_STYLE_ROUND; break;
-	case XENT_STROKE_CAP_SQUARE : cap_style = D2D1_CAP_STYLE_SQUARE; break;
-	default                     : break;
-	}
-	ssp.startCap                   = cap_style;
-	ssp.endCap                     = cap_style;
-	ssp.dashCap                    = cap_style;
-	ssp.lineJoin                   = D2D1_LINE_JOIN_ROUND;
-	ssp.miterLimit                 = 1.0f;
-	ssp.dashStyle                  = D2D1_DASH_STYLE_SOLID;
-	ssp.dashOffset                 = 0.0f;
-	ID2D1StrokeStyle *stroke_style = NULL;
-	ID2D1Factory_CreateStrokeStyle(factory, &ssp, NULL, 0, &stroke_style);
-	return stroke_style;
+	D2D1_CAP_STYLE cap_style
+	  = idx == 1 ? D2D1_CAP_STYLE_ROUND : (idx == 2 ? D2D1_CAP_STYLE_SQUARE : D2D1_CAP_STYLE_FLAT);
+	ssp.startCap   = cap_style;
+	ssp.endCap     = cap_style;
+	ssp.dashCap    = cap_style;
+	ssp.lineJoin   = D2D1_LINE_JOIN_ROUND;
+	ssp.miterLimit = 1.0f;
+	ssp.dashStyle  = D2D1_DASH_STYLE_SOLID;
+	ssp.dashOffset = 0.0f;
+	ID2D1Factory_CreateStrokeStyle(factory, &ssp, NULL, 0, &g_rcache.strokes [idx]);
+	return g_rcache.strokes [idx];
 }
 
 static bool xtk_stroke_arc(FluxBackendXtkState *S, XentDlCmd const *cmd) {
@@ -363,7 +490,6 @@ static bool xtk_stroke_arc(FluxBackendXtkState *S, XentDlCmd const *cmd) {
 	ID2D1RenderTarget_DrawGeometry(
 	  FLUX_RT(S->rc), ( ID2D1Geometry * ) path, ( ID2D1Brush * ) S->rc->brush, cmd->u.arc.stroke_width, stroke_style
 	);
-	if (stroke_style) ID2D1StrokeStyle_Release(stroke_style);
 	ID2D1PathGeometry_Release(path);
 	ID2D1Factory_Release(factory);
 	return true;

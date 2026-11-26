@@ -1,6 +1,7 @@
 #include "fluxent/flux_tooltip.h"
 #include "store/flux_node_data.h"
 #include "fluxent/flux_gfx.h"
+#include "graphics/flux_graphics_compose.h"
 #include "controls/draw/flux_control_record_internal.h"
 #include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
@@ -22,6 +23,7 @@ struct FluxTooltip {
 	FluxThemeColors const *theme;
 	bool                   is_dark;
 	ID2D1SolidColorBrush  *brush;
+	uint32_t               brush_gen;
 	XentNodeId             hovered_node;
 	char const            *tooltip_text;
 	FluxRect               anchor_screen;
@@ -230,8 +232,14 @@ static void CALLBACK tooltip_timer_proc(HWND hwnd, UINT msg, UINT_PTR id, DWORD 
 	if (tt->tooltip_text && !tt->is_visible) tooltip_show(tt);
 }
 
-static void tooltip_ensure_brush(FluxTooltip *tt, ID2D1DeviceContext *d2d) {
-	if (tt->brush || !d2d) return;
+static void tooltip_ensure_brush(FluxTooltip *tt, FluxGfx *gfx, ID2D1DeviceContext *d2d) {
+	uint32_t gen = flux_gfx_generation(gfx);
+	if (tt->brush && tt->brush_gen == gen) return;
+	if (tt->brush) {
+		ID2D1SolidColorBrush_Release(tt->brush);
+		tt->brush = NULL;
+	}
+	if (!d2d) return;
 	D2D1_COLOR_F          black = {0.0f, 0.0f, 0.0f, 1.0f};
 	D2D1_BRUSH_PROPERTIES bp;
 	bp.opacity       = 1.0f;
@@ -242,7 +250,7 @@ static void tooltip_ensure_brush(FluxTooltip *tt, ID2D1DeviceContext *d2d) {
 	bp.transform._31 = 0;
 	bp.transform._32 = 0;
 	HRESULT hr       = ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &bp, &tt->brush);
-	( void ) hr;
+	if (SUCCEEDED(hr)) tt->brush_gen = gen;
 }
 
 static void tooltip_resolve_colors(FluxTooltip const *tt, FluxColor *bg, FluxColor *border, FluxColor *text_color) {
@@ -307,7 +315,7 @@ static void tooltip_paint(void *ctx, FluxPopup *popup) {
 	ID2D1DeviceContext *d2d = flux_gfx_d2d(gfx);
 	if (!d2d) return;
 
-	tooltip_ensure_brush(tt, d2d);
+	tooltip_ensure_brush(tt, gfx, d2d);
 	if (!tt->brush) return;
 
 	FluxColor bg         = {0};

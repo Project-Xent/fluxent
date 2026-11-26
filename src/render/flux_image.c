@@ -21,6 +21,9 @@ enum
 	IMAGE_FAILED,
 };
 
+#define IMAGE_GPU_MAX_BYTES (64u * 1024u * 1024u)
+#define IMAGE_GPU_MAX_COUNT 128u
+
 struct FluxImage {
 	char *source;
 	LONG volatile state;
@@ -31,17 +34,24 @@ struct FluxImage {
 	void             *device;
 	ID2D1Bitmap1    **bitmaps;
 	ID2D1SvgDocument *svg;
+	uint64_t          last_tick;
+	size_t            gpu_bytes;
+	bool              gpu_resident;
 };
 
-static SRWLOCK     g_lock = SRWLOCK_INIT;
-static FluxImage **g_images;
-static int         g_count;
-static int         g_cap;
-static SRWLOCK     g_wake_lock = SRWLOCK_INIT;
-static void        (*g_wake)(void *ctx);
-static void       *g_wake_ctx;
+static SRWLOCK             g_lock = SRWLOCK_INIT;
+static FluxImage         **g_images;
+static int                 g_count;
+static int                 g_cap;
+static IWICImagingFactory *g_wic;
+static uint64_t            g_gpu_tick;
+static size_t              g_gpu_bytes;
+static uint32_t            g_gpu_count;
+static SRWLOCK             g_wake_lock = SRWLOCK_INIT;
+static void                (*g_wake)(void *ctx);
+static void               *g_wake_ctx;
 
-static LONG        image_state(FluxImage const *im) {
+static LONG                image_state(FluxImage const *im) {
 	return InterlockedCompareExchange(( LONG volatile * ) &im->state, 0, 0);
 }
 
@@ -75,17 +85,25 @@ static void image_load(FluxImage *im, IWICImagingFactory *wic, wchar_t const *pa
 	image_wake();
 }
 
+static IWICImagingFactory *image_acquire_wic(void) {
+	AcquireSRWLockExclusive(&g_lock);
+	if (!g_wic)
+		CoCreateInstance(
+		  &CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, &IID_IWICImagingFactory, ( void ** ) &g_wic
+		);
+	IWICImagingFactory *wic = g_wic;
+	if (wic) IWICImagingFactory_AddRef(wic);
+	ReleaseSRWLockExclusive(&g_lock);
+	return wic;
+}
+
 static void CALLBACK image_work(PTP_CALLBACK_INSTANCE instance, void *ctx) {
 	( void ) instance;
 	FluxImage          *im  = ( FluxImage * ) ctx;
 	HRESULT             co  = CoInitializeEx(NULL, COINIT_MULTITHREADED);
-	IWICImagingFactory *wic = NULL;
+	IWICImagingFactory *wic = SUCCEEDED(co) ? image_acquire_wic() : NULL;
 	wchar_t             path [MAX_PATH * 2];
-	bool                ok
-	  = MultiByteToWideChar(CP_UTF8, 0, im->source, -1, path, MAX_PATH * 2) > 0
-	 && SUCCEEDED(
-	   CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, &IID_IWICImagingFactory, ( void ** ) &wic)
-	 );
+	bool                ok = wic && MultiByteToWideChar(CP_UTF8, 0, im->source, -1, path, MAX_PATH * 2) > 0;
 	if (ok) image_load(im, wic, path);
 	else {
 		InterlockedExchange(&im->state, IMAGE_FAILED);
@@ -153,15 +171,66 @@ uint32_t flux_image_frame(FluxImage const *im, double seconds) {
 	return ( uint32_t ) (im->px.nframe - 1);
 }
 
-static void image_bind(FluxImage *im, void *dc) {
-	if (im->device == dc) return;
+static void image_release_gpu(FluxImage *im) {
 	for (int i = 0; im->bitmaps && i < im->px.nframe; i++)
 		if (im->bitmaps [i]) ID2D1Bitmap1_Release(im->bitmaps [i]);
 	free(im->bitmaps);
 	if (im->svg) ID2D1SvgDocument_Release(im->svg);
 	im->bitmaps = NULL;
 	im->svg     = NULL;
-	im->device  = dc;
+	im->device  = NULL;
+	if (im->gpu_resident) {
+		g_gpu_bytes = g_gpu_bytes >= im->gpu_bytes ? g_gpu_bytes - im->gpu_bytes : 0u;
+		if (g_gpu_count > 0u) g_gpu_count--;
+		im->gpu_resident = false;
+	}
+	im->gpu_bytes = 0u;
+}
+
+static void image_evict_lru(FluxImage const *keep) {
+	while (g_gpu_bytes > IMAGE_GPU_MAX_BYTES || g_gpu_count >= IMAGE_GPU_MAX_COUNT) {
+		int      victim      = -1;
+		uint64_t oldest_tick = UINT64_MAX;
+		for (int i = 0; i < g_count; i++) {
+			FluxImage *cand = g_images [i];
+			if (!cand || cand == keep || !cand->gpu_resident) continue;
+			if (cand->last_tick < oldest_tick) {
+				oldest_tick = cand->last_tick;
+				victim      = i;
+			}
+		}
+		if (victim < 0) break;
+		image_release_gpu(g_images [victim]);
+	}
+}
+
+static void image_gpu_account(FluxImage *im, size_t added_bytes) {
+	AcquireSRWLockExclusive(&g_lock);
+	if (!im->gpu_resident) {
+		image_evict_lru(im);
+		im->gpu_resident  = true;
+		g_gpu_count      += 1u;
+	}
+	im->gpu_bytes += added_bytes;
+	g_gpu_bytes   += added_bytes;
+	im->last_tick  = ++g_gpu_tick;
+	image_evict_lru(im);
+	ReleaseSRWLockExclusive(&g_lock);
+}
+
+static void image_bind(FluxImage *im, ID2D1DeviceContext *dc) {
+	ID2D1Device *dev = NULL;
+	ID2D1DeviceContext_GetDevice(dc, &dev);
+	void *key = dev ? ( void * ) dev : ( void * ) dc;
+	if (dev) ID2D1Device_Release(dev);
+
+	AcquireSRWLockExclusive(&g_lock);
+	im->last_tick = ++g_gpu_tick;
+	if (im->device != key) {
+		image_release_gpu(im);
+		im->device = key;
+	}
+	ReleaseSRWLockExclusive(&g_lock);
 }
 
 static ID2D1Bitmap1 *image_bitmap(FluxImage *im, ID2D1DeviceContext *dc, uint32_t frame) {
@@ -174,9 +243,14 @@ static ID2D1Bitmap1 *image_bitmap(FluxImage *im, ID2D1DeviceContext *dc, uint32_
 	  {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED},
       96.0f, 96.0f, D2D1_BITMAP_OPTIONS_NONE, NULL
     };
-	ID2D1DeviceContext_CreateBitmapFromWicBitmap1(
-	  dc, ( IWICBitmapSource * ) im->px.frames [frame].bitmap, &props, &im->bitmaps [frame]
-	);
+	if (SUCCEEDED(ID2D1DeviceContext_CreateBitmapFromWicBitmap1(
+		  dc, ( IWICBitmapSource * ) im->px.frames [frame].bitmap, &props, &im->bitmaps [frame]
+		))
+	    && im->bitmaps [frame])
+	{
+		size_t bytes = ( size_t ) (im->w > 1.0f ? im->w : 1.0f) * ( size_t ) (im->h > 1.0f ? im->h : 1.0f) * 4u;
+		image_gpu_account(im, bytes);
+	}
 	return im->bitmaps [frame];
 }
 
@@ -232,7 +306,8 @@ static ID2D1SvgDocument *image_svg(FluxImage *im, ID2D1DeviceContext5 *dc5) {
 		GlobalFree(mem);
 		return NULL;
 	}
-	ID2D1DeviceContext5_CreateSvgDocument(dc5, stream, (D2D_SIZE_F) {im->w, im->h}, &im->svg);
+	if (SUCCEEDED(ID2D1DeviceContext5_CreateSvgDocument(dc5, stream, (D2D_SIZE_F) {im->w, im->h}, &im->svg)) && im->svg)
+		image_gpu_account(im, im->px.svg_len);
 	IStream_Release(stream);
 	return im->svg;
 }

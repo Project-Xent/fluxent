@@ -13,20 +13,13 @@ FluxText *flux_text_create(void) {
 		return NULL;
 	}
 
+	tr->refcount     = 1u;
 	tr->default_size = 14.0f;
 	return tr;
 }
 
-static void release_format_cache(FluxText *tr) {
-	for (int i = 0; i < FLUX_FORMAT_CACHE_SIZE; i++)
-		if (tr->format_cache [i].occupied && tr->format_cache [i].format)
-			IDWriteTextFormat_Release(tr->format_cache [i].format);
-}
-
-static void release_layout_cache(FluxText *tr) {
-	for (int i = 0; i < FLUX_LAYOUT_CACHE_SIZE; i++)
-		if (tr->layout_cache [i].occupied && tr->layout_cache [i].layout)
-			IDWriteTextLayout_Release(tr->layout_cache [i].layout);
+void flux_text_retain(FluxText *tr) {
+	if (tr) tr->refcount++;
 }
 
 static void release_fonts(FluxText *tr) {
@@ -38,9 +31,12 @@ static void release_fonts(FluxText *tr) {
 
 void flux_text_destroy(FluxText *tr) {
 	if (!tr) return;
+	if (tr->refcount > 1u) {
+		tr->refcount--;
+		return;
+	}
 
-	release_format_cache(tr);
-	release_layout_cache(tr);
+	flux_text_caches_release(tr);
 	release_fonts(tr);
 
 	if (tr->shared_brush) ID2D1SolidColorBrush_Release(tr->shared_brush);
@@ -51,13 +47,9 @@ void flux_text_destroy(FluxText *tr) {
 
 #define FLUX_TEXT_UNBOUNDED 100000.0f
 
-static IDWriteTextLayout *text_layout_from_utf8(TextLayoutRequest const *req, FluxWideBuffer *wide) {
-	if (!flux_wide_buffer_from_utf8(wide, req->text)) return NULL;
-
-	TextLayoutCacheRequest cache_req = {wide->text, wide->len, req->text, req->style, req->max_w, req->max_h};
-	IDWriteTextLayout     *layout    = get_or_create_layout(req->tr, &cache_req);
-	if (!layout) flux_wide_buffer_free(wide);
-	return layout;
+static IDWriteTextLayout *text_layout_from_utf8(TextLayoutRequest const *req, int *out_wlen) {
+	DWRITE_WORD_WRAPPING wrap = req->style->word_wrap ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP;
+	return get_or_create_layout_ex(req->tr, req, wrap, out_wlen);
 }
 
 static bool text_ensure_shared_brush(FluxText *tr, ID2D1RenderTarget *rt, FluxColor color) {
@@ -105,14 +97,9 @@ void flux_text_draw(
 
 	tr->cache_tick++;
 
-	FluxWideBuffer     wide;
 	TextLayoutRequest  req    = {tr, text, style, bounds->w, bounds->h};
-	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
-	if (!layout) return;
-	if (!text_ensure_shared_brush(tr, rt, style->color)) {
-		flux_wide_buffer_free(&wide);
-		return;
-	}
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, NULL);
+	if (!layout || !text_ensure_shared_brush(tr, rt, style->color)) return;
 
 	D2D1_POINT_2F origin;
 	origin.x = bounds->x;
@@ -120,7 +107,6 @@ void flux_text_draw(
 	ID2D1RenderTarget_DrawTextLayout(
 	  rt, origin, layout, ( ID2D1Brush * ) tr->shared_brush, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT
 	);
-	flux_wide_buffer_free(&wide);
 }
 
 FluxSize flux_text_measure(FluxText *tr, char const *text, FluxTextStyle const *style, float max_width) {
@@ -129,10 +115,9 @@ FluxSize flux_text_measure(FluxText *tr, char const *text, FluxTextStyle const *
 
 	tr->cache_tick++;
 
-	FluxWideBuffer     wide;
 	float              mw     = text_effective_max_width(max_width);
 	TextLayoutRequest  req    = {tr, text, style, mw, FLUX_TEXT_UNBOUNDED};
-	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, NULL);
 	if (!layout) return result;
 
 	DWRITE_TEXT_METRICS metrics;
@@ -140,8 +125,6 @@ FluxSize flux_text_measure(FluxText *tr, char const *text, FluxTextStyle const *
 		result.w = metrics.widthIncludingTrailingWhitespace;
 		result.h = metrics.height;
 	}
-
-	flux_wide_buffer_free(&wide);
 	return result;
 }
 
@@ -151,9 +134,8 @@ int flux_text_hittest(FluxTextHitTestQuery const *query) {
 
 	query->layout.renderer->cache_tick++;
 
-	FluxWideBuffer     wide;
 	TextLayoutRequest  req    = text_layout_request(&query->layout, NULL);
-	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, NULL);
 	if (!layout) return 0;
 
 	BOOL                    is_trailing, is_inside;
@@ -161,8 +143,6 @@ int flux_text_hittest(FluxTextHitTestQuery const *query) {
 	int                     pos = 0;
 	if (SUCCEEDED(IDWriteTextLayout_HitTestPoint(layout, query->x, query->y, &is_trailing, &is_inside, &htm)))
 		pos = is_trailing ? ( int ) htm.textPosition + 1 : ( int ) htm.textPosition;
-
-	flux_wide_buffer_free(&wide);
 	return pos;
 }
 
@@ -172,15 +152,15 @@ FluxRect flux_text_caret(FluxTextCaretQuery const *query) {
 
 	query->layout.renderer->cache_tick++;
 
-	char const        *safe = (query->layout.text && query->layout.text [0]) ? query->layout.text : " ";
-	FluxWideBuffer     wide;
+	char const        *safe   = (query->layout.text && query->layout.text [0]) ? query->layout.text : " ";
+	int                wlen   = 0;
 	TextLayoutRequest  req    = text_layout_request(&query->layout, safe);
-	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wlen);
 	if (!layout) return result;
 
 	int index = query->index;
 	if (index < 0) index = 0;
-	if (index > wide.len) index = wide.len;
+	if (index > wlen) index = wlen;
 
 	float                   cx, cy;
 	DWRITE_HIT_TEST_METRICS htm;
@@ -190,8 +170,6 @@ FluxRect flux_text_caret(FluxTextCaretQuery const *query) {
 		result.w = 1.0f;
 		result.h = htm.height;
 	}
-
-	flux_wide_buffer_free(&wide);
 	return result;
 }
 
@@ -255,23 +233,19 @@ uint32_t flux_text_selection_for_height(FluxTextSelectionQuery const *query, flo
 
 	query->layout.renderer->cache_tick++;
 
-	FluxWideBuffer    wide;
+	int               wlen    = 0;
 	TextLayoutRequest req     = text_layout_request(&query->layout, NULL);
 	req.max_h                 = height;
-	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wlen);
 	if (!layout) return 0;
 
 	int start = query->start;
 	int end   = query->end;
-	if (!text_clamp_selection_range(&start, &end, wide.len)) {
-		flux_wide_buffer_free(&wide);
-		return 0;
-	}
+	if (!text_clamp_selection_range(&start, &end, wlen)) return 0;
 
 	DWRITE_HIT_TEST_METRICS *htm = text_selection_metrics(layout, start, end, total);
 	uint32_t                 n   = htm ? text_copy_selection_rects(htm, *total, query->out_rects, query->max_rects) : 0;
 	free(htm);
-	flux_wide_buffer_free(&wide);
 	return n;
 }
 
@@ -288,25 +262,21 @@ static void text_copy_lines(TextLineMetrics const *m, FluxTextLine *out, uint32_
 uint32_t flux_text_lines(FluxTextLayoutQuery const *query, FluxTextLine *out, uint32_t max_lines) {
 	if (!query || !query->renderer || !query->style) return 0u;
 	query->renderer->cache_tick++;
-	char const        *safe = query->text && query->text [0] ? query->text : " ";
-	FluxWideBuffer     wide;
+	char const        *safe   = query->text && query->text [0] ? query->text : " ";
 	TextLayoutRequest  req    = text_layout_request(query, safe);
-	IDWriteTextLayout *layout = text_layout_from_utf8(&req, &wide);
+	IDWriteTextLayout *layout = text_layout_from_utf8(&req, NULL);
 	TextLineMetrics    m;
 	bool               ok = layout && read_line_metrics(layout, &m);
 	uint32_t           n  = ok ? m.count : 0u;
 	if (ok && out) text_copy_lines(&m, out, max_lines);
 	if (ok) free_line_metrics(&m);
-	if (layout) flux_wide_buffer_free(&wide);
 	return n;
 }
 
-static IDWriteTextLayout *text_cluster_layout(FluxTextClusterQuery const *query, FluxWideBuffer *wide, int *wlen) {
-	char const        *safe   = (query->layout.text && query->layout.text [0]) ? query->layout.text : " ";
-	TextLayoutRequest  req    = text_layout_request(&query->layout, safe);
-	IDWriteTextLayout *layout = text_layout_from_utf8(&req, wide);
-	*wlen                     = layout ? wide->len : 0;
-	return layout;
+static IDWriteTextLayout *text_cluster_layout(FluxTextClusterQuery const *query, int *wlen) {
+	char const       *safe = (query->layout.text && query->layout.text [0]) ? query->layout.text : " ";
+	TextLayoutRequest req  = text_layout_request(&query->layout, safe);
+	return text_layout_from_utf8(&req, wlen);
 }
 
 uint32_t flux_text_next(FluxTextClusterQuery const *query) {
@@ -314,22 +284,15 @@ uint32_t flux_text_next(FluxTextClusterQuery const *query) {
 
 	query->layout.renderer->cache_tick++;
 
-	FluxWideBuffer     wide;
 	int                wlen   = 0;
-	IDWriteTextLayout *layout = text_cluster_layout(query, &wide, &wlen);
+	IDWriteTextLayout *layout = text_cluster_layout(query, &wlen);
 	if (!layout) return query->index;
-	if (( int ) query->index >= wlen) {
-		flux_wide_buffer_free(&wide);
-		return ( uint32_t ) wlen;
-	}
+	if (( int ) query->index >= wlen) return ( uint32_t ) wlen;
 
 	float                   cx, cy;
 	DWRITE_HIT_TEST_METRICS htm;
-	HRESULT                 hr     = IDWriteTextLayout_HitTestTextPosition(layout, query->index, FALSE, &cx, &cy, &htm);
-	uint32_t                result = SUCCEEDED(hr) ? htm.textPosition + htm.length : query->index + 1;
-
-	flux_wide_buffer_free(&wide);
-	return result;
+	HRESULT                 hr = IDWriteTextLayout_HitTestTextPosition(layout, query->index, FALSE, &cx, &cy, &htm);
+	return SUCCEEDED(hr) ? htm.textPosition + htm.length : query->index + 1;
 }
 
 uint32_t flux_text_prev(FluxTextClusterQuery const *query) {
@@ -338,16 +301,12 @@ uint32_t flux_text_prev(FluxTextClusterQuery const *query) {
 
 	query->layout.renderer->cache_tick++;
 
-	FluxWideBuffer     wide;
 	int                wlen   = 0;
-	IDWriteTextLayout *layout = text_cluster_layout(query, &wide, &wlen);
+	IDWriteTextLayout *layout = text_cluster_layout(query, &wlen);
 	if (!layout) return query->index;
 
 	float                   cx, cy;
 	DWRITE_HIT_TEST_METRICS htm;
 	HRESULT                 hr = IDWriteTextLayout_HitTestTextPosition(layout, query->index - 1, FALSE, &cx, &cy, &htm);
-	uint32_t                result = SUCCEEDED(hr) ? htm.textPosition : query->index - 1;
-
-	flux_wide_buffer_free(&wide);
-	return result;
+	return SUCCEEDED(hr) ? htm.textPosition : query->index - 1;
 }

@@ -273,7 +273,17 @@ static void compose_render_node(
 
 	FluxNodeData *nd = flux_store_find(store, node);
 	if (nd && nd->component_type == FLUX_CONTROL_SCROLL) {
-		flux_scroll_measure(ctx, node, nd->component_data);
+		FluxScrollData *sd = ( FluxScrollData * ) nd->component_data;
+		float           cw = sd ? sd->content_w : 0.0f;
+		float           ch = sd ? sd->content_h : 0.0f;
+		float           sx = sd ? sd->scroll_x : 0.0f;
+		float           sy = sd ? sd->scroll_y : 0.0f;
+		flux_scroll_measure(ctx, node, sd);
+		if (sd && (sd->content_w != cw || sd->content_h != ch || sx != nd->prev_scroll_x || sy != nd->prev_scroll_y)) {
+			flux_uia_mark_dirty(store, node, FLUX_UIA_DIRTY_PATTERN);
+			nd->prev_scroll_x = sx;
+			nd->prev_scroll_y = sy;
+		}
 		content_scroll_sync(r, store, node, &rect, scale, rc_tmpl->animations_active);
 	}
 	ContentNode *cn = content_owned(r, node);
@@ -315,6 +325,22 @@ static void compose_walk(
 	free(stack);
 }
 
+static uint64_t compose_env_hash(int w, int h, float scale, FluxRenderCtx const *rc, FluxColor clear) {
+	uint64_t hash = UINT64_C(0xcbf29ce484222325);
+	uint32_t vals [6];
+	vals [0] = ( uint32_t ) w;
+	vals [1] = ( uint32_t ) h;
+	memcpy(&vals [2], &scale, sizeof(scale));
+	vals [3] = clear.rgba;
+	vals [4] = rc->is_dark ? 1u : 0u;
+	vals [5] = (rc->theme && rc->theme->contrast.active) ? 1u : 0u;
+	for (int i = 0; i < 6; i++) {
+		hash ^= vals [i];
+		hash *= UINT64_C(0x100000001b3);
+	}
+	return hash ^ ( uint64_t ) ( uintptr_t ) rc->theme;
+}
+
 static void frame_paint(
   FluxComposeRender *r, XentCtx *ctx, XentNodeId root, FluxRenderCtx const *rc_tmpl, float scale, FluxColor clear
 ) {
@@ -324,28 +350,54 @@ static void frame_paint(
 	int h = ( int ) ceilf(rect.h * scale);
 	if (w < 1 || h < 1 || !frame_ensure(r, w, h)) return;
 
+	flux_engine_collect(r->engine, ctx, root);
+	uint64_t env_hash  = compose_env_hash(w, h, scale, rc_tmpl, clear);
+	FluxRect dirty_dip = {0};
+	bool     partial   = flux_engine_dirty_rect(r->engine, env_hash, rect.w, rect.h, false, &dirty_dip);
+	if (partial && (dirty_dip.w <= 0.0f || dirty_dip.h <= 0.0f)) {
+		flux_engine_finish_frame(r->engine, env_hash);
+		return;
+	}
+	RECT req_px = {
+	  ( LONG ) floorf(dirty_dip.x * scale), ( LONG ) floorf(dirty_dip.y * scale),
+	  ( LONG ) ceilf((dirty_dip.x + dirty_dip.w) * scale), ( LONG ) ceilf((dirty_dip.y + dirty_dip.h) * scale)};
 	POINT               offset = {0, 0};
-	ID2D1DeviceContext *dc     = flux_surface_begin(r->frame, &offset);
+	RECT                used   = {0, 0, w, h};
+	ID2D1DeviceContext *dc     = flux_surface_begin(r->frame, partial ? &req_px : NULL, &offset, &used);
 	if (!dc) return;
 	ID2D1RenderTarget *rt = ( ID2D1RenderTarget * ) dc;
 
 	ID2D1DeviceContext_SetDpi(dc, scale * FLUX_DPI_BASE, scale * FLUX_DPI_BASE);
-	D2D1_MATRIX_3X2_F base  = {._11 = 1.0f, ._22 = 1.0f, ._31 = offset.x / scale, ._32 = offset.y / scale};
-	D2D1_RECT_F       whole = {0.0f, 0.0f, w / scale, h / scale};
-	D2D1_COLOR_F      bg    = {flux_color_rf(clear), flux_color_gf(clear), flux_color_bf(clear), flux_color_af(clear)};
+	D2D1_MATRIX_3X2_F base = {
+	  ._11 = 1.0f,
+	  ._22 = 1.0f,
+	  ._31 = ( float ) (offset.x - used.left) / scale,
+	  ._32 = ( float ) (offset.y - used.top) / scale};
+	D2D1_RECT_F clip = {
+	  ( float ) used.left / scale, ( float ) used.top / scale, ( float ) used.right / scale,
+	  ( float ) used.bottom / scale};
+	D2D1_COLOR_F bg = {flux_color_rf(clear), flux_color_gf(clear), flux_color_bf(clear), flux_color_af(clear)};
 	ID2D1RenderTarget_SetTransform(rt, &base);
-	ID2D1RenderTarget_PushAxisAlignedClip(rt, &whole, D2D1_ANTIALIAS_MODE_ALIASED);
-	ID2D1RenderTarget_Clear(rt, &bg);
+	ID2D1RenderTarget_PushAxisAlignedClip(rt, &clip, D2D1_ANTIALIAS_MODE_ALIASED);
 
 	if (!r->frame_brush) {
 		D2D1_COLOR_F black = {0, 0, 0, 1};
 		ID2D1RenderTarget_CreateSolidColorBrush(rt, &black, NULL, &r->frame_brush);
 	}
-	FluxRenderCtx rc = *rc_tmpl;
-	rc.d2d           = dc;
-	rc.brush         = r->frame_brush;
-	flux_engine_collect(r->engine, ctx, root);
-	flux_engine_execute(r->engine, &rc);
+	bool full_surface = used.left == 0 && used.top == 0 && used.right == w && used.bottom == h;
+	if (full_surface || !r->frame_brush) ID2D1RenderTarget_Clear(rt, &bg);
+	else {
+		ID2D1SolidColorBrush_SetColor(r->frame_brush, &bg);
+		ID2D1DeviceContext_SetPrimitiveBlend(dc, D2D1_PRIMITIVE_BLEND_COPY);
+		ID2D1RenderTarget_FillRectangle(rt, &clip, ( ID2D1Brush * ) r->frame_brush);
+		ID2D1DeviceContext_SetPrimitiveBlend(dc, D2D1_PRIMITIVE_BLEND_SOURCE_OVER);
+	}
+	FluxRenderCtx rc  = *rc_tmpl;
+	rc.d2d            = dc;
+	rc.brush          = r->frame_brush;
+	FluxRect clip_dip = {clip.left, clip.top, clip.right - clip.left, clip.bottom - clip.top};
+	flux_engine_execute_clipped(r->engine, &rc, full_surface ? NULL : &clip_dip);
+	flux_engine_finish_frame(r->engine, env_hash);
 
 	ID2D1RenderTarget_PopAxisAlignedClip(rt);
 	flux_surface_end(r->frame);

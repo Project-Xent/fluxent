@@ -1739,10 +1739,15 @@ bool flux_host_can_project(XtkCtrlId type, XtkPropPatch const *patch) {
 }
 
 bool flux_host_apply_native(FluxHostState *R, XtkCtrl control, XtkPropPatch const *patch) {
-	XentNodeId             node   = flux_host_as_node(control);
-	XtkCtrlId              type   = flux_host_types_get(R, node);
-	FluxPropHandler const *module = flux_module_prop(( FluxControlType ) type, patch->id, patch->value.kind);
-	if (module && module->fn(R, control, node, &patch->value)) return true;
-	FluxPropHandler const *core = core_prop(patch);
-	return core && core->fn(R, control, node, &patch->value);
+	XentNodeId             node    = flux_host_as_node(control);
+	XtkCtrlId              type    = flux_host_types_get(R, node);
+	FluxPropHandler const *module  = flux_module_prop(( FluxControlType ) type, patch->id, patch->value.kind);
+	bool                   applied = (module && module->fn(R, control, node, &patch->value));
+	if (!applied) {
+		FluxPropHandler const *core = core_prop(patch);
+		applied                     = core && core->fn(R, control, node, &patch->value);
+	}
+	if (applied)
+		flux_uia_mark_dirty(R->store, node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE);
+	return applied;
 }

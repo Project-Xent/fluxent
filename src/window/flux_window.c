@@ -588,7 +588,9 @@ static void window_show_first(FluxWindow *win) {
 	if (win->shown) return;
 	win->shown = true;
 	flux_window_applyframe(win, false);
-	ShowWindow(win->hwnd, SW_SHOW);
+	LONG_PTR ex   = GetWindowLongPtrW(win->hwnd, GWL_EXSTYLE);
+	UINT     show = (ex & WS_EX_NOACTIVATE) ? SW_SHOWNOACTIVATE : SW_SHOW;
+	ShowWindow(win->hwnd, show);
 	UpdateWindow(win->hwnd);
 }
 
@@ -749,6 +751,14 @@ static bool window_handle_lifecycle(WindowMessage const *m, LRESULT *result) {
 		return true;
 	}
 	if (m->msg == WM_SETCURSOR) return window_on_set_cursor(m->win, m->lp) ? (*result = TRUE, true) : false;
+	if (m->msg == WM_NCACTIVATE
+	    && m->win->config.backdrop != 0
+	    && (GetWindowLongPtrW(m->hwnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE))
+	{
+		/* Keep DWM backdrop active on WS_EX_NOACTIVATE windows instead of opaque fallback. */
+		*result = DefWindowProcW(m->hwnd, WM_NCACTIVATE, TRUE, m->lp);
+		return true;
+	}
 	if (m->msg == FLUX_WM_APPLY_FRAME) {
 		SetWindowPos(
 		  m->hwnd, NULL, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
@@ -1139,7 +1149,6 @@ void flux_window_setbackdrop(FluxWindow *win, int backdrop_type) {
 	if (!win || !win->hwnd) return;
 	if (backdrop_type != 0 && !os_supports_backdrop()) backdrop_type = 0;
 	bool  contrast = flux_theme_systemcontrast();
-	BOOL  host     = !contrast;
 	DWORD bd       = DWMSBT_NONE;
 	switch (contrast ? 0 : backdrop_type) {
 	case 1  : bd = DWMSBT_MAINWINDOW; break;
@@ -1147,6 +1156,10 @@ void flux_window_setbackdrop(FluxWindow *win, int backdrop_type) {
 	case 3  : bd = DWMSBT_TRANSIENTWINDOW; break;
 	default : bd = DWMSBT_NONE; break;
 	}
+	bool material = bd != DWMSBT_NONE;
+	if (flux_window_is_chromeless(win->hwnd)) flux_window_apply_margins(win, material);
+	/* Setting host backdrop brush with DWMSBT_NONE perturbs other NOACTIVATE windows in-process. */
+	BOOL host = material;
 	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &host, sizeof(host));
 	DwmSetWindowAttribute(win->hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &bd, sizeof(bd));
 	win->config.backdrop = backdrop_type;

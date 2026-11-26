@@ -108,6 +108,7 @@ static void input_focus_node(FluxInput *input, XentNodeId node, bool suppress_vi
 	input->focused           = node;
 	nd->state.focused        = 1;
 	nd->state.suppress_focus = suppress_visual;
+	flux_uia_mark_dirty(input->store, node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_FOCUS);
 	if (nd->behavior.on_focus) nd->behavior.on_focus(nd->behavior.on_focus_ctx);
 }
 

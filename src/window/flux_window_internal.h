@@ -3,21 +3,27 @@
 
 #include "fluxent/flux_window.h"
 
+struct FluxText;
+
 #define FLUX_WINDOW_MAX_RESIZE_OBSERVERS 8
 
 #define FLUX_WINDOW_REDRAW_TIMER         0xf2
 
 #define FLUX_WM_APPLY_FRAME              (WM_APP + 0x51)
 
-bool flux_window_ime_message(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT *result);
-void flux_window_setmaxbutton(FluxWindow *win, FluxRect bounds);
-bool flux_window_caption_bounds(FluxWindow *win, FluxRect *bounds);
-void flux_window_redraw_after(FluxWindow *win, double seconds);
-void flux_window_applyframe(FluxWindow *win, bool deferred);
-bool flux_taskbar_message(FluxWindow *win, UINT msg, WPARAM wp);
-void flux_taskbar_destroy(FluxWindow *win);
-bool flux_tray_message(FluxWindow *win, UINT msg, WPARAM wp, LPARAM lp);
-void flux_tray_destroy_window(FluxWindow *win);
+bool             flux_window_ime_message(FluxWindow *win, HWND hwnd, UINT msg, WPARAM wp, LPARAM lp, LRESULT *result);
+void             flux_window_setmaxbutton(FluxWindow *win, FluxRect bounds);
+bool             flux_window_caption_bounds(FluxWindow *win, FluxRect *bounds);
+void             flux_window_redraw_after(FluxWindow *win, double seconds);
+void             flux_window_settext(FluxWindow *win, struct FluxText *text);
+struct FluxText *flux_window_text(FluxWindow const *win);
+void             flux_window_applyframe(FluxWindow *win, bool deferred);
+bool             flux_window_is_chromeless(HWND hwnd);
+void             flux_window_apply_margins(FluxWindow const *win, bool backdrop_active);
+bool             flux_taskbar_message(FluxWindow *win, UINT msg, WPARAM wp);
+void             flux_taskbar_destroy(FluxWindow *win);
+bool             flux_tray_message(FluxWindow *win, UINT msg, WPARAM wp, LPARAM lp);
+void             flux_tray_destroy_window(FluxWindow *win);
 
 typedef struct FluxTaskbar  FluxTaskbar;
 typedef struct FluxTrayIcon FluxTrayIcon;
@@ -28,6 +34,7 @@ struct FluxWindow {
 	FluxDpi              dpi;
 	FluxWindowCfg        config;
 	FluxGfx             *gfx;
+	struct FluxText     *text;
 	bool                 render_requested;
 	ULONGLONG            redraw_due;
 	bool                 shown;

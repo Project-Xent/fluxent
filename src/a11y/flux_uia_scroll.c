@@ -101,7 +101,7 @@ static ULONG STDMETHODCALLTYPE scr_release(IScrollProvider *p) {
 
 static HRESULT STDMETHODCALLTYPE scr_scroll(IScrollProvider *p, enum ScrollAmount h, enum ScrollAmount v) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblScroll);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PATTERN);
 	FluxUiaHooks const *hk = uia_scroll_hooks(self);
 	UiaScrollView       sv;
 	if (hk && hk->scroll_by) hk->scroll_by(self->info.store, self->node, uia_item_step(v));
@@ -117,7 +117,7 @@ static HRESULT STDMETHODCALLTYPE scr_scroll(IScrollProvider *p, enum ScrollAmoun
 
 static HRESULT STDMETHODCALLTYPE scr_set_percent(IScrollProvider *p, double h, double v) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblScroll);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PATTERN);
 	FluxUiaHooks const *hk = uia_scroll_hooks(self);
 	UiaScrollView       sv;
 	if (hk) return hk->scroll_set && hk->scroll_set(self->info.store, self->node, v) ? S_OK : UIA_E_INVALIDOPERATION;
@@ -238,7 +238,7 @@ void flux_uia_bring_into_view(FluxUiaContext const *info, XentNodeId node) {
 
 static HRESULT STDMETHODCALLTYPE sci_scroll_into_view(IScrollItemProvider *p) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblScrollItem);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PATTERN);
 	if (self->sub >= 0) return uia_sub_scroll(self);
 	flux_uia_bring_into_view(&self->info, self->node);
 	return S_OK;

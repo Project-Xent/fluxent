@@ -18,5 +18,8 @@ WUC_Visual                    *flux_graphics_composition_root(FluxGfx *gfx);
 WUC_CompositionGraphicsDevice *flux_graphics_graphics_device(FluxGfx *gfx);
 
 bool                           flux_gfx_enable_acrylic(FluxGfx *gfx, float blur);
+uint32_t                       flux_gfx_generation(FluxGfx const *gfx);
+bool                           flux_gfx_has_presented(FluxGfx const *gfx);
+void                           flux_gfx_present_dirty(FluxGfx *gfx, bool vsync, RECT const *dirty_px);
 
 #endif

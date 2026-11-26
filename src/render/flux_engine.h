@@ -60,10 +60,22 @@ void                       flux_engine_ondegraded(FluxEngine *eng, FluxDegradedF
 
 void                       flux_engine_collect(FluxEngine *eng, XentCtx *ctx, XentNodeId root);
 
-uint32_t                   flux_engine_ncmd(FluxEngine const *eng);
+void                       flux_engine_note_removed(FluxEngine *eng, XentNodeId id);
 
-FluxRenderCommand const   *flux_engine_cmd(FluxEngine const *eng, uint32_t index);
+void                       flux_engine_invalidate_full(FluxEngine *eng);
 
-void                       flux_engine_execute(FluxEngine const *eng, FluxRenderCtx const *rc);
+bool                       flux_engine_dirty_rect(
+  FluxEngine const *eng, uint64_t env_hash, float max_w, float max_h, bool double_buffered, FluxRect *out_draw
+);
+
+void                     flux_engine_finish_frame(FluxEngine *eng, uint64_t env_hash);
+
+uint32_t                 flux_engine_ncmd(FluxEngine const *eng);
+
+FluxRenderCommand const *flux_engine_cmd(FluxEngine const *eng, uint32_t index);
+
+void                     flux_engine_execute(FluxEngine const *eng, FluxRenderCtx const *rc);
+
+void flux_engine_execute_clipped(FluxEngine const *eng, FluxRenderCtx const *rc, FluxRect const *clip);
 
 #endif

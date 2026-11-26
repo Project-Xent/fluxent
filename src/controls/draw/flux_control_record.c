@@ -143,21 +143,14 @@ XentDl *flux_card_record(
 ) {
 	( void ) state;
 	FLUX_REC_BEGIN();
-	FluxThemeColors const *t        = flux_rec_theme(rc);
-	FluxRect                sb       = flux_rec_snap_bounds(rc, bounds);
-	float                   radius   = snap->corner_radius > 0.0f ? snap->corner_radius : 8.0f;
-	float                   width    = flux_rec_hairline(rc);
+	FluxThemeColors const *t      = flux_rec_theme(rc);
+	FluxRect               sb     = flux_rec_snap_bounds(rc, bounds);
+	float                  radius = snap->corner_radius > 0.0f ? snap->corner_radius : 8.0f;
+	float                  width  = flux_rec_hairline(rc);
 	if (snap->dialog_surface == FLUX_DIALOG_SURFACE_CARD && t->contrast.active) width = 2.0f * width;
-	float                   half     = width * 0.5f;
-	float                   stroke_r = radius > half ? radius - half : 0.0f;
-	float                   inner_r  = radius > width ? radius - width : 0.0f;
-	/* WinUI Border BackgroundSizing=InnerBorderEdge: the fill stops inside the border, so the translucent
-	   stroke sits on the backdrop. Painting it over the fill cancels it out and the edge reads as a blur. */
-	FluxRect                inner    = {sb.x + width, sb.y + width, sb.w - width * 2.0f, sb.h - width * 2.0f};
-	FluxColor               bg       = snap->background.rgba ? snap->background : t->card_bg_default;
+	FluxColor bg = snap->background.rgba ? snap->background : t->card_bg_default;
 	if (snap->dialog_surface == FLUX_DIALOG_SURFACE_CARD) bg = t->solid_background;
-	bool                    ok       = flux_rec_fill_rounded(b, &inner, inner_r, bg);
-	if (ok) ok = flux_rec_stroke_rounded(b, &sb, stroke_r, t->card_stroke_default, width);
+	bool ok = flux_rec_inner_border_rounded(b, &sb, radius, width, bg, t->card_stroke_default);
 	FLUX_REC_END(ok);
 }
 

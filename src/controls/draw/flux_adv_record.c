@@ -474,8 +474,7 @@ static bool nav_rec_shadow(XentDlBuilder *b, FluxRect const *pb, float opacity) 
 }
 
 static bool nav_rec_content_layer(
-  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *root, FluxRenderSnap const *snap,
-  FluxThemeColors const *t
+  XentDlBuilder *b, FluxRenderCtx const *rc, FluxRect const *root, FluxRenderSnap const *snap, FluxThemeColors const *t
 ) {
 	float    cx    = snap->u.nav.nav_content_x;
 	float    cy    = snap->u.nav.nav_content_y;
@@ -490,14 +489,11 @@ static bool nav_rec_content_layer(
 			  t->card_stroke_default
 			);
 
-	/* Same as cards: the fill stops inside the 1px border so the translucent stroke shows against the backdrop. */
-	float    r     = FLUX_NAV_CONTENT_RADIUS;
-	float    w     = flux_rec_hairline(rc);
-	FluxRect ext   = {layer.x, layer.y, layer.w + r, layer.h + r};
-	FluxRect inner = {ext.x + w, ext.y + w, ext.w - w * 2.0f, ext.h - w * 2.0f};
-	bool     ok    = xent_dl_pushcliprect(b, flux_rec_xrect(&layer));
-	if (ok) ok = flux_rec_fill_rounded(b, &inner, r > w ? r - w : 0.0f, t->layer_default);
-	if (ok) ok = flux_rec_stroke_rounded(b, &ext, r - w * 0.5f, t->card_stroke_default, w);
+	float    r   = FLUX_NAV_CONTENT_RADIUS;
+	float    w   = flux_rec_hairline(rc);
+	FluxRect ext = {layer.x, layer.y, layer.w + r, layer.h + r};
+	bool     ok  = xent_dl_pushcliprect(b, flux_rec_xrect(&layer));
+	if (ok) ok = flux_rec_inner_border_rounded(b, &ext, r, w, t->layer_default, t->card_stroke_default);
 	return xent_dl_popclip(b) && ok;
 }
 

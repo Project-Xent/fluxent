@@ -20,9 +20,12 @@ XentDl                *flux_rec_finish(XentDlBuilder *b, bool ok);
 bool                   flux_rec_fill_rect(XentDlBuilder *b, FluxRect const *r, FluxColor c);
 bool                   flux_rec_fill_rounded(XentDlBuilder *b, FluxRect const *r, float radius, FluxColor c);
 bool                   flux_rec_stroke_rounded(XentDlBuilder *b, FluxRect const *r, float radius, FluxColor c, float w);
-bool                   flux_rec_fill_circle(XentDlBuilder *b, float cx, float cy, float d, FluxColor c);
-bool                   flux_rec_stroke_circle(XentDlBuilder *b, float cx, float cy, float d, FluxColor c, float w);
-bool                   flux_rec_line_h(XentDlBuilder *b, float x0, float x1, float y, float h, FluxColor c);
+bool                   flux_rec_inner_border_rounded(
+  XentDlBuilder *b, FluxRect const *bounds, float radius, float stroke_w, FluxColor fill, FluxColor stroke
+);
+bool flux_rec_fill_circle(XentDlBuilder *b, float cx, float cy, float d, FluxColor c);
+bool flux_rec_stroke_circle(XentDlBuilder *b, float cx, float cy, float d, FluxColor c, float w);
+bool flux_rec_line_h(XentDlBuilder *b, float x0, float x1, float y, float h, FluxColor c);
 bool flux_rec_linehs(XentDlBuilder *b, FluxRenderCtx const *rc, float x0, float x1, float y, float h, FluxColor c);
 bool flux_rec_strokev(XentDlBuilder *b, float x, float y0, float y1, float w, FluxColor c);
 bool flux_rec_strokevs(XentDlBuilder *b, FluxRenderCtx const *rc, float x, float y0, float y1, float w, FluxColor c);

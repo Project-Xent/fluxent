@@ -67,6 +67,19 @@ bool flux_rec_stroke_rounded(XentDlBuilder *b, FluxRect const *r, float radius, 
 	return xent_dl_strokerrect(b, flux_rec_xrect(&inset), radius, flux_rec_xcolor(c), w);
 }
 
+bool flux_rec_inner_border_rounded(
+  XentDlBuilder *b, FluxRect const *bounds, float radius, float stroke_w, FluxColor fill, FluxColor stroke
+) {
+	float    half     = stroke_w * 0.5f;
+	float    inner_r  = radius > stroke_w ? radius - stroke_w : 0.0f;
+	float    stroke_r = radius > half ? radius - half : 0.0f;
+	FluxRect inner
+	  = {bounds->x + stroke_w, bounds->y + stroke_w, bounds->w - stroke_w * 2.0f, bounds->h - stroke_w * 2.0f};
+	bool ok = true;
+	if (inner.w > 0.0f && inner.h > 0.0f) ok = flux_rec_fill_rounded(b, &inner, inner_r, fill);
+	return ok && flux_rec_stroke_rounded(b, bounds, stroke_r, stroke, stroke_w);
+}
+
 bool flux_rec_fill_circle(XentDlBuilder *b, float cx, float cy, float d, FluxColor c) {
 	if (d <= 0.0f || flux_color_af(c) <= 0.0f) return true;
 	float    r   = d * 0.5f;

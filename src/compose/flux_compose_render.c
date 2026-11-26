@@ -263,9 +263,12 @@ static void compose_render_node(
 ) {
 	XentRect rect = {0};
 	xent_layout_rect(ctx, node, &rect);
-	/* Match tree_sync_node: the surface and the visual must be the same whole-pixel size, or the brush is scaled. */
-	int            w         = ( int ) roundf(rect.w * scale);
-	int            h         = ( int ) roundf(rect.h * scale);
+	int x0 = ( int ) roundf(rect.x * scale);
+	int y0 = ( int ) roundf(rect.y * scale);
+	int x1 = ( int ) roundf((rect.x + rect.w) * scale);
+	int y1 = ( int ) roundf((rect.y + rect.h) * scale);
+	int w  = x1 - x0;
+	int h  = y1 - y0;
 	if (w < 1) w = 1;
 	if (h < 1) h = 1;
 	WUC_Container *container = flux_vtree_visual(r->vt, node);

@@ -96,18 +96,12 @@ char const *flux_icon_font_family(void) { return os_build() >= 22000 ? "Segoe Fl
 #ifndef DWMWA_COLOR_NONE
   #define DWMWA_COLOR_NONE 0xFFFFFFFE
 #endif
+#ifndef DWMWA_COLOR_DEFAULT
+  #define DWMWA_COLOR_DEFAULT 0xFFFFFFFF
+#endif
 
 static void setup_dwm_backdrop(FluxWindow *win) {
 	flux_window_setdark(win, win->config.dark_mode);
-
-	/* QuickLook EnableDwmBlur: CaptionColor = -2 before system backdrop. */
-	if (win->config.backdrop != 0) {
-		DWORD caption = DWMWA_COLOR_NONE;
-		DwmSetWindowAttribute(win->hwnd, DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
-		MARGINS glass = {-1, -1, -1, -1};
-		DwmExtendFrameIntoClientArea(win->hwnd, &glass);
-	}
-
 	flux_window_setbackdrop(win, win->config.backdrop);
 }
 
@@ -1178,9 +1172,26 @@ void flux_window_setbackdrop(FluxWindow *win, int backdrop_type) {
 	case 3  : bd = DWMSBT_TRANSIENTWINDOW; break;
 	default : bd = DWMSBT_NONE; break;
 	}
+	bool material = bd != DWMSBT_NONE;
+
+	/* Caption color and frame margins travel with the effective backdrop so
+	 * runtime None ↔ material switches (gallery Materials) stay consistent.
+	 * QuickLook EnableDwmBlur: CaptionColor = -2 before system backdrop. */
+	DWORD caption = material ? DWMWA_COLOR_NONE : DWMWA_COLOR_DEFAULT;
+	DwmSetWindowAttribute(win->hwnd, DWMWA_CAPTION_COLOR, &caption, sizeof(caption));
+	MARGINS m;
+	if (win->title_bar_extended) {
+		m = (MARGINS) {0, 0, 1, 0};
+	} else if (material) {
+		m = (MARGINS) {-1, -1, -1, -1};
+	} else {
+		m = (MARGINS) {0, 0, 0, 0};
+	}
+	DwmExtendFrameIntoClientArea(win->hwnd, &m);
+
 	/* Arm the host brush only when a system material is requested. Setting it
 	 * with DWMSBT_NONE still perturbs other NOACTIVATE hwnds in-process. */
-	BOOL host = !contrast && bd != DWMSBT_NONE;
+	BOOL host = material;
 	DwmSetWindowAttribute(win->hwnd, DWMWA_USE_HOSTBACKDROPBRUSH, &host, sizeof(host));
 	DwmSetWindowAttribute(win->hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &bd, sizeof(bd));
 	win->config.backdrop = backdrop_type;

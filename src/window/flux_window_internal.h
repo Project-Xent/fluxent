@@ -14,6 +14,8 @@ void flux_window_setmaxbutton(FluxWindow *win, FluxRect bounds);
 bool flux_window_caption_bounds(FluxWindow *win, FluxRect *bounds);
 void flux_window_redraw_after(FluxWindow *win, double seconds);
 void flux_window_applyframe(FluxWindow *win, bool deferred);
+bool flux_window_is_chromeless(HWND hwnd);
+void flux_window_apply_margins(FluxWindow const *win, bool backdrop_active);
 bool flux_taskbar_message(FluxWindow *win, UINT msg, WPARAM wp);
 void flux_taskbar_destroy(FluxWindow *win);
 bool flux_tray_message(FluxWindow *win, UINT msg, WPARAM wp, LPARAM lp);

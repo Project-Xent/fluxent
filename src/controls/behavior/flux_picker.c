@@ -191,13 +191,14 @@ bool flux_picker_setup(
 	FluxNodeData *nd = flux_store_find(store, root);
 	if (!nd) return false;
 
-	pd->ctx                          = ctx;
-	pd->store                        = store;
-	pd->root                         = root;
-	pd->overlay                      = XENT_NODE_INVALID;
-	pd->enabled                      = true;
+	pd->ctx            = ctx;
+	pd->store          = store;
+	pd->root           = root;
+	pd->overlay        = XENT_NODE_INVALID;
+	pd->enabled        = true;
 
-	nd->component_type               = type;
+	nd->component_type = type;
+	flux_store_track_frame(store, root, type);
 	nd->component_data               = pd;
 	nd->destroy_component_data       = flux_picker_destroy;
 	nd->behavior.on_pointer_down     = picker_on_press;

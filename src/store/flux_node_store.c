@@ -1,5 +1,6 @@
 #include "fluxent/flux_node_store.h"
 #include "store/flux_node_data.h"
+#include "controls/flux_module.h"
 #include "runtime/flux_str.h"
 #include "a11y/flux_uia_app.h"
 
@@ -30,9 +31,16 @@ struct FluxStore {
 	XentNodeId       *lifted;
 	uint32_t          nlifted;
 	uint32_t          lifted_cap;
+	XentNodeId       *frame_nodes;
+	uint32_t          nframe;
+	uint32_t          frame_cap;
 	FluxUiaNote      *notes;
 	uint32_t          nnotes;
 	uint32_t          notes_cap;
+	FluxUiaDirtyItem *uia_dirty;
+	uint32_t          uia_dirty_cap;
+	uint32_t          uia_dirty_count;
+	bool              uia_dirty_all;
 };
 
 static uint32_t ns_hash(XentNodeId id, uint32_t cap) {
@@ -95,6 +103,10 @@ static void node_data_clear_display_list(FluxNodeData *d) {
 	if (d->display_list_owned && d->display_list) xent_dl_free(( XentDl * ) d->display_list);
 	d->display_list       = NULL;
 	d->display_list_owned = false;
+	d->dl_hash            = 0u;
+	d->dl_w               = 0.0f;
+	d->dl_h               = 0.0f;
+	d->dl_dynamic         = 0u;
 }
 
 static void node_data_destroy_component(FluxNodeData *d) {
@@ -188,8 +200,10 @@ void flux_store_destroy(FluxStore *store) {
 		if (store->slots [i].tag == FLUX_NS_OCCUPIED) node_data_destroy_component(&store->slots [i].data);
 	free(store->slots);
 	free(store->lifted);
+	free(store->frame_nodes);
 	flux_store_clearnotes(store);
 	free(store->notes);
+	free(store->uia_dirty);
 	free(store);
 }
 
@@ -212,49 +226,53 @@ FluxNodeData *flux_store_ensure(FluxStore *store, XentNodeId id) {
 	return ns_occupy_slot(store, slot, id, was_tombstone);
 }
 
+static int id_list_index(XentNodeId const *list, uint32_t count, XentNodeId node) {
+	for (uint32_t i = 0; i < count; i++)
+		if (list [i] == node) return ( int ) i;
+	return -1;
+}
+
+static bool id_list_set(XentNodeId **list, uint32_t *count, uint32_t *cap, XentNodeId node, bool present) {
+	int i = id_list_index(*list, *count, node);
+	if (present) {
+		if (i >= 0) return true;
+		if (*count == *cap) {
+			uint32_t    next_cap = *cap ? *cap * 2u : 4u;
+			XentNodeId *items    = ( XentNodeId * ) realloc(*list, sizeof(*items) * next_cap);
+			if (!items) return false;
+			*list = items;
+			*cap  = next_cap;
+		}
+		(*list) [(*count)++] = node;
+		return true;
+	}
+	if (i < 0) return true;
+	memmove(&(*list) [i], &(*list) [i + 1], sizeof(XentNodeId) * (*count - ( uint32_t ) i - 1u));
+	(*count)--;
+	return true;
+}
+
 void flux_store_del(FluxStore *store, XentNodeId id) {
 	if (!store || id == XENT_NODE_INVALID) return;
 	FluxNodeSlot *s = ns_find(store, id);
 	if (!s) return;
 	flux_node_lift(store, id, false);
+	( void ) id_list_set(&store->frame_nodes, &store->nframe, &store->frame_cap, id, false);
 	node_data_destroy_component(&s->data);
 	s->tag = FLUX_NS_DELETED;
 	store->count--;
 	store->tombstones++;
 }
 
-uint32_t   flux_store_n(FluxStore const *store) { return store ? store->count : 0; }
+uint32_t flux_store_n(FluxStore const *store) { return store ? store->count : 0; }
 
-static int lifted_index(FluxStore const *store, XentNodeId node) {
-	for (uint32_t i = 0; i < store->nlifted; i++)
-		if (store->lifted [i] == node) return ( int ) i;
-	return -1;
-}
-
-static bool lifted_append(FluxStore *store, XentNodeId node) {
-	if (store->nlifted == store->lifted_cap) {
-		uint32_t    cap   = store->lifted_cap ? store->lifted_cap * 2u : 4u;
-		XentNodeId *items = ( XentNodeId * ) realloc(store->lifted, sizeof(*items) * cap);
-		if (!items) return false;
-		store->lifted     = items;
-		store->lifted_cap = cap;
-	}
-	store->lifted [store->nlifted++] = node;
-	return true;
-}
-
-bool flux_node_lift(FluxStore *store, XentNodeId node, bool lifted) {
+bool     flux_node_lift(FluxStore *store, XentNodeId node, bool lifted) {
 	if (!store || node == XENT_NODE_INVALID) return false;
-	int i = lifted_index(store, node);
-	if (lifted) return i >= 0 || lifted_append(store, node);
-	if (i < 0) return true;
-	memmove(&store->lifted [i], &store->lifted [i + 1], sizeof(XentNodeId) * (store->nlifted - ( uint32_t ) i - 1u));
-	store->nlifted--;
-	return true;
+	return id_list_set(&store->lifted, &store->nlifted, &store->lifted_cap, node, lifted);
 }
 
 bool flux_node_lifted(FluxStore const *store, XentNodeId node) {
-	return store && store->nlifted && lifted_index(store, node) >= 0;
+	return store && store->nlifted && id_list_index(store->lifted, store->nlifted, node) >= 0;
 }
 
 uint32_t   flux_store_nlifted(FluxStore const *store) { return store ? store->nlifted : 0; }
@@ -263,13 +281,38 @@ XentNodeId flux_store_lifted(FluxStore const *store, uint32_t i) {
 	return store && i < store->nlifted ? store->lifted [i] : XENT_NODE_INVALID;
 }
 
-static void ns_on_node_lifecycle(XentCtx *ctx, XentNodeEvent const *lifecycle, void *userdata) {
-	( void ) ctx;
-	if (lifecycle->event != XENT_NODE_EVENT_DESTROY) return;
+void flux_store_track_frame(FluxStore *store, XentNodeId node, FluxControlType type) {
+	if (!store || node == XENT_NODE_INVALID) return;
+	FluxControlModule const *m         = flux_module_get(type);
+	bool                     has_frame = m && m->tree && m->tree->frame != NULL;
+	( void ) id_list_set(&store->frame_nodes, &store->nframe, &store->frame_cap, node, has_frame);
+}
 
+uint32_t   flux_store_nframe(FluxStore const *store) { return store ? store->nframe : 0u; }
+
+XentNodeId flux_store_frame(FluxStore const *store, uint32_t i) {
+	return store && i < store->nframe ? store->frame_nodes [i] : XENT_NODE_INVALID;
+}
+
+static void ns_on_node_lifecycle(XentCtx *ctx, XentNodeEvent const *lifecycle, void *userdata) {
 	FluxStore *store = ( FluxStore * ) userdata;
-	if (store->removed_fn) store->removed_fn(store->removed_userdata, lifecycle->node);
-	flux_store_del(store, lifecycle->node);
+	switch (lifecycle->event) {
+	case XENT_NODE_EVENT_DESTROY :
+		flux_uia_mark_dirty(store, lifecycle->node, FLUX_UIA_DIRTY_TREE);
+		flux_uia_mark_dirty(store, lifecycle->old_parent, FLUX_UIA_DIRTY_TREE);
+		if (store->removed_fn) store->removed_fn(store->removed_userdata, lifecycle->node);
+		flux_store_del(store, lifecycle->node);
+		break;
+	case XENT_NODE_EVENT_REPARENT :
+		flux_uia_mark_dirty(store, lifecycle->node, FLUX_UIA_DIRTY_TREE);
+		flux_uia_mark_dirty(store, lifecycle->old_parent, FLUX_UIA_DIRTY_TREE);
+		flux_uia_mark_dirty(store, lifecycle->new_parent, FLUX_UIA_DIRTY_TREE);
+		break;
+	case XENT_NODE_EVENT_COLLAPSED :
+		flux_uia_mark_dirty(store, lifecycle->node, FLUX_UIA_DIRTY_TREE);
+		flux_uia_mark_dirty(store, xent_node_parent(ctx, lifecycle->node), FLUX_UIA_DIRTY_TREE);
+		break;
+	}
 }
 
 static void node_store_unbind_context(FluxStore *store) {
@@ -364,6 +407,7 @@ static FluxUiaNote *note_push(FluxStore *store) {
 
 void flux_uia_note(FluxStore *store, XentNodeId node, int sub, int event) {
 	FluxUiaNote *n = node != XENT_NODE_INVALID ? note_push(store) : NULL;
+	if (node != XENT_NODE_INVALID) flux_uia_mark_dirty(store, node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN);
 	if (!n) return;
 	n->node  = node;
 	n->sub   = sub;
@@ -378,6 +422,7 @@ void flux_uia_retarget_notes(FluxStore *store, XentNodeId from, XentNodeId to) {
 
 void flux_uia_noteprop(FluxStore *store, XentNodeId node, int property, double old_v, double new_v) {
 	FluxUiaNote *n = node != XENT_NODE_INVALID ? note_push(store) : NULL;
+	if (node != XENT_NODE_INVALID) flux_uia_mark_dirty(store, node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN);
 	if (!n) return;
 	*n = (FluxUiaNote) {.node = node, .sub = -1, .event = -property, .old_v = old_v, .new_v = new_v};
 }
@@ -388,6 +433,83 @@ void flux_uia_notify(
 	FluxUiaNote *n = node != XENT_NODE_INVALID ? note_push(store) : NULL;
 	if (!n) return;
 	*n = (FluxUiaNote) {node, -1, 20035, kind, processing, flux_str_dup(text ? text : ""), flux_str_dup(activity)};
+}
+
+static uint32_t uia_dirty_slot_find(FluxUiaDirtyItem const *items, uint32_t cap, XentNodeId node) {
+	uint32_t idx  = ns_hash(node, cap);
+	uint32_t step = 0u;
+	while (items [idx].node != XENT_NODE_INVALID && items [idx].node != node) ns_probe_next(&idx, &step, cap);
+	return idx;
+}
+
+static bool uia_dirty_grow(FluxStore *store) {
+	uint32_t          cap   = store->uia_dirty_cap ? store->uia_dirty_cap * 2u : 64u;
+	FluxUiaDirtyItem *items = ( FluxUiaDirtyItem * ) calloc(cap, sizeof(*items));
+	if (!items) {
+		store->uia_dirty_all = true;
+		return false;
+	}
+	for (uint32_t i = 0u; i < store->uia_dirty_cap; i++) {
+		XentNodeId id = store->uia_dirty [i].node;
+		if (id == XENT_NODE_INVALID) continue;
+		items [uia_dirty_slot_find(items, cap, id)] = store->uia_dirty [i];
+	}
+	free(store->uia_dirty);
+	store->uia_dirty     = items;
+	store->uia_dirty_cap = cap;
+	return true;
+}
+
+void flux_uia_mark_dirty(FluxStore *store, XentNodeId node, uint8_t flags) {
+	if (!store || node == XENT_NODE_INVALID || !flags || store->uia_dirty_all) return;
+	if ((store->uia_dirty_count + 1u) * 2u > store->uia_dirty_cap && !uia_dirty_grow(store)) return;
+	uint32_t idx = uia_dirty_slot_find(store->uia_dirty, store->uia_dirty_cap, node);
+	if (store->uia_dirty [idx].node == XENT_NODE_INVALID) {
+		store->uia_dirty [idx].node = node;
+		store->uia_dirty_count++;
+	}
+	store->uia_dirty [idx].flags |= flags;
+}
+
+void flux_uia_mark_all_dirty(FluxStore *store) {
+	if (store) store->uia_dirty_all = true;
+}
+
+void flux_uia_clear_dirty(FluxStore *store) {
+	if (!store) return;
+	if (store->uia_dirty && store->uia_dirty_count > 0u)
+		memset(store->uia_dirty, 0, sizeof(FluxUiaDirtyItem) * store->uia_dirty_cap);
+	store->uia_dirty_count = 0u;
+	store->uia_dirty_all   = false;
+}
+
+static bool uia_dirty_reserve(FluxUiaDirtyItem **out_buf, uint32_t *out_cap, uint32_t need) {
+	if (*out_cap >= need) return true;
+	uint32_t          ncap = need < 64u ? 64u : need;
+	FluxUiaDirtyItem *next = ( FluxUiaDirtyItem * ) realloc(*out_buf, sizeof(*next) * ncap);
+	if (!next) return false;
+	*out_buf = next;
+	*out_cap = ncap;
+	return true;
+}
+
+uint32_t flux_uia_drain_dirty(FluxStore *store, FluxUiaDirtyItem **out_buf, uint32_t *out_cap, bool *out_all) {
+	if (!store || !out_all) return 0u;
+	*out_all = store->uia_dirty_all;
+	if (store->uia_dirty_all || store->uia_dirty_count == 0u || !out_buf || !out_cap) {
+		flux_uia_clear_dirty(store);
+		return 0u;
+	}
+	if (!uia_dirty_reserve(out_buf, out_cap, store->uia_dirty_count)) {
+		flux_uia_clear_dirty(store);
+		*out_all = true;
+		return 0u;
+	}
+	uint32_t n = 0u;
+	for (uint32_t i = 0u; i < store->uia_dirty_cap; i++)
+		if (store->uia_dirty [i].node != XENT_NODE_INVALID) (*out_buf) [n++] = store->uia_dirty [i];
+	flux_uia_clear_dirty(store);
+	return n;
 }
 
 uint32_t           flux_store_nnotes(FluxStore const *store) { return store ? store->nnotes : 0u; }

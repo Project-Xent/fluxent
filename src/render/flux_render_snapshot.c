@@ -19,6 +19,7 @@
 #include "controls/behavior/flux_nav_internal.h"
 #include "render/flux_looping_geom.h"
 #include "controls/behavior/flux_picker_internal.h"
+#include "render/flux_render_internal.h"
 
 #include <string.h>
 
@@ -636,4 +637,116 @@ void flux_snapshot_build(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId no
 
 	FluxSnapCtx build = {snap, ctx, node, nd->component_data};
 	m->snapshot(&build);
+}
+
+static uint64_t snap_fnv(uint64_t h, void const *data, size_t len) {
+	uint8_t const *p = ( uint8_t const * ) data;
+	for (size_t i = 0; i < len; i++) {
+		h ^= p [i];
+		h *= UINT64_C(0x100000001b3);
+	}
+	return h;
+}
+
+static uint64_t snap_hash_str(uint64_t h, char const *s) {
+	if (!s) return snap_fnv(h, "", 1u);
+	return snap_fnv(h, s, strlen(s) + 1u);
+}
+
+static uint64_t snap_hash_strings_at(uint64_t h, FluxRenderSnap const *snap) {
+#define STR_OFF(field) (( uint16_t ) (offsetof(FluxRenderSnap, u.field) + 1u))
+	static uint16_t const kStrOff [XTK_CTRL_TYPE_COUNT][4] = {
+	  [FLUX_CONTROL_TEXT]            = {STR_OFF(text.text_content), STR_OFF(text.font_family)},
+	  [FLUX_CONTROL_BUTTON]          = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
+	  [FLUX_CONTROL_TOGGLE_BUTTON]   = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
+	  [FLUX_CONTROL_REPEAT_BUTTON]   = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
+	  [FLUX_CONTROL_HYPERLINK]       = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
+	  [FLUX_CONTROL_DROPDOWN_BUTTON] = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
+	  [FLUX_CONTROL_SPLIT_BUTTON]    = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
+	  [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON]
+	  = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
+	  [FLUX_CONTROL_CHECKBOX] = {STR_OFF(check.label)},
+	  [FLUX_CONTROL_RADIO]    = {STR_OFF(check.label)},
+	  [FLUX_CONTROL_SWITCH]   = {STR_OFF(sw.label)},
+	  [FLUX_CONTROL_TEXT_INPUT]
+	  = {STR_OFF(textbox.text_content), STR_OFF(textbox.placeholder), STR_OFF(textbox.font_family)},
+	  [FLUX_CONTROL_PASSWORD_BOX]
+	  = {STR_OFF(textbox.text_content), STR_OFF(textbox.placeholder), STR_OFF(textbox.font_family)},
+	  [FLUX_CONTROL_NUMBER_BOX]
+	  = {STR_OFF(textbox.text_content), STR_OFF(textbox.placeholder), STR_OFF(textbox.font_family)},
+	  [FLUX_CONTROL_INFO_BADGE]        = {STR_OFF(info_badge.icon_name)},
+	  [FLUX_CONTROL_INFO_BAR]          = {STR_OFF(info_bar.label), STR_OFF(info_bar.text_content)},
+	  [FLUX_CONTROL_COMBO_BOX]         = {STR_OFF(combo.text_content), STR_OFF(combo.placeholder)},
+	  [FLUX_CONTROL_LOOPING_ITEM]      = {STR_OFF(loop_item.label)},
+	  [FLUX_CONTROL_TAB_VIEW_ITEM]     = {STR_OFF(tab.label), STR_OFF(tab.icon_name)},
+	  [FLUX_CONTROL_NAV_VIEW_ITEM]     = {STR_OFF(nav.label), STR_OFF(nav.icon_name)},
+	  [FLUX_CONTROL_MENU_BAR_ITEM]     = {STR_OFF(menu.label)},
+	  [FLUX_CONTROL_SELECTOR_BAR_ITEM] = {STR_OFF(selector.text)},
+	  [FLUX_CONTROL_BREADCRUMB_ITEM]   = {STR_OFF(breadcrumb.label)},
+	  [FLUX_CONTROL_RATING]            = {STR_OFF(rating.caption)},
+	  [FLUX_CONTROL_TREE_ITEM]         = {STR_OFF(tree_item.label)},
+	  [FLUX_CONTROL_TITLE_BAR] = {STR_OFF(title_bar.title), STR_OFF(title_bar.subtitle), STR_OFF(title_bar.icon_glyph)},
+	  [FLUX_CONTROL_PERSON_PICTURE]
+	  = {STR_OFF(person.initials), STR_OFF(person.image_path), STR_OFF(person.badge_glyph), STR_OFF(person.badge_image_path)},
+	  [FLUX_CONTROL_COLITEM]      = {STR_OFF(col_item.label)},
+	  [FLUX_CONTROL_COLHEADER]    = {STR_OFF(col_header.item.label)},
+	  [FLUX_CONTROL_APPBARBUTTON] = {STR_OFF(app_bar.label), STR_OFF(app_bar.icon)},
+	  [FLUX_CONTROL_APPBARTOGGLE] = {STR_OFF(app_bar.label), STR_OFF(app_bar.icon)},
+	  [FLUX_CONTROL_APPBARSEP]    = {STR_OFF(app_bar.label), STR_OFF(app_bar.icon)},
+	  [FLUX_CONTROL_COMBO_ITEM]   = {STR_OFF(combo_item.label)},
+	  [FLUX_CONTROL_SUGGEST_ITEM] = {STR_OFF(suggest_item.label)},
+	};
+#undef STR_OFF
+	if (( unsigned ) snap->type >= XTK_CTRL_TYPE_COUNT) return h;
+	for (int i = 0; i < 4; i++) {
+		uint16_t off1 = kStrOff [snap->type][i];
+		if (!off1) break;
+		char const *s = NULL;
+		memcpy(&s, ( char const * ) snap + (off1 - 1u), sizeof(s));
+		h = snap_hash_str(h, s);
+	}
+	return h;
+}
+
+static bool snap_type_is_dynamic(FluxRenderSnap const *snap) {
+	static bool const kDyn [XTK_CTRL_TYPE_COUNT] = {
+	  [FLUX_CONTROL_CANVAS]          = true,
+	  [FLUX_CONTROL_IMAGE]           = true,
+	  [FLUX_CONTROL_PROGRESS]        = true,
+	  [FLUX_CONTROL_PROGRESS_RING]   = true,
+	  [FLUX_CONTROL_CALENDAR_VIEW]   = true,
+	  [FLUX_CONTROL_COLOR_PICKER]    = true,
+	  [FLUX_CONTROL_COLOR_SPECTRUM]  = true,
+	  [FLUX_CONTROL_COLOR_SLIDER]    = true,
+	  [FLUX_CONTROL_TEACHING_TIP]    = true,
+	  [FLUX_CONTROL_MENU_PRESENTER]  = true,
+	  [FLUX_CONTROL_MENU_ROW]        = true,
+	  [FLUX_CONTROL_CMDBAR_OVERFLOW] = true,
+	};
+	if (( unsigned ) snap->type < XTK_CTRL_TYPE_COUNT && kDyn [snap->type]) return true;
+	bool is_edit = snap->type == FLUX_CONTROL_TEXT_INPUT
+	            || snap->type == FLUX_CONTROL_PASSWORD_BOX
+	            || snap->type == FLUX_CONTROL_NUMBER_BOX;
+	return is_edit && snap->u.textbox.edit.composition_text != NULL;
+}
+
+uint64_t flux_snap_hash(
+  FluxRenderSnap const *snap, FluxControlState const *state, float w, float h, FluxRenderCtx const *rc,
+  bool *out_dynamic
+) {
+	if (out_dynamic) *out_dynamic = snap_type_is_dynamic(snap);
+	uint64_t hash = UINT64_C(0xcbf29ce484222325);
+	hash          = snap_fnv(hash, snap, sizeof(*snap));
+	hash          = snap_fnv(hash, state, sizeof(*state));
+	hash          = snap_fnv(hash, &w, sizeof(w));
+	hash          = snap_fnv(hash, &h, sizeof(h));
+	if (rc) {
+		uint8_t dark     = rc->is_dark ? 1u : 0u;
+		uint8_t contrast = (rc->theme && rc->theme->contrast.active) ? 1u : 0u;
+		hash             = snap_fnv(hash, &dark, sizeof(dark));
+		hash             = snap_fnv(hash, &contrast, sizeof(contrast));
+		hash             = snap_fnv(hash, &rc->dpi.dpi_x, sizeof(rc->dpi.dpi_x));
+		hash             = snap_fnv(hash, &rc->theme, sizeof(rc->theme));
+	}
+	return snap_hash_strings_at(hash, snap);
 }

@@ -337,7 +337,8 @@ void input_blur_focused(FluxInput *input) {
 
 	XentNodeId    old_id = input->focused;
 	FluxNodeData *old    = flux_store_find(input->store, old_id);
-	input->focused       = XENT_NODE_INVALID;
+	flux_uia_mark_dirty(input->store, old_id, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_FOCUS);
+	input->focused = XENT_NODE_INVALID;
 	if (!old) return;
 
 	old->state.focused        = 0;
@@ -582,25 +583,129 @@ static void input_dispatch_wheel(FluxInput *input, XentNodeId root, FluxPointerE
 	fi_scroll(&scroll);
 }
 
-void flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev) {
-	if (!input || !ev || root == XENT_NODE_INVALID) return;
+static bool hover_tracks_pointer(FluxNodeData const *nd) {
+	static bool const kHoverTrack [XTK_CTRL_TYPE_COUNT] = {
+	  [FLUX_CONTROL_SLIDER]              = true,
+	  [FLUX_CONTROL_TEXT_INPUT]          = true,
+	  [FLUX_CONTROL_SCROLL]              = true,
+	  [FLUX_CONTROL_PASSWORD_BOX]        = true,
+	  [FLUX_CONTROL_NUMBER_BOX]          = true,
+	  [FLUX_CONTROL_SPLIT_BUTTON]        = true,
+	  [FLUX_CONTROL_COMBO_BOX]           = true,
+	  [FLUX_CONTROL_INFO_BAR]            = true,
+	  [FLUX_CONTROL_FLIP_VIEW]           = true,
+	  [FLUX_CONTROL_PIPS_PAGER]          = true,
+	  [FLUX_CONTROL_AUTO_SUGGEST]        = true,
+	  [FLUX_CONTROL_TOGGLE_SPLIT_BUTTON] = true,
+	  [FLUX_CONTROL_RATING]              = true,
+	  [FLUX_CONTROL_BREADCRUMB_BAR]      = true,
+	  [FLUX_CONTROL_TREE_ITEM]           = true,
+	  [FLUX_CONTROL_PAGER]               = true,
+	  [FLUX_CONTROL_TITLE_BAR]           = true,
+	  [FLUX_CONTROL_SCROLL_BAR]          = true,
+	  [FLUX_CONTROL_LOOPING_SELECTOR]    = true,
+	  [FLUX_CONTROL_CALENDAR_VIEW]       = true,
+	  [FLUX_CONTROL_COLOR_PICKER]        = true,
+	  [FLUX_CONTROL_COLOR_SPECTRUM]      = true,
+	  [FLUX_CONTROL_COLOR_SLIDER]        = true,
+	};
+	if (!nd) return false;
+	if (nd->behavior.on_pointer_move || nd->behavior.tooltip_at) return true;
+	return ( unsigned ) nd->component_type < XTK_CTRL_TYPE_COUNT && kHoverTrack [nd->component_type];
+}
 
-	input->pointer_type  = ev->device;
-	input->pointer_id    = ev->pointer_id;
-	input->pointer       = (FluxPoint) {ev->x, ev->y};
-	input->pointer_valid = ev->device == FLUX_POINTER_MOUSE;
+static bool input_scroll_strip_hot(FluxInput const *input, XentNodeId node) {
+	if (node == XENT_NODE_INVALID) return false;
+	FluxNodeData   *nd = flux_store_find(input->store, node);
+	FluxScrollData *sd
+	  = nd && nd->component_type == FLUX_CONTROL_SCROLL ? ( FluxScrollData * ) nd->component_data : NULL;
+	if (!sd || !sd->mouse_over) return false;
+	XentRect rect = {0};
+	if (!xent_layout_rect(input->ctx, node, &rect)) return false;
+	return sd->mouse_local_x >= rect.w - 24.0f || sd->mouse_local_y >= rect.h - 24.0f;
+}
+
+static void input_mark_chain(FluxInput *input, XentNodeId node, uint8_t flags) {
+	for (int depth = 0; depth < 3 && node != XENT_NODE_INVALID; depth++) {
+		flux_uia_mark_dirty(input->store, node, flags);
+		node = xent_node_parent(input->ctx, node);
+	}
+}
+
+static void input_mark_uia_dirty(FluxInput *input, XentNodeId old_pressed) {
+	uint8_t flags = FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN;
+	input_mark_chain(input, old_pressed, flags);
+	input_mark_chain(input, input->pressed, flags);
+	flux_uia_mark_dirty(input->store, input->hovered, flags);
+	flux_uia_mark_dirty(input->store, input->focused, flags);
+	flux_uia_mark_dirty(input->store, input->scroll_drag.node, flags);
+}
+
+static bool input_move_dirty(FluxInput *input, XentNodeId old_hover, XentNodeId old_scroll, bool was_strip_hot) {
+	if (input->scroll_drag.axis != 0 || input->pressed != XENT_NODE_INVALID) return true;
+	if (input->touch.active || input->refresh_pull.active) return true;
+	if (input->hovered != old_hover || input->scroll_hover_target != old_scroll) return true;
+	if (was_strip_hot || input_scroll_strip_hot(input, input->scroll_hover_target)) return true;
+	FluxNodeData const *nd = input->hovered != XENT_NODE_INVALID ? flux_store_find(input->store, input->hovered) : NULL;
+	return hover_tracks_pointer(nd);
+}
+
+static bool input_move_marks_uia(FluxInput const *input) {
+	return input->pressed != XENT_NODE_INVALID || input->scroll_drag.axis != 0 || input->touch.active;
+}
+
+bool flux_input_dispatch_dirty(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev) {
+	if (!input || !ev || root == XENT_NODE_INVALID) return false;
+
+	input->pointer_type      = ev->device;
+	input->pointer_id        = ev->pointer_id;
+	input->pointer           = (FluxPoint) {ev->x, ev->y};
+	input->pointer_valid     = ev->device == FLUX_POINTER_MOUSE;
+
+	XentNodeId old_hover     = input->hovered;
+	XentNodeId old_scroll    = input->scroll_hover_target;
+	XentNodeId old_pressed   = input->pressed;
+	bool       was_strip_hot = ev->kind == FLUX_POINTER_MOVE && input_scroll_strip_hot(input, old_scroll);
 
 	switch (ev->kind) {
-	case FLUX_POINTER_DOWN         : input_dispatch_button(input, root, ev); break;
-	case FLUX_POINTER_UP           : input_dispatch_button(input, root, ev); break;
-	case FLUX_POINTER_MOVE         : fi_pointer_move(input, root, ev->x, ev->y); break;
-	case FLUX_POINTER_WHEEL        : input_dispatch_wheel(input, root, ev); break;
-	case FLUX_POINTER_HOLD         : fi_touch_hold(input, root, ev->x, ev->y); break;
-	case FLUX_POINTER_CONTEXT_MENU : fi_context_menu(input, root, ev->x, ev->y); break;
-	case FLUX_POINTER_CANCEL       : fi_cancel(input); break;
-	case FLUX_POINTER_LEAVE        : fi_pointer_leave(input); break;
-	case FLUX_POINTER_HITTEST      : break;
+	case FLUX_POINTER_DOWN :
+		input_dispatch_button(input, root, ev);
+		input_mark_uia_dirty(input, old_pressed);
+		return true;
+	case FLUX_POINTER_UP :
+		input_dispatch_button(input, root, ev);
+		input_mark_uia_dirty(input, old_pressed);
+		return true;
+	case FLUX_POINTER_MOVE :
+		fi_pointer_move(input, root, ev->x, ev->y);
+		if (input_move_marks_uia(input)) input_mark_uia_dirty(input, old_pressed);
+		return input_move_dirty(input, old_hover, old_scroll, was_strip_hot);
+	case FLUX_POINTER_WHEEL :
+		input_dispatch_wheel(input, root, ev);
+		input_mark_uia_dirty(input, old_pressed);
+		return true;
+	case FLUX_POINTER_HOLD :
+		fi_touch_hold(input, root, ev->x, ev->y);
+		input_mark_uia_dirty(input, old_pressed);
+		return true;
+	case FLUX_POINTER_CONTEXT_MENU :
+		fi_context_menu(input, root, ev->x, ev->y);
+		input_mark_uia_dirty(input, old_pressed);
+		return true;
+	case FLUX_POINTER_CANCEL :
+		fi_cancel(input);
+		input_mark_uia_dirty(input, old_pressed);
+		return true;
+	case FLUX_POINTER_LEAVE :
+		fi_pointer_leave(input);
+		return old_hover != XENT_NODE_INVALID || old_scroll != XENT_NODE_INVALID || old_pressed != XENT_NODE_INVALID;
+	case FLUX_POINTER_HITTEST : return false;
 	}
+	return false;
+}
+
+void flux_input_dispatch(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev) {
+	( void ) flux_input_dispatch_dirty(input, root, ev);
 }
 
 static XentNodeId input_drag_source(FluxInput const *input, XentNodeId node) {
@@ -795,9 +900,12 @@ static bool input_dismiss_focused_pane(FluxInput *input) {
 
 bool flux_input_keydown(FluxInput *input, FluxKey key) {
 	if (!input || input->focused == XENT_NODE_INVALID) return false;
-	FluxNodeData *nd = flux_store_find(input->store, input->focused);
-	if (nd && nd->behavior.on_key && nd->behavior.on_key(nd->behavior.on_key_ctx, key, true)) return true;
-	return key == FLUX_KEY_ESCAPE && input_dismiss_focused_pane(input);
+	XentNodeId    focused = input->focused;
+	FluxNodeData *nd      = flux_store_find(input->store, focused);
+	bool          handled = nd && nd->behavior.on_key && nd->behavior.on_key(nd->behavior.on_key_ctx, key, true);
+	if (!handled && key == FLUX_KEY_ESCAPE) handled = input_dismiss_focused_pane(input);
+	flux_uia_mark_dirty(input->store, focused, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN);
+	return handled;
 }
 
 void flux_input_keyup(FluxInput *input, FluxKey key) {
@@ -810,6 +918,7 @@ void flux_input_char(FluxInput *input, wchar_t ch) {
 	if (!input || input->focused == XENT_NODE_INVALID) return;
 	FluxNodeData *nd = flux_store_find(input->store, input->focused);
 	if (nd && nd->behavior.on_char) nd->behavior.on_char(nd->behavior.on_char_ctx, ch);
+	flux_uia_mark_dirty(input->store, input->focused, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN);
 }
 
 int  flux_input_clicks(FluxInput const *input) { return input ? input->click_count : 1; }
@@ -819,6 +928,7 @@ void flux_input_ime(FluxInput *input, wchar_t const *text, uint32_t length, uint
 	FluxNodeData *nd = flux_store_find(input->store, input->focused);
 	if (nd && nd->behavior.on_ime_composition)
 		nd->behavior.on_ime_composition(nd->behavior.on_ime_composition_ctx, text, length, cursor);
+	flux_uia_mark_dirty(input->store, input->focused, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN);
 }
 
 void flux_input_imeend(FluxInput *input) {
@@ -826,6 +936,7 @@ void flux_input_imeend(FluxInput *input) {
 	FluxNodeData *nd = flux_store_find(input->store, input->focused);
 	if (nd && nd->behavior.on_ime_composition)
 		nd->behavior.on_ime_composition(nd->behavior.on_ime_composition_ctx, NULL, 0, 0);
+	flux_uia_mark_dirty(input->store, input->focused, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN);
 }
 
 static void fi_context_menu(FluxInput *input, XentNodeId root, float px, float py) {

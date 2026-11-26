@@ -865,11 +865,12 @@ static void tv_make_tabs_host(FluxTabViewData *tv) {
 		free(sd);
 		return;
 	}
-	sd->h_vis                  = FLUX_SCROLL_NEVER;
-	sd->v_vis                  = FLUX_SCROLL_NEVER;
-	sd->content_h              = FLUX_TAB_MIN_H;
-	sd->content_manual         = 1;
-	nd->component_type         = FLUX_CONTROL_SCROLL;
+	sd->h_vis          = FLUX_SCROLL_NEVER;
+	sd->v_vis          = FLUX_SCROLL_NEVER;
+	sd->content_h      = FLUX_TAB_MIN_H;
+	sd->content_manual = 1;
+	nd->component_type = FLUX_CONTROL_SCROLL;
+	flux_store_track_frame(tv->store, tv->tabs_host, FLUX_CONTROL_SCROLL);
 	nd->component_data         = sd;
 	nd->destroy_component_data = free;
 }

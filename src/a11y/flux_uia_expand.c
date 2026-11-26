@@ -8,7 +8,7 @@ static FluxUiaHooks const *uia_expand_hooks(FluxUia const *self) {
 
 static HRESULT uia_expand_to(IExpandCollapseProvider *p, int want) {
 	FluxUia *self = FLUX_UIA_SELF(p, lpVtblExpand);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE);
 	FluxUiaHooks const *h = uia_expand_hooks(self);
 	if (!h) return UIA_E_ELEMENTNOTAVAILABLE;
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;

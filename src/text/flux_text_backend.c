@@ -3,35 +3,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-static IDWriteTextFormat *dwrite_create_measure_format(FluxText *tr, XentTextMeasureReq const *request) {
-	wchar_t const *family = tr->default_font ? tr->default_font : FLUX_DEFAULT_FONT_FAMILY;
-	wchar_t        family_buf [FLUX_FAMILY_BUF];
-	if (request->font_family
-	    && request->font_family [0]
-	    && flux_utf8_to_wchar(request->font_family, family_buf, FLUX_FAMILY_BUF) > 0)
-		family = family_buf;
-
-	DWRITE_FONT_WEIGHT weight = ( DWRITE_FONT_WEIGHT ) (request->font_weight ? request->font_weight : 400);
-	IDWriteTextFormat *fmt    = NULL;
-	HRESULT            hr     = IDWriteFactory_CreateTextFormat(
-	  tr->factory, family, NULL, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, request->font_size, L"",
-	  &fmt
-	);
-	if (FAILED(hr)) return NULL;
-
-	IDWriteTextFormat_SetWordWrapping(fmt, policy_to_dwrite_wrapping(request->line_break_policy, request->width_mode));
-	return fmt;
-}
-
-static FluxTextStyle measure_style_from_request(XentTextMeasureReq const *request) {
+static FluxTextStyle measure_style_from_request(XentTextMeasureReq const *request, DWRITE_WORD_WRAPPING wrap) {
 	bool constrained = request->width_mode == XENT_MEASURE_AT_MOST || request->width_mode == XENT_MEASURE_EXACTLY;
 
 	FluxTextStyle style;
 	memset(&style, 0, sizeof(style));
-	style.runs      = request->runs;
-	style.run_count = request->run_count;
-	style.trim      = constrained ? request->trim : XENT_TEXT_TRIM_NONE;
-	style.max_lines = constrained ? request->max_lines : 0u;
+	style.font_family = request->font_family;
+	style.font_size   = request->font_size;
+	style.font_weight = ( FluxFontWeight ) (request->font_weight ? request->font_weight : 400);
+	style.word_wrap   = wrap != DWRITE_WORD_WRAPPING_NO_WRAP;
+	style.runs        = request->runs;
+	style.run_count   = request->run_count;
+	style.trim        = constrained ? request->trim : XENT_TEXT_TRIM_NONE;
+	style.max_lines   = constrained ? request->max_lines : 0u;
 	return style;
 }
 
@@ -81,25 +65,26 @@ static bool dwrite_read_metrics(IDWriteTextLayout *layout, XentTextMeasureReq co
 	return true;
 }
 
-static IDWriteTextLayout *dwrite_build_measure_layout(FluxText *tr, XentTextMeasureReq const *request) {
-	FluxWideBuffer wide;
-	if (!flux_wide_buffer_from_utf8(&wide, request->text)) return NULL;
+static IDWriteTextLayout *
+dwrite_acquire_layout(FluxText *tr, XentTextMeasureReq const *request, bool *out_owned, int *out_wlen) {
+	DWRITE_WORD_WRAPPING wrap  = policy_to_dwrite_wrapping(request->line_break_policy, request->width_mode);
+	FluxTextStyle        style = measure_style_from_request(request, wrap);
+	float                width = constraint_for_mode(request->width_constraint, request->width_mode);
 
-	IDWriteTextFormat *fmt = dwrite_create_measure_format(tr, request);
-	if (!fmt) {
-		flux_wide_buffer_free(&wide);
-		return NULL;
+	if (request->width_mode != XENT_MEASURE_MIN_CONTENT) {
+		TextLayoutRequest req = {tr, request->text, &style, width, 100000.0f};
+		*out_owned            = false;
+		return get_or_create_layout_ex(tr, &req, wrap, out_wlen);
 	}
 
-	float              width  = constraint_for_mode(request->width_constraint, request->width_mode);
-	IDWriteTextLayout *layout = dwrite_create_measure_layout(tr, fmt, &wide, width);
+	*out_owned = true;
+	FluxWideBuffer wide;
+	if (!flux_wide_buffer_from_utf8(&wide, request->text)) return NULL;
+	IDWriteTextFormat *fmt    = get_or_create_format_ex(tr, &style, wrap);
+	IDWriteTextLayout *layout = fmt ? dwrite_create_measure_layout(tr, fmt, &wide, width) : NULL;
+	if (out_wlen) *out_wlen = wide.len;
 	flux_wide_buffer_free(&wide);
-	IDWriteTextFormat_Release(fmt);
-
-	if (!layout) return NULL;
-
-	FluxTextStyle style = measure_style_from_request(request);
-	text_configure_layout(tr, layout, request->text, &style);
+	if (layout) text_configure_layout(tr, layout, request->text, &style);
 	return layout;
 }
 
@@ -107,11 +92,12 @@ static bool dwrite_measure(XentTextBackend const *backend, XentTextMeasureReq co
 	FluxText *tr = ( FluxText * ) backend->userdata;
 	if (!tr || !request || !out) return false;
 
-	IDWriteTextLayout *layout = dwrite_build_measure_layout(tr, request);
+	bool               owned  = false;
+	IDWriteTextLayout *layout = dwrite_acquire_layout(tr, request, &owned, NULL);
 	if (!layout) return false;
 
 	bool ok = dwrite_read_metrics(layout, request, out);
-	IDWriteTextLayout_Release(layout);
+	if (owned) IDWriteTextLayout_Release(layout);
 	return ok;
 }
 
@@ -285,12 +271,14 @@ static bool dwrite_shape(
 	FluxText *tr = ( FluxText * ) backend->userdata;
 	if (!tr || !request || !sink || !out) return false;
 
-	IDWriteTextLayout *layout = dwrite_build_measure_layout(tr, request);
+	bool               owned  = false;
+	int                wlen_i = 0;
+	IDWriteTextLayout *layout = dwrite_acquire_layout(tr, request, &owned, &wlen_i);
 	if (!layout) return false;
 
 	bool              ok       = dwrite_read_metrics(layout, request, out);
 	uint32_t          len      = ( uint32_t ) strlen(request->text);
-	uint32_t          wlen     = flux_utf8_to_utf16_offset(request->text, len, len);
+	uint32_t          wlen     = wlen_i >= 0 ? ( uint32_t ) wlen_i : flux_utf8_to_utf16_offset(request->text, len, len);
 	uint32_t         *table    = ok ? flux_utf8_utf16_byte_table(request->text, len, wlen) : NULL;
 
 	FluxShapeRenderer renderer = {&kShapeVtbl, tr, sink, table, wlen, false};
@@ -300,7 +288,7 @@ static bool dwrite_shape(
 	else ok = false;
 
 	free(table);
-	IDWriteTextLayout_Release(layout);
+	if (owned) IDWriteTextLayout_Release(layout);
 	return ok;
 }
 

@@ -15,6 +15,7 @@ struct FluxSurface {
 	FluxICompositionDrawingSurfaceInterop *interop;
 	WUC_CompositionSurfaceBrush           *brush;
 	ID2D1DeviceContext                    *active_dc;
+	bool                                   has_drawn;
 };
 
 static int   clamp_dim(int v) { return v < 1 ? 1 : v; }
@@ -61,24 +62,38 @@ void flux_surface_destroy(FluxSurface *s) {
 
 HRESULT flux_surface_resize(FluxSurface *s, int w, int h) {
 	if (!s || !s->surface) return E_INVALIDARG;
+	s->has_drawn      = false;
 	WG_SizeInt32 size = {clamp_dim(w), clamp_dim(h)};
 	return wuc_composition_drawing_surface_resize(s->surface, size);
 }
 
-ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, POINT *out_offset) {
+static RECT surface_clamp_rect(WG_SizeInt32 size, RECT const *dirty) {
+	RECT r = *dirty;
+	if (r.left < 0) r.left = 0;
+	if (r.top < 0) r.top = 0;
+	if (r.right > size.Width) r.right = size.Width;
+	if (r.bottom > size.Height) r.bottom = size.Height;
+	if (r.right <= r.left || r.bottom <= r.top) r = (RECT) {0, 0, size.Width, size.Height};
+	return r;
+}
+
+ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, RECT const *dirty, POINT *out_offset, RECT *out_used) {
 	if (!s || !s->interop) return NULL;
 
 	WG_SizeInt32 size = {0, 0};
 	if (FAILED(wuc_composition_drawing_surface_get__size_int32(s->surface, &size))) return NULL;
 
 	RECT    whole  = {0, 0, size.Width, size.Height};
+	RECT    rect   = (dirty && s->has_drawn) ? surface_clamp_rect(size, dirty) : whole;
 	POINT   offset = {0, 0};
 	void   *dc     = NULL;
-	HRESULT hr     = s->interop->lpVtbl->BeginDraw(s->interop, &whole, &IID_ID2D1DeviceContext, &dc, &offset);
+	HRESULT hr     = s->interop->lpVtbl->BeginDraw(s->interop, &rect, &IID_ID2D1DeviceContext, &dc, &offset);
 	if (FAILED(hr)) return NULL;
 
+	s->has_drawn = true;
 	s->active_dc = ( ID2D1DeviceContext * ) dc;
 	if (out_offset) *out_offset = offset;
+	if (out_used) *out_used = rect;
 	return s->active_dc;
 }
 

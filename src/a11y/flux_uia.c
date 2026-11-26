@@ -417,7 +417,7 @@ static void uia_sub_focus(FluxUia *self, FluxInput *input) {
 
 static HRESULT STDMETHODCALLTYPE f_set_focus(IRawElementProviderFragment *p) {
 	FluxUia *self = SELF_FRAG(p);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_FOCUS);
 	FluxInput *input = flux_store_input(self->info.store);
 	if (!input || self->node == self->info.root) return S_OK;
 	if (self->sub >= 0) uia_sub_focus(self, input);
@@ -510,6 +510,11 @@ void flux_uia_dirty(FluxUiaContext const *info) {
 	if (win) flux_window_redraw(win);
 }
 
+void flux_uia_dirty_node(FluxUiaContext const *info, XentNodeId node, uint8_t flags) {
+	if (info && info->store) flux_uia_mark_dirty(info->store, node, flags);
+	flux_uia_dirty(info);
+}
+
 HRESULT flux_uia_activate(FluxUia *self) {
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 	XtkHost *host = flux_store_host(self->info.store);
@@ -540,7 +545,7 @@ static HRESULT uia_hook_invoke(FluxUia *self, FluxUiaHooks const *h) {
 
 static HRESULT STDMETHODCALLTYPE inv_invoke(IInvokeProvider *p) {
 	FluxUia *self = SELF_INVOKE(p);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE);
 	FluxUiaHooks const *h = self->sub < 0 ? flux_module_uia(self->info.store, self->node) : NULL;
 	if (h && h->invoke) return uia_hook_invoke(self, h);
 	return self->sub >= 0 ? uia_sub_invoke(self) : flux_uia_activate(self);
@@ -558,7 +563,7 @@ static ULONG STDMETHODCALLTYPE   tog_release(IToggleProvider *p) { return flux_u
 
 static HRESULT STDMETHODCALLTYPE tog_toggle(IToggleProvider *p) {
 	FluxUia *self = SELF_TOGGLE(p);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE);
 	FluxUiaHooks const *h = self->sub < 0 ? flux_module_uia(self->info.store, self->node) : NULL;
 	if (!h || !h->toggle) return flux_uia_activate(self);
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
@@ -600,7 +605,7 @@ static HRESULT                   rng_get_component(IRangeValueProvider *p, doubl
 
 static HRESULT STDMETHODCALLTYPE rng_set_value(IRangeValueProvider *p, double value) {
 	FluxUia *self = SELF_RANGE(p);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE);
 	if (!self->info.store || uia_range_is_readonly(self)) return UIA_E_INVALIDOPERATION;
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 
@@ -705,6 +710,8 @@ static char const             *uia_text_content(FluxUia *self) {
 	return tb->content;
 }
 
+char const *flux_uia_value_utf8(FluxUia *self) { return uia_text_content(self); }
+
 static bool uia_value_is_picker(FluxUia const *self) {
 	FluxControlType     t = flux_node_type(self->info.store, self->node);
 	FluxUiaHooks const *h = flux_module_uia(self->info.store, self->node);
@@ -725,7 +732,7 @@ static HRESULT uia_apply_value(FluxUia const *self, FluxUiaHooks const *h, LPCWS
 
 static HRESULT STDMETHODCALLTYPE val_set_value(IValueProvider *p, LPCWSTR value) {
 	FluxUia *self = SELF_VALUE(p);
-	flux_uia_dirty(&self->info);
+	flux_uia_dirty_node(&self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE);
 	if (!self->info.store) return UIA_E_INVALIDOPERATION;
 	if (!xent_sem_enabled(self->info.ctx, self->node)) return UIA_E_ELEMENTNOTENABLED;
 	if (uia_value_is_picker(self)) return UIA_E_INVALIDOPERATION;
@@ -760,9 +767,7 @@ static IValueProviderVtbl const g_value_vtbl = {
   val_get_readonly,
 };
 
-FluxUia *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node) {
-	FluxUia *p = ( FluxUia * ) calloc(1, sizeof(*p));
-	if (!p) return NULL;
+void flux_uia_init(FluxUia *p, FluxUiaContext const *info, XentNodeId node, int sub) {
 	p->lpVtblSimple     = &g_simple_vtbl;
 	p->lpVtblFragment   = &g_fragment_vtbl;
 	p->lpVtblRoot       = &g_root_vtbl;
@@ -787,7 +792,12 @@ FluxUia *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node) {
 	p->ref              = 1;
 	p->info             = *info;
 	p->node             = node;
-	p->sub              = -1;
+	p->sub              = sub;
+}
+
+FluxUia *flux_uia_alloc(FluxUiaContext const *info, XentNodeId node) {
+	FluxUia *p = ( FluxUia * ) calloc(1, sizeof(*p));
+	if (p) flux_uia_init(p, info, node, -1);
 	return p;
 }
 

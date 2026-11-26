@@ -165,6 +165,7 @@ struct FluxNavViewData {
 	XentNodeId             top_spacer;
 	XentNodeId             overflow_host;
 	bool                   top_more;
+	bool                   move_overflow_on_close;
 	float                  top_more_width;
 	FluxTheme             *theme;
 	bool                   adaptive;

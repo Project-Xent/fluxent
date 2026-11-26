@@ -4,6 +4,7 @@
 
 #include "fluxent/flux_flyout.h"
 #include "fluxent/flux_gfx.h"
+#include "graphics/flux_graphics_compose.h"
 #include "controls/draw/flux_control_record_internal.h"
 #include "render/flux_dl_replay.h"
 #include "render/flux_render_internal.h"
@@ -27,6 +28,7 @@ struct FluxFlyout {
 	ThemeRef              theme;
 
 	ID2D1SolidColorBrush *brush;
+	uint32_t              brush_gen;
 
 	float                 content_w;
 	float                 content_h;
@@ -38,8 +40,14 @@ struct FluxFlyout {
 	void                 *dismiss_ctx;
 };
 
-static void ensure_brush(FluxFlyout *fly, ID2D1DeviceContext *d2d) {
-	if (fly->brush || !d2d) return;
+static void ensure_brush(FluxFlyout *fly, FluxGfx *gfx, ID2D1DeviceContext *d2d) {
+	uint32_t gen = flux_gfx_generation(gfx);
+	if (fly->brush && fly->brush_gen == gen) return;
+	if (fly->brush) {
+		ID2D1SolidColorBrush_Release(fly->brush);
+		fly->brush = NULL;
+	}
+	if (!d2d) return;
 	D2D1_COLOR_F          black = {0.0f, 0.0f, 0.0f, 1.0f};
 	D2D1_BRUSH_PROPERTIES bp;
 	bp.opacity       = 1.0f;
@@ -49,7 +57,8 @@ static void ensure_brush(FluxFlyout *fly, ID2D1DeviceContext *d2d) {
 	bp.transform._22 = 1;
 	bp.transform._31 = 0;
 	bp.transform._32 = 0;
-	ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &bp, &fly->brush);
+	if (SUCCEEDED(ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &bp, &fly->brush)))
+		fly->brush_gen = gen;
 }
 
 static void flyout_resolve_theme(FluxFlyout *fly, FluxThemeColors const **out_theme, bool *out_is_dark) {
@@ -125,7 +134,7 @@ static void flyout_paint_thunk(void *ctx, FluxPopup *popup) {
 	ID2D1DeviceContext *d2d = flux_gfx_d2d(gfx);
 	if (!d2d) return;
 
-	ensure_brush(fly, d2d);
+	ensure_brush(fly, gfx, d2d);
 	if (!fly->brush) return;
 
 	FluxThemeColors const *theme   = NULL;

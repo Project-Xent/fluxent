@@ -21,6 +21,7 @@ typedef struct PropEntry {
 	XtkValue       value;
 	XtkChangeStamp change;
 	uint64_t       user_revision;
+	uint8_t        slot_state;
 	bool           live;
 } PropEntry;
 
@@ -49,6 +50,7 @@ typedef struct FluxHostState {
 	uint32_t       pending_invalidation;
 	PropEntry     *props;
 	uint32_t       prop_count;
+	uint32_t       prop_used;
 	uint32_t       prop_cap;
 	SubEntry      *subs;
 	uint32_t       sub_count;
@@ -152,7 +154,7 @@ PropEntry       *flux_host_prop_find(FluxHostState *R, XtkCtrl control, XtkPrope
 PropEntry const *flux_host_prop_findc(FluxHostState const *R, XtkCtrl control, XtkPropertyId id);
 bool             flux_host_stale_echo(FluxHostState const *R, XtkCtrl control, XtkPropPatch const *patch);
 void             flux_host_mark_user(FluxHostState *R, XtkEvent *event);
-PropEntry       *flux_host_prop_add(FluxHostState *R);
+PropEntry       *flux_host_prop_put(FluxHostState *R, XtkCtrl control, XtkPropertyId id);
 void             flux_host_clear_props(FluxHostState *R, XtkCtrl control);
 XtkBatchError    flux_host_apply_prop(Prepare *P, XtkCtrl control, XtkPropPatch const *patch);
 void             flux_host_rollback_prop(FluxHostState *R, UndoProp *prop);

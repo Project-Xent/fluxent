@@ -119,6 +119,15 @@ typedef struct FluxNodeData {
 
 	XentDl const              *display_list;
 	bool                       display_list_owned;
+	uint64_t                   dl_hash;
+	float                      dl_w;
+	float                      dl_h;
+	uint8_t                    dl_dynamic;
+	bool                       has_prev_bounds;
+	FluxRect                   prev_bounds;
+	uint64_t                   collect_hash;
+	float                      prev_scroll_x;
+	float                      prev_scroll_y;
 } FluxNodeData;
 
 struct FluxStore;
@@ -131,6 +140,9 @@ bool                     flux_node_lift(FluxStore *store, XentNodeId node, bool 
 bool                     flux_node_lifted(FluxStore const *store, XentNodeId node);
 uint32_t                 flux_store_nlifted(FluxStore const *store);
 XentNodeId               flux_store_lifted(FluxStore const *store, uint32_t i);
+void                     flux_store_track_frame(FluxStore *store, XentNodeId node, FluxControlType type);
+uint32_t                 flux_store_nframe(FluxStore const *store);
+XentNodeId               flux_store_frame(FluxStore const *store, uint32_t i);
 
 typedef struct FluxUiaNote {
 	XentNodeId node;
@@ -154,9 +166,29 @@ uint32_t           flux_store_nnotes(FluxStore const *store);
 FluxUiaNote const *flux_store_note(FluxStore const *store, uint32_t i);
 void               flux_store_clearnotes(FluxStore *store);
 
+enum
+{
+	FLUX_UIA_DIRTY_PROPS   = 1u << 0,
+	FLUX_UIA_DIRTY_PATTERN = 1u << 1,
+	FLUX_UIA_DIRTY_TREE    = 1u << 2,
+	FLUX_UIA_DIRTY_FOCUS   = 1u << 3,
+};
+
+typedef struct FluxUiaDirtyItem {
+	XentNodeId node;
+	uint8_t    flags;
+} FluxUiaDirtyItem;
+
+void     flux_uia_mark_dirty(FluxStore *store, XentNodeId node, uint8_t flags);
+void     flux_uia_mark_all_dirty(FluxStore *store);
+void     flux_uia_clear_dirty(FluxStore *store);
+uint32_t flux_uia_drain_dirty(FluxStore *store, FluxUiaDirtyItem **out_buf, uint32_t *out_cap, bool *out_all);
+
 static void inline flux_node_settype(FluxStore *store, XentNodeId node, FluxControlType type) {
 	FluxNodeData *nd = flux_store_ensure(store, node);
-	if (nd) nd->component_type = type;
+	if (!nd) return;
+	nd->component_type = type;
+	flux_store_track_frame(store, node, type);
 }
 
 static FluxControlType inline flux_node_type(FluxStore *store, XentNodeId node) {

@@ -255,6 +255,7 @@ static bool top_has_overflow(FluxNavViewData const *d) {
 
 static int top_selected_entry(FluxNavViewData const *d) {
 	int s = d->selected;
+	while (s >= 0 && d->items [s].parent >= 0) s = d->items [s].parent;
 	return s >= 0 && top_entry(&d->items [s]) ? s : -1;
 }
 
@@ -274,8 +275,16 @@ static float top_list_w(FluxNavViewData *d, TopList const *l) {
 	return w;
 }
 
+static void top_set_item_overflow(FluxNavViewItem *it, bool out, bool collapse) {
+	it->in_overflow = out;
+	if (collapse && it->has_children) {
+		it->expanded = false;
+		flux_nav_tween_snap(&it->expand_t, 0.0f);
+	}
+}
+
 static void top_move(FluxNavViewData *d, TopList const *l, bool out) {
-	for (int k = 0; k < l->n; k++) d->items [l->at [k]].in_overflow = out;
+	for (int k = 0; k < l->n; k++) top_set_item_overflow(&d->items [l->at [k]], out, !out);
 }
 
 static void top_keep_one(FluxNavViewData const *d, TopList *l, bool keep_first) {
@@ -347,8 +356,13 @@ static void top_shrink(FluxNavViewData *d, float desired, float avail) {
 }
 
 static void top_clear_overflow(FluxNavViewData *d) {
-	for (int i = 0; i < d->count; i++) d->items [i].in_overflow = false;
-	d->top_more = false;
+	bool top = d->mode == FLUX_NAV_TOP;
+	for (int i = 0; i < d->count; i++) {
+		FluxNavViewItem *it = &d->items [i];
+		top_set_item_overflow(it, false, top && it->in_overflow);
+	}
+	d->top_more               = false;
+	d->move_overflow_on_close = false;
 }
 
 static void top_measure_more(FluxNavViewData *d) {

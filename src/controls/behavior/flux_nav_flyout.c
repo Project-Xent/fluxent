@@ -122,6 +122,9 @@ static void fly_dismissed(void *ctx) {
 		flux_nav_home_host(d, &d->items [owner]);
 	}
 	if (d->overflow_host != XENT_NODE_INVALID) xent_setcollapsed(d->ctx, d->overflow_host, true);
+	bool bring                = owner == FLUX_NAV_FLY_OVERFLOW && d->move_overflow_on_close;
+	d->move_overflow_on_close = false;
+	if (bring && d->selected >= 0) flux_nav_top_bring(d, d->selected);
 	flux_nav_sync_hosts(d);
 	flux_nav_anim_start(d);
 	flux_nav_repaint(d);
@@ -251,10 +254,11 @@ void flux_nav_fly_destroy(FluxNavViewData *d) {
 	flux_popup_destroy(d->fly_popup);
 	d->fly_popup = NULL;
 	if (d->fly_root != XENT_NODE_INVALID) xent_node_destroy(d->ctx, d->fly_root);
-	d->fly_root      = XENT_NODE_INVALID;
-	d->fly_scroll    = XENT_NODE_INVALID;
-	d->overflow_host = XENT_NODE_INVALID;
-	d->fly_owner     = FLUX_NAV_FLY_NONE;
+	d->fly_root               = XENT_NODE_INVALID;
+	d->fly_scroll             = XENT_NODE_INVALID;
+	d->overflow_host          = XENT_NODE_INVALID;
+	d->fly_owner              = FLUX_NAV_FLY_NONE;
+	d->move_overflow_on_close = false;
 }
 
 static bool fly_chain_open(FluxNavViewData const *d, FluxNavViewItem const *it, int stop) {

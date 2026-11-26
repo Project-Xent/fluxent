@@ -13,7 +13,7 @@ void                flux_surface_destroy(FluxSurface *s);
 
 HRESULT             flux_surface_resize(FluxSurface *s, int w, int h);
 
-ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, POINT *out_offset);
+ID2D1DeviceContext *flux_surface_begin(FluxSurface *s, RECT const *dirty, POINT *out_offset, RECT *out_used);
 
 void                flux_surface_end(FluxSurface *s);
 

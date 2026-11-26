@@ -6,6 +6,7 @@
 #include <stdbool.h>
 
 bool       flux_uia_exposed(FluxUiaContext const *info, XentNodeId node);
+bool       flux_uia_in_tree(FluxUiaContext const *info, XentNodeId node);
 XentNodeId flux_uia_visible(FluxUiaContext const *info, XentNodeId node);
 XentNodeId flux_uia_parent(FluxUiaContext const *info, XentNodeId node);
 XentNodeId flux_uia_first(FluxUiaContext const *info, XentNodeId node);

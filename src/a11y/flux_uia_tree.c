@@ -129,3 +129,19 @@ XentNodeId flux_uia_next(FluxUiaContext const *info, XentNodeId node) {
 XentNodeId flux_uia_prev(FluxUiaContext const *info, XentNodeId node) {
 	return uia_sibling(info, node, tree_prev, tree_last);
 }
+
+static bool uia_node_active(FluxUiaContext const *info, XentNodeId node) {
+	FluxNodeData const *nd = flux_store_find(info->store, node);
+	if (nd && nd->popup && !flux_popup_visible(nd->popup)) return false;
+	return !uia_refused(info, node);
+}
+
+bool flux_uia_in_tree(FluxUiaContext const *info, XentNodeId node) {
+	if (!info || !info->ctx || !xent_node_valid(info->ctx, node)) return false;
+	while (node != info->root) {
+		if (!uia_node_active(info, node)) return false;
+		node = tree_parent(info, node);
+		if (node == XENT_NODE_INVALID) return false;
+	}
+	return true;
+}

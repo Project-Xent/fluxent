@@ -304,7 +304,7 @@ static HRESULT STDMETHODCALLTYPE range_move_by_range(
 
 static HRESULT STDMETHODCALLTYPE range_select(ITextRangeProvider *p) {
 	FluxUiaRange *r = range_self(p);
-	flux_uia_dirty(&r->info);
+	flux_uia_dirty_node(&r->info, r->node, FLUX_UIA_DIRTY_PATTERN);
 	UiaDoc doc;
 	if (!range_open(r, &doc)) return UIA_E_ELEMENTNOTAVAILABLE;
 	bool ok = doc.view.selectable && doc.hooks->select;
@@ -320,7 +320,7 @@ static HRESULT STDMETHODCALLTYPE range_add(ITextRangeProvider *p) {
 
 static HRESULT STDMETHODCALLTYPE range_scroll(ITextRangeProvider *p, BOOL top) {
 	FluxUiaRange *r = range_self(p);
-	flux_uia_dirty(&r->info);
+	flux_uia_dirty_node(&r->info, r->node, FLUX_UIA_DIRTY_PATTERN);
 	UiaDoc doc;
 	( void ) top;
 	if (!range_open(r, &doc)) return UIA_E_ELEMENTNOTAVAILABLE;

@@ -50,12 +50,16 @@ enum
 enum
 {
 	WATCH_SCROLL_VALUES = 6,
+	WATCH_EMPTY         = 0,
+	WATCH_OCCUPIED      = 1,
+	WATCH_TOMBSTONE     = 2,
 };
 
 typedef struct WatchEntry {
 	XentNodeId node;
 	XentNodeId container;
 	int        sub;
+	uint32_t   stamp;
 	uint32_t   name;
 	uint32_t   value;
 	uint32_t   kids;
@@ -67,6 +71,7 @@ typedef struct WatchEntry {
 	int        expand;
 	uint8_t    enabled;
 	uint8_t    selected;
+	uint8_t    slot_state;
 	uint16_t   has;
 } WatchEntry;
 
@@ -74,6 +79,7 @@ typedef struct WatchTable {
 	WatchEntry *e;
 	uint32_t    cap;
 	uint32_t    count;
+	uint32_t    tombstones;
 } WatchTable;
 
 typedef struct WatchChange {
@@ -84,12 +90,17 @@ typedef struct WatchChange {
 } WatchChange;
 
 struct FluxUiaWatch {
-	WatchTable   prev;
-	WatchTable   cur;
-	WatchChange *changes;
-	uint32_t     nchanges;
-	uint32_t     capchanges;
-	bool         primed;
+	WatchTable        table;
+	WatchChange      *changes;
+	uint32_t          nchanges;
+	uint32_t          capchanges;
+	FluxUiaDirtyItem *dirty_buf;
+	uint32_t          dirty_cap;
+	XentNodeId       *sel_containers;
+	uint32_t          nsel_containers;
+	uint32_t          cap_sel_containers;
+	uint32_t          pump_gen;
+	bool              primed;
 };
 
 static uint32_t watch_slot(WatchTable const *t, XentNodeId node, int sub) {
@@ -97,68 +108,96 @@ static uint32_t watch_slot(WatchTable const *t, XentNodeId node, int sub) {
 	return ( uint32_t ) (h >> 32) & (t->cap - 1u);
 }
 
-static WatchEntry const *watch_find(WatchTable const *t, XentNodeId node, int sub) {
+static WatchEntry *watch_find(WatchTable const *t, XentNodeId node, int sub) {
 	if (!t->cap) return NULL;
 	for (uint32_t i = watch_slot(t, node, sub);; i = (i + 1u) & (t->cap - 1u)) {
-		WatchEntry const *e = &t->e [i];
-		if (!e->node) return NULL;
-		if (e->node == node && e->sub == sub) return e;
+		WatchEntry *e = &t->e [i];
+		if (e->slot_state == WATCH_EMPTY) return NULL;
+		if (e->slot_state == WATCH_OCCUPIED && e->node == node && e->sub == sub) return e;
 	}
 }
 
-static void watch_insert(WatchTable *t, WatchEntry const *src) {
-	uint32_t i = watch_slot(t, src->node, src->sub);
-	while (t->e [i].node && !(t->e [i].node == src->node && t->e [i].sub == src->sub)) i = (i + 1u) & (t->cap - 1u);
-	t->count += !t->e [i].node;
-	t->e [i]  = *src;
+static void watch_insert_raw(WatchTable *t, WatchEntry const *src) {
+	uint32_t dead = UINT32_MAX;
+	uint32_t i    = watch_slot(t, src->node, src->sub);
+	for (; t->e [i].slot_state != WATCH_EMPTY; i = (i + 1u) & (t->cap - 1u)) {
+		WatchEntry *e = &t->e [i];
+		if (e->slot_state == WATCH_TOMBSTONE && dead == UINT32_MAX) dead = i;
+		if (e->slot_state == WATCH_OCCUPIED && e->node == src->node && e->sub == src->sub) {
+			*e            = *src;
+			e->slot_state = WATCH_OCCUPIED;
+			return;
+		}
+	}
+	uint32_t dst = dead != UINT32_MAX ? dead : i;
+	if (t->e [dst].slot_state == WATCH_TOMBSTONE) t->tombstones--;
+	t->count++;
+	t->e [dst]            = *src;
+	t->e [dst].slot_state = WATCH_OCCUPIED;
 }
 
 static bool watch_grow(WatchTable *t) {
-	if (t->cap && (t->count + 1u) * 2u <= t->cap) return true;
-	WatchTable bigger = {calloc(t->cap ? t->cap * 2u : 256u, sizeof(WatchEntry)), t->cap ? t->cap * 2u : 256u, 0u};
+	if (t->cap && (t->count + t->tombstones + 1u) * 2u <= t->cap) return true;
+	uint32_t   next_cap = !t->cap ? 256u : ((t->count + 1u) * 4u <= t->cap ? t->cap : t->cap * 2u);
+	WatchTable bigger   = {calloc(next_cap, sizeof(WatchEntry)), next_cap, 0u, 0u};
 	if (!bigger.e) return false;
-	for (uint32_t i = 0; i < t->cap; i++)
-		if (t->e [i].node) watch_insert(&bigger, &t->e [i]);
+	for (uint32_t i = 0u; i < t->cap; i++)
+		if (t->e [i].slot_state == WATCH_OCCUPIED) watch_insert_raw(&bigger, &t->e [i]);
 	free(t->e);
 	*t = bigger;
 	return true;
 }
 
-static void watch_clear(WatchTable *t) {
-	if (t->e) memset(t->e, 0, t->cap * sizeof(WatchEntry));
-	t->count = 0u;
+static void watch_remove_slot(WatchTable *t, uint32_t i) {
+	t->e [i].slot_state = WATCH_TOMBSTONE;
+	t->e [i].node       = XENT_NODE_INVALID;
+	t->count--;
+	t->tombstones++;
 }
 
-static uint32_t watch_hash_wide(BSTR s) {
+static void watch_remove_node_all(WatchTable *t, XentNodeId node) {
+	for (uint32_t i = 0u; i < t->cap; i++)
+		if (t->e [i].slot_state == WATCH_OCCUPIED && t->e [i].node == node) watch_remove_slot(t, i);
+}
+
+static void watch_remove_stale_subs(WatchTable *t, XentNodeId node, bool has_subs, int first, int last) {
+	for (uint32_t i = 0u; i < t->cap; i++) {
+		WatchEntry const *e = &t->e [i];
+		if (e->slot_state != WATCH_OCCUPIED || e->node != node || e->sub < 0) continue;
+		if (!has_subs || e->sub < first || e->sub > last) watch_remove_slot(t, i);
+	}
+}
+
+static void watch_clear(WatchTable *t) {
+	if (t->e && t->cap) memset(t->e, 0, t->cap * sizeof(WatchEntry));
+	t->count      = 0u;
+	t->tombstones = 0u;
+}
+
+static uint32_t watch_hash_utf8(char const *s) {
 	uint32_t h = 2166136261u;
-	for (UINT i = 0, n = s ? SysStringLen(s) : 0u; i < n; i++) h = (h ^ s [i]) * 16777619u;
+	if (!s || !s [0]) return h;
+	for (unsigned char const *p = ( unsigned char const * ) s; *p; p++) h = (h ^ *p) * 16777619u;
 	return h;
 }
 
 static IRawElementProviderSimple *watch_simple(FluxUia *p) { return ( IRawElementProviderSimple * ) &p->lpVtblSimple; }
 
-static uint32_t                   watch_prop_hash(FluxUia *p, PROPERTYID id) {
-	VARIANT v;
-	VariantInit(&v);
-	IRawElementProviderSimple_GetPropertyValue(watch_simple(p), id, &v);
-	uint32_t h = v.vt == VT_BSTR ? watch_hash_wide(v.bstrVal) : 0u;
-	VariantClear(&v);
-	return h;
-}
-
-static bool watch_prop_bool(FluxUia *p, PROPERTYID id) {
-	VARIANT v;
-	VariantInit(&v);
-	IRawElementProviderSimple_GetPropertyValue(watch_simple(p), id, &v);
-	bool b = v.vt == VT_BOOL && v.boolVal == VARIANT_TRUE;
-	VariantClear(&v);
-	return b;
+static FluxUia                   *watch_live(FluxUiaContext const *info, WatchEntry const *n, FluxUia **slot) {
+	if (!*slot) *slot = n->sub < 0 ? flux_uia_alloc(info, n->node) : flux_uia_alloc_sub(info, n->node, n->sub);
+	return *slot;
 }
 
 static IUnknown *watch_pattern(FluxUia *p, PATTERNID id) {
 	IUnknown *u = NULL;
 	IRawElementProviderSimple_GetPatternProvider(watch_simple(p), id, &u);
 	return u;
+}
+
+static bool watch_has_pattern(FluxUia *p, PATTERNID id) {
+	IUnknown *u = watch_pattern(p, id);
+	if (u) u->lpVtbl->Release(u);
+	return u != NULL;
 }
 
 static void watch_read_toggle(FluxUia *p, WatchEntry *e) {
@@ -190,23 +229,14 @@ static void watch_read_range(FluxUia *p, WatchEntry *e) {
 }
 
 static void watch_read_value(FluxUia *p, WatchEntry *e) {
-	IValueProvider *v = ( IValueProvider * ) watch_pattern(p, WATCH_PAT_VALUE);
-	if (!v) return;
-	BSTR s = NULL;
-	IValueProvider_get_Value(v, &s);
-	e->value  = watch_hash_wide(s);
+	if (!watch_has_pattern(p, WATCH_PAT_VALUE)) return;
+	e->value  = watch_hash_utf8(flux_uia_value_utf8(p));
 	e->has   |= W_VALUE;
-	SysFreeString(s);
-	IValueProvider_Release(v);
 }
 
 static void watch_read_selection(FluxUia *p, WatchEntry *e) {
 	ISelectionItemProvider *s = ( ISelectionItemProvider * ) watch_pattern(p, WATCH_PAT_SELECTION_ITEM);
-	IUnknown               *c = watch_pattern(p, WATCH_PAT_SELECTION);
-	if (c) {
-		e->has |= W_SELECTION;
-		c->lpVtbl->Release(c);
-	}
+	if (watch_has_pattern(p, WATCH_PAT_SELECTION)) e->has |= W_SELECTION;
 	if (!s) return;
 	BOOL on = FALSE;
 	ISelectionItemProvider_get_IsSelected(s, &on);
@@ -231,21 +261,32 @@ static void watch_read_scroll(FluxUia *p, WatchEntry *e) {
 	IScrollProvider_Release(s);
 }
 
-static bool watch_has_pattern(FluxUia *p, PATTERNID id) {
-	IUnknown *u = watch_pattern(p, id);
-	if (u) u->lpVtbl->Release(u);
-	return u != NULL;
-}
-
 static void watch_read_text(FluxUia *p, WatchEntry *e) {
 	if (!watch_has_pattern(p, WATCH_PAT_TEXT)) return;
 	if (!flux_uia_doc_state(&p->info, p->node, &e->text, &e->tsel)) return;
 	e->has |= watch_has_pattern(p, WATCH_PAT_TEXT2) ? W_TEXT | W_EDIT : W_TEXT;
 }
 
+static uint32_t watch_entry_tag(XentNodeId node, int sub) {
+	return ( uint32_t ) (node * 2654435761u) ^ ( uint32_t ) (sub + 1);
+}
+
+static uint32_t watch_kids_hash(FluxUiaContext const *info, XentNodeId node) {
+	uint32_t h     = 2166136261u;
+	int      first = 0, last = -1;
+	if (flux_uia_sub_range(info, node, &first, &last)) {
+		for (int i = first; i <= last; i++) h = (h ^ watch_entry_tag(node, i)) * 16777619u;
+		return h;
+	}
+	for (XentNodeId c = flux_uia_first(info, node); c != XENT_NODE_INVALID; c = flux_uia_next(info, c))
+		h = (h ^ watch_entry_tag(c, -1)) * 16777619u;
+	return h;
+}
+
 static void watch_read(FluxUia *p, WatchEntry *e) {
-	e->name    = watch_prop_hash(p, WATCH_PROP_NAME);
-	e->enabled = watch_prop_bool(p, WATCH_PROP_ENABLED);
+	char buf [256] = {0};
+	e->name        = watch_hash_utf8(flux_uia_name_utf8(p, buf, sizeof(buf)));
+	e->enabled     = flux_uia_enabled_bool(p) ? 1u : 0u;
 	watch_read_toggle(p, e);
 	watch_read_expand(p, e);
 	watch_read_range(p, e);
@@ -253,10 +294,11 @@ static void watch_read(FluxUia *p, WatchEntry *e) {
 	watch_read_selection(p, e);
 	watch_read_text(p, e);
 	watch_read_scroll(p, e);
+	if (e->sub < 0) e->kids = watch_kids_hash(&p->info, e->node);
 }
 
 static void watch_raise_variant(FluxUia *p, PROPERTYID id, VARIANT old_v, VARIANT new_v) {
-	UiaRaiseAutomationPropertyChangedEvent(watch_simple(p), id, old_v, new_v);
+	if (p) UiaRaiseAutomationPropertyChangedEvent(watch_simple(p), id, old_v, new_v);
 }
 
 static void watch_raise_i4(FluxUia *p, PROPERTYID id, int old_i, int new_i) {
@@ -267,6 +309,7 @@ static void watch_raise_i4(FluxUia *p, PROPERTYID id, int old_i, int new_i) {
 }
 
 static void watch_raise_current(FluxUia *p, PROPERTYID id) {
+	if (!p) return;
 	VARIANT o, n;
 	VariantInit(&o);
 	VariantInit(&n);
@@ -276,7 +319,7 @@ static void watch_raise_current(FluxUia *p, PROPERTYID id) {
 }
 
 static void watch_raise_value(FluxUia *p) {
-	IValueProvider *v = ( IValueProvider * ) watch_pattern(p, WATCH_PAT_VALUE);
+	IValueProvider *v = p ? ( IValueProvider * ) watch_pattern(p, WATCH_PAT_VALUE) : NULL;
 	if (!v) return;
 	VARIANT o, n;
 	VariantInit(&o);
@@ -294,12 +337,6 @@ static void watch_raise_range_id(FluxUia *p, PROPERTYID id, double old_d, double
 	watch_raise_variant(p, id, o, n);
 }
 
-static void watch_raise_range(FluxUia *p, double old_d, double new_d) {
-	watch_raise_range_id(p, WATCH_PROP_RANGE, old_d, new_d);
-}
-
-static bool watch_both(WatchEntry const *a, WatchEntry const *b, unsigned bit) { return (a->has & b->has & bit) != 0u; }
-
 static void watch_raise_bool(FluxUia *p, PROPERTYID id, bool old_b, bool new_b) {
 	VARIANT o = {.vt = VT_BOOL}, n = {.vt = VT_BOOL};
 	o.boolVal = old_b ? VARIANT_TRUE : VARIANT_FALSE;
@@ -307,36 +344,51 @@ static void watch_raise_bool(FluxUia *p, PROPERTYID id, bool old_b, bool new_b) 
 	watch_raise_variant(p, id, o, n);
 }
 
-static void watch_raise_scroll(FluxUia *p, WatchEntry const *o, WatchEntry const *n) {
+static bool watch_both(WatchEntry const *a, WatchEntry const *b, unsigned bit) { return (a->has & b->has & bit) != 0u; }
+
+static void watch_raise_scroll(FluxUiaContext const *info, WatchEntry const *o, WatchEntry const *n, FluxUia **live) {
 	static PROPERTYID const ids [WATCH_SCROLL_VALUES] = {
 	  WATCH_PROP_SCROLL_FIRST, WATCH_PROP_SCROLL_FIRST + 1, WATCH_PROP_SCROLL_FIRST + 2, WATCH_PROP_SCROLL_FIRST + 3,
 	  WATCH_PROP_SCROLL_FIRST + 4, WATCH_PROP_SCROLL_FIRST + 5};
 	if (!watch_both(o, n, W_SCROLL)) return;
 	for (int i = 0; i < 4; i++)
-		if (o->scroll [i] != n->scroll [i]) watch_raise_range_id(p, ids [i], o->scroll [i], n->scroll [i]);
+		if (o->scroll [i] != n->scroll [i])
+			watch_raise_range_id(watch_live(info, n, live), ids [i], o->scroll [i], n->scroll [i]);
 	for (int i = 4; i < WATCH_SCROLL_VALUES; i++)
-		if (o->scroll [i] != n->scroll [i]) watch_raise_bool(p, ids [i], o->scroll [i] != 0.0, n->scroll [i] != 0.0);
+		if (o->scroll [i] != n->scroll [i])
+			watch_raise_bool(watch_live(info, n, live), ids [i], o->scroll [i] != 0.0, n->scroll [i] != 0.0);
 }
 
-static void watch_raise_props(FluxUia *p, WatchEntry const *o, WatchEntry const *n) {
-	if (o->name != n->name) watch_raise_current(p, WATCH_PROP_NAME);
-	if (o->enabled != n->enabled) watch_raise_current(p, WATCH_PROP_ENABLED);
+static void
+watch_raise_scalar_props(FluxUiaContext const *info, WatchEntry const *o, WatchEntry const *n, FluxUia **live) {
+	if (o->name != n->name) watch_raise_current(watch_live(info, n, live), WATCH_PROP_NAME);
+	if (o->enabled != n->enabled) watch_raise_current(watch_live(info, n, live), WATCH_PROP_ENABLED);
+	if (watch_both(o, n, W_VALUE) && o->value != n->value) watch_raise_value(watch_live(info, n, live));
+}
+
+static void watch_raise_props(FluxUiaContext const *info, WatchEntry const *o, WatchEntry const *n, FluxUia **live) {
+	watch_raise_scalar_props(info, o, n, live);
 	if (watch_both(o, n, W_TOGGLE) && o->toggle != n->toggle)
-		watch_raise_i4(p, WATCH_PROP_TOGGLE, o->toggle, n->toggle);
+		watch_raise_i4(watch_live(info, n, live), WATCH_PROP_TOGGLE, o->toggle, n->toggle);
 	if (watch_both(o, n, W_EXPAND) && o->expand != n->expand)
-		watch_raise_i4(p, WATCH_PROP_EXPAND, o->expand, n->expand);
-	if (watch_both(o, n, W_RANGE) && o->range != n->range) watch_raise_range(p, o->range, n->range);
-	if (watch_both(o, n, W_VALUE) && o->value != n->value) watch_raise_value(p);
+		watch_raise_i4(watch_live(info, n, live), WATCH_PROP_EXPAND, o->expand, n->expand);
+	if (watch_both(o, n, W_RANGE) && o->range != n->range)
+		watch_raise_range_id(watch_live(info, n, live), WATCH_PROP_RANGE, o->range, n->range);
 }
 
-static void watch_raise_text(FluxUia *p, WatchEntry const *o, WatchEntry const *n) {
-	if (watch_both(o, n, W_EDIT) && o->text != n->text)
-		UiaRaiseAutomationEvent(watch_simple(p), WATCH_EVT_TEXT_CHANGED);
-	if (watch_both(o, n, W_TEXT) && o->tsel != n->tsel)
-		UiaRaiseAutomationEvent(watch_simple(p), WATCH_EVT_TEXT_SELECTION);
+static void watch_raise_text(FluxUiaContext const *info, WatchEntry const *o, WatchEntry const *n, FluxUia **live) {
+	if (watch_both(o, n, W_EDIT) && o->text != n->text) {
+		FluxUia *p = watch_live(info, n, live);
+		if (p) UiaRaiseAutomationEvent(watch_simple(p), WATCH_EVT_TEXT_CHANGED);
+	}
+	if (watch_both(o, n, W_TEXT) && o->tsel != n->tsel) {
+		FluxUia *p = watch_live(info, n, live);
+		if (p) UiaRaiseAutomationEvent(watch_simple(p), WATCH_EVT_TEXT_SELECTION);
+	}
 }
 
 static void watch_raise_structure(FluxUia *p) {
+	if (!p) return;
 	SAFEARRAY *sa = NULL;
 	IRawElementProviderFragment_GetRuntimeId(( IRawElementProviderFragment * ) &p->lpVtblFragment, &sa);
 	int *ids = NULL;
@@ -358,58 +410,192 @@ static void watch_note_change(FluxUiaWatch *w, WatchEntry const *n) {
 	w->changes [w->nchanges++] = (WatchChange) {n->container, n->node, n->sub, n->selected != 0u};
 }
 
+static void watch_push_sel_container(FluxUiaWatch *w, XentNodeId c) {
+	if (c == XENT_NODE_INVALID) return;
+	for (uint32_t i = 0u; i < w->nsel_containers; i++)
+		if (w->sel_containers [i] == c) return;
+	if (w->nsel_containers == w->cap_sel_containers) {
+		uint32_t    cap  = w->cap_sel_containers ? w->cap_sel_containers * 2u : 16u;
+		XentNodeId *next = ( XentNodeId * ) realloc(w->sel_containers, cap * sizeof(*next));
+		if (!next) return;
+		w->sel_containers     = next;
+		w->cap_sel_containers = cap;
+	}
+	w->sel_containers [w->nsel_containers++] = c;
+}
+
 static bool watch_per_item(FluxUiaContext const *info, XentNodeId container) {
 	FluxUiaHooks const *h = container ? flux_module_uia(info->store, container) : NULL;
 	return h && h->select_mode && (h->select_mode(info->store, container) & FLUX_UIA_SEL_EACH);
 }
 
 static void watch_compare_selection(
-  FluxUiaWatch *w, FluxUiaContext const *info, FluxUia *p, WatchEntry const *old, WatchEntry const *now
+  FluxUiaWatch *w, FluxUiaContext const *info, WatchEntry const *old, WatchEntry const *now, FluxUia **live
 ) {
 	if (!watch_both(old, now, W_SELITEM) || old->selected == now->selected) return;
-	bool selected = now->selected != 0u;
-	if (watch_per_item(info, now->container))
-		UiaRaiseAutomationEvent(watch_simple(p), selected ? WATCH_EVT_ADDED : WATCH_EVT_REMOVED);
+	bool     selected = now->selected != 0u;
+	FluxUia *p        = watch_live(info, now, live);
+	if (watch_per_item(info, now->container)) {
+		if (p) UiaRaiseAutomationEvent(watch_simple(p), selected ? WATCH_EVT_ADDED : WATCH_EVT_REMOVED);
+	}
 	else watch_note_change(w, now);
 	watch_raise_bool(p, WATCH_PROP_SELECTED, !selected, selected);
 }
 
-static void watch_compare(FluxUiaWatch *w, FluxUiaContext const *info, FluxUia *p, WatchEntry const *now) {
-	WatchEntry const *old = w->primed ? watch_find(&w->prev, now->node, now->sub) : NULL;
-	if (!old) return;
-	watch_raise_props(p, old, now);
-	watch_raise_text(p, old, now);
-	watch_raise_scroll(p, old, now);
-	watch_compare_selection(w, info, p, old, now);
-	if (now->sub < 0 && old->kids != now->kids) watch_raise_structure(p);
+static void watch_compare(FluxUiaWatch *w, FluxUiaContext const *info, WatchEntry const *old, WatchEntry const *now) {
+	if (!w->primed || !old) return;
+	FluxUia *live = NULL;
+	watch_raise_props(info, old, now, &live);
+	watch_raise_text(info, old, now, &live);
+	watch_raise_scroll(info, old, now, &live);
+	watch_compare_selection(w, info, old, now, &live);
+	if (now->sub < 0 && old->kids != now->kids) watch_raise_structure(watch_live(info, now, &live));
+	if (live) flux_uia_release(live);
 }
 
-static uint32_t
-watch_visit(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, int sub, XentNodeId container);
+static void watch_fill_entry(
+  FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, int sub, XentNodeId container, WatchEntry *now
+) {
+	FluxUia probe;
+	memset(&probe, 0, sizeof(probe));
+	flux_uia_init(&probe, info, node, sub);
+	*now = (WatchEntry) {.node = node, .container = container, .sub = sub, .stamp = w->pump_gen};
+	watch_read(&probe, now);
+}
 
-static uint32_t watch_children(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, XentNodeId container) {
-	uint32_t h     = 2166136261u;
-	int      first = 0, last = -1;
+static void watch_track_sel(FluxUiaWatch *w, WatchEntry const *old, WatchEntry const *now) {
+	if (now->has & W_SELECTION) watch_push_sel_container(w, now->node);
+	if (now->has & W_SELITEM) watch_push_sel_container(w, now->container);
+	if (old && (old->has & W_SELITEM)) watch_push_sel_container(w, old->container);
+}
+
+static void watch_walk_tree(
+  FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, int sub, XentNodeId container, bool emit
+) {
+	WatchEntry now;
+	watch_fill_entry(w, info, node, sub, container, &now);
+	WatchEntry const *old = emit ? watch_find(&w->table, node, sub) : NULL;
+	if (emit) watch_compare(w, info, old, &now);
+	if (watch_grow(&w->table)) watch_insert_raw(&w->table, &now);
+	if (sub >= 0) return;
+
+	XentNodeId child_container = (now.has & W_SELECTION) ? node : container;
+	int        first = 0, last = -1;
 	if (flux_uia_sub_range(info, node, &first, &last)) {
-		for (int i = first; i <= last; i++) h = (h ^ watch_visit(w, info, node, i, container)) * 16777619u;
-		return h;
+		for (int i = first; i <= last; i++) watch_walk_tree(w, info, node, i, child_container, emit);
+		return;
 	}
 	for (XentNodeId c = flux_uia_first(info, node); c != XENT_NODE_INVALID; c = flux_uia_next(info, c))
-		h = (h ^ watch_visit(w, info, c, -1, container)) * 16777619u;
-	return h;
+		watch_walk_tree(w, info, c, -1, child_container, emit);
 }
 
-static uint32_t
-watch_visit(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, int sub, XentNodeId container) {
-	FluxUia *p = sub < 0 ? flux_uia_alloc(info, node) : flux_uia_alloc_sub(info, node, sub);
-	if (!p) return 0u;
-	WatchEntry now = {.node = node, .container = container, .sub = sub};
-	watch_read(p, &now);
-	if (sub < 0) now.kids = watch_children(w, info, node, (now.has & W_SELECTION) ? node : container);
-	watch_compare(w, info, p, &now);
-	if (watch_grow(&w->cur)) watch_insert(&w->cur, &now);
-	flux_uia_release(p);
-	return ( uint32_t ) (node * 2654435761u) ^ ( uint32_t ) (sub + 1);
+static XentNodeId watch_find_container(FluxUiaWatch const *w, FluxUiaContext const *info, XentNodeId node, int sub) {
+	if (sub >= 0) {
+		WatchEntry const *p = watch_find(&w->table, node, -1);
+		bool is_sel = p ? (p->has & W_SELECTION) != 0u : (flux_uia_patterns(info, node) & FLUX_UIA_P_SELECTION) != 0u;
+		if (is_sel) return node;
+	}
+	for (XentNodeId p = flux_uia_parent(info, node); p != XENT_NODE_INVALID; p = flux_uia_parent(info, p)) {
+		WatchEntry const *cached = watch_find(&w->table, p, -1);
+		if (cached && (cached->has & W_SELECTION)) return p;
+		if (!cached && (flux_uia_patterns(info, p) & FLUX_UIA_P_SELECTION)) return p;
+		if (p == info->root) break;
+	}
+	return XENT_NODE_INVALID;
+}
+
+static void
+watch_refresh_subitems(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, XentNodeId child_container) {
+	int  first = 0, last = -1;
+	bool has_subs = flux_uia_sub_range(info, node, &first, &last);
+	watch_remove_stale_subs(&w->table, node, has_subs, first, last);
+	if (!has_subs) return;
+	for (int i = first; i <= last; i++) {
+		WatchEntry now;
+		watch_fill_entry(w, info, node, i, child_container, &now);
+		WatchEntry const *old = watch_find(&w->table, node, i);
+		watch_compare(w, info, old, &now);
+		watch_track_sel(w, old, &now);
+		if (watch_grow(&w->table)) watch_insert_raw(&w->table, &now);
+	}
+}
+
+static void
+watch_prime_new_children(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, XentNodeId child_container) {
+	for (XentNodeId c = flux_uia_first(info, node); c != XENT_NODE_INVALID; c = flux_uia_next(info, c))
+		if (!watch_find(&w->table, c, -1)) watch_walk_tree(w, info, c, -1, child_container, false);
+}
+
+static void watch_refresh_target(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId target, uint8_t flags) {
+	WatchEntry *existing = watch_find(&w->table, target, -1);
+	if (existing && existing->stamp == w->pump_gen && !(flags & FLUX_UIA_DIRTY_TREE)) return;
+
+	XentNodeId container = watch_find_container(w, info, target, -1);
+	WatchEntry now;
+	watch_fill_entry(w, info, target, -1, container, &now);
+	WatchEntry const *old = watch_find(&w->table, target, -1);
+	if (!old || old->stamp != w->pump_gen) {
+		watch_compare(w, info, old, &now);
+		watch_track_sel(w, old, &now);
+		if (watch_grow(&w->table)) watch_insert_raw(&w->table, &now);
+	}
+	XentNodeId child_container = (now.has & W_SELECTION) ? target : container;
+	watch_refresh_subitems(w, info, target, child_container);
+	if (flags & FLUX_UIA_DIRTY_TREE) watch_prime_new_children(w, info, target, child_container);
+}
+
+static XentNodeId watch_visible_in_tree(FluxUiaContext const *info, XentNodeId node) {
+	for (XentNodeId cur = flux_uia_visible(info, node); cur != XENT_NODE_INVALID; cur = flux_uia_parent(info, cur)) {
+		if (flux_uia_exposed(info, cur) && flux_uia_in_tree(info, cur)) return cur;
+		if (cur == info->root) break;
+	}
+	return XENT_NODE_INVALID;
+}
+
+static void watch_process_dirty(FluxUiaWatch *w, FluxUiaContext const *info, XentNodeId node, uint8_t flags) {
+	if (!flux_uia_in_tree(info, node)) {
+		watch_remove_node_all(&w->table, node);
+		if (xent_node_valid(info->ctx, node)) {
+			XentNodeId anc = watch_visible_in_tree(info, node);
+			if (anc != XENT_NODE_INVALID) watch_refresh_target(w, info, anc, flags | FLUX_UIA_DIRTY_TREE);
+		}
+		return;
+	}
+	XentNodeId target = flux_uia_visible(info, node);
+	if (target == XENT_NODE_INVALID || !flux_uia_in_tree(info, target)) return;
+	watch_refresh_target(w, info, target, flags);
+	if (node != target || flux_node_type(info->store, node) == FLUX_CONTROL_TEXT) {
+		XentNodeId parent = flux_uia_parent(info, target);
+		if (parent != XENT_NODE_INVALID && flux_uia_in_tree(info, parent)) watch_refresh_target(w, info, parent, flags);
+	}
+}
+
+static void watch_refresh_inplace(FluxUiaWatch *w, FluxUiaContext const *info, WatchEntry *slot) {
+	WatchEntry now;
+	watch_fill_entry(w, info, slot->node, slot->sub, slot->container, &now);
+	watch_compare(w, info, slot, &now);
+	now.slot_state = WATCH_OCCUPIED;
+	*slot          = now;
+}
+
+static void watch_flush_sel_containers(FluxUiaWatch *w, FluxUiaContext const *info) {
+	for (uint32_t c = 0u; c < w->nsel_containers; c++) {
+		XentNodeId cont = w->sel_containers [c];
+		for (uint32_t i = 0u; i < w->table.cap; i++) {
+			WatchEntry *e = &w->table.e [i];
+			if (e->slot_state != WATCH_OCCUPIED || e->container != cont || e->stamp == w->pump_gen) continue;
+			if (!flux_uia_in_tree(info, e->node)) continue;
+			watch_refresh_inplace(w, info, e);
+		}
+	}
+}
+
+static void watch_prune_table(FluxUiaWatch *w, FluxUiaContext const *info, bool check_tree) {
+	for (uint32_t i = 0u; i < w->table.cap; i++) {
+		WatchEntry const *e = &w->table.e [i];
+		if (e->slot_state != WATCH_OCCUPIED || e->stamp == w->pump_gen) continue;
+		if (!check_tree || !flux_uia_in_tree(info, e->node)) watch_remove_slot(&w->table, i);
+	}
 }
 
 static void watch_raise_item(FluxUiaContext const *info, WatchChange const *c, int event_id) {
@@ -421,24 +607,25 @@ static void watch_raise_item(FluxUiaContext const *info, WatchChange const *c, i
 
 static uint32_t watch_selected_in(WatchTable const *t, XentNodeId container) {
 	uint32_t n = 0u;
-	for (uint32_t i = 0; i < t->cap; i++) n += t->e [i].node && t->e [i].container == container && t->e [i].selected;
+	for (uint32_t i = 0u; i < t->cap; i++)
+		n += t->e [i].slot_state == WATCH_OCCUPIED && t->e [i].container == container && t->e [i].selected;
 	return n;
 }
 
 static WatchChange const *watch_first_of(FluxUiaWatch const *w, XentNodeId container, bool added) {
-	for (uint32_t i = 0; i < w->nchanges; i++)
+	for (uint32_t i = 0u; i < w->nchanges; i++)
 		if (w->changes [i].container == container && w->changes [i].added == added) return &w->changes [i];
 	return NULL;
 }
 
 static void watch_count(FluxUiaWatch const *w, XentNodeId container, uint32_t *added, uint32_t *removed) {
 	*added = *removed = 0u;
-	for (uint32_t i = 0; i < w->nchanges; i++)
+	for (uint32_t i = 0u; i < w->nchanges; i++)
 		if (w->changes [i].container == container) *(w->changes [i].added ? added : removed) += 1u;
 }
 
 static void watch_each_item(FluxUiaWatch const *w, FluxUiaContext const *info, XentNodeId container) {
-	for (uint32_t i = 0; i < w->nchanges; i++)
+	for (uint32_t i = 0u; i < w->nchanges; i++)
 		if (w->changes [i].container == container)
 			watch_raise_item(info, &w->changes [i], w->changes [i].added ? WATCH_EVT_ADDED : WATCH_EVT_REMOVED);
 }
@@ -453,7 +640,7 @@ static void watch_invalidate(FluxUiaContext const *info, XentNodeId container) {
 static void watch_selection_of(FluxUiaWatch const *w, FluxUiaContext const *info, XentNodeId container) {
 	uint32_t added = 0u, removed = 0u;
 	watch_count(w, container, &added, &removed);
-	if (added == 1u && watch_selected_in(&w->cur, container) == 1u) {
+	if (added == 1u && watch_selected_in(&w->table, container) == 1u) {
 		watch_raise_item(info, watch_first_of(w, container, true), WATCH_EVT_SELECTED);
 		if (removed == 1u) watch_raise_item(info, watch_first_of(w, container, false), WATCH_EVT_REMOVED);
 		return;
@@ -463,13 +650,13 @@ static void watch_selection_of(FluxUiaWatch const *w, FluxUiaContext const *info
 }
 
 static bool watch_seen_before(FluxUiaWatch const *w, uint32_t i) {
-	for (uint32_t k = 0; k < i; k++)
+	for (uint32_t k = 0u; k < i; k++)
 		if (w->changes [k].container == w->changes [i].container) return true;
 	return false;
 }
 
 static void watch_selection(FluxUiaWatch *w, FluxUiaContext const *info) {
-	for (uint32_t i = 0; i < w->nchanges; i++)
+	for (uint32_t i = 0u; i < w->nchanges; i++)
 		if (!watch_seen_before(w, i)) watch_selection_of(w, info, w->changes [i].container);
 	w->nchanges = 0u;
 }
@@ -507,25 +694,37 @@ static void watch_raise_note(FluxUiaContext const *info, FluxUiaNote const *n) {
 }
 
 static void watch_notes(FluxUiaContext const *info, bool listening) {
-	for (uint32_t i = 0; listening && i < flux_store_nnotes(info->store); i++)
+	for (uint32_t i = 0u; listening && i < flux_store_nnotes(info->store); i++)
 		watch_raise_note(info, flux_store_note(info->store, i));
 	flux_store_clearnotes(info->store);
 }
 
+static void watch_drain_semantics(FluxUiaContext const *info, bool forward) {
+	XentNodeId sem_buf [256];
+	for (;;) {
+		uint32_t n = xent_sem_drain_dirty(info->ctx, sem_buf, 256u);
+		if (forward)
+			for (uint32_t i = 0u; i < n; i++)
+				flux_uia_mark_dirty(info->store, sem_buf [i], FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN);
+		if (n < 256u) break;
+	}
+}
+
 static void watch_reset(FluxUiaWatch *w) {
-	watch_clear(&w->prev);
-	watch_clear(&w->cur);
-	w->nchanges = 0u;
-	w->primed   = false;
+	watch_clear(&w->table);
+	w->nchanges        = 0u;
+	w->nsel_containers = 0u;
+	w->primed          = false;
 }
 
 FluxUiaWatch *flux_uia_watch_create(void) { return ( FluxUiaWatch * ) calloc(1, sizeof(FluxUiaWatch)); }
 
 void          flux_uia_watch_destroy(FluxUiaWatch *w) {
 	if (!w) return;
-	free(w->prev.e);
-	free(w->cur.e);
+	free(w->table.e);
 	free(w->changes);
+	free(w->dirty_buf);
+	free(w->sel_containers);
 	free(w);
 }
 
@@ -534,19 +733,57 @@ void flux_uia_watch_flush(FluxUiaContext const *info) {
 	watch_notes(info, UiaClientsAreListening());
 }
 
-void flux_uia_watch_pump(FluxUiaWatch *w, FluxUiaContext const *info) {
-	if (!w || !info || !info->ctx || info->root == XENT_NODE_INVALID) return;
+static void watch_pump_all(FluxUiaWatch *w, FluxUiaContext const *info) {
+	watch_walk_tree(w, info, info->root, -1, XENT_NODE_INVALID, true);
+	watch_prune_table(w, info, false);
+	watch_selection(w, info);
+}
+
+static void watch_pump_dirty(FluxUiaWatch *w, FluxUiaContext const *info, uint32_t ndirty) {
+	bool tree_dirty = false;
+	for (uint32_t i = 0u; i < ndirty; i++) {
+		tree_dirty |= (w->dirty_buf [i].flags & FLUX_UIA_DIRTY_TREE) != 0u;
+		watch_process_dirty(w, info, w->dirty_buf [i].node, w->dirty_buf [i].flags);
+	}
+	watch_flush_sel_containers(w, info);
+	if (tree_dirty) watch_prune_table(w, info, true);
+	watch_selection(w, info);
+}
+
+static void watch_prime_tree(FluxUiaWatch *w, FluxUiaContext const *info) {
+	flux_uia_clear_dirty(info->store);
+	watch_drain_semantics(info, false);
+	w->pump_gen++;
+	watch_walk_tree(w, info, info->root, -1, XENT_NODE_INVALID, false);
+	w->primed = true;
+}
+
+static bool watch_ensure_ready(FluxUiaWatch *w, FluxUiaContext const *info) {
 	bool listening = UiaClientsAreListening();
 	watch_notes(info, listening);
 	if (!listening) {
 		if (w->primed) watch_reset(w);
-		return;
+		flux_uia_clear_dirty(info->store);
+		watch_drain_semantics(info, false);
+		return false;
 	}
-	watch_visit(w, info, info->root, -1, XENT_NODE_INVALID);
-	watch_selection(w, info);
-	WatchTable done = w->prev;
-	w->prev         = w->cur;
-	w->cur          = done;
-	watch_clear(&w->cur);
-	w->primed = true;
+	if (!w->primed) {
+		watch_prime_tree(w, info);
+		return false;
+	}
+	return true;
+}
+
+void flux_uia_watch_pump(FluxUiaWatch *w, FluxUiaContext const *info) {
+	if (!w || !info || !info->ctx || info->root == XENT_NODE_INVALID) return;
+	if (!watch_ensure_ready(w, info)) return;
+	watch_drain_semantics(info, true);
+	bool     all    = false;
+	uint32_t ndirty = flux_uia_drain_dirty(info->store, &w->dirty_buf, &w->dirty_cap, &all);
+	if (!all && ndirty == 0u) return;
+	w->pump_gen++;
+	w->nsel_containers = 0u;
+	w->nchanges        = 0u;
+	if (all) watch_pump_all(w, info);
+	else watch_pump_dirty(w, info, ndirty);
 }

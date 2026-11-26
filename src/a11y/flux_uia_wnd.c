@@ -32,7 +32,10 @@ static HRESULT STDMETHODCALLTYPE wnd_set_state(IWindowProvider *p, enum WindowVi
 static HRESULT STDMETHODCALLTYPE wnd_close(IWindowProvider *p) {
 	FluxUia            *self = NULL;
 	FluxUiaHooks const *h    = uia_window_hooks(p, &self);
-	if (self) flux_uia_dirty(&self->info);
+	if (self)
+		flux_uia_dirty_node(
+		  &self->info, self->node, FLUX_UIA_DIRTY_PROPS | FLUX_UIA_DIRTY_PATTERN | FLUX_UIA_DIRTY_TREE
+		);
 	if (h && h->close) h->close(self->info.store, self->node);
 	return S_OK;
 }

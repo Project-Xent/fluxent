@@ -12,53 +12,60 @@
 #include <cd2d.h>
 #include <cdwrite.h>
 
-#define FLUX_FORMAT_CACHE_SIZE   16
-#define FLUX_LAYOUT_CACHE_SIZE   64
+#define FLUX_FORMAT_CACHE_CAP    64
+#define FLUX_FORMAT_HASH_CAP     128
+#define FLUX_LAYOUT_CACHE_CAP    512
+#define FLUX_LAYOUT_HASH_CAP     1024
 
 #define FLUX_DEFAULT_FONT_FAMILY L"Segoe UI Variable"
 #define FLUX_FAMILY_BUF          128
 
 typedef struct FluxFormatCacheKey {
-	uint32_t family_hash;
-	uint32_t size_bits;
-	int      font_weight;
-	int      text_align;
-	int      vert_align;
-	int      word_wrap;
-	int      rtl;
+	uint64_t             hash;
+	char                 family_inline [48];
+	char                *family_heap;
+	uint32_t             family_len;
+	uint32_t             size_bits;
+	int                  font_weight;
+	int                  text_align;
+	int                  vert_align;
+	DWRITE_WORD_WRAPPING wrapping;
+	int                  rtl;
 } FluxFormatCacheKey;
 
 typedef struct FluxFormatCacheEntry {
 	FluxFormatCacheKey key;
 	IDWriteTextFormat *format;
-	uint64_t           last_used;
-	bool               occupied;
+	int16_t            hash_next;
+	int16_t            lru_prev;
+	int16_t            lru_next;
+	bool               in_use;
 } FluxFormatCacheEntry;
 
 typedef struct FluxLayoutCacheKey {
-	uint32_t text_hash;
-	uint32_t text_len;
-	uint32_t format_hash;
-	uint32_t style_hash;
-	uint32_t max_w_bits;
-	uint32_t max_h_bits;
+	uint64_t           hash;
+	uint64_t           format_hash;
+	uint64_t           style_hash;
+	char               text_inline [64];
+	char              *text_heap;
+	uint32_t           text_len;
+	int                wlen;
+	uint32_t           run_count;
+	XentTextTrim       trim;
+	uint32_t           max_lines;
+	uint32_t           max_w_bits;
+	uint32_t           max_h_bits;
+	FluxFormatCacheKey fmt_spec;
 } FluxLayoutCacheKey;
 
 typedef struct FluxLayoutCacheEntry {
 	FluxLayoutCacheKey key;
 	IDWriteTextLayout *layout;
-	uint64_t           last_used;
-	bool               occupied;
+	int16_t            hash_next;
+	int16_t            lru_prev;
+	int16_t            lru_next;
+	bool               in_use;
 } FluxLayoutCacheEntry;
-
-typedef struct TextLayoutCacheRequest {
-	wchar_t const       *wtext;
-	int                  wlen;
-	char const          *utf8_text;
-	FluxTextStyle const *style;
-	float                max_w;
-	float                max_h;
-} TextLayoutCacheRequest;
 
 typedef struct TextLayoutRequest {
 	FluxText            *tr;
@@ -73,13 +80,27 @@ typedef struct FluxFontEntry {
 	XentFontId       id;
 } FluxFontEntry;
 
+typedef struct FluxTextCaches {
+	FluxFormatCacheEntry format_pool [FLUX_FORMAT_CACHE_CAP];
+	int16_t              format_buckets [FLUX_FORMAT_HASH_CAP];
+	int16_t              fmt_head;
+	int16_t              fmt_tail;
+	uint16_t             fmt_count;
+
+	FluxLayoutCacheEntry layout_pool [FLUX_LAYOUT_CACHE_CAP];
+	int16_t              layout_buckets [FLUX_LAYOUT_HASH_CAP];
+	int16_t              lay_head;
+	int16_t              lay_tail;
+	uint16_t             lay_count;
+} FluxTextCaches;
+
 struct FluxText {
+	uint32_t              refcount;
 	IDWriteFactory       *factory;
 	wchar_t              *default_font;
 	float                 default_size;
-	FluxFormatCacheEntry  format_cache [FLUX_FORMAT_CACHE_SIZE];
 	uint64_t              cache_tick;
-	FluxLayoutCacheEntry  layout_cache [FLUX_LAYOUT_CACHE_SIZE];
+	FluxTextCaches       *caches;
 	ID2D1SolidColorBrush *shared_brush;
 	ID2D1RenderTarget    *brush_rt;
 	FluxFontEntry        *fonts;
@@ -103,7 +124,10 @@ void                       free_line_metrics(TextLineMetrics *m);
 float                      kept_line_height(TextLineMetrics const *m, uint32_t max_lines);
 void text_configure_layout(FluxText *tr, IDWriteTextLayout *layout, char const *utf8, FluxTextStyle const *style);
 
-IDWriteTextLayout *get_or_create_layout(FluxText *tr, TextLayoutCacheRequest const *req);
-uint32_t           flux_text_selection_for_height(FluxTextSelectionQuery const *query, float height, uint32_t *total);
+void flux_text_caches_release(FluxText *tr);
+IDWriteTextFormat *get_or_create_format_ex(FluxText *tr, FluxTextStyle const *s, DWRITE_WORD_WRAPPING wrap);
+IDWriteTextLayout *
+get_or_create_layout_ex(FluxText *tr, TextLayoutRequest const *req, DWRITE_WORD_WRAPPING wrap, int *out_wlen);
+uint32_t flux_text_selection_for_height(FluxTextSelectionQuery const *query, float height, uint32_t *total);
 
 #endif

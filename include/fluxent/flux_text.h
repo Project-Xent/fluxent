@@ -96,6 +96,8 @@ typedef struct FluxTextClusterQuery {
 
 XENT_NODISCARD FluxText *flux_text_create(void);
 
+void                     flux_text_retain(FluxText *tr);
+
 void                     flux_text_destroy(FluxText *tr);
 
 bool                     flux_text_register(FluxText *tr, XentCtx *ctx);

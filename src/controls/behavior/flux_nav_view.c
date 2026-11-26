@@ -189,6 +189,8 @@ void flux_nav_graft_host(FluxNavViewData *d, FluxNavViewItem *it, bool on) {
 	if (!hn || !pn) return;
 	hn->uia_adopter = on ? it->node : XENT_NODE_INVALID;
 	pn->uia_graft   = on ? it->children_host : XENT_NODE_INVALID;
+	flux_uia_mark_dirty(d->store, it->node, FLUX_UIA_DIRTY_TREE);
+	flux_uia_mark_dirty(d->store, it->children_host, FLUX_UIA_DIRTY_TREE);
 }
 
 void flux_nav_home_host(FluxNavViewData *d, FluxNavViewItem *it) {
@@ -832,6 +834,26 @@ static void nav_mark_selected(FluxNavViewData *d, int index) {
 	if (it) xent_sem_setselected(d->ctx, it->node, true);
 }
 
+static bool nav_item_in_overflow(FluxNavViewData const *d, int index) {
+	if (index < 0 || index >= d->count) return false;
+	while (d->items [index].parent >= 0) index = d->items [index].parent;
+	return d->items [index].in_overflow;
+}
+
+static void nav_handle_top_overflow_select(FluxNavViewData *d, int index) {
+	if (d->mode != FLUX_NAV_TOP || !nav_item_in_overflow(d, index)) {
+		d->move_overflow_on_close = false;
+		return;
+	}
+	if (d->fly_owner == FLUX_NAV_FLY_OVERFLOW && d->items [index].has_children) {
+		d->move_overflow_on_close = true;
+		return;
+	}
+	d->move_overflow_on_close = false;
+	if (d->fly_owner == FLUX_NAV_FLY_OVERFLOW) flux_nav_fly_close(d);
+	flux_nav_top_bring(d, index);
+}
+
 void flux_nav_apply_selection(FluxNavViewData *d, int index, bool notify) {
 	bool settings = index == FLUX_NAV_SETTINGS;
 	if (!settings && (index < 0 || index >= d->count)) return;
@@ -839,7 +861,8 @@ void flux_nav_apply_selection(FluxNavViewData *d, int index, bool notify) {
 	nav_clear_selected(d);
 	d->selected = index;
 	nav_mark_selected(d, index);
-	if (!settings) flux_nav_top_bring(d, index);
+	if (!settings) nav_handle_top_overflow_select(d, index);
+	else d->move_overflow_on_close = false;
 	flux_nav_anim_start(d);
 	d->selection_revision++;
 	if (notify && d->on_selection_changed) d->on_selection_changed(d->on_sel_ctx, index);

@@ -1,5 +1,12 @@
 #include "flux_host_internal.h"
 
+enum
+{
+	PROP_EMPTY = 0,
+	PROP_LIVE  = 1,
+	PROP_TOMB  = 2,
+};
+
 static bool clone_string(XtkValue *dst, XtkValue const *src) {
 	uint32_t len = src->u.string.len;
 	char    *dup = ( char * ) xtk_alloc(( size_t ) len + 1u);
@@ -39,46 +46,107 @@ bool flux_host_value_clone(XtkValue *dst, XtkValue const *src) {
 	return true;
 }
 
-PropEntry *flux_host_prop_find(FluxHostState *R, XtkCtrl control, XtkPropertyId id) {
-	for (uint32_t i = 0; i < R->prop_count; i++)
-		if (R->props [i].live && R->props [i].control == control && R->props [i].id == id) return &R->props [i];
+static uint32_t prop_hash(XtkCtrl control, XtkPropertyId id) {
+	uint64_t x  = control ^ (( uint64_t ) id * UINT64_C(0x9e3779b97f4a7c15));
+	x          ^= x >> 30;
+	x          *= UINT64_C(0xbf58476d1ce4e5b9);
+	x          ^= x >> 27;
+	x          *= UINT64_C(0x94d049bb133111eb);
+	x          ^= x >> 31;
+	return ( uint32_t ) x;
+}
+
+static PropEntry *prop_probe(FluxHostState const *R, XtkCtrl control, XtkPropertyId id) {
+	if (!R || !R->prop_cap || control == XTK_CTRL_INVALID) return NULL;
+	uint32_t mask = R->prop_cap - 1u;
+	uint32_t slot = prop_hash(control, id) & mask;
+	for (uint32_t probe = 0; probe < R->prop_cap; probe++) {
+		PropEntry *e = &R->props [slot];
+		if (e->slot_state == PROP_EMPTY) return NULL;
+		if (e->slot_state == PROP_LIVE && e->control == control && e->id == id) return e;
+		slot = (slot + 1u) & mask;
+	}
 	return NULL;
+}
+
+PropEntry *flux_host_prop_find(FluxHostState *R, XtkCtrl control, XtkPropertyId id) {
+	return prop_probe(R, control, id);
 }
 
 PropEntry const *flux_host_prop_findc(FluxHostState const *R, XtkCtrl control, XtkPropertyId id) {
-	for (uint32_t i = 0; i < R->prop_count; i++)
-		if (R->props [i].live && R->props [i].control == control && R->props [i].id == id) return &R->props [i];
+	return prop_probe(R, control, id);
+}
+
+static bool prop_rehash(FluxHostState *R, uint32_t new_cap) {
+	if (( size_t ) new_cap > SIZE_MAX / sizeof(PropEntry)) return false;
+	PropEntry *table = ( PropEntry * ) xtk_alloc_zero(new_cap, sizeof(PropEntry));
+	if (!table) return false;
+	uint32_t mask = new_cap - 1u;
+	uint32_t live = 0u;
+	for (uint32_t i = 0; i < R->prop_cap; i++) {
+		if (R->props [i].slot_state != PROP_LIVE) continue;
+		uint32_t slot = prop_hash(R->props [i].control, R->props [i].id) & mask;
+		while (table [slot].slot_state == PROP_LIVE) slot = (slot + 1u) & mask;
+		table [slot] = R->props [i];
+		live++;
+	}
+	xtk_alloc_free(R->props);
+	R->props      = table;
+	R->prop_cap   = new_cap;
+	R->prop_count = live;
+	R->prop_used  = live;
+	return true;
+}
+
+static bool prop_ensure_cap(FluxHostState *R) {
+	if (R->prop_cap && (R->prop_used + 1u) * 10u < R->prop_cap * 7u) return true;
+	uint32_t next_cap = R->prop_cap ? R->prop_cap : 32u;
+	if (R->prop_cap && (R->prop_count + 1u) * 2u >= R->prop_cap) {
+		if (next_cap > UINT32_MAX / 2u) return false;
+		next_cap *= 2u;
+	}
+	return prop_rehash(R, next_cap);
+}
+
+static void prop_erase(FluxHostState *R, PropEntry *e) {
+	flux_host_value_clear(&e->value);
+	e->live       = false;
+	e->slot_state = PROP_TOMB;
+	if (R->prop_count > 0u) R->prop_count--;
+}
+
+PropEntry *flux_host_prop_put(FluxHostState *R, XtkCtrl control, XtkPropertyId id) {
+	if (!R || control == XTK_CTRL_INVALID || !prop_ensure_cap(R)) return NULL;
+	uint32_t   mask  = R->prop_cap - 1u;
+	uint32_t   slot  = prop_hash(control, id) & mask;
+	PropEntry *avail = NULL;
+	for (uint32_t probe = 0; probe < R->prop_cap; probe++) {
+		PropEntry *e = &R->props [slot];
+		if (e->slot_state == PROP_LIVE && e->control == control && e->id == id) return e;
+		if (e->slot_state == PROP_TOMB && !avail) avail = e;
+		if (e->slot_state == PROP_EMPTY) {
+			PropEntry *dst = avail ? avail : e;
+			if (!avail) R->prop_used++;
+			*dst = (PropEntry) {.control = control, .id = id, .slot_state = PROP_LIVE, .live = true};
+			R->prop_count++;
+			return dst;
+		}
+		slot = (slot + 1u) & mask;
+	}
 	return NULL;
 }
 
-PropEntry *flux_host_prop_add(FluxHostState *R) {
-	if (R->prop_count == R->prop_cap) {
-		uint32_t   cap = R->prop_cap ? R->prop_cap * 2u : 16u;
-		PropEntry *n   = ( PropEntry * ) xtk_alloc_resize(R->props, sizeof(*n) * cap);
-		if (!n) return NULL;
-		R->props    = n;
-		R->prop_cap = cap;
-	}
-	PropEntry *e = &R->props [R->prop_count++];
-	*e           = (PropEntry) {.live = true};
-	return e;
-}
-
 void flux_host_clear_props(FluxHostState *R, XtkCtrl control) {
-	for (uint32_t i = 0; i < R->prop_count; i++) {
-		if (!R->props [i].live || R->props [i].control != control) continue;
-		flux_host_value_clear(&R->props [i].value);
-		R->props [i].live = false;
+	for (uint32_t i = 0; i < R->prop_cap; i++) {
+		if (R->props [i].slot_state != PROP_LIVE || R->props [i].control != control) continue;
+		prop_erase(R, &R->props [i]);
 	}
 }
 
 void flux_host_rollback_prop(FluxHostState *R, UndoProp *prop) {
 	PropEntry *e = flux_host_prop_find(R, prop->control, prop->id);
 	if (!prop->had_value) {
-		if (e) {
-			flux_host_value_clear(&e->value);
-			e->live = false;
-		}
+		if (e) prop_erase(R, e);
 		return;
 	}
 	if (!e) return;
@@ -95,10 +163,7 @@ bool flux_host_stale_echo(FluxHostState const *R, XtkCtrl control, XtkPropPatch 
 }
 
 static PropEntry *prop_entry(FluxHostState *R, XtkCtrl control, XtkPropertyId id) {
-	PropEntry *e = flux_host_prop_find(R, control, id);
-	if (e || !(e = flux_host_prop_add(R))) return e;
-	*e = (PropEntry) {.control = control, .id = id, .live = true};
-	return e;
+	return flux_host_prop_put(R, control, id);
 }
 
 void flux_host_mark_user(FluxHostState *R, XtkEvent *event) {
@@ -128,12 +193,13 @@ XtkBatchError flux_host_apply_prop(Prepare *P, XtkCtrl control, XtkPropPatch con
 		return XTK_BATCH_ERR_OOM;
 	}
 
-	PropEntry *e = old ? old : flux_host_prop_add(R);
+	PropEntry *e = old ? old : flux_host_prop_put(R, control, patch->id);
 	if (!e || !flux_host_value_clone(&e->value, &patch->value)) return XTK_BATCH_ERR_OOM;
-	e->control = control;
-	e->id      = patch->id;
-	e->change  = patch->change;
-	e->live    = true;
+	e->control    = control;
+	e->id         = patch->id;
+	e->change     = patch->change;
+	e->slot_state = PROP_LIVE;
+	e->live       = true;
 	return flux_host_stage_prop_invalidation(P, control, patch->id) ? XTK_BATCH_OK : XTK_BATCH_ERR_OOM;
 }
 

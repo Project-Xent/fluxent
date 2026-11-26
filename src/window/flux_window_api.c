@@ -229,3 +229,9 @@ void flux_window_setmenu(FluxWindow *win, FluxMenu *menu) {
 }
 
 FluxMenu *flux_window_menu(FluxWindow *win) { return win ? win->active_menu : NULL; }
+
+void      flux_window_settext(FluxWindow *win, struct FluxText *text) {
+	if (win) win->text = text;
+}
+
+struct FluxText *flux_window_text(FluxWindow const *win) { return win ? win->text : NULL; }

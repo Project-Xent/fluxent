@@ -10,6 +10,7 @@
 #include "theme/flux_theme_contrast.h"
 #include "store/flux_node_data.h"
 #include "fluxent/flux_input.h"
+#include "input/flux_input_internal.h"
 #include "a11y/flux_uia.h"
 
 #ifndef COBJMACROS
@@ -46,6 +47,7 @@ struct FluxPopup {
 	XentNodeId            content_root;
 	FluxPopupTree        *tree;
 	bool                  tree_busy;
+	ULONGLONG             redraw_due;
 	float                 tree_sx, tree_sy, tree_cx, tree_cy;
 	bool                  rtl;
 
@@ -68,6 +70,13 @@ struct FluxPopup {
 	void                 *record_ctx;
 	FluxText             *record_text;
 	ID2D1SolidColorBrush *record_brush;
+	uint32_t              record_brush_gen;
+	ID2D1CommandList     *shadow_caster;
+	ID2D1Effect          *shadow_fx;
+	FluxRect              shadow_band;
+	float                 shadow_corner;
+	bool                  shadow_dark;
+	uint32_t              shadow_gen;
 
 	FluxInput            *host_input;
 	XentNodeId            host_owner;
@@ -129,6 +138,7 @@ static void popup_registry_remove(FluxPopup *p) {
 #define POPUP_FLYOUT_DURATION_MS 167
 #define POPUP_FLYOUT_OFFSET_DIP  50.0f
 #define POPUP_ACRYLIC_BLUR       30.0f
+#define FLUX_POPUP_REDRAW_TIMER  0xf3
 
 static void             popup_stop_animation(FluxPopup *popup);
 static LRESULT CALLBACK popup_wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -198,12 +208,19 @@ FluxPopup *flux_popup_create(FluxWindow *owner) {
 	return popup;
 }
 
+static void popup_mark_uia_dirty(FluxPopup const *popup, XentNodeId owner) {
+	if (!popup || !popup->store) return;
+	flux_uia_mark_dirty(popup->store, owner, FLUX_UIA_DIRTY_TREE | FLUX_UIA_DIRTY_PATTERN);
+	flux_uia_mark_dirty(popup->store, popup->content_root, FLUX_UIA_DIRTY_TREE);
+}
+
 static void popup_host_detach(FluxPopup *popup) {
 	if (!popup->host_input) return;
 	FluxNodeData *root  = flux_store_find(popup->store, popup->content_root);
 	FluxNodeData *owner = flux_store_find(popup->store, popup->host_owner);
 	if (root) root->popup = NULL;
 	if (owner && owner->uia_popup == popup->content_root) owner->uia_popup = XENT_NODE_INVALID;
+	popup_mark_uia_dirty(popup, popup->host_owner);
 	popup->host_input = NULL;
 }
 
@@ -213,12 +230,17 @@ void flux_popup_destroy(FluxPopup *popup) {
 	flux_anim_unregister(&popup->anim);
 	flux_anim_unregister(&popup->tree_busy);
 	if (popup->popup_hwnd) {
+		KillTimer(popup->popup_hwnd, FLUX_POPUP_REDRAW_TIMER);
+		popup->redraw_due = 0;
 		SetWindowLongPtrW(popup->popup_hwnd, GWLP_USERDATA, 0);
 		DestroyWindow(popup->popup_hwnd);
 	}
 	popup_host_detach(popup);
 	flux_popup_tree_destroy(popup->tree);
 	if (popup->record_brush) ID2D1SolidColorBrush_Release(popup->record_brush);
+	if (popup->shadow_fx) (( IUnknown * ) popup->shadow_fx)->lpVtbl->Release(( IUnknown * ) popup->shadow_fx);
+	if (popup->shadow_caster)
+		(( IUnknown * ) popup->shadow_caster)->lpVtbl->Release(( IUnknown * ) popup->shadow_caster);
 	if (popup->graphics) flux_gfx_destroy(popup->graphics);
 	free(popup);
 }
@@ -481,46 +503,85 @@ static PopupInsets popup_insets(FluxPopup const *popup) {
 
 static FluxRect popup_split_band(FluxPopup const *popup);
 
-static void     popup_draw_shadow(FluxPopup *popup, ID2D1DeviceContext *d2d) {
-	PopupInsets in = popup_insets(popup);
-	if (in.b <= 0.0f) return;
+static void     popup_release_shadow_cache(FluxPopup *popup) {
+	if (popup->shadow_fx) {
+		(( IUnknown * ) popup->shadow_fx)->lpVtbl->Release(( IUnknown * ) popup->shadow_fx);
+		popup->shadow_fx = NULL;
+	}
+	if (popup->shadow_caster) {
+		(( IUnknown * ) popup->shadow_caster)->lpVtbl->Release(( IUnknown * ) popup->shadow_caster);
+		popup->shadow_caster = NULL;
+	}
+}
+
+static bool popup_shadow_cache_valid(FluxPopup const *popup, FluxRect const *band, bool dark, uint32_t gen) {
+	return popup->shadow_fx
+	    && popup->shadow_caster
+	    && popup->shadow_gen == gen
+	    && popup->shadow_corner == popup->corner
+	    && popup->shadow_dark == dark
+	    && popup->shadow_band.x == band->x
+	    && popup->shadow_band.y == band->y
+	    && popup->shadow_band.w == band->w
+	    && popup->shadow_band.h == band->h;
+}
+
+static bool popup_build_shadow_cache(
+  FluxPopup *popup, ID2D1DeviceContext *d2d, PopupInsets in, FluxRect const *band, bool dark, uint32_t gen
+) {
+	popup_release_shadow_cache(popup);
 	ID2D1CommandList *caster = NULL;
 	ID2D1Effect      *fx     = NULL;
 	ID2D1Image       *target = NULL;
-	if (FAILED(ID2D1DeviceContext_CreateCommandList(d2d, &caster))) return;
+	if (FAILED(ID2D1DeviceContext_CreateCommandList(d2d, &caster))) return false;
 	ID2D1DeviceContext_GetTarget(d2d, &target);
 	ID2D1DeviceContext_SetTarget(d2d, ( ID2D1Image * ) caster);
-	FluxRect          band = popup_split_band(popup);
-	D2D1_ROUNDED_RECT rr   = {
-	  {in.l + band.x, in.t + band.y, in.l + band.x + band.w, in.t + band.y + band.h},
-      popup->corner, popup->corner
+	D2D1_ROUNDED_RECT rr = {
+	  {in.l + band->x, in.t + band->y, in.l + band->x + band->w, in.t + band->y + band->h},
+      popup->corner,
+	  popup->corner
     };
 	ID2D1RenderTarget_FillRoundedRectangle(( ID2D1RenderTarget * ) d2d, &rr, ( ID2D1Brush * ) popup->record_brush);
 	ID2D1CommandList_Close(caster);
 	ID2D1DeviceContext_SetTarget(d2d, target);
-	if (SUCCEEDED(ID2D1DeviceContext_CreateEffect(d2d, &CLSID_D2D1Shadow, &fx))) {
-		bool  dark      = flux_theme_systemdark();
-		float sigma     = 16.0f / 2.0f;
-		float color [4] = {0.0f, 0.0f, 0.0f, dark ? 0.26f : 0.14f};
-		ID2D1Effect_SetInput(fx, 0, ( ID2D1Image * ) caster, TRUE);
-		ID2D1Effect_SetValue(
-		  fx, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_PROPERTY_TYPE_FLOAT, ( UINT8 const * ) &sigma,
-		  sizeof(sigma)
-		);
-		ID2D1Effect_SetValue(
-		  fx, D2D1_SHADOW_PROP_COLOR, D2D1_PROPERTY_TYPE_VECTOR4, ( UINT8 const * ) color, sizeof(color)
-		);
-		ID2D1Image *out = NULL;
-		ID2D1Effect_GetOutput(fx, &out);
-		D2D_POINT_2F off = {0.0f, 8.0f};
-		ID2D1DeviceContext_DrawImage(
-		  d2d, out, &off, NULL, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER
-		);
-		if (out) (( IUnknown * ) out)->lpVtbl->Release(( IUnknown * ) out);
-		(( IUnknown * ) fx)->lpVtbl->Release(( IUnknown * ) fx);
-	}
 	if (target) (( IUnknown * ) target)->lpVtbl->Release(( IUnknown * ) target);
-	(( IUnknown * ) caster)->lpVtbl->Release(( IUnknown * ) caster);
+	if (FAILED(ID2D1DeviceContext_CreateEffect(d2d, &CLSID_D2D1Shadow, &fx))) {
+		(( IUnknown * ) caster)->lpVtbl->Release(( IUnknown * ) caster);
+		return false;
+	}
+	float sigma     = 16.0f / 2.0f;
+	float color [4] = {0.0f, 0.0f, 0.0f, dark ? 0.26f : 0.14f};
+	ID2D1Effect_SetInput(fx, 0, ( ID2D1Image * ) caster, TRUE);
+	ID2D1Effect_SetValue(
+	  fx, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_PROPERTY_TYPE_FLOAT, ( UINT8 const * ) &sigma, sizeof(sigma)
+	);
+	ID2D1Effect_SetValue(
+	  fx, D2D1_SHADOW_PROP_COLOR, D2D1_PROPERTY_TYPE_VECTOR4, ( UINT8 const * ) color, sizeof(color)
+	);
+	popup->shadow_caster = caster;
+	popup->shadow_fx     = fx;
+	popup->shadow_band   = *band;
+	popup->shadow_corner = popup->corner;
+	popup->shadow_dark   = dark;
+	popup->shadow_gen    = gen;
+	return true;
+}
+
+static void popup_draw_shadow(FluxPopup *popup, ID2D1DeviceContext *d2d) {
+	PopupInsets in = popup_insets(popup);
+	if (in.b <= 0.0f) return;
+	FluxRect band = popup_split_band(popup);
+	bool     dark = flux_theme_systemdark();
+	uint32_t gen  = flux_gfx_generation(popup->graphics);
+	if (!popup_shadow_cache_valid(popup, &band, dark, gen)
+	    && !popup_build_shadow_cache(popup, d2d, in, &band, dark, gen))
+		return;
+	ID2D1Image *out = NULL;
+	ID2D1Effect_GetOutput(popup->shadow_fx, &out);
+	if (!out) return;
+	D2D_POINT_2F off = {0.0f, 8.0f};
+	ID2D1DeviceContext_DrawImage(d2d, out, &off, NULL, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_COMPOSITE_MODE_SOURCE_OVER);
+	(( IUnknown * ) out)->lpVtbl->Release(( IUnknown * ) out);
 }
 
 void flux_popup_setsplit(FluxPopup *popup, float closed_length, float offset_from_center) {
@@ -747,7 +808,7 @@ static void popup_repaint_host(FluxPopup const *popup) {
 
 static void popup_paint_now(FluxPopup *popup);
 
-void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement) {
+void        flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement) {
 	if (!popup) return;
 
 	popup->anchor     = anchor;
@@ -762,6 +823,7 @@ void flux_popup_show(FluxPopup *popup, FluxRect anchor, FluxPlacement placement)
 	popup_paint_now(popup);
 	ShowWindow(popup->popup_hwnd, SW_SHOWNOACTIVATE);
 	InvalidateRect(popup->popup_hwnd, NULL, FALSE);
+	popup_mark_uia_dirty(popup, popup->host_owner);
 	popup_repaint_host(popup);
 }
 
@@ -780,11 +842,14 @@ void flux_popup_dismiss(FluxPopup *popup) {
 	if (!popup || !popup->is_visible) return;
 
 	popup->is_visible = false;
+	if (popup->popup_hwnd) KillTimer(popup->popup_hwnd, FLUX_POPUP_REDRAW_TIMER);
+	popup->redraw_due = 0;
 	flux_anim_unregister(&popup->tree_busy);
 	if (!popup_start_close_animation(popup)) {
 		popup_stop_animation(popup);
 		ShowWindow(popup->popup_hwnd, SW_HIDE);
 	}
+	popup_mark_uia_dirty(popup, popup->host_owner);
 	popup_repaint_host(popup);
 	if (popup->dismiss_cb) popup->dismiss_cb(popup->dismiss_ctx);
 }
@@ -1003,11 +1068,17 @@ static LRESULT popup_on_mouse_leave(FluxPopup *popup) {
 }
 
 static bool popup_ensure_record_brush(FluxPopup *popup, ID2D1DeviceContext *d2d) {
-	if (popup->record_brush) return true;
+	uint32_t gen = flux_gfx_generation(popup->graphics);
+	if (popup->record_brush && popup->record_brush_gen == gen) return true;
+	if (popup->record_brush) {
+		ID2D1SolidColorBrush_Release(popup->record_brush);
+		popup->record_brush = NULL;
+	}
 	D2D1_COLOR_F          black = {0.0f, 0.0f, 0.0f, 1.0f};
 	D2D1_BRUSH_PROPERTIES props = flux_default_brush_props();
 	HRESULT               hr
 	  = ID2D1RenderTarget_CreateSolidColorBrush(( ID2D1RenderTarget * ) d2d, &black, &props, &popup->record_brush);
+	if (SUCCEEDED(hr)) popup->record_brush_gen = gen;
 	return SUCCEEDED(hr);
 }
 
@@ -1035,9 +1106,18 @@ static void popup_split_plate(FluxPopup *popup, FluxRect const *band) {
 	);
 }
 
+static void popup_redraw_after(FluxPopup *popup, double seconds) {
+	if (!popup || !popup->popup_hwnd || seconds <= 0.0) return;
+	UINT      delay = ( UINT ) (seconds * 1000.0 + 0.999);
+	ULONGLONG due   = GetTickCount64() + delay;
+	if (popup->redraw_due && popup->redraw_due <= due) return;
+	if (SetTimer(popup->popup_hwnd, FLUX_POPUP_REDRAW_TIMER, delay, NULL)) popup->redraw_due = due;
+}
+
 static void popup_paint_tree(FluxPopup *popup) {
 	ID2D1DeviceContext *d2d = flux_gfx_d2d(popup->graphics);
 	popup->tree_busy        = false;
+	double next_redraw      = 0.0;
 	if (d2d && popup_ensure_record_brush(popup, d2d)) {
 		FluxRenderCtx     rc = {.d2d = d2d, .brush = popup->record_brush};
 		D2D1_MATRIX_3X2_F saved;
@@ -1048,11 +1128,12 @@ static void popup_paint_tree(FluxPopup *popup) {
 		scaled._31               = popup->tree_cx * (1.0f - popup->tree_sx) * saved._11 + saved._31;
 		scaled._32               = popup->tree_cy * (1.0f - popup->tree_sy) * saved._22 + saved._32;
 		ID2D1RenderTarget_SetTransform(( ID2D1RenderTarget * ) d2d, &scaled);
-		popup->tree_busy = flux_popup_tree_paint(popup->tree, popup, &rc);
+		popup->tree_busy = flux_popup_tree_paint(popup->tree, popup, &rc, &next_redraw);
 		ID2D1RenderTarget_SetTransform(( ID2D1RenderTarget * ) d2d, &saved);
 	}
 	if (popup->tree_busy && popup->is_visible) flux_anim_register(&popup->tree_busy, popup_tree_step);
 	else flux_anim_unregister(&popup->tree_busy);
+	if (next_redraw > 0.0 && popup->is_visible) popup_redraw_after(popup, next_redraw);
 }
 
 static void popup_run_paint(FluxPopup *popup) {
@@ -1075,7 +1156,7 @@ static void popup_paint_content(FluxPopup *popup) {
 	bool        split = d2d && band.h < popup->content_h;
 	if (popup->anim.style == FLUX_POPUP_ANIM_SPLIT || popup->anim.style == FLUX_POPUP_ANIM_PICKER)
 		popup_split_plate(popup, &band);
-	D2D1_MATRIX_3X2_F m = {1.0f, 0.0f, 0.0f, 1.0f, in.l, in.t};
+	D2D1_MATRIX_3X2_F m = {._11 = 1.0f, ._22 = 1.0f, ._31 = in.l, ._32 = in.t};
 	if (d2d) ID2D1RenderTarget_SetTransform(( ID2D1RenderTarget * ) d2d, &m);
 	D2D1_RECT_F clip = {band.x, band.y, band.x + band.w, band.y + band.h};
 	if (split) ID2D1RenderTarget_PushAxisAlignedClip(( ID2D1RenderTarget * ) d2d, &clip, D2D1_ANTIALIAS_MODE_ALIASED);
@@ -1094,6 +1175,7 @@ static float popup_picker_opacity(FluxPopup const *popup) {
 
 static void popup_paint_now(FluxPopup *popup) {
 	if (!popup || !popup->graphics) return;
+	if (!flux_gfx_current(popup->graphics)) ( void ) flux_gfx_devicechange(popup->graphics);
 
 	float blur            = flux_theme_systemcontrast() ? 0.0f : POPUP_ACRYLIC_BLUR;
 	popup->acrylic_active = flux_gfx_enable_acrylic(popup->graphics, blur);
@@ -1177,7 +1259,14 @@ static bool popup_handle_system_message(PopupWindowMessage const *m, LRESULT *re
 	case WM_SIZE          : *result = popup_on_size(m->popup, m->lp); return true;
 	case WM_NCHITTEST     : *result = popup_on_hittest(m); return true;
 	case WM_GETOBJECT     : return popup_on_object(m, result);
-	default               : return false;
+	case WM_TIMER :
+		if (m->wp != FLUX_POPUP_REDRAW_TIMER) return false;
+		KillTimer(m->hwnd, FLUX_POPUP_REDRAW_TIMER);
+		if (m->popup) m->popup->redraw_due = 0;
+		InvalidateRect(m->hwnd, NULL, FALSE);
+		*result = 0;
+		return true;
+	default : return false;
 	}
 }
 
@@ -1232,8 +1321,8 @@ static void popup_host_mouse(void *ctx, FluxPopup *popup, FluxPopupMouseEvent ev
 	case FLUX_POPUP_MOUSE_LEAVE : ev.x = ev.y = -1.0f; break;
 	default : ev.buttons = GetKeyState(VK_LBUTTON) < 0 || popup->last_input_touch ? FLUX_POINTER_BUTTON_LEFT : 0; break;
 	}
-	flux_input_dispatch(popup->host_input, popup->content_root, &ev);
-	InvalidateRect(popup->popup_hwnd, NULL, FALSE);
+	bool dirty = flux_input_dispatch_dirty(popup->host_input, popup->content_root, &ev);
+	if (dirty) InvalidateRect(popup->popup_hwnd, NULL, FALSE);
 }
 
 bool flux_popup_sethost(FluxPopup *popup, FluxInput *input, XentNodeId owner) {
@@ -1246,6 +1335,7 @@ bool flux_popup_sethost(FluxPopup *popup, FluxInput *input, XentNodeId owner) {
 	root->popup       = popup;
 	root->uia_owner   = nd ? owner : XENT_NODE_INVALID;
 	if (nd) nd->uia_popup = popup->content_root;
+	popup_mark_uia_dirty(popup, owner);
 	flux_popup_onmouse(popup, popup_host_mouse, NULL);
 	return true;
 }
@@ -1255,12 +1345,15 @@ void flux_popup_rebind(FluxPopup *popup, XentNodeId owner) {
 	FluxNodeData *root = flux_store_find(popup->store, popup->content_root);
 	FluxNodeData *nd   = flux_store_find(popup->store, owner);
 	if (!root || !nd) return;
-	FluxNodeData *old = flux_store_find(popup->store, popup->host_owner);
+	XentNodeId    prev_owner = popup->host_owner;
+	FluxNodeData *old        = flux_store_find(popup->store, prev_owner);
 	if (old && old != nd && old->uia_popup == popup->content_root) old->uia_popup = XENT_NODE_INVALID;
 	popup->host_owner = owner;
 	root->popup       = popup;
 	root->uia_owner   = owner;
 	nd->uia_popup     = popup->content_root;
+	popup_mark_uia_dirty(popup, prev_owner);
+	popup_mark_uia_dirty(popup, owner);
 }
 
 void flux_popup_setscale(FluxPopup *popup, float sx, float sy, float cx, float cy) {

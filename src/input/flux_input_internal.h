@@ -87,6 +87,7 @@ struct FluxInput {
 	FluxXyManifolds    xy_saved;
 };
 
+bool flux_input_dispatch_dirty(FluxInput *input, XentNodeId root, FluxPointerEvent const *ev);
 void flux_input_setwindow(FluxInput *input, struct FluxWindow *window);
 void flux_input_setmodal_enter(FluxInput *input, bool (*on_enter)(void *ctx));
 bool flux_input_modal_enter(FluxInput *input);

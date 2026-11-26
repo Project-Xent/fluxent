@@ -9,11 +9,21 @@ set_warnings("all")
 set_runtimes("MT")
 
 if is_mode("release") then
-    set_optimize("faster")
+    set_optimize("smallest")
 end
+
+option("lto")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Enable ThinLTO for release builds (breaks cross-toolchain static archive linking)")
+option_end()
 
 if is_plat("windows") then
     add_defines("_CRT_SECURE_NO_WARNINGS")
+end
+
+if is_plat("mingw") and is_mode("release") and has_config("lto") then
+    add_cflags("-flto=thin", { force = true })
 end
 
 add_repositories("xent-repo https://github.com/Project-Xent/xent-repo.git")
@@ -77,6 +87,9 @@ target("fluxent")
     )
     if is_plat("mingw") then
         add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
+        if is_mode("release") then
+            add_cflags("-fmerge-all-constants", { force = true })
+        end
     end
     if is_plat("windows") then
         add_cflags("/Gy", "/Gw", "/wd4201", { force = true })
@@ -106,9 +119,16 @@ local function gui_binary(name, dirs)
         end
         if is_plat("mingw") then
             add_cflags("-ffunction-sections", "-fdata-sections", { force = true })
+            if is_mode("release") then
+                add_cflags("-fmerge-all-constants", { force = true })
+            end
             add_ldflags("-Wl,--subsystem,windows", "-Wl,--gc-sections", "-Wl,--icf=safe", { force = true })
+            if is_mode("release") and has_config("lto") then
+                add_ldflags("-flto=thin", { force = true })
+            end
         end
         if is_plat("windows") then
+            add_cflags("/Gy", "/Gw", { tools = "cl", force = true })
             add_ldflags("/SUBSYSTEM:WINDOWS", "/OPT:REF", "/OPT:ICF", { force = true })
             if is_mode("release") then
                 add_ldflags("/NODEFAULTLIB:libucrt.lib", "/DEFAULTLIB:ucrt.lib", { force = true })

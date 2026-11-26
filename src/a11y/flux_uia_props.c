@@ -263,6 +263,8 @@ static char const *prop_name_text(FluxUia *self, char *text, size_t size, UiaNam
 	return text;
 }
 
+char const *flux_uia_name_utf8(FluxUia *self, char *buf, size_t size) { return prop_name_text(self, buf, size, NULL); }
+
 static void prop_name(FluxUia *self, int role, VARIANT *out) {
 	( void ) role;
 	char text [256] = {0};
@@ -349,12 +351,16 @@ static void prop_localized_landmark(FluxUia *self, int role, VARIANT *out) {
 	else if (self->sub < 0 && h) put_wide(out, h->lmtype);
 }
 
-static void prop_enabled(FluxUia *self, int role, VARIANT *out) {
-	( void ) role;
+bool flux_uia_enabled_bool(FluxUia *self) {
 	FluxUiaSub const *s  = self->sub >= 0 ? prop_sub(self) : NULL;
 	bool              on = xent_sem_enabled(self->info.ctx, self->node);
 	if (on && s && s->enabled) on = s->enabled(self->info.store, self->node, self->sub);
-	put_bool(out, on);
+	return on;
+}
+
+static void prop_enabled(FluxUia *self, int role, VARIANT *out) {
+	( void ) role;
+	put_bool(out, flux_uia_enabled_bool(self));
 }
 
 static void prop_automation_id(FluxUia *self, int role, VARIANT *out) {

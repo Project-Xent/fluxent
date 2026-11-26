@@ -619,9 +619,18 @@ static void nav_apply_content_motion(FluxNavViewData *d) {
 	cn->render_translate_y = (1.0f - p) * NAV_CONTENT_DY * d->content_dir;
 }
 
+static int nav_content_pos(FluxNavViewData const *d, int index) {
+	return index == FLUX_NAV_SETTINGS ? d->count : index;
+}
+
 static void nav_content_play(FluxNavViewData *d, int from, int to) {
-	if (!d->content_ready || from < 0) return;
-	d->content_dir = (to >= from) ? 1.0f : -1.0f;
+	if (!d->content_ready || !nav_index_live(from)) return;
+	if (!nav_motion_enabled()) {
+		flux_nav_tween_snap(&d->content_t, 1.0f);
+		nav_apply_content_motion(d);
+		return;
+	}
+	d->content_dir = nav_content_pos(d, to) >= nav_content_pos(d, from) ? 1.0f : -1.0f;
 	flux_nav_tween_snap(&d->content_t, 0.0f);
 	nav_tween_to(&d->content_t, 1.0f, NAV_CONTENT_MS);
 	nav_apply_content_motion(d);
@@ -975,9 +984,9 @@ static void nav_apply_width(FluxNavViewData *d) {
 
 uint32_t flux_nav_frame(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxNodeData *nd) {
 	( void ) store;
-	FluxNavViewData *d    = nd->component_data;
-	d->content_ready = true;
-	XentRect         rect = {0};
+	FluxNavViewData *d = nd->component_data;
+	d->content_ready   = true;
+	XentRect rect      = {0};
 	if (node != d->root || !xent_layout_rect(ctx, node, &rect)) return 0u;
 	bool  resized = rect.w != d->width || rect.h != d->height;
 	float scale   = nav_dip_scale(d);
@@ -1198,7 +1207,10 @@ static bool nav_make_content(FluxNavViewData *d) {
 	d->content = flux_factory_create_node(d->ctx, d->store, d->content_grid, FLUX_CONTROL_CONTAINER);
 	flux_uia_part_hooks(d->store, d->content, &nav_uia_main);
 	FluxNodeData *cn = flux_store_find(d->store, d->content);
-	if (cn) cn->clips_children = true;
+	if (cn) {
+		cn->clips_children      = true;
+		cn->render_clip_subtree = true;
+	}
 	xent_setgrow(d->ctx, d->content, 1.0f);
 	xent_setbasis(d->ctx, d->content, 0.0f);
 	return d->page_header && d->content;

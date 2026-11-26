@@ -1,5 +1,6 @@
 #include "flux_display_paint.h"
 #include "render/flux_dl_replay.h"
+#include "render/flux_fluent.h"
 #include "render/flux_render_internal.h"
 #include "controls/flux_module.h"
 
@@ -14,6 +15,15 @@ static D2D1_MATRIX_3X2_F paint_mul(D2D1_MATRIX_3X2_F const *a, D2D1_MATRIX_3X2_F
 	m._31 = a->_31 * b->_11 + a->_32 * b->_21 + b->_31;
 	m._32 = a->_31 * b->_12 + a->_32 * b->_22 + b->_32;
 	return m;
+}
+
+/* Record in local space, then place on whole device pixels so hairlines stay crisp after translate. */
+static FluxRect paint_place_bounds(FluxRenderCtx const *rc, FluxRect const *bounds) {
+	float sx = rc && rc->dpi.dpi_x > 0.0f ? rc->dpi.dpi_x / FLUX_DPI_BASE : 1.0f;
+	float sy = rc && rc->dpi.dpi_y > 0.0f ? rc->dpi.dpi_y / FLUX_DPI_BASE : 1.0f;
+	if (sx <= 0.0f) sx = 1.0f;
+	if (sy <= 0.0f) sy = 1.0f;
+	return flux_snap_bounds(bounds, sx, sy);
 }
 
 static void
@@ -40,16 +50,17 @@ void flux_display_paint_main(
 ) {
 	if (!store || !rc || !snap || !bounds || !state || !rc->d2d || !rc->brush) return;
 
+	FluxRect                placed = paint_place_bounds(rc, bounds);
 	FluxControlModule const *module = flux_module_get(snap->type);
 	if (module && module->record) {
-		FluxRect local = {0.0f, 0.0f, bounds->w, bounds->h};
+		FluxRect local = {0.0f, 0.0f, placed.w, placed.h};
 		XentDl  *list  = module->record(rc, snap, &local, state);
-		if (snap->rtl) xent_dl_mirror(list, bounds->w);
+		if (snap->rtl) xent_dl_mirror(list, placed.w);
 		flux_node_adoptdl(store, ( XentNodeId ) snap->id, list);
 	}
 
 	XentDl const *list = flux_node_dl(store, ( XentNodeId ) snap->id);
-	if (list) paint_replay_translated(backend, rc, list, bounds);
+	if (list) paint_replay_translated(backend, rc, list, &placed);
 }
 
 void flux_display_paint_overlay(
@@ -61,9 +72,10 @@ void flux_display_paint_overlay(
 	FluxControlModule const *module = flux_module_get(snap->type);
 	if (!module || !module->overlay) return;
 
-	FluxRect local = {0.0f, 0.0f, bounds->w, bounds->h};
-	XentDl  *list  = module->overlay(rc, snap, &local, state);
-	if (snap->rtl) xent_dl_mirror(list, bounds->w);
-	if (list) paint_replay_translated(backend, rc, list, bounds);
+	FluxRect placed = paint_place_bounds(rc, bounds);
+	FluxRect local  = {0.0f, 0.0f, placed.w, placed.h};
+	XentDl  *list   = module->overlay(rc, snap, &local, state);
+	if (snap->rtl) xent_dl_mirror(list, placed.w);
+	if (list) paint_replay_translated(backend, rc, list, &placed);
 	if (list) xent_dl_free(list);
 }

@@ -504,7 +504,8 @@ static bool nav_rec_content_layer(
 bool flux_rec_nav(XentDlBuilder *b, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds) {
 	FluxThemeColors const *t  = flux_rec_theme(rc);
 	FluxRect               pb = rec_inset(bounds, 1.0f, 1.0f);
-	if (!snap->u.nav.nav_is_pane) return nav_rec_content_layer(b, rc, &pb, snap, t);
+	/* Content offsets are relative to the root bounds, not the pane inset. */
+	if (!snap->u.nav.nav_is_pane) return nav_rec_content_layer(b, rc, bounds, snap, t);
 	if (t->contrast.active) {
 		FluxColor fill = snap->u.nav.nav_pane_solid ? t->contrast.window : t->contrast.button_face;
 		return flux_rec_fill_rect(b, &pb, fill);

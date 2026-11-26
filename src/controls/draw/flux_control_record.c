@@ -144,15 +144,13 @@ XentDl *flux_card_record(
 	( void ) state;
 	FLUX_REC_BEGIN();
 	FluxThemeColors const *t      = flux_rec_theme(rc);
+	FluxRect               sb     = flux_rec_snap_bounds(rc, bounds);
 	float                  radius = snap->corner_radius > 0.0f ? snap->corner_radius : 8.0f;
-	FluxColor              bg     = snap->background.rgba ? snap->background : t->card_bg_default;
-	float                  stroke = 1.0f;
-	if (snap->dialog_surface == FLUX_DIALOG_SURFACE_CARD) {
-		bg = t->solid_background;
-		if (t->contrast.active) stroke = 2.0f;
-	}
-	bool ok = flux_rec_fill_rounded(b, bounds, radius, bg);
-	if (ok) ok = flux_rec_stroke_rounded(b, bounds, radius, t->card_stroke_default, stroke);
+	float                  width  = flux_rec_hairline(rc);
+	if (snap->dialog_surface == FLUX_DIALOG_SURFACE_CARD && t->contrast.active) width = 2.0f * width;
+	FluxColor bg = snap->background.rgba ? snap->background : t->card_bg_default;
+	if (snap->dialog_surface == FLUX_DIALOG_SURFACE_CARD) bg = t->solid_background;
+	bool ok = flux_rec_inner_border_rounded(b, &sb, radius, width, bg, t->card_stroke_default);
 	FLUX_REC_END(ok);
 }
 

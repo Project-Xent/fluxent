@@ -30,6 +30,8 @@ FluxRect flux_rec_snap_bounds(FluxRenderCtx const *rc, FluxRect const *bounds) {
 	return flux_snap_bounds(bounds, rec_dpi_scale_x(rc), rec_dpi_scale_y(rc));
 }
 
+float flux_rec_hairline(FluxRenderCtx const *rc) { return 1.0f / rec_dpi_scale_x(rc); }
+
 float flux_rec_snapx(FluxRenderCtx const *rc, float x) {
 	float sx = rec_dpi_scale_x(rc);
 	return (floorf(x * sx) + 0.5f) / sx;
@@ -63,6 +65,19 @@ bool flux_rec_stroke_rounded(XentDlBuilder *b, FluxRect const *r, float radius, 
 	float    half  = w * 0.5f;
 	FluxRect inset = {r->x + half, r->y + half, r->w - half * 2.0f, r->h - half * 2.0f};
 	return xent_dl_strokerrect(b, flux_rec_xrect(&inset), radius, flux_rec_xcolor(c), w);
+}
+
+bool flux_rec_inner_border_rounded(
+  XentDlBuilder *b, FluxRect const *bounds, float radius, float stroke_w, FluxColor fill, FluxColor stroke
+) {
+	float    half     = stroke_w * 0.5f;
+	float    inner_r  = radius > stroke_w ? radius - stroke_w : 0.0f;
+	float    stroke_r = radius > half ? radius - half : 0.0f;
+	FluxRect inner
+	  = {bounds->x + stroke_w, bounds->y + stroke_w, bounds->w - stroke_w * 2.0f, bounds->h - stroke_w * 2.0f};
+	bool ok = true;
+	if (inner.w > 0.0f && inner.h > 0.0f) ok = flux_rec_fill_rounded(b, &inner, inner_r, fill);
+	return ok && flux_rec_stroke_rounded(b, bounds, stroke_r, stroke, stroke_w);
 }
 
 bool flux_rec_fill_circle(XentDlBuilder *b, float cx, float cy, float d, FluxColor c) {

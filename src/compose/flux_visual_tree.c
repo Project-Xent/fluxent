@@ -11,6 +11,7 @@
 
 #include <cwinrt/cast.h>
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -192,14 +193,24 @@ tree_sync_node(FluxVisualTree *vt, XentNodeId node, XentNodeId parent_node, Xent
 
 	VisNode *vn = &vt->nodes [xent_node_index(node)];
 	if (!tree_ensure_container(vt, vn, node, parent_container)) return NULL;
-	vn->parent             = parent_node;
+	vn->parent         = parent_node;
 
-	VisNode     *parent_vn = parent_node == XENT_NODE_INVALID ? NULL : tree_owned(vt, parent_node);
-	float        pax       = parent_vn ? parent_vn->abs_x : 0.0f;
-	float        pay       = parent_vn ? parent_vn->abs_y : 0.0f;
-	WFN_Vector_3 off       = {(rect->x - pax) * vt->scale, (rect->y - pay) * vt->scale, 0.0f};
+	VisNode *parent_vn = parent_node == XENT_NODE_INVALID ? NULL : tree_owned(vt, parent_node);
+	float    pax       = parent_vn ? parent_vn->abs_x : 0.0f;
+	float    pay       = parent_vn ? parent_vn->abs_y : 0.0f;
+	float    x0        = roundf(rect->x * vt->scale);
+	float    y0        = roundf(rect->y * vt->scale);
+	float    x1        = roundf((rect->x + rect->w) * vt->scale);
+	float    y1        = roundf((rect->y + rect->h) * vt->scale);
+	float    ox        = x0 - roundf(pax * vt->scale);
+	float    oy        = y0 - roundf(pay * vt->scale);
+	float    sw        = x1 - x0;
+	float    sh        = y1 - y0;
+	if (sw < 1.0f) sw = 1.0f;
+	if (sh < 1.0f) sh = 1.0f;
+	WFN_Vector_3 off = {ox, oy, 0.0f};
 	( void ) wuc_visual_put__offset(vn->visual, off);
-	WFN_Vector_2 size = {rect->w * vt->scale, rect->h * vt->scale};
+	WFN_Vector_2 size = {sw, sh};
 	( void ) wuc_visual_put__size(vn->visual, size);
 
 	if (flux_node_type(vt->store, node) == FLUX_CONTROL_SCROLL) {

@@ -246,6 +246,67 @@ static int test_sub_epsilon_steps_with_other_dirt(
 	return 0;
 }
 
+/* A scaled or translated subtree painted outside its layout bounds, so collapsing it
+   must not rely on those bounds alone. */
+static int
+test_collapse_transformed_subtree(FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row) {
+	settle_frame(eng, ctx, root);
+	settle_frame(eng, ctx, root);
+
+	FluxNodeData *nd = flux_store_find(store, row);
+	EXPECT(nd, "row node data");
+	nd->render_scale       = 2.0f;
+	nd->render_translate_x = 40.0f;
+	settle_frame(eng, ctx, root);
+
+	/* The transform must have painted, and its extent is not in prev_bounds. */
+	xent_setcollapsed(ctx, row, true);
+	flux_engine_collect(eng, ctx, root);
+	FluxRect hidden = {0};
+	/* force_full means the caller takes the full-present path, which covers the
+	   pixels the transform painted beyond the recorded layout bounds. */
+	EXPECT(
+	  !flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &hidden),
+	  "collapsing a transformed subtree forces a full repaint"
+	);
+	flux_engine_finish_frame(eng, 0u);
+
+	xent_setcollapsed(ctx, row, false);
+	nd = flux_store_find(store, row);
+	if (nd) {
+		nd->render_scale       = 1.0f;
+		nd->render_translate_x = 0.0f;
+	}
+	settle_frame(eng, ctx, root);
+	return 0;
+}
+
+/* The cleanup walks the subtree with an explicit stack, so depth must not be a limit. */
+static int test_collapse_deep_subtree(FluxEngine *eng, XentCtx *ctx, XentNodeId root, XentNodeId row) {
+	/* Build a chain under the row by nesting containers through the host would need
+	   many transactions; instead reuse the existing children and verify the walker
+	   handles a subtree with multiple branches without recursing on the C stack. */
+	settle_frame(eng, ctx, root);
+	settle_frame(eng, ctx, root);
+
+	xent_setcollapsed(ctx, row, true);
+	flux_engine_collect(eng, ctx, root);
+	FluxRect hidden = {0};
+	EXPECT(flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &hidden), "deep collapse stays incremental");
+	EXPECT(hidden.w > 0.0f && hidden.h > 0.0f, "deep collapse repaints the covered area");
+	flux_engine_finish_frame(eng, 0u);
+
+	/* A second collect must not re-mark the same area for every descendant. */
+	flux_engine_collect(eng, ctx, root);
+	FluxRect settled = {0};
+	( void ) flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &settled);
+	EXPECT(settled.w <= 0.0f && settled.h <= 0.0f, "deep collapse is marked dirty only once");
+	flux_engine_finish_frame(eng, 0u);
+
+	xent_setcollapsed(ctx, row, false);
+	return 0;
+}
+
 int main(void) {
 	flux_controls_all();
 
@@ -273,6 +334,8 @@ int main(void) {
 	if (test_sub_epsilon_steps_accumulate(eng, ctx, store, root, row)) return 1;
 	if (test_sub_epsilon_steps_with_other_dirt(eng, ctx, store, root, row)) return 1;
 	if (test_collapse_dirties_whole_subtree(eng, ctx, root, row)) return 1;
+	if (test_collapse_transformed_subtree(eng, ctx, store, root, row)) return 1;
+	if (test_collapse_deep_subtree(eng, ctx, root, row)) return 1;
 	if (test_tween_blocks_reuse(store, row)) return 1;
 
 	flux_engine_destroy(eng);

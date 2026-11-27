@@ -343,28 +343,64 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 }
 
 /*
- * Dirty the area a node drew last frame and forget the record, so the following frame
- * does not mark it again. Cheap and safe to call for nodes that were never emitted.
- */
-static void collect_forget_node(FluxEngine *eng, XentNodeId node) {
-	FluxNodeData *nd = flux_store_find(eng->store, node);
-	if (!nd) return;
-	if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
-	nd->has_prev_bounds = false;
-	nd->has_prev_render = false;
-	nd->collect_hash    = 0u;
-}
-
-/*
  * A subtree that becomes collapsed is skipped by the walk, so its previous pixels are
  * never marked dirty and the present leaves them on screen: closing a dialog showed a
  * stale blank rectangle where the buttons had been. Every node in the subtree kept its
- * own prev_bounds while it was visible, so visit the whole subtree, not just its root.
+ * own prev_bounds while it was visible, so the whole subtree has to be visited.
+ *
+ * Iterative on purpose: this runs for every collapsed child of every frame, and a deep
+ * subtree would otherwise recurse to the depth of the tree.
+ *
+ * prev_bounds is the pre-transform layout rect, so a node that was scaled or translated
+ * could have painted outside it. Ask for a full repaint in that case rather than guess
+ * the painted area.
  */
-static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId node) {
-	collect_forget_node(eng, node);
-	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
-		collect_note_hidden(eng, ctx, child);
+static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId root) {
+	uint32_t    cap   = 64;
+	uint32_t    top   = 0;
+	XentNodeId *stack = ( XentNodeId * ) xtk_alloc(sizeof(*stack) * cap);
+	if (!stack) {
+		eng->force_full = true;
+		return;
+	}
+	stack [top++] = root;
+
+	while (top > 0) {
+		XentNodeId    node = stack [--top];
+		FluxNodeData *nd   = flux_store_find(eng->store, node);
+		if (nd) {
+			if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
+			/* The recorded bounds are not the painted bounds once a transform applies. */
+			if (nd->render_scale != 1.0f
+			    || nd->render_translate_x != 0.0f
+			    || nd->render_translate_y != 0.0f
+			    || nd->render_rotate_x != 0.0f
+			    || nd->render_rotate_y != 0.0f)
+				eng->force_full = true;
+			nd->has_prev_bounds = false;
+			nd->has_prev_render = false;
+			nd->collect_hash    = 0u;
+		}
+
+		for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID;
+		  child               = xent_node_next(ctx, child))
+		{
+			if (top == cap) {
+				uint32_t    next_cap = cap * 2u;
+				XentNodeId *grown    = ( XentNodeId * ) xtk_alloc_resize(stack, sizeof(*grown) * next_cap);
+				if (!grown) {
+					xtk_alloc_free(stack);
+					eng->force_full = true;
+					return;
+				}
+				stack = grown;
+				cap   = next_cap;
+			}
+			stack [top++] = child;
+		}
+	}
+
+	xtk_alloc_free(stack);
 }
 
 static bool collect_child_visible(XentCtx *ctx, CollectFrame const *frame, XentNodeId child) {

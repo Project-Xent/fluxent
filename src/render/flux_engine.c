@@ -283,18 +283,24 @@ static void collect_track_node_dirty(
 	if (changed) {
 		if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
 		engine_expand_dirty(eng, &bounds, 4.0f);
+		/*
+		 * Advance the transform baseline only on a frame that was actually dirtied. If it
+		 * moved on every collect, an animation that steps by less than the epsilon each
+		 * frame would compare as unchanged forever: the baseline would creep along with
+		 * the value and no single step could ever cross the threshold.
+		 */
+		nd->has_prev_render          = true;
+		nd->prev_render_scale        = nd->render_scale;
+		nd->prev_render_opacity      = nd->render_opacity;
+		nd->prev_render_translate_x  = nd->render_translate_x;
+		nd->prev_render_translate_y  = nd->render_translate_y;
+		nd->prev_render_rotate_x     = nd->render_rotate_x;
+		nd->prev_render_rotate_y     = nd->render_rotate_y;
+		nd->prev_render_clip_subtree = nd->render_clip_subtree;
 	}
-	nd->prev_bounds              = bounds;
-	nd->has_prev_bounds          = true;
-	nd->collect_hash             = chash;
-	nd->has_prev_render          = true;
-	nd->prev_render_scale        = nd->render_scale;
-	nd->prev_render_opacity      = nd->render_opacity;
-	nd->prev_render_translate_x  = nd->render_translate_x;
-	nd->prev_render_translate_y  = nd->render_translate_y;
-	nd->prev_render_rotate_x     = nd->render_rotate_x;
-	nd->prev_render_rotate_y     = nd->render_rotate_y;
-	nd->prev_render_clip_subtree = nd->render_clip_subtree;
+	nd->prev_bounds     = bounds;
+	nd->has_prev_bounds = true;
+	nd->collect_hash    = chash;
 	if (frame->is_scroll && nd->component_data) {
 		float sx = frame->scroll_off_x, sy = frame->scroll_off_y;
 		if (sx != nd->prev_scroll_x || sy != nd->prev_scroll_y) {

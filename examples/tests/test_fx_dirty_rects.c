@@ -188,6 +188,33 @@ static int test_tween_blocks_reuse(FluxStore *store, XentNodeId node) {
 	return 0;
 }
 
+/* A transform that steps by less than the epsilon must still cross it eventually: the
+   baseline may only advance on a frame that was actually dirtied. */
+static int
+test_sub_epsilon_steps_accumulate(FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row) {
+	settle_frame(eng, ctx, root);
+	settle_frame(eng, ctx, root);
+
+	FluxNodeData *nd = flux_store_find(store, row);
+	EXPECT(nd, "row node data");
+	nd->render_opacity = 1.0f;
+	settle_frame(eng, ctx, root);
+
+	/* Two steps of 0.0005 each stay below the 0.001 epsilon on their own, but sum to
+	   0.001 against the last dirtied value. */
+	bool crossed = false;
+	for (int step = 0; step < 4 && !crossed; step++) {
+		nd->render_opacity -= 0.0005f;
+		flux_engine_collect(eng, ctx, root);
+		FluxRect r = {0};
+		/* Leaving the partial path means the frame repaints in full. */
+		if (!flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r)) crossed = true;
+		flux_engine_finish_frame(eng, 0u);
+	}
+	EXPECT(crossed, "sub-epsilon steps accumulate into a repaint");
+	return 0;
+}
+
 int main(void) {
 	flux_controls_all();
 
@@ -212,6 +239,7 @@ int main(void) {
 	xent_layout(ctx, root, 200.0f, 100.0f);
 
 	if (test_opacity_change_repaints(eng, ctx, store, root, row)) return 1;
+	if (test_sub_epsilon_steps_accumulate(eng, ctx, store, root, row)) return 1;
 	if (test_collapse_dirties_whole_subtree(eng, ctx, root, row)) return 1;
 	if (test_tween_blocks_reuse(store, row)) return 1;
 

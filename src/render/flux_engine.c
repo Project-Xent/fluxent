@@ -361,6 +361,14 @@ static bool collect_under_transform(FluxEngine *eng, XentCtx *ctx, XentNodeId no
 	return false;
 }
 
+static bool prev_render_transformed(FluxNodeData const *nd) {
+	return nd->prev_render_scale != 1.0f
+	    || nd->prev_render_translate_x != 0.0f
+	    || nd->prev_render_translate_y != 0.0f
+	    || nd->prev_render_rotate_x != 0.0f
+	    || nd->prev_render_rotate_y != 0.0f;
+}
+
 /*
  * A subtree that becomes collapsed is skipped by the walk, so its previous pixels are
  * never marked dirty and the present leaves them on screen: closing a dialog showed a
@@ -391,7 +399,14 @@ static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId root) 
 	while (top > 0) {
 		XentNodeId    node = stack [--top];
 		FluxNodeData *nd   = flux_store_find(eng->store, node);
-		if (nd) {
+		/*
+		 * Walk every node, but only act on one that still carries a record. The walk has to
+		 * keep descending after the first pass because descendants may never have been
+		 * cleaned, yet touching an already-cleaned node must not set force_full again --
+		 * that would repaint in full on every frame for as long as the subtree stays
+		 * collapsed, which is exactly the partial-rect win this code exists to protect.
+		 */
+		if (nd && (nd->has_prev_bounds || nd->has_prev_render)) {
 			if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
 			/*
 			 * It is the *previous* frame's transform that decided where the pixels went, and
@@ -400,13 +415,7 @@ static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId root) 
 			 * frame: prev_bounds is then the untransformed layout rect, while the screen still
 			 * holds the scaled or translated paint.
 			 */
-			if (!nd->has_prev_render
-			    || nd->prev_render_scale != 1.0f
-			    || nd->prev_render_translate_x != 0.0f
-			    || nd->prev_render_translate_y != 0.0f
-			    || nd->prev_render_rotate_x != 0.0f
-			    || nd->prev_render_rotate_y != 0.0f)
-				eng->force_full = true;
+			if (nd->has_prev_render && prev_render_transformed(nd)) eng->force_full = true;
 			nd->has_prev_bounds = false;
 			nd->has_prev_render = false;
 			nd->collect_hash    = 0u;

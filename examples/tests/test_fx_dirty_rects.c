@@ -153,10 +153,15 @@ static int test_collapse_dirties_whole_subtree(FluxEngine *eng, XentCtx *ctx, Xe
 	EXPECT(hidden.w > 0.0f && hidden.h > 0.0f, "collapsing a container repaints the area it covered");
 	flux_engine_finish_frame(eng, 0u);
 
-	/* Every descendant record was cleared, so the next frame marks nothing again. */
+	/* Every descendant record was cleared, so the next frame marks nothing again -- and it
+	   must stay on the partial path. Full present returns false and would leave `settled`
+	   empty either way, which is how the previous version of this test passed. */
 	flux_engine_collect(eng, ctx, root);
 	FluxRect settled = {0};
-	( void ) flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &settled);
+	EXPECT(
+	  flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &settled),
+	  "a collapsed subtree stops forcing full repaints"
+	);
 	EXPECT(settled.w <= 0.0f && settled.h <= 0.0f, "a collapsed subtree is marked dirty only once");
 	flux_engine_finish_frame(eng, 0u);
 
@@ -211,6 +216,11 @@ static int test_tween_blocks_reuse(FluxStore *store, XentNodeId node) {
 
 /* A transform that steps by less than the epsilon must still cross it eventually: the
    baseline may only advance on a frame that was actually dirtied. */
+/*
+ * Uses render_scale, not render_opacity: opacity below 1.0 sets has_transform, which would
+ * force the full path for that reason alone and prove nothing about the epsilon baseline.
+ * Scale returns to exactly 1.0f at the end, so has_transform stays false throughout.
+ */
 static int
 test_sub_epsilon_steps_accumulate(FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row) {
 	settle_frame(eng, ctx, root);
@@ -218,21 +228,24 @@ test_sub_epsilon_steps_accumulate(FluxEngine *eng, XentCtx *ctx, FluxStore *stor
 
 	FluxNodeData *nd = flux_store_find(store, row);
 	EXPECT(nd, "row node data");
-	nd->render_opacity = 1.0f;
+	nd->render_scale = 1.0f;
 	settle_frame(eng, ctx, root);
 
-	/* Two steps of 0.0005 each stay below the 0.001 epsilon on their own, but sum to
-	   0.001 against the last dirtied value. */
-	bool crossed = false;
-	for (int step = 0; step < 4 && !crossed; step++) {
-		nd->render_opacity -= 0.0005f;
+	/* Two steps of 0.0005 each stay below the 0.001 epsilon; together they reach it. */
+	int steps_until_full = -1;
+	for (int step = 1; step <= 4 && steps_until_full < 0; step++) {
+		nd->render_scale = 1.0f + 0.0005f * ( float ) step;
 		flux_engine_collect(eng, ctx, root);
-		FluxRect r = {0};
-		/* Leaving the partial path means the frame repaints in full. */
-		if (!flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r)) crossed = true;
+		FluxRect r       = {0};
+		bool     partial = flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r);
+		if (!partial) steps_until_full = step;
 		flux_engine_finish_frame(eng, 0u);
 	}
-	EXPECT(crossed, "sub-epsilon steps accumulate into a repaint");
+	/* The first step is below the epsilon, so it must not have left the partial path. */
+	EXPECT(steps_until_full == 2, "sub-epsilon steps accumulate into a repaint");
+
+	nd->render_scale = 1.0f;
+	settle_frame(eng, ctx, root);
 	return 0;
 }
 

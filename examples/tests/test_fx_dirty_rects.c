@@ -215,6 +215,37 @@ test_sub_epsilon_steps_accumulate(FluxEngine *eng, XentCtx *ctx, FluxStore *stor
 	return 0;
 }
 
+/* A node that has some other dirty change every frame must still let sub-epsilon
+   transform steps accumulate. The baseline may only advance when the transform itself
+   is what dirtied the frame. */
+static int test_sub_epsilon_steps_with_other_dirt(
+  FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row
+) {
+	settle_frame(eng, ctx, root);
+	settle_frame(eng, ctx, root);
+
+	FluxNodeData *nd = flux_store_find(store, row);
+	EXPECT(nd, "row node data");
+	nd->render_opacity = 1.0f;
+	settle_frame(eng, ctx, root);
+
+	bool crossed = false;
+	for (int step = 0; step < 6 && !crossed; step++) {
+		/* Some other change dirties the node every frame: the collect hash moves with it. */
+		char text [8];
+		snprintf(text, sizeof(text), "t%d", step);
+		( void ) xent_settext(ctx, row, text);
+		nd->render_opacity -= 0.0005f;
+
+		flux_engine_collect(eng, ctx, root);
+		FluxRect r = {0};
+		if (!flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r)) crossed = true;
+		flux_engine_finish_frame(eng, 0u);
+	}
+	EXPECT(crossed, "sub-epsilon steps accumulate even with other dirty changes");
+	return 0;
+}
+
 int main(void) {
 	flux_controls_all();
 
@@ -240,6 +271,7 @@ int main(void) {
 
 	if (test_opacity_change_repaints(eng, ctx, store, root, row)) return 1;
 	if (test_sub_epsilon_steps_accumulate(eng, ctx, store, root, row)) return 1;
+	if (test_sub_epsilon_steps_with_other_dirt(eng, ctx, store, root, row)) return 1;
 	if (test_collapse_dirties_whole_subtree(eng, ctx, root, row)) return 1;
 	if (test_tween_blocks_reuse(store, row)) return 1;
 

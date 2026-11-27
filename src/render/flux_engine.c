@@ -114,6 +114,7 @@ typedef struct CollectFrame {
 	FluxControlState  state;
 	XentNodeId        current_child;
 	bool              has_transform;
+	bool              under_transform; /* an ancestor carries a render transform */
 	bool              clipped_top;
 	bool              dim_item_content;
 	FluxItemTextColor item_text_color;
@@ -276,10 +277,19 @@ static void collect_track_node_dirty(
 	                        || !render_close(nd->prev_render_rotate_y, nd->render_rotate_y)
 	                        || nd->prev_render_clip_subtree != nd->render_clip_subtree);
 	bool changed = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic || transform_moved;
-	/* A transform moves its whole subtree and invalidates the previous frame's pixels
-	   under the old projection, so the affected area cannot be described by this node's
-	   bounds alone. Repaint the frame while a transform changes. */
-	if (changed && (has_transform || transform_moved)) eng->force_full = true;
+	/*
+	 * A transform moves its whole subtree and invalidates the previous frame's pixels
+	 * under the old projection, so the affected area cannot be described by this node's
+	 * bounds alone. Repaint the frame while a transform changes.
+	 *
+	 * The same holds for a node that merely *sits under* a transformed ancestor, even when
+	 * that ancestor's transform is steady: the recorded bounds are layout coordinates,
+	 * while the replay clip is set in device space, so a dirty rect derived from them would
+	 * clip the update to the wrong pixels. That is conservative -- it costs the partial
+	 * path for any subtree under a standing scale or translate -- but it is the only
+	 * correct answer until the dirty rect is mapped through the projection.
+	 */
+	if (changed && (has_transform || transform_moved || frame->under_transform)) eng->force_full = true;
 	if (changed) {
 		if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
 		engine_expand_dirty(eng, &bounds, 4.0f);
@@ -328,6 +338,8 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	  = nd
 	 && (nd->render_scale != 1.0f || nd->render_opacity < 1.0f || nd->render_translate_y != 0.0f || nd->render_translate_x != 0.0f || nd->render_rotate_x != 0.0f || nd->render_rotate_y != 0.0f);
 	if (frame->has_transform) collect_emit_transform_push(eng, frame, &rect, nd);
+	/* Sticky downwards: any ancestor transform projects everything below it. */
+	if (frame->has_transform) frame->under_transform = true;
 	frame->clipped_top = nd && nd->clip_top > 0.0f;
 	if (frame->clipped_top) collect_emit_clip_top(eng, frame, &rect, nd->clip_top);
 
@@ -470,13 +482,14 @@ static bool collect_grow_stack(CollectFrame **stack, uint32_t *stack_cap) {
 
 static bool collect_push_child(
   CollectFrame **stack, uint32_t *stack_top, uint32_t *stack_cap, XentNodeId child, FluxItemTextColor item_color,
-  float cum_scroll_x, float cum_scroll_y
+  float cum_scroll_x, float cum_scroll_y, bool under_transform
 ) {
 	if (*stack_top == *stack_cap && !collect_grow_stack(stack, stack_cap)) return false;
 	CollectFrame frame        = collect_root_frame(child);
 	frame.item_text_color     = item_color;
 	frame.cum_scroll_x        = cum_scroll_x;
 	frame.cum_scroll_y        = cum_scroll_y;
+	frame.under_transform     = under_transform;
 	(*stack) [(*stack_top)++] = frame;
 	return true;
 }
@@ -497,7 +510,7 @@ collect_visit_child(FluxEngine *eng, CollectFrame **stack, uint32_t *stack_top, 
 
 	float sx = frame->cum_scroll_x + (frame->is_scroll ? frame->scroll_off_x : 0.0f);
 	float sy = frame->cum_scroll_y + (frame->is_scroll ? frame->scroll_off_y : 0.0f);
-	if (!collect_push_child(stack, stack_top, stack_cap, child, frame->item_text_color, sx, sy))
+	if (!collect_push_child(stack, stack_top, stack_cap, child, frame->item_text_color, sx, sy, frame->under_transform))
 		eng->render_degraded = true;
 	return true;
 }

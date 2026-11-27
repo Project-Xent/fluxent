@@ -413,6 +413,41 @@ static int test_collapse_under_transformed_ancestor(
 	return 0;
 }
 
+/* A child under a *steady* transformed ancestor still paints through that projection, so a
+   dirty rect derived from its layout bounds would clip the update to the wrong pixels. */
+static int test_change_under_steady_transformed_ancestor(
+  FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row
+) {
+	settle_frame(eng, ctx, root);
+	settle_frame(eng, ctx, root);
+
+	XentNodeId child = xent_node_first(ctx, row);
+	EXPECT(child != XENT_NODE_INVALID, "row has a child");
+
+	FluxNodeData *parent = flux_store_find(store, row);
+	EXPECT(parent, "row node data");
+	parent->render_scale = 1.5f;
+	settle_frame(eng, ctx, root); /* the transform is now the steady baseline */
+
+	/* Only the child's own content changes; the ancestor transform does not move. */
+	FluxNodeData *kid = flux_store_find(store, child);
+	EXPECT(kid, "child node data");
+	kid->visuals.background.rgba = 0xff3366ccu;
+
+	flux_engine_collect(eng, ctx, root);
+	FluxRect r = {0};
+	EXPECT(
+	  !flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r),
+	  "a change under a steady transform leaves the partial path"
+	);
+	flux_engine_finish_frame(eng, 0u);
+
+	parent = flux_store_find(store, row);
+	if (parent) parent->render_scale = 1.0f;
+	settle_frame(eng, ctx, root);
+	return 0;
+}
+
 int main(void) {
 	flux_controls_all();
 
@@ -443,6 +478,7 @@ int main(void) {
 	if (test_collapse_transformed_subtree(eng, ctx, store, root, row)) return 1;
 	if (test_collapse_after_transform_reset(eng, ctx, store, root, row)) return 1;
 	if (test_collapse_under_transformed_ancestor(eng, ctx, store, root, row)) return 1;
+	if (test_change_under_steady_transformed_ancestor(eng, ctx, store, root, row)) return 1;
 	if (test_collapse_deep_subtree(eng, ctx, host, root, row)) return 1;
 	if (test_tween_blocks_reuse(store, row)) return 1;
 

@@ -1,5 +1,6 @@
 #include "flux_display_paint.h"
 #include "render/flux_dl_replay.h"
+#include "render/flux_render_cache.h"
 #include "render/flux_render_internal.h"
 #include "controls/flux_module.h"
 
@@ -40,7 +41,9 @@ static void paint_propagate_timers(FluxRenderCtx const *rc, bool local_anim, dou
 		*rc->next_redraw = local_redraw;
 }
 
-static bool paint_can_reuse(FluxNodeData const *nd, uint64_t hash, float w, float h, bool force_dyn) {
+static bool
+paint_can_reuse(FluxNodeData const *nd, uint64_t hash, float w, float h, bool force_dyn, FluxCacheEntry const *entry) {
+	if (flux_rcache_entry_animating(entry)) return false;
 	return nd
 	    && !nd->dl_dynamic
 	    && !force_dyn
@@ -51,6 +54,36 @@ static bool paint_can_reuse(FluxNodeData const *nd, uint64_t hash, float w, floa
 	    && nd->dl_h == h;
 }
 
+static void paint_record_main(
+  FluxStore *store, FluxControlModule const *module, FluxRenderCtx const *rc, FluxRenderSnap const *snap,
+  FluxRect const *bounds, FluxControlState const *state
+) {
+	XentNodeId            node      = ( XentNodeId ) snap->id;
+	FluxNodeData         *nd        = flux_store_find(store, node);
+	bool                  force_dyn = false;
+	uint64_t              hash      = flux_snap_hash(snap, state, bounds->w, bounds->h, rc, &force_dyn);
+	FluxCacheEntry const *entry     = rc->cache ? flux_render_cache_get(rc->cache, ( uint64_t ) node) : NULL;
+	if (paint_can_reuse(nd, hash, bounds->w, bounds->h, force_dyn, entry)) return;
+
+	FluxRect      local        = {0.0f, 0.0f, bounds->w, bounds->h};
+	bool          local_anim   = false;
+	double        local_redraw = 0.0;
+	FluxRenderCtx rec_rc       = *rc;
+	rec_rc.animations_active   = &local_anim;
+	rec_rc.next_redraw         = &local_redraw;
+	XentDl *list               = module->record(&rec_rc, snap, &local, state);
+	if (snap->rtl) xent_dl_mirror(list, bounds->w);
+	flux_node_adoptdl(store, node, list);
+	nd = flux_store_find(store, node);
+	if (nd) {
+		nd->dl_hash    = hash;
+		nd->dl_w       = bounds->w;
+		nd->dl_h       = bounds->h;
+		nd->dl_dynamic = (local_anim || local_redraw > 0.0 || force_dyn) ? 1u : 0u;
+	}
+	paint_propagate_timers(rc, local_anim, local_redraw);
+}
+
 void flux_display_paint_main(
   FluxStore *store, XtkBackend *backend, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
@@ -58,31 +91,7 @@ void flux_display_paint_main(
 	if (!store || !rc || !snap || !bounds || !state || !rc->d2d || !rc->brush) return;
 
 	FluxControlModule const *module = flux_module_get(snap->type);
-	if (module && module->record) {
-		XentNodeId    node      = ( XentNodeId ) snap->id;
-		FluxNodeData *nd        = flux_store_find(store, node);
-		bool          force_dyn = false;
-		uint64_t      hash      = flux_snap_hash(snap, state, bounds->w, bounds->h, rc, &force_dyn);
-		if (!paint_can_reuse(nd, hash, bounds->w, bounds->h, force_dyn)) {
-			FluxRect      local        = {0.0f, 0.0f, bounds->w, bounds->h};
-			bool          local_anim   = false;
-			double        local_redraw = 0.0;
-			FluxRenderCtx rec_rc       = *rc;
-			rec_rc.animations_active   = &local_anim;
-			rec_rc.next_redraw         = &local_redraw;
-			XentDl *list               = module->record(&rec_rc, snap, &local, state);
-			if (snap->rtl) xent_dl_mirror(list, bounds->w);
-			flux_node_adoptdl(store, node, list);
-			nd = flux_store_find(store, node);
-			if (nd) {
-				nd->dl_hash    = hash;
-				nd->dl_w       = bounds->w;
-				nd->dl_h       = bounds->h;
-				nd->dl_dynamic = (local_anim || local_redraw > 0.0 || force_dyn) ? 1u : 0u;
-			}
-			paint_propagate_timers(rc, local_anim, local_redraw);
-		}
-	}
+	if (module && module->record) paint_record_main(store, module, rc, snap, bounds, state);
 
 	XentDl const *list = flux_node_dl(store, ( XentNodeId ) snap->id);
 	if (list) paint_replay_translated(backend, rc, list, bounds);

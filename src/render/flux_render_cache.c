@@ -213,3 +213,16 @@ void flux_rcache_evict(FluxRenderCache *cache, uint64_t age_threshold) {
 		rc_delete_slot(cache, oldest_idx);
 	}
 }
+
+bool flux_rcache_entry_animating(FluxCacheEntry const *entry) {
+	if (!entry) return false;
+	return entry->hover_anim.active
+	    || entry->press_anim.active
+	    || entry->focus_anim.active
+	    || entry->check_anim.active
+	    || entry->slider_anim.active
+	    || entry->progress_anim.active
+	    || entry->scroll_anim_x.active
+	    || entry->scroll_anim_y.active
+	    || entry->color_anim.active;
+}

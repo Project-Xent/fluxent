@@ -40,6 +40,8 @@ struct FluxEngine {
 	FluxRect          prev_dirty;
 };
 
+static bool render_close(float a, float b) { return fabsf(a - b) <= 0.001f; }
+
 static void engine_expand_dirty(FluxEngine *eng, FluxRect const *r, float pad) {
 	if (!eng || !r || r->w <= 0.0f || r->h <= 0.0f) return;
 	FluxRect d = {r->x - pad, r->y - pad, r->w + pad * 2.0f, r->h + pad * 2.0f};
@@ -110,6 +112,7 @@ typedef struct CollectFrame {
 	FluxControlState  state;
 	XentNodeId        current_child;
 	bool              has_transform;
+	bool              under_transform;
 	bool              clipped_top;
 	bool              dim_item_content;
 	FluxItemTextColor item_text_color;
@@ -242,6 +245,40 @@ static void collect_control_snapshot(FluxEngine *eng, XentCtx *ctx, CollectFrame
 	collect_item_content(frame);
 }
 
+static bool render_transform_moved(FluxNodeData const *nd) {
+	if (!nd->has_prev_render) return false;
+	return !render_close(nd->prev_render_scale, nd->render_scale)
+	    || !render_close(nd->prev_render_opacity, nd->render_opacity)
+	    || !render_close(nd->prev_render_translate_x, nd->render_translate_x)
+	    || !render_close(nd->prev_render_translate_y, nd->render_translate_y)
+	    || !render_close(nd->prev_render_rotate_x, nd->render_rotate_x)
+	    || !render_close(nd->prev_render_rotate_y, nd->render_rotate_y)
+	    || nd->prev_render_clip_subtree != nd->render_clip_subtree;
+}
+
+static void render_save_prev(FluxNodeData *nd) {
+	nd->has_prev_render          = true;
+	nd->prev_render_scale        = nd->render_scale;
+	nd->prev_render_opacity      = nd->render_opacity;
+	nd->prev_render_translate_x  = nd->render_translate_x;
+	nd->prev_render_translate_y  = nd->render_translate_y;
+	nd->prev_render_rotate_x     = nd->render_rotate_x;
+	nd->prev_render_rotate_y     = nd->render_rotate_y;
+	nd->prev_render_clip_subtree = nd->render_clip_subtree;
+}
+
+static void
+collect_track_scroll_dirty(FluxEngine *eng, CollectFrame const *frame, FluxNodeData *nd, FluxRect const *bounds) {
+	if (!frame->is_scroll || !nd->component_data) return;
+	float sx = frame->scroll_off_x;
+	float sy = frame->scroll_off_y;
+	if (sx == nd->prev_scroll_x && sy == nd->prev_scroll_y) return;
+	engine_expand_dirty(eng, bounds, 4.0f);
+	flux_uia_mark_dirty(eng->store, frame->node, FLUX_UIA_DIRTY_PATTERN);
+	nd->prev_scroll_x = sx;
+	nd->prev_scroll_y = sy;
+}
+
 static void collect_track_node_dirty(
   FluxEngine *eng, CollectFrame const *frame, XentRect const *rect, FluxNodeData *nd, bool has_transform
 ) {
@@ -249,28 +286,22 @@ static void collect_track_node_dirty(
 		eng->force_full = true;
 		return;
 	}
-	FluxRect bounds  = {frame->abs_x - frame->cum_scroll_x, frame->abs_y - frame->cum_scroll_y, rect->w, rect->h};
-	bool     dyn     = false;
-	uint64_t chash   = flux_snap_hash(&frame->snapshot, &frame->state, rect->w, rect->h, NULL, &dyn);
-	bool     moved   = !nd->has_prev_bounds || memcmp(&nd->prev_bounds, &bounds, sizeof(bounds)) != 0;
-	bool     changed = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic;
-	if (has_transform && changed) eng->force_full = true;
+	FluxRect bounds = {frame->abs_x - frame->cum_scroll_x, frame->abs_y - frame->cum_scroll_y, rect->w, rect->h};
+	bool     dyn    = false;
+	uint64_t chash  = flux_snap_hash(&frame->snapshot, &frame->state, rect->w, rect->h, NULL, &dyn);
+	bool     moved  = !nd->has_prev_bounds || memcmp(&nd->prev_bounds, &bounds, sizeof(bounds)) != 0;
+	bool     transform_moved = render_transform_moved(nd);
+	bool     changed         = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic || transform_moved;
+	if (changed && (has_transform || transform_moved || frame->under_transform)) eng->force_full = true;
 	if (changed) {
 		if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
 		engine_expand_dirty(eng, &bounds, 4.0f);
+		render_save_prev(nd);
 	}
 	nd->prev_bounds     = bounds;
 	nd->has_prev_bounds = true;
 	nd->collect_hash    = chash;
-	if (frame->is_scroll && nd->component_data) {
-		float sx = frame->scroll_off_x, sy = frame->scroll_off_y;
-		if (sx != nd->prev_scroll_x || sy != nd->prev_scroll_y) {
-			engine_expand_dirty(eng, &bounds, 4.0f);
-			flux_uia_mark_dirty(eng->store, frame->node, FLUX_UIA_DIRTY_PATTERN);
-			nd->prev_scroll_x = sx;
-			nd->prev_scroll_y = sy;
-		}
-	}
+	collect_track_scroll_dirty(eng, frame, nd, &bounds);
 }
 
 static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame) {
@@ -289,6 +320,7 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	  = nd
 	 && (nd->render_scale != 1.0f || nd->render_opacity < 1.0f || nd->render_translate_y != 0.0f || nd->render_translate_x != 0.0f || nd->render_rotate_x != 0.0f || nd->render_rotate_y != 0.0f);
 	if (frame->has_transform) collect_emit_transform_push(eng, frame, &rect, nd);
+	if (frame->has_transform) frame->under_transform = true;
 	frame->clipped_top = nd && nd->clip_top > 0.0f;
 	if (frame->clipped_top) collect_emit_clip_top(eng, frame, &rect, nd->clip_top);
 
@@ -301,6 +333,66 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 
 	frame->current_child = xent_node_first(ctx, frame->node);
 	frame->main_emitted  = true;
+}
+
+static bool prev_render_transformed(FluxNodeData const *nd) {
+	if (!nd->has_prev_render) return false;
+	return nd->prev_render_scale != 1.0f
+	    || nd->prev_render_translate_x != 0.0f
+	    || nd->prev_render_translate_y != 0.0f
+	    || nd->prev_render_rotate_x != 0.0f
+	    || nd->prev_render_rotate_y != 0.0f;
+}
+
+static void collect_forget_hidden_node(FluxEngine *eng, FluxNodeData *nd, bool under_transform) {
+	if (!nd || (!nd->has_prev_bounds && !nd->has_prev_render)) return;
+	if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
+	if (under_transform || prev_render_transformed(nd)) eng->force_full = true;
+	nd->has_prev_bounds = false;
+	nd->has_prev_render = false;
+	nd->collect_hash    = 0u;
+}
+
+static bool
+hidden_stack_push(XentNodeId **stack, uint32_t *top, uint32_t *cap, XentNodeId *inline_buf, XentNodeId node) {
+	if (*top == *cap) {
+		uint32_t    next_cap = *cap * 2u;
+		XentNodeId *grown = *stack == inline_buf ? ( XentNodeId * ) xtk_alloc(sizeof(*grown) * next_cap)
+		                                         : ( XentNodeId * ) xtk_alloc_resize(*stack, sizeof(*grown) * next_cap);
+		if (!grown) return false;
+		if (*stack == inline_buf) memcpy(grown, inline_buf, sizeof(*grown) * (*top));
+		*stack = grown;
+		*cap   = next_cap;
+	}
+	(*stack) [(*top)++] = node;
+	return true;
+}
+
+static bool hidden_push_children(
+  XentCtx *ctx, XentNodeId **stack, uint32_t *top, uint32_t *cap, XentNodeId *inline_buf, XentNodeId node
+) {
+	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
+		if (!hidden_stack_push(stack, top, cap, inline_buf, child)) return false;
+	return true;
+}
+
+static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId root, bool under_transform) {
+	XentNodeId  inline_buf [64];
+	XentNodeId *stack = inline_buf;
+	uint32_t    cap   = 64;
+	uint32_t    top   = 0;
+	stack [top++]     = root;
+
+	while (top > 0) {
+		XentNodeId node = stack [--top];
+		collect_forget_hidden_node(eng, flux_store_find(eng->store, node), under_transform);
+		if (!hidden_push_children(ctx, &stack, &top, &cap, inline_buf, node)) {
+			eng->force_full = true;
+			break;
+		}
+	}
+
+	if (stack != inline_buf) xtk_alloc_free(stack);
 }
 
 static bool collect_child_visible(XentCtx *ctx, CollectFrame const *frame, XentNodeId child) {
@@ -331,13 +423,14 @@ static bool collect_grow_stack(CollectFrame **stack, uint32_t *stack_cap) {
 
 static bool collect_push_child(
   CollectFrame **stack, uint32_t *stack_top, uint32_t *stack_cap, XentNodeId child, FluxItemTextColor item_color,
-  float cum_scroll_x, float cum_scroll_y
+  float cum_scroll_x, float cum_scroll_y, bool under_transform
 ) {
 	if (*stack_top == *stack_cap && !collect_grow_stack(stack, stack_cap)) return false;
 	CollectFrame frame        = collect_root_frame(child);
 	frame.item_text_color     = item_color;
 	frame.cum_scroll_x        = cum_scroll_x;
 	frame.cum_scroll_y        = cum_scroll_y;
+	frame.under_transform     = under_transform;
 	(*stack) [(*stack_top)++] = frame;
 	return true;
 }
@@ -349,13 +442,16 @@ collect_visit_child(FluxEngine *eng, CollectFrame **stack, uint32_t *stack_top, 
 
 	XentNodeId child     = frame->current_child;
 	frame->current_child = xent_node_next(ctx, child);
-	if (xent_collapsed(ctx, child)) return true;
+	if (xent_collapsed(ctx, child)) {
+		collect_note_hidden(eng, ctx, child, frame->under_transform);
+		return true;
+	}
 	if (frame->node != eng->root && flux_node_lifted(eng->store, child)) return true;
 	if (!collect_child_visible(ctx, frame, child)) return true;
 
 	float sx = frame->cum_scroll_x + (frame->is_scroll ? frame->scroll_off_x : 0.0f);
 	float sy = frame->cum_scroll_y + (frame->is_scroll ? frame->scroll_off_y : 0.0f);
-	if (!collect_push_child(stack, stack_top, stack_cap, child, frame->item_text_color, sx, sy))
+	if (!collect_push_child(stack, stack_top, stack_cap, child, frame->item_text_color, sx, sy, frame->under_transform))
 		eng->render_degraded = true;
 	return true;
 }

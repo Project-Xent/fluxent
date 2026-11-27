@@ -93,4 +93,6 @@ void             flux_render_cache_remove(FluxRenderCache *cache, uint64_t node_
 
 void             flux_rcache_evict(FluxRenderCache *cache, uint64_t age_threshold);
 
+bool             flux_rcache_entry_animating(FluxCacheEntry const *entry);
+
 #endif

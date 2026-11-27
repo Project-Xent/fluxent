@@ -8,6 +8,7 @@
 #include <cwinrt/cast.h>
 #include <cd2d.h>
 
+#include <stdbool.h>
 #include <stdlib.h>
 
 struct FluxSurface {

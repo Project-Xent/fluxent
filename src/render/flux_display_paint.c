@@ -74,7 +74,6 @@ void flux_display_paint_main(
 		bool                  force_dyn = false;
 		uint64_t              hash      = flux_snap_hash(snap, state, bounds->w, bounds->h, rc, &force_dyn);
 		FluxCacheEntry const *entry     = rc->cache ? flux_render_cache_get(rc->cache, ( uint64_t ) node) : NULL;
-		bool                  tweening  = flux_rcache_entry_animating(entry);
 		if (!flux_display_paint_can_reuse(nd, hash, bounds->w, bounds->h, force_dyn, entry)) {
 			FluxRect      local        = {0.0f, 0.0f, bounds->w, bounds->h};
 			bool          local_anim   = false;
@@ -90,9 +89,15 @@ void flux_display_paint_main(
 				nd->dl_hash    = hash;
 				nd->dl_w       = bounds->w;
 				nd->dl_h       = bounds->h;
-				nd->dl_dynamic = (local_anim || local_redraw > 0.0 || force_dyn || tweening) ? 1u : 0u;
+				nd->dl_dynamic = (local_anim || local_redraw > 0.0 || force_dyn) ? 1u : 0u;
 			}
-			paint_propagate_timers(rc, local_anim || tweening, local_redraw);
+			/*
+			 * Only what record() itself reported may ask for another frame. Folding
+			 * `tweening` in here made the frame self-sustaining: a live tween forced a
+			 * re-record, the re-record kept reporting "animating", and the app requested
+			 * an immediate redraw forever -- a 100% CPU loop that never settles.
+			 */
+			paint_propagate_timers(rc, local_anim, local_redraw);
 		}
 	}
 

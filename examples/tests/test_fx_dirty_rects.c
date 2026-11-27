@@ -69,6 +69,27 @@ static XentNodeId mount_row(XtkHost *host) {
 	return row_id;
 }
 
+/* Mount a chain of `depth` nested containers under `parent`, one transaction each. */
+static XentNodeId mount_chain(XtkHost *host, XentNodeId parent, int depth) {
+	XentNodeId top = XENT_NODE_INVALID;
+	for (int i = 0; i < depth; i++) {
+		XtkBatch *b = xtk_batch_alloc(host->vt->revision(host));
+		if (!b) return top;
+		XtkNodeRef par = parent == XENT_NODE_INVALID ? xtk_ref_none() : xtk_ref_existing(( XtkCtrl ) parent);
+		XtkLocalId id  = xtk_batch_create(b, XTK_CTRL_CONTAINER, par, xtk_ref_none(), NULL, 0u);
+		if (id == XTK_LOCAL_INVALID) {
+			xtk_batch_free(b);
+			return top;
+		}
+		XentNodeId made = commit_one(host, b);
+		xtk_batch_free(b);
+		if (made == XENT_NODE_INVALID) return top;
+		top    = made;
+		parent = made;
+	}
+	return top;
+}
+
 /* Run one collect + finish_frame pair so the engine has a baseline. */
 static void settle_frame(FluxEngine *eng, XentCtx *ctx, XentNodeId root) {
 	flux_engine_collect(eng, ctx, root);
@@ -231,15 +252,20 @@ static int test_sub_epsilon_steps_with_other_dirt(
 
 	bool crossed = false;
 	for (int step = 0; step < 6 && !crossed; step++) {
-		/* Some other change dirties the node every frame: the collect hash moves with it. */
-		char text [8];
-		snprintf(text, sizeof(text), "t%d", step);
-		( void ) xent_settext(ctx, row, text);
-		nd->render_opacity -= 0.0005f;
+		/* An unrelated visual change dirties the node every frame: the snapshot background
+		   feeds flux_snap_hash, so the collect hash moves with it. */
+		nd->visuals.background.rgba  = 0xff000000u | ( uint32_t ) (step * 0x101010u);
+		nd->render_opacity          -= 0.0005f;
 
 		flux_engine_collect(eng, ctx, root);
-		FluxRect r = {0};
-		if (!flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r)) crossed = true;
+
+		/* Prove the unrelated change alone dirties the frame: opacity is still within
+		   epsilon of the baseline on the early steps, so a dirty rect here is not from it. */
+		FluxRect r       = {0};
+		bool     partial = flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r);
+		bool     dirtied = !partial || r.w > 0.0f || r.h > 0.0f;
+		EXPECT(dirtied, "each unrelated change dirties the frame on its own");
+		if (!partial) crossed = true;
 		flux_engine_finish_frame(eng, 0u);
 	}
 	EXPECT(crossed, "sub-epsilon steps accumulate even with other dirty changes");
@@ -281,11 +307,18 @@ test_collapse_transformed_subtree(FluxEngine *eng, XentCtx *ctx, FluxStore *stor
 	return 0;
 }
 
-/* The cleanup walks the subtree with an explicit stack, so depth must not be a limit. */
-static int test_collapse_deep_subtree(FluxEngine *eng, XentCtx *ctx, XentNodeId root, XentNodeId row) {
-	/* Build a chain under the row by nesting containers through the host would need
-	   many transactions; instead reuse the existing children and verify the walker
-	   handles a subtree with multiple branches without recursing on the C stack. */
+/* The cleanup walks the subtree with an explicit stack, so depth must not be a limit.
+   Builds a chain deeper than the walker's initial stack capacity (64). */
+static int test_collapse_deep_subtree(FluxEngine *eng, XentCtx *ctx, XtkHost *host, XentNodeId root, XentNodeId row) {
+	XentNodeId deep = mount_chain(host, row, 128);
+	EXPECT(deep != XENT_NODE_INVALID && deep != row, "mounted a deep chain");
+
+	/* Count the chain so a silently failed mount cannot pass this test. */
+	int depth = 0;
+	for (XentNodeId n = deep; n != XENT_NODE_INVALID && n != row; n = xent_node_parent(ctx, n)) depth++;
+	EXPECT(depth >= 100, "the chain is deeper than the walker's initial capacity");
+
+	xent_layout(ctx, root, 200.0f, 100.0f);
 	settle_frame(eng, ctx, root);
 	settle_frame(eng, ctx, root);
 
@@ -304,6 +337,66 @@ static int test_collapse_deep_subtree(FluxEngine *eng, XentCtx *ctx, XentNodeId 
 	flux_engine_finish_frame(eng, 0u);
 
 	xent_setcollapsed(ctx, row, false);
+	return 0;
+}
+
+/* Resetting the transform and collapsing in the same frame must still cover the pixels
+   the previous frame painted under that transform. */
+static int
+test_collapse_after_transform_reset(FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row) {
+	settle_frame(eng, ctx, root);
+	settle_frame(eng, ctx, root);
+
+	FluxNodeData *nd = flux_store_find(store, row);
+	EXPECT(nd, "row node data");
+	nd->render_scale = 2.0f;
+	settle_frame(eng, ctx, root); /* paints while scaled */
+
+	nd->render_scale = 1.0f;      /* reset, then collapse in the same frame */
+	xent_setcollapsed(ctx, row, true);
+	flux_engine_collect(eng, ctx, root);
+	FluxRect hidden = {0};
+	EXPECT(
+	  !flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &hidden),
+	  "collapse after a transform reset still forces a full repaint"
+	);
+	flux_engine_finish_frame(eng, 0u);
+
+	xent_setcollapsed(ctx, row, false);
+	settle_frame(eng, ctx, root);
+	return 0;
+}
+
+/* A subtree under a transformed ancestor paints through that ancestor's projection, so
+   its own layout bounds do not cover its pixels either. */
+static int test_collapse_under_transformed_ancestor(
+  FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row
+) {
+	settle_frame(eng, ctx, root);
+	settle_frame(eng, ctx, root);
+
+	FluxNodeData *parent = flux_store_find(store, row);
+	EXPECT(parent, "row node data");
+	parent->render_scale = 2.0f;
+	settle_frame(eng, ctx, root);
+
+	/* Collapse a child while the ancestor keeps its transform. */
+	XentNodeId child = xent_node_first(ctx, row);
+	EXPECT(child != XENT_NODE_INVALID, "row has a child");
+	xent_setcollapsed(ctx, child, true);
+
+	flux_engine_collect(eng, ctx, root);
+	FluxRect hidden = {0};
+	EXPECT(
+	  !flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &hidden),
+	  "collapsing under a transformed ancestor forces a full repaint"
+	);
+	flux_engine_finish_frame(eng, 0u);
+
+	xent_setcollapsed(ctx, child, false);
+	parent = flux_store_find(store, row);
+	if (parent) parent->render_scale = 1.0f;
+	settle_frame(eng, ctx, root);
 	return 0;
 }
 
@@ -335,7 +428,9 @@ int main(void) {
 	if (test_sub_epsilon_steps_with_other_dirt(eng, ctx, store, root, row)) return 1;
 	if (test_collapse_dirties_whole_subtree(eng, ctx, root, row)) return 1;
 	if (test_collapse_transformed_subtree(eng, ctx, store, root, row)) return 1;
-	if (test_collapse_deep_subtree(eng, ctx, root, row)) return 1;
+	if (test_collapse_after_transform_reset(eng, ctx, store, root, row)) return 1;
+	if (test_collapse_under_transformed_ancestor(eng, ctx, store, root, row)) return 1;
+	if (test_collapse_deep_subtree(eng, ctx, host, root, row)) return 1;
 	if (test_tween_blocks_reuse(store, row)) return 1;
 
 	flux_engine_destroy(eng);

@@ -343,6 +343,25 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 }
 
 /*
+ * True when this node or any ancestor currently carries a render transform. A subtree
+ * under a transformed ancestor is painted through that ancestor's projection, so its
+ * recorded layout bounds do not bound its pixels either.
+ */
+static bool collect_under_transform(FluxEngine *eng, XentCtx *ctx, XentNodeId node) {
+	for (; node != XENT_NODE_INVALID; node = xent_node_parent(ctx, node)) {
+		FluxNodeData const *nd = flux_store_find(eng->store, node);
+		if (!nd) continue;
+		if (nd->prev_render_scale != 1.0f
+		    || nd->prev_render_translate_x != 0.0f
+		    || nd->prev_render_translate_y != 0.0f
+		    || nd->prev_render_rotate_x != 0.0f
+		    || nd->prev_render_rotate_y != 0.0f)
+			return true;
+	}
+	return false;
+}
+
+/*
  * A subtree that becomes collapsed is skipped by the walk, so its previous pixels are
  * never marked dirty and the present leaves them on screen: closing a dialog showed a
  * stale blank rectangle where the buttons had been. Every node in the subtree kept its
@@ -365,17 +384,28 @@ static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId root) 
 	}
 	stack [top++] = root;
 
+	/* One check for the subtree root covers every descendant: an ancestor transform
+	   applies to the whole subtree below it. */
+	if (collect_under_transform(eng, ctx, xent_node_parent(ctx, root))) eng->force_full = true;
+
 	while (top > 0) {
 		XentNodeId    node = stack [--top];
 		FluxNodeData *nd   = flux_store_find(eng->store, node);
 		if (nd) {
 			if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
-			/* The recorded bounds are not the painted bounds once a transform applies. */
-			if (nd->render_scale != 1.0f
-			    || nd->render_translate_x != 0.0f
-			    || nd->render_translate_y != 0.0f
-			    || nd->render_rotate_x != 0.0f
-			    || nd->render_rotate_y != 0.0f)
+			/*
+			 * It is the *previous* frame's transform that decided where the pixels went, and
+			 * those pixels are what has to be erased. Checking the current values misses the
+			 * case where a node is reset to its default transform and collapsed in the same
+			 * frame: prev_bounds is then the untransformed layout rect, while the screen still
+			 * holds the scaled or translated paint.
+			 */
+			if (!nd->has_prev_render
+			    || nd->prev_render_scale != 1.0f
+			    || nd->prev_render_translate_x != 0.0f
+			    || nd->prev_render_translate_y != 0.0f
+			    || nd->prev_render_rotate_x != 0.0f
+			    || nd->prev_render_rotate_y != 0.0f)
 				eng->force_full = true;
 			nd->has_prev_bounds = false;
 			nd->has_prev_render = false;

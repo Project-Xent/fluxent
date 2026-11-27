@@ -442,6 +442,17 @@ static int test_change_under_steady_transformed_ancestor(
 	);
 	flux_engine_finish_frame(eng, 0u);
 
+	/* And with nothing changed at all, an idle frame under a standing transform must stay
+	   partial -- otherwise every frame would repaint in full again. */
+	flux_engine_collect(eng, ctx, root);
+	FluxRect idle = {0};
+	EXPECT(
+	  flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &idle),
+	  "idle frames under a standing transform stay partial"
+	);
+	EXPECT(idle.w <= 0.0f && idle.h <= 0.0f, "an idle frame under a standing transform is not dirty");
+	flux_engine_finish_frame(eng, 0u);
+
 	parent = flux_store_find(store, row);
 	if (parent) parent->render_scale = 1.0f;
 	settle_frame(eng, ctx, root);

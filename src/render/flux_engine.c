@@ -330,6 +330,21 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	frame->main_emitted  = true;
 }
 
+/*
+ * A subtree that becomes collapsed is skipped by the walk, so its previous pixels are
+ * never marked dirty and the present leaves them on screen: closing a dialog showed a
+ * stale blank rectangle where the buttons had been. Repaint the last bounds this node
+ * reported, then forget them so the next frame does not mark the same area again.
+ */
+static void collect_note_hidden(FluxEngine *eng, XentNodeId node) {
+	FluxNodeData *nd = flux_store_find(eng->store, node);
+	if (!nd || !nd->has_prev_bounds) return;
+	engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
+	nd->has_prev_bounds = false;
+	nd->has_prev_render = false;
+	nd->collect_hash    = 0u;
+}
+
 static bool collect_child_visible(XentCtx *ctx, CollectFrame const *frame, XentNodeId child) {
 	if (!frame->is_scroll) return true;
 
@@ -376,7 +391,10 @@ collect_visit_child(FluxEngine *eng, CollectFrame **stack, uint32_t *stack_top, 
 
 	XentNodeId child     = frame->current_child;
 	frame->current_child = xent_node_next(ctx, child);
-	if (xent_collapsed(ctx, child)) return true;
+	if (xent_collapsed(ctx, child)) {
+		collect_note_hidden(eng, child);
+		return true;
+	}
 	if (frame->node != eng->root && flux_node_lifted(eng->store, child)) return true;
 	if (!collect_child_visible(ctx, frame, child)) return true;
 

@@ -132,6 +132,11 @@ test_opacity_change_repaints(FluxEngine *eng, XentCtx *ctx, FluxStore *store, Xe
 	EXPECT(flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &steady), "steady state stays incremental");
 	EXPECT(steady.w <= 0.0f && steady.h <= 0.0f, "rewriting the same opacity does not dirty the frame");
 	flux_engine_finish_frame(eng, 0u);
+
+	/* Restore the default, or every later test inherits has_transform on this node. */
+	nd                 = flux_store_find(store, row);
+	nd->render_opacity = 1.0f;
+	settle_frame(eng, ctx, root);
 	return 0;
 }
 
@@ -215,11 +220,11 @@ static int test_tween_blocks_reuse(FluxStore *store, XentNodeId node) {
 }
 
 /* A transform that steps by less than the epsilon must still cross it eventually: the
-   baseline may only advance on a frame that was actually dirtied. */
-/*
- * Uses render_scale, not render_opacity: opacity below 1.0 sets has_transform, which would
- * force the full path for that reason alone and prove nothing about the epsilon baseline.
- * Scale returns to exactly 1.0f at the end, so has_transform stays false throughout.
+   baseline may only advance on a frame that was actually dirtied.
+ *
+ * Uses render_scale on a node with no children, and steps by 0.0006: two steps are
+ * 0.0012 apart, clear of the 0.001 epsilon on both sides. Stepping by 0.0005 and
+ * relying on 1.0f + 0.001f landing just above the threshold would be float luck.
  */
 static int
 test_sub_epsilon_steps_accumulate(FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row) {
@@ -231,17 +236,18 @@ test_sub_epsilon_steps_accumulate(FluxEngine *eng, XentCtx *ctx, FluxStore *stor
 	nd->render_scale = 1.0f;
 	settle_frame(eng, ctx, root);
 
-	/* Two steps of 0.0005 each stay below the 0.001 epsilon; together they reach it. */
-	int steps_until_full = -1;
+	int  steps_until_full   = -1;
+	bool first_step_partial = false;
 	for (int step = 1; step <= 4 && steps_until_full < 0; step++) {
-		nd->render_scale = 1.0f + 0.0005f * ( float ) step;
+		nd->render_scale = 1.0f + 0.0006f * ( float ) step;
 		flux_engine_collect(eng, ctx, root);
 		FluxRect r       = {0};
 		bool     partial = flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r);
+		if (step == 1) first_step_partial = partial;
 		if (!partial) steps_until_full = step;
 		flux_engine_finish_frame(eng, 0u);
 	}
-	/* The first step is below the epsilon, so it must not have left the partial path. */
+	EXPECT(first_step_partial, "a single sub-epsilon step does not repaint");
 	EXPECT(steps_until_full == 2, "sub-epsilon steps accumulate into a repaint");
 
 	nd->render_scale = 1.0f;
@@ -251,37 +257,53 @@ test_sub_epsilon_steps_accumulate(FluxEngine *eng, XentCtx *ctx, FluxStore *stor
 
 /* A node that has some other dirty change every frame must still let sub-epsilon
    transform steps accumulate. The baseline may only advance when the transform itself
-   is what dirtied the frame. */
+   is what dirtied the frame.
+ *
+ * The unrelated change goes on a *sibling*, not on the measured node. Putting it on the
+ * measured node made that node's has_transform true from the first step (opacity < 1.0),
+ * which forces the full path on its own and proves nothing about the epsilon baseline.
+ * The measured node keeps render_opacity == 1.0f and has no children, so has_transform
+ * stays false and only the transform comparison can decide.
+ */
 static int test_sub_epsilon_steps_with_other_dirt(
   FluxEngine *eng, XentCtx *ctx, FluxStore *store, XentNodeId root, XentNodeId row
 ) {
 	settle_frame(eng, ctx, root);
 	settle_frame(eng, ctx, root);
 
-	FluxNodeData *nd = flux_store_find(store, row);
-	EXPECT(nd, "row node data");
-	nd->render_opacity = 1.0f;
+	XentNodeId first  = xent_node_first(ctx, row);
+	XentNodeId second = first == XENT_NODE_INVALID ? XENT_NODE_INVALID : xent_node_next(ctx, first);
+	EXPECT(first != XENT_NODE_INVALID && second != XENT_NODE_INVALID, "row has two children");
+
+	FluxNodeData *measured = flux_store_find(store, first);
+	FluxNodeData *noise    = flux_store_find(store, second);
+	EXPECT(measured && noise, "both children have node data");
+	measured->render_scale   = 1.0f;
+	measured->render_opacity = 1.0f;
 	settle_frame(eng, ctx, root);
 
-	bool crossed = false;
-	for (int step = 0; step < 6 && !crossed; step++) {
-		/* An unrelated visual change dirties the node every frame: the snapshot background
-		   feeds flux_snap_hash, so the collect hash moves with it. */
-		nd->visuals.background.rgba  = 0xff000000u | ( uint32_t ) (step * 0x101010u);
-		nd->render_opacity          -= 0.0005f;
+	int  steps_until_full   = -1;
+	bool first_step_partial = false;
+	for (int step = 1; step <= 4 && steps_until_full < 0; step++) {
+		/* The sibling changes every frame, so the frame is dirty for an unrelated reason. */
+		noise->visuals.background.rgba = 0xff000000u | ( uint32_t ) (step * 0x101010u);
+		measured->render_scale         = 1.0f + 0.0006f * ( float ) step;
 
 		flux_engine_collect(eng, ctx, root);
-
-		/* Prove the unrelated change alone dirties the frame: opacity is still within
-		   epsilon of the baseline on the early steps, so a dirty rect here is not from it. */
 		FluxRect r       = {0};
 		bool     partial = flux_engine_dirty_rect(eng, 0u, 1000.0f, 1000.0f, false, &r);
-		bool     dirtied = !partial || r.w > 0.0f || r.h > 0.0f;
-		EXPECT(dirtied, "each unrelated change dirties the frame on its own");
-		if (!partial) crossed = true;
+
+		/* The unrelated change must really make the frame dirty, or the loop is a no-op. */
+		EXPECT(!partial || r.w > 0.0f || r.h > 0.0f, "the sibling change dirties the frame");
+		if (step == 1) first_step_partial = partial;
+		if (!partial) steps_until_full = step;
 		flux_engine_finish_frame(eng, 0u);
 	}
-	EXPECT(crossed, "sub-epsilon steps accumulate even with other dirty changes");
+	EXPECT(first_step_partial, "one sub-epsilon step under unrelated dirt does not repaint");
+	EXPECT(steps_until_full == 2, "sub-epsilon steps accumulate under unrelated dirt");
+
+	measured->render_scale = 1.0f;
+	settle_frame(eng, ctx, root);
 	return 0;
 }
 

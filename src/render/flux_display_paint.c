@@ -51,6 +51,16 @@ static bool paint_can_reuse(FluxNodeData const *nd, uint64_t hash, float w, floa
 	    && nd->dl_h == h;
 }
 
+bool flux_display_paint_can_reuse(
+  FluxNodeData const *nd, uint64_t hash, float w, float h, bool force_dyn, FluxCacheEntry const *entry
+) {
+	/* State tweens advance inside record() and only report themselves there. While one
+	   runs, the snapshot and control state do not change, so the hash matches and the
+	   reuse path would replay the pre-press display list. */
+	if (flux_rcache_entry_animating(entry)) return false;
+	return paint_can_reuse(nd, hash, w, h, force_dyn);
+}
+
 void flux_display_paint_main(
   FluxStore *store, XtkBackend *backend, FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds,
   FluxControlState const *state
@@ -59,16 +69,13 @@ void flux_display_paint_main(
 
 	FluxControlModule const *module = flux_module_get(snap->type);
 	if (module && module->record) {
-		XentNodeId    node      = ( XentNodeId ) snap->id;
-		FluxNodeData *nd        = flux_store_find(store, node);
-		bool          force_dyn = false;
-		uint64_t      hash      = flux_snap_hash(snap, state, bounds->w, bounds->h, rc, &force_dyn);
-		/* State tweens advance inside record() and only report themselves there. While one
-		   runs, the snapshot and control state do not change, so the hash matches and the
-		   reuse path would replay the pre-press display list. */
-		bool          tweening
-		  = flux_rcache_entry_animating(rc->cache ? flux_render_cache_get(rc->cache, ( uint64_t ) node) : NULL);
-		if (tweening || !paint_can_reuse(nd, hash, bounds->w, bounds->h, force_dyn)) {
+		XentNodeId            node      = ( XentNodeId ) snap->id;
+		FluxNodeData         *nd        = flux_store_find(store, node);
+		bool                  force_dyn = false;
+		uint64_t              hash      = flux_snap_hash(snap, state, bounds->w, bounds->h, rc, &force_dyn);
+		FluxCacheEntry const *entry     = rc->cache ? flux_render_cache_get(rc->cache, ( uint64_t ) node) : NULL;
+		bool                  tweening  = flux_rcache_entry_animating(entry);
+		if (!flux_display_paint_can_reuse(nd, hash, bounds->w, bounds->h, force_dyn, entry)) {
 			FluxRect      local        = {0.0f, 0.0f, bounds->w, bounds->h};
 			bool          local_anim   = false;
 			double        local_redraw = 0.0;

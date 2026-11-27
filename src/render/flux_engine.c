@@ -40,8 +40,6 @@ struct FluxEngine {
 	FluxRect          prev_dirty;
 };
 
-/* Float fields on the node can be rewritten with the same computed value; treat that as
-   unchanged so a static node is not repainted every frame. */
 static bool render_close(float a, float b) { return fabsf(a - b) <= 0.001f; }
 
 static void engine_expand_dirty(FluxEngine *eng, FluxRect const *r, float pad) {
@@ -114,7 +112,7 @@ typedef struct CollectFrame {
 	FluxControlState  state;
 	XentNodeId        current_child;
 	bool              has_transform;
-	bool              under_transform; /* an ancestor carries a render transform */
+	bool              under_transform;
 	bool              clipped_top;
 	bool              dim_item_content;
 	FluxItemTextColor item_text_color;
@@ -247,6 +245,40 @@ static void collect_control_snapshot(FluxEngine *eng, XentCtx *ctx, CollectFrame
 	collect_item_content(frame);
 }
 
+static bool render_transform_moved(FluxNodeData const *nd) {
+	if (!nd->has_prev_render) return false;
+	return !render_close(nd->prev_render_scale, nd->render_scale)
+	    || !render_close(nd->prev_render_opacity, nd->render_opacity)
+	    || !render_close(nd->prev_render_translate_x, nd->render_translate_x)
+	    || !render_close(nd->prev_render_translate_y, nd->render_translate_y)
+	    || !render_close(nd->prev_render_rotate_x, nd->render_rotate_x)
+	    || !render_close(nd->prev_render_rotate_y, nd->render_rotate_y)
+	    || nd->prev_render_clip_subtree != nd->render_clip_subtree;
+}
+
+static void render_save_prev(FluxNodeData *nd) {
+	nd->has_prev_render          = true;
+	nd->prev_render_scale        = nd->render_scale;
+	nd->prev_render_opacity      = nd->render_opacity;
+	nd->prev_render_translate_x  = nd->render_translate_x;
+	nd->prev_render_translate_y  = nd->render_translate_y;
+	nd->prev_render_rotate_x     = nd->render_rotate_x;
+	nd->prev_render_rotate_y     = nd->render_rotate_y;
+	nd->prev_render_clip_subtree = nd->render_clip_subtree;
+}
+
+static void
+collect_track_scroll_dirty(FluxEngine *eng, CollectFrame const *frame, FluxNodeData *nd, FluxRect const *bounds) {
+	if (!frame->is_scroll || !nd->component_data) return;
+	float sx = frame->scroll_off_x;
+	float sy = frame->scroll_off_y;
+	if (sx == nd->prev_scroll_x && sy == nd->prev_scroll_y) return;
+	engine_expand_dirty(eng, bounds, 4.0f);
+	flux_uia_mark_dirty(eng->store, frame->node, FLUX_UIA_DIRTY_PATTERN);
+	nd->prev_scroll_x = sx;
+	nd->prev_scroll_y = sy;
+}
+
 static void collect_track_node_dirty(
   FluxEngine *eng, CollectFrame const *frame, XentRect const *rect, FluxNodeData *nd, bool has_transform
 ) {
@@ -258,68 +290,18 @@ static void collect_track_node_dirty(
 	bool     dyn    = false;
 	uint64_t chash  = flux_snap_hash(&frame->snapshot, &frame->state, rect->w, rect->h, NULL, &dyn);
 	bool     moved  = !nd->has_prev_bounds || memcmp(&nd->prev_bounds, &bounds, sizeof(bounds)) != 0;
-	/*
-	 * Render transforms live on FluxNodeData and never reach the snapshot, so a hash
-	 * comparison alone cannot see an animated scale, opacity or translate. Without
-	 * this, a dialog that fades in parks on its first (nearly transparent) frame:
-	 * nothing else changes, so the frame produces an empty dirty rect and the
-	 * present is skipped. Compare only against a recorded previous frame, so the
-	 * first sighting of a node does not force a full repaint. The epsilon keeps a
-	 * node that rewrites the same computed value from forcing a full repaint on
-	 * float noise.
-	 */
-	bool transform_moved = nd->has_prev_render
-	                    && (!render_close(nd->prev_render_scale, nd->render_scale)
-	                        || !render_close(nd->prev_render_opacity, nd->render_opacity)
-	                        || !render_close(nd->prev_render_translate_x, nd->render_translate_x)
-	                        || !render_close(nd->prev_render_translate_y, nd->render_translate_y)
-	                        || !render_close(nd->prev_render_rotate_x, nd->render_rotate_x)
-	                        || !render_close(nd->prev_render_rotate_y, nd->render_rotate_y)
-	                        || nd->prev_render_clip_subtree != nd->render_clip_subtree);
-	bool changed = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic || transform_moved;
-	/*
-	 * A transform moves its whole subtree and invalidates the previous frame's pixels
-	 * under the old projection, so the affected area cannot be described by this node's
-	 * bounds alone. Repaint the frame while a transform changes.
-	 *
-	 * The same holds for a node that merely *sits under* a transformed ancestor, even when
-	 * that ancestor's transform is steady: the recorded bounds are layout coordinates,
-	 * while the replay clip is set in device space, so a dirty rect derived from them would
-	 * clip the update to the wrong pixels. That is conservative -- it costs the partial
-	 * path for any subtree under a standing scale or translate -- but it is the only
-	 * correct answer until the dirty rect is mapped through the projection.
-	 */
+	bool     transform_moved = render_transform_moved(nd);
+	bool     changed         = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic || transform_moved;
 	if (changed && (has_transform || transform_moved || frame->under_transform)) eng->force_full = true;
 	if (changed) {
 		if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
 		engine_expand_dirty(eng, &bounds, 4.0f);
-		/*
-		 * Advance the transform baseline only on a frame that was actually dirtied. If it
-		 * moved on every collect, an animation that steps by less than the epsilon each
-		 * frame would compare as unchanged forever: the baseline would creep along with
-		 * the value and no single step could ever cross the threshold.
-		 */
-		nd->has_prev_render          = true;
-		nd->prev_render_scale        = nd->render_scale;
-		nd->prev_render_opacity      = nd->render_opacity;
-		nd->prev_render_translate_x  = nd->render_translate_x;
-		nd->prev_render_translate_y  = nd->render_translate_y;
-		nd->prev_render_rotate_x     = nd->render_rotate_x;
-		nd->prev_render_rotate_y     = nd->render_rotate_y;
-		nd->prev_render_clip_subtree = nd->render_clip_subtree;
+		render_save_prev(nd);
 	}
 	nd->prev_bounds     = bounds;
 	nd->has_prev_bounds = true;
 	nd->collect_hash    = chash;
-	if (frame->is_scroll && nd->component_data) {
-		float sx = frame->scroll_off_x, sy = frame->scroll_off_y;
-		if (sx != nd->prev_scroll_x || sy != nd->prev_scroll_y) {
-			engine_expand_dirty(eng, &bounds, 4.0f);
-			flux_uia_mark_dirty(eng->store, frame->node, FLUX_UIA_DIRTY_PATTERN);
-			nd->prev_scroll_x = sx;
-			nd->prev_scroll_y = sy;
-		}
-	}
+	collect_track_scroll_dirty(eng, frame, nd, &bounds);
 }
 
 static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame) {
@@ -338,7 +320,6 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	  = nd
 	 && (nd->render_scale != 1.0f || nd->render_opacity < 1.0f || nd->render_translate_y != 0.0f || nd->render_translate_x != 0.0f || nd->render_rotate_x != 0.0f || nd->render_rotate_y != 0.0f);
 	if (frame->has_transform) collect_emit_transform_push(eng, frame, &rect, nd);
-	/* Sticky downwards: any ancestor transform projects everything below it. */
 	if (frame->has_transform) frame->under_transform = true;
 	frame->clipped_top = nd && nd->clip_top > 0.0f;
 	if (frame->clipped_top) collect_emit_clip_top(eng, frame, &rect, nd->clip_top);
@@ -354,26 +335,8 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 	frame->main_emitted  = true;
 }
 
-/*
- * True when this node or any ancestor currently carries a render transform. A subtree
- * under a transformed ancestor is painted through that ancestor's projection, so its
- * recorded layout bounds do not bound its pixels either.
- */
-static bool collect_under_transform(FluxEngine *eng, XentCtx *ctx, XentNodeId node) {
-	for (; node != XENT_NODE_INVALID; node = xent_node_parent(ctx, node)) {
-		FluxNodeData const *nd = flux_store_find(eng->store, node);
-		if (!nd) continue;
-		if (nd->prev_render_scale != 1.0f
-		    || nd->prev_render_translate_x != 0.0f
-		    || nd->prev_render_translate_y != 0.0f
-		    || nd->prev_render_rotate_x != 0.0f
-		    || nd->prev_render_rotate_y != 0.0f)
-			return true;
-	}
-	return false;
-}
-
 static bool prev_render_transformed(FluxNodeData const *nd) {
+	if (!nd->has_prev_render) return false;
 	return nd->prev_render_scale != 1.0f
 	    || nd->prev_render_translate_x != 0.0f
 	    || nd->prev_render_translate_y != 0.0f
@@ -381,77 +344,55 @@ static bool prev_render_transformed(FluxNodeData const *nd) {
 	    || nd->prev_render_rotate_y != 0.0f;
 }
 
-/*
- * A subtree that becomes collapsed is skipped by the walk, so its previous pixels are
- * never marked dirty and the present leaves them on screen: closing a dialog showed a
- * stale blank rectangle where the buttons had been. Every node in the subtree kept its
- * own prev_bounds while it was visible, so the whole subtree has to be visited.
- *
- * Iterative on purpose: this runs for every collapsed child of every frame, and a deep
- * subtree would otherwise recurse to the depth of the tree.
- *
- * prev_bounds is the pre-transform layout rect, so a node that was scaled or translated
- * could have painted outside it. Ask for a full repaint in that case rather than guess
- * the painted area.
- */
-static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId root) {
+static void collect_forget_hidden_node(FluxEngine *eng, FluxNodeData *nd, bool under_transform) {
+	if (!nd || (!nd->has_prev_bounds && !nd->has_prev_render)) return;
+	if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
+	if (under_transform || prev_render_transformed(nd)) eng->force_full = true;
+	nd->has_prev_bounds = false;
+	nd->has_prev_render = false;
+	nd->collect_hash    = 0u;
+}
+
+static bool
+hidden_stack_push(XentNodeId **stack, uint32_t *top, uint32_t *cap, XentNodeId *inline_buf, XentNodeId node) {
+	if (*top == *cap) {
+		uint32_t    next_cap = *cap * 2u;
+		XentNodeId *grown = *stack == inline_buf ? ( XentNodeId * ) xtk_alloc(sizeof(*grown) * next_cap)
+		                                         : ( XentNodeId * ) xtk_alloc_resize(*stack, sizeof(*grown) * next_cap);
+		if (!grown) return false;
+		if (*stack == inline_buf) memcpy(grown, inline_buf, sizeof(*grown) * (*top));
+		*stack = grown;
+		*cap   = next_cap;
+	}
+	(*stack) [(*top)++] = node;
+	return true;
+}
+
+static bool hidden_push_children(
+  XentCtx *ctx, XentNodeId **stack, uint32_t *top, uint32_t *cap, XentNodeId *inline_buf, XentNodeId node
+) {
+	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
+		if (!hidden_stack_push(stack, top, cap, inline_buf, child)) return false;
+	return true;
+}
+
+static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId root, bool under_transform) {
+	XentNodeId  inline_buf [64];
+	XentNodeId *stack = inline_buf;
 	uint32_t    cap   = 64;
 	uint32_t    top   = 0;
-	XentNodeId *stack = ( XentNodeId * ) xtk_alloc(sizeof(*stack) * cap);
-	if (!stack) {
-		eng->force_full = true;
-		return;
-	}
-	stack [top++] = root;
-
-	/* One check for the subtree root covers every descendant: an ancestor transform
-	   applies to the whole subtree below it. */
-	if (collect_under_transform(eng, ctx, xent_node_parent(ctx, root))) eng->force_full = true;
+	stack [top++]     = root;
 
 	while (top > 0) {
-		XentNodeId    node = stack [--top];
-		FluxNodeData *nd   = flux_store_find(eng->store, node);
-		/*
-		 * Walk every node, but only act on one that still carries a record. The walk has to
-		 * keep descending after the first pass because descendants may never have been
-		 * cleaned, yet touching an already-cleaned node must not set force_full again --
-		 * that would repaint in full on every frame for as long as the subtree stays
-		 * collapsed, which is exactly the partial-rect win this code exists to protect.
-		 */
-		if (nd && (nd->has_prev_bounds || nd->has_prev_render)) {
-			if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
-			/*
-			 * It is the *previous* frame's transform that decided where the pixels went, and
-			 * those pixels are what has to be erased. Checking the current values misses the
-			 * case where a node is reset to its default transform and collapsed in the same
-			 * frame: prev_bounds is then the untransformed layout rect, while the screen still
-			 * holds the scaled or translated paint.
-			 */
-			if (nd->has_prev_render && prev_render_transformed(nd)) eng->force_full = true;
-			nd->has_prev_bounds = false;
-			nd->has_prev_render = false;
-			nd->collect_hash    = 0u;
-		}
-
-		for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID;
-		  child               = xent_node_next(ctx, child))
-		{
-			if (top == cap) {
-				uint32_t    next_cap = cap * 2u;
-				XentNodeId *grown    = ( XentNodeId * ) xtk_alloc_resize(stack, sizeof(*grown) * next_cap);
-				if (!grown) {
-					xtk_alloc_free(stack);
-					eng->force_full = true;
-					return;
-				}
-				stack = grown;
-				cap   = next_cap;
-			}
-			stack [top++] = child;
+		XentNodeId node = stack [--top];
+		collect_forget_hidden_node(eng, flux_store_find(eng->store, node), under_transform);
+		if (!hidden_push_children(ctx, &stack, &top, &cap, inline_buf, node)) {
+			eng->force_full = true;
+			break;
 		}
 	}
 
-	xtk_alloc_free(stack);
+	if (stack != inline_buf) xtk_alloc_free(stack);
 }
 
 static bool collect_child_visible(XentCtx *ctx, CollectFrame const *frame, XentNodeId child) {
@@ -502,7 +443,7 @@ collect_visit_child(FluxEngine *eng, CollectFrame **stack, uint32_t *stack_top, 
 	XentNodeId child     = frame->current_child;
 	frame->current_child = xent_node_next(ctx, child);
 	if (xent_collapsed(ctx, child)) {
-		collect_note_hidden(eng, ctx, child);
+		collect_note_hidden(eng, ctx, child, frame->under_transform);
 		return true;
 	}
 	if (frame->node != eng->root && flux_node_lifted(eng->store, child)) return true;

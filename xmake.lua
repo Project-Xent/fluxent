@@ -162,15 +162,6 @@ target("test_fx_txn_errors")
     add_files("examples/tests/test_fx_txn_errors.c")
 target_end()
 
-target("test_fx_dirty_rects")
-    set_default(false)
-    set_kind("binary")
-    add_deps("fluxent")
-    add_files("examples/tests/test_fx_dirty_rects.c")
-    add_includedirs("include", "src")
-    add_tests("default")
-target_end()
-
 task("dist")
     set_menu {
         usage = "xmake dist [arch ...]",

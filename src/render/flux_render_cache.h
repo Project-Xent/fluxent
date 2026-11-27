@@ -93,9 +93,6 @@ void             flux_render_cache_remove(FluxRenderCache *cache, uint64_t node_
 
 void             flux_rcache_evict(FluxRenderCache *cache, uint64_t age_threshold);
 
-/** True while a state tween on this entry is still producing new values, so its display
- *  list must not be reused. Lives here so a new tween field cannot be forgotten at the
- *  reuse site. */
 bool             flux_rcache_entry_animating(FluxCacheEntry const *entry);
 
 #endif

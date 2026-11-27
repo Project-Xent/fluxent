@@ -40,26 +40,6 @@ static void paint_propagate_timers(FluxRenderCtx const *rc, bool local_anim, dou
 		*rc->next_redraw = local_redraw;
 }
 
-/*
- * State tweens (hover, press, focus, check, colour) are advanced inside record() and
- * only report themselves as animating there. While a press tween runs the snapshot and
- * control state do not change, so the hash matches and the reuse path would skip
- * record() and replay the pre-press display list until the tween ends -- the pressed
- * button showed un-pressed colours. Keep recording while a tween is live.
- */
-static bool paint_tween_active(FluxCacheEntry const *ce) {
-	if (!ce) return false;
-	return ce->hover_anim.active
-	    || ce->press_anim.active
-	    || ce->focus_anim.active
-	    || ce->check_anim.active
-	    || ce->slider_anim.active
-	    || ce->progress_anim.active
-	    || ce->scroll_anim_x.active
-	    || ce->scroll_anim_y.active
-	    || ce->color_anim.active;
-}
-
 static bool paint_can_reuse(FluxNodeData const *nd, uint64_t hash, float w, float h, bool force_dyn) {
 	return nd
 	    && !nd->dl_dynamic
@@ -83,7 +63,11 @@ void flux_display_paint_main(
 		FluxNodeData *nd        = flux_store_find(store, node);
 		bool          force_dyn = false;
 		uint64_t      hash      = flux_snap_hash(snap, state, bounds->w, bounds->h, rc, &force_dyn);
-		bool tweening = paint_tween_active(rc->cache ? flux_render_cache_get(rc->cache, ( uint64_t ) node) : NULL);
+		/* State tweens advance inside record() and only report themselves there. While one
+		   runs, the snapshot and control state do not change, so the hash matches and the
+		   reuse path would replay the pre-press display list. */
+		bool          tweening
+		  = flux_rcache_entry_animating(rc->cache ? flux_render_cache_get(rc->cache, ( uint64_t ) node) : NULL);
 		if (tweening || !paint_can_reuse(nd, hash, bounds->w, bounds->h, force_dyn)) {
 			FluxRect      local        = {0.0f, 0.0f, bounds->w, bounds->h};
 			bool          local_anim   = false;

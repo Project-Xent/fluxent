@@ -40,6 +40,10 @@ struct FluxEngine {
 	FluxRect          prev_dirty;
 };
 
+/* Float fields on the node can be rewritten with the same computed value; treat that as
+   unchanged so a static node is not repainted every frame. */
+static bool render_close(float a, float b) { return fabsf(a - b) <= 0.001f; }
+
 static void engine_expand_dirty(FluxEngine *eng, FluxRect const *r, float pad) {
 	if (!eng || !r || r->w <= 0.0f || r->h <= 0.0f) return;
 	FluxRect d = {r->x - pad, r->y - pad, r->w + pad * 2.0f, r->h + pad * 2.0f};
@@ -259,15 +263,17 @@ static void collect_track_node_dirty(
 	 * this, a dialog that fades in parks on its first (nearly transparent) frame:
 	 * nothing else changes, so the frame produces an empty dirty rect and the
 	 * present is skipped. Compare only against a recorded previous frame, so the
-	 * first sighting of a node does not force a full repaint.
+	 * first sighting of a node does not force a full repaint. The epsilon keeps a
+	 * node that rewrites the same computed value from forcing a full repaint on
+	 * float noise.
 	 */
 	bool transform_moved = nd->has_prev_render
-	                    && (nd->prev_render_scale != nd->render_scale
-	                        || nd->prev_render_opacity != nd->render_opacity
-	                        || nd->prev_render_translate_x != nd->render_translate_x
-	                        || nd->prev_render_translate_y != nd->render_translate_y
-	                        || nd->prev_render_rotate_x != nd->render_rotate_x
-	                        || nd->prev_render_rotate_y != nd->render_rotate_y
+	                    && (!render_close(nd->prev_render_scale, nd->render_scale)
+	                        || !render_close(nd->prev_render_opacity, nd->render_opacity)
+	                        || !render_close(nd->prev_render_translate_x, nd->render_translate_x)
+	                        || !render_close(nd->prev_render_translate_y, nd->render_translate_y)
+	                        || !render_close(nd->prev_render_rotate_x, nd->render_rotate_x)
+	                        || !render_close(nd->prev_render_rotate_y, nd->render_rotate_y)
 	                        || nd->prev_render_clip_subtree != nd->render_clip_subtree);
 	bool changed = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic || transform_moved;
 	/* A transform moves its whole subtree and invalidates the previous frame's pixels
@@ -331,18 +337,28 @@ static void collect_emit_main(FluxEngine *eng, XentCtx *ctx, CollectFrame *frame
 }
 
 /*
- * A subtree that becomes collapsed is skipped by the walk, so its previous pixels are
- * never marked dirty and the present leaves them on screen: closing a dialog showed a
- * stale blank rectangle where the buttons had been. Repaint the last bounds this node
- * reported, then forget them so the next frame does not mark the same area again.
+ * Dirty the area a node drew last frame and forget the record, so the following frame
+ * does not mark it again. Cheap and safe to call for nodes that were never emitted.
  */
-static void collect_note_hidden(FluxEngine *eng, XentNodeId node) {
+static void collect_forget_node(FluxEngine *eng, XentNodeId node) {
 	FluxNodeData *nd = flux_store_find(eng->store, node);
-	if (!nd || !nd->has_prev_bounds) return;
-	engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
+	if (!nd) return;
+	if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
 	nd->has_prev_bounds = false;
 	nd->has_prev_render = false;
 	nd->collect_hash    = 0u;
+}
+
+/*
+ * A subtree that becomes collapsed is skipped by the walk, so its previous pixels are
+ * never marked dirty and the present leaves them on screen: closing a dialog showed a
+ * stale blank rectangle where the buttons had been. Every node in the subtree kept its
+ * own prev_bounds while it was visible, so visit the whole subtree, not just its root.
+ */
+static void collect_note_hidden(FluxEngine *eng, XentCtx *ctx, XentNodeId node) {
+	collect_forget_node(eng, node);
+	for (XentNodeId child = xent_node_first(ctx, node); child != XENT_NODE_INVALID; child = xent_node_next(ctx, child))
+		collect_note_hidden(eng, ctx, child);
 }
 
 static bool collect_child_visible(XentCtx *ctx, CollectFrame const *frame, XentNodeId child) {
@@ -392,7 +408,7 @@ collect_visit_child(FluxEngine *eng, CollectFrame **stack, uint32_t *stack_top, 
 	XentNodeId child     = frame->current_child;
 	frame->current_child = xent_node_next(ctx, child);
 	if (xent_collapsed(ctx, child)) {
-		collect_note_hidden(eng, child);
+		collect_note_hidden(eng, ctx, child);
 		return true;
 	}
 	if (frame->node != eng->root && flux_node_lifted(eng->store, child)) return true;

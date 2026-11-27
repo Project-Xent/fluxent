@@ -128,6 +128,14 @@ typedef struct FluxNodeData {
 	uint64_t                   collect_hash;
 	float                      prev_scroll_x;
 	float                      prev_scroll_y;
+	bool                       has_prev_render;
+	float                      prev_render_scale;
+	float                      prev_render_opacity;
+	float                      prev_render_translate_x;
+	float                      prev_render_translate_y;
+	float                      prev_render_rotate_x;
+	float                      prev_render_rotate_y;
+	bool                       prev_render_clip_subtree;
 } FluxNodeData;
 
 struct FluxStore;

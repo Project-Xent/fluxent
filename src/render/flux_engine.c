@@ -249,19 +249,46 @@ static void collect_track_node_dirty(
 		eng->force_full = true;
 		return;
 	}
-	FluxRect bounds  = {frame->abs_x - frame->cum_scroll_x, frame->abs_y - frame->cum_scroll_y, rect->w, rect->h};
-	bool     dyn     = false;
-	uint64_t chash   = flux_snap_hash(&frame->snapshot, &frame->state, rect->w, rect->h, NULL, &dyn);
-	bool     moved   = !nd->has_prev_bounds || memcmp(&nd->prev_bounds, &bounds, sizeof(bounds)) != 0;
-	bool     changed = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic;
-	if (has_transform && changed) eng->force_full = true;
+	FluxRect bounds = {frame->abs_x - frame->cum_scroll_x, frame->abs_y - frame->cum_scroll_y, rect->w, rect->h};
+	bool     dyn    = false;
+	uint64_t chash  = flux_snap_hash(&frame->snapshot, &frame->state, rect->w, rect->h, NULL, &dyn);
+	bool     moved  = !nd->has_prev_bounds || memcmp(&nd->prev_bounds, &bounds, sizeof(bounds)) != 0;
+	/*
+	 * Render transforms live on FluxNodeData and never reach the snapshot, so a hash
+	 * comparison alone cannot see an animated scale, opacity or translate. Without
+	 * this, a dialog that fades in parks on its first (nearly transparent) frame:
+	 * nothing else changes, so the frame produces an empty dirty rect and the
+	 * present is skipped. Compare only against a recorded previous frame, so the
+	 * first sighting of a node does not force a full repaint.
+	 */
+	bool transform_moved = nd->has_prev_render
+	                    && (nd->prev_render_scale != nd->render_scale
+	                        || nd->prev_render_opacity != nd->render_opacity
+	                        || nd->prev_render_translate_x != nd->render_translate_x
+	                        || nd->prev_render_translate_y != nd->render_translate_y
+	                        || nd->prev_render_rotate_x != nd->render_rotate_x
+	                        || nd->prev_render_rotate_y != nd->render_rotate_y
+	                        || nd->prev_render_clip_subtree != nd->render_clip_subtree);
+	bool changed = moved || nd->collect_hash != chash || dyn || nd->dl_dynamic || transform_moved;
+	/* A transform moves its whole subtree and invalidates the previous frame's pixels
+	   under the old projection, so the affected area cannot be described by this node's
+	   bounds alone. Repaint the frame while a transform changes. */
+	if (changed && (has_transform || transform_moved)) eng->force_full = true;
 	if (changed) {
 		if (nd->has_prev_bounds) engine_expand_dirty(eng, &nd->prev_bounds, 4.0f);
 		engine_expand_dirty(eng, &bounds, 4.0f);
 	}
-	nd->prev_bounds     = bounds;
-	nd->has_prev_bounds = true;
-	nd->collect_hash    = chash;
+	nd->prev_bounds              = bounds;
+	nd->has_prev_bounds          = true;
+	nd->collect_hash             = chash;
+	nd->has_prev_render          = true;
+	nd->prev_render_scale        = nd->render_scale;
+	nd->prev_render_opacity      = nd->render_opacity;
+	nd->prev_render_translate_x  = nd->render_translate_x;
+	nd->prev_render_translate_y  = nd->render_translate_y;
+	nd->prev_render_rotate_x     = nd->render_rotate_x;
+	nd->prev_render_rotate_y     = nd->render_rotate_y;
+	nd->prev_render_clip_subtree = nd->render_clip_subtree;
 	if (frame->is_scroll && nd->component_data) {
 		float sx = frame->scroll_off_x, sy = frame->scroll_off_y;
 		if (sx != nd->prev_scroll_x || sy != nd->prev_scroll_y) {

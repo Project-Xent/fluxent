@@ -39,6 +39,7 @@ struct FluxRenderCtx {
 	bool                  *animations_active;
 	double                *next_redraw;
 	bool                   is_dark;
+	bool                   animations_enabled;
 	FluxFillSink          *fill_sink;
 };
 

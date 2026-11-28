@@ -77,6 +77,20 @@ typedef struct FluxNodeBehavior {
 	void       *chrome_hit_ctx;
 } FluxNodeBehavior;
 
+typedef struct FluxPrevRender {
+	float scale_x;
+	float scale_y;
+	float opacity;
+	float translate_x;
+	float translate_y;
+	float rotate_x;
+	float rotate_y;
+	float rotate_z;
+	float pivot_x;
+	float pivot_y;
+	bool  clip_subtree;
+} FluxPrevRender;
+
 typedef struct FluxNodeData {
 	XentNodeId                 node_id;
 	FluxNodeVisuals            visuals;
@@ -108,11 +122,22 @@ typedef struct FluxNodeData {
 	char const                *drag_files;
 
 	float                      render_scale;
+	float                      render_scale_x;
+	float                      render_scale_y;
 	float                      render_opacity;
 	float                      render_translate_x;
 	float                      render_translate_y;
 	float                      render_rotate_x;
 	float                      render_rotate_y;
+	float                      render_rotate_z;
+	float                      render_pivot_x;
+	float                      render_pivot_y;
+	float                      motion_translate_x;
+	float                      motion_translate_y;
+	float                      motion_opacity;
+	bool                       retiring;
+	bool                       connected_hidden;
+	struct FluxMotionState    *motion;
 	bool                       render_clip_subtree;
 	float                      clip_top;
 	bool                       clips_children;
@@ -129,13 +154,7 @@ typedef struct FluxNodeData {
 	float                      prev_scroll_x;
 	float                      prev_scroll_y;
 	bool                       has_prev_render;
-	float                      prev_render_scale;
-	float                      prev_render_opacity;
-	float                      prev_render_translate_x;
-	float                      prev_render_translate_y;
-	float                      prev_render_rotate_x;
-	float                      prev_render_rotate_y;
-	bool                       prev_render_clip_subtree;
+	FluxPrevRender             prev_render;
 } FluxNodeData;
 
 struct FluxStore;
@@ -151,6 +170,10 @@ XentNodeId               flux_store_lifted(FluxStore const *store, uint32_t i);
 void                     flux_store_track_frame(FluxStore *store, XentNodeId node, FluxControlType type);
 uint32_t                 flux_store_nframe(FluxStore const *store);
 XentNodeId               flux_store_frame(FluxStore const *store, uint32_t i);
+
+struct FluxMotionSystem;
+void                     flux_store_setmotion(FluxStore *store, struct FluxMotionSystem *motion);
+struct FluxMotionSystem *flux_store_motion(FluxStore const *store);
 
 typedef struct FluxUiaNote {
 	XentNodeId node;

@@ -20,6 +20,7 @@
 #include "controls/behavior/flux_uia_part.h"
 #include "fluxent/flux_window.h"
 #include "fluxent/flux_popup.h"
+#include "fluxent/flux_theme.h"
 #include "controls/data/flux_title_bar_data.h"
 #include "input/flux_input_internal.h"
 #include "host/flux_prop_apply.h"
@@ -47,6 +48,8 @@
 #define NAV_ADAPT_COMPACT    641.0f
 #define NAV_ADAPT_EXPANDED   1008.0f
 #define NAV_EXPAND_MS        200.0f
+#define NAV_HEADER_IN_MS     200.0f
+#define NAV_HEADER_OUT_MS    100.0f
 #define NAV_CHEVRON_ZONE     40.0f
 
 static float nav_ease_lead(float t) {
@@ -54,7 +57,14 @@ static float nav_ease_lead(float t) {
 	return flux_cubic_bezier(t * 3.0f, 0.9f, 0.1f, 1.0f, 0.2f);
 }
 
-static void nav_tween_init(FluxNavTween *tw, float v) {
+static float nav_header_ease_in(float t) {
+	if (t <= 0.5f) return 0.0f;
+	return flux_cubic_bezier((t - 0.5f) * 2.0f, 0.0f, 0.35f, 0.15f, 1.0f);
+}
+
+static float nav_header_ease_out(float t) { return flux_cubic_bezier(t, 0.0f, 0.35f, 0.15f, 1.0f); }
+
+static void  nav_tween_init(FluxNavTween *tw, float v) {
 	tw->current = tw->start = tw->target = v;
 	tw->active                           = false;
 }
@@ -207,13 +217,14 @@ static void nav_set_abs(FluxNavViewData *d, XentNodeId node, float x, float y, f
 	xent_setsize(d->ctx, node, (XentSize) {w, h});
 }
 
+static void nav_sync_header_height(FluxNavViewData *d, FluxNavViewItem const *it) {
+	if (it->kind != FLUX_NAV_ITEM_HEADER || it->place == FLUX_NAV_PLACE_TOP) return;
+	bool shown = it->place != FLUX_NAV_PLACE_LEFT || d->labels_visible;
+	xent_setsize(d->ctx, it->node, (XentSize) {NAN, shown ? FLUX_NAV_HEADER_H : 0.0f});
+}
+
 static void nav_sync_header_heights(FluxNavViewData *d) {
-	for (int i = 0; i < d->count; i++) {
-		FluxNavViewItem *it = &d->items [i];
-		if (it->kind != FLUX_NAV_ITEM_HEADER || it->place == FLUX_NAV_PLACE_TOP) continue;
-		bool shown = it->place != FLUX_NAV_PLACE_LEFT || d->labels_visible;
-		xent_setsize(d->ctx, it->node, (XentSize) {NAN, shown ? FLUX_NAV_HEADER_H : 0.0f});
-	}
+	for (int i = 0; i < d->count; i++) nav_sync_header_height(d, &d->items [i]);
 }
 
 static void nav_place_pane(FluxNavViewData *d, XentRect clip, float content_width) {
@@ -285,7 +296,8 @@ static void nav_place_content_overlay(FluxNavViewData *d) {
 
 static void nav_apply_geometry_top(FluxNavViewData *d) {
 	d->labels_visible = true;
-	float tb          = nav_titlebar_height(d);
+	flux_nav_tween_snap(&d->header_opacity, 1.0f);
+	float tb = nav_titlebar_height(d);
 	xent_setsize(d->ctx, d->toggle, (XentSize) {0.0f, 0.0f});
 	if (d->title_bar != XENT_NODE_INVALID) nav_set_abs(d, d->title_bar, 0.0f, 0.0f, d->width, tb);
 	nav_place_pane(d, (XentRect) {0.0f, tb, d->width, FLUX_NAV_TOP_H}, d->width);
@@ -372,6 +384,17 @@ static void nav_layout_toggle(FluxNavViewData *d) {
 	if (xent_node_parent(d->ctx, d->chrome_title) == d->toggle) nav_layout_toggle_title(d, width);
 }
 
+static bool nav_motion_enabled(void) { return flux_animations_enabled(); }
+
+static void nav_animate_header(FluxNavViewData *d) {
+	float target = d->labels_visible ? 1.0f : 0.0f;
+	if (!nav_motion_enabled() || !d->pane_progress.active) {
+		flux_nav_tween_snap(&d->header_opacity, target);
+		return;
+	}
+	nav_tween_to(&d->header_opacity, target, d->labels_visible ? NAV_HEADER_IN_MS : NAV_HEADER_OUT_MS);
+}
+
 static void nav_apply_geometry(FluxNavViewData *d) {
 	nav_sync_pane_tab_scope(d);
 	nav_content_slot_layout(d, d->width);
@@ -386,7 +409,7 @@ static void nav_apply_geometry(FluxNavViewData *d) {
 	d->labels_visible = !flux_nav_closed_compact(d);
 	if (d->labels_visible != labels_was) {
 		nav_sync_header_heights(d);
-
+		nav_animate_header(d);
 		nav_indicator_reset(d);
 	}
 
@@ -474,12 +497,6 @@ static FluxNavIndicator nav_indicator_at(FluxNavViewData *d, int index) {
 
 static bool nav_same_indicator(FluxNavIndicator a, FluxNavIndicator b) {
 	return a.item == b.item && a.place == b.place && a.in_flyout == b.in_flyout;
-}
-
-static bool nav_motion_enabled(void) {
-	BOOL enabled = TRUE;
-	SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0);
-	return enabled;
 }
 
 static float nav_cross_ease(float t) { return flux_cubic_bezier(t, 0.41f, 0.52f, 0.0f, 0.94f); }
@@ -614,6 +631,9 @@ static float nav_overlay_ease(float t) { return flux_cubic_bezier(t, 0.1f, 0.9f,
 static bool  nav_tick_one(FluxNavViewData *d, DWORD now) {
 	bool active
 	  = nav_tween_tick(&d->pane_progress, now, flux_nav_pane_overlay(d) ? nav_overlay_ease : flux_ease_out_cubic);
+	active |= nav_tween_tick(
+	  &d->header_opacity, now, d->header_opacity.target > 0.5f ? nav_header_ease_in : nav_header_ease_out
+	);
 	active |= nav_tick_expand(d, now);
 	nav_apply_geometry(d);
 	flux_nav_fly_refresh(d);
@@ -659,13 +679,13 @@ static void nav_refresh_item(FluxNavViewData *d, FluxNavViewItem *it) {
 		xent_setsize(d->ctx, it->node, (XentSize) {flux_nav_top_item_w(d, it), FLUX_NAV_TOP_H});
 		return;
 	}
-	if (it->kind != FLUX_NAV_ITEM_HEADER) xent_setsize(d->ctx, it->node, (XentSize) {NAN, nav_item_height(it->kind)});
+	if (it->kind == FLUX_NAV_ITEM_HEADER) nav_sync_header_height(d, it);
+	else xent_setsize(d->ctx, it->node, (XentSize) {NAN, nav_item_height(it->kind)});
 }
 
 void flux_nav_refresh_items(FluxNavViewData *d) {
 	for (int i = 0; i < d->count; i++) nav_refresh_item(d, &d->items [i]);
 	if (d->settings != XENT_NODE_INVALID) nav_refresh_item(d, &d->settings_item);
-	nav_sync_header_heights(d);
 	flux_nav_sync_hosts(d);
 }
 
@@ -1153,6 +1173,7 @@ static void nav_init_data(FluxNavViewData *d, FluxNavViewDesc const *info, XentN
 	d->settings_visible     = true;
 	d->always_show_header   = true;
 	nav_tween_init(&d->pane_progress, 0.0f);
+	nav_tween_init(&d->header_opacity, 0.0f);
 }
 
 static bool nav_make_pane(FluxNavViewData *d) {
@@ -1257,6 +1278,7 @@ static void nav_apply_initial_geometry(FluxNavViewData *d) {
 	flux_nav_tween_snap(&d->pane_progress, d->pane_open ? 1.0f : 0.0f);
 	nav_apply_mode(d);
 	nav_apply_geometry(d);
+	flux_nav_tween_snap(&d->header_opacity, d->labels_visible ? 1.0f : 0.0f);
 }
 
 XentNodeId flux_nav_init(FluxNavViewDesc const *info) {

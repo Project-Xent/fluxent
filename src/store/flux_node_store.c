@@ -3,6 +3,7 @@
 #include "controls/flux_module.h"
 #include "runtime/flux_str.h"
 #include "a11y/flux_uia_app.h"
+#include "motion/flux_motion_internal.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -18,29 +19,30 @@ typedef struct FluxNodeSlot {
 } FluxNodeSlot;
 
 struct FluxStore {
-	FluxNodeSlot     *slots;
-	uint32_t          capacity;
-	uint32_t          count;
-	uint32_t          tombstones;
-	XentCtx          *ctx;
-	XentObsId         observer;
-	FluxNodeRemovedFn removed_fn;
-	void             *removed_userdata;
-	XtkHost          *host;
-	struct FluxInput *input;
-	XentNodeId       *lifted;
-	uint32_t          nlifted;
-	uint32_t          lifted_cap;
-	XentNodeId       *frame_nodes;
-	uint32_t          nframe;
-	uint32_t          frame_cap;
-	FluxUiaNote      *notes;
-	uint32_t          nnotes;
-	uint32_t          notes_cap;
-	FluxUiaDirtyItem *uia_dirty;
-	uint32_t          uia_dirty_cap;
-	uint32_t          uia_dirty_count;
-	bool              uia_dirty_all;
+	FluxNodeSlot            *slots;
+	uint32_t                 capacity;
+	uint32_t                 count;
+	uint32_t                 tombstones;
+	XentCtx                 *ctx;
+	XentObsId                observer;
+	FluxNodeRemovedFn        removed_fn;
+	void                    *removed_userdata;
+	XtkHost                 *host;
+	struct FluxInput        *input;
+	XentNodeId              *lifted;
+	uint32_t                 nlifted;
+	uint32_t                 lifted_cap;
+	XentNodeId              *frame_nodes;
+	uint32_t                 nframe;
+	uint32_t                 frame_cap;
+	FluxUiaNote             *notes;
+	uint32_t                 nnotes;
+	uint32_t                 notes_cap;
+	FluxUiaDirtyItem        *uia_dirty;
+	uint32_t                 uia_dirty_cap;
+	uint32_t                 uia_dirty_count;
+	bool                     uia_dirty_all;
+	struct FluxMotionSystem *motion;
 };
 
 static uint32_t ns_hash(XentNodeId id, uint32_t cap) {
@@ -121,6 +123,10 @@ static void node_data_destroy_component(FluxNodeData *d) {
 	d->drag_text    = NULL;
 	d->drag_files   = NULL;
 	node_data_clear_display_list(d);
+	if (d->motion) {
+		flux_motion_state_free(d->motion);
+		d->motion = NULL;
+	}
 
 	if (!d->component_data) return;
 
@@ -147,7 +153,12 @@ static void node_data_init(FluxNodeData *d, XentNodeId id) {
 	d->node_id         = id;
 	d->visuals.opacity = 1.0f;
 	d->render_scale    = 1.0f;
+	d->render_scale_x  = 1.0f;
+	d->render_scale_y  = 1.0f;
 	d->render_opacity  = 1.0f;
+	d->render_pivot_x  = 0.5f;
+	d->render_pivot_y  = 0.5f;
+	d->motion_opacity  = 1.0f;
 	d->state.visible   = 1;
 	d->component_type  = FLUX_CONTROL_CONTAINER;
 }
@@ -195,6 +206,10 @@ FluxStore *flux_store_create(uint32_t initial_capacity) {
 
 void flux_store_destroy(FluxStore *store) {
 	if (!store) return;
+	if (store->motion) {
+		flux_motion_system_destroy(store->motion);
+		store->motion = NULL;
+	}
 	if (store->ctx && store->observer != XENT_NODE_OBSERVER_INVALID) xent_node_delobs(store->ctx, store->observer);
 	for (uint32_t i = 0; i < store->capacity; i++)
 		if (store->slots [i].tag == FLUX_NS_OCCUPIED) node_data_destroy_component(&store->slots [i].data);
@@ -284,7 +299,7 @@ XentNodeId flux_store_lifted(FluxStore const *store, uint32_t i) {
 void flux_store_track_frame(FluxStore *store, XentNodeId node, FluxControlType type) {
 	if (!store || node == XENT_NODE_INVALID) return;
 	FluxControlModule const *m         = flux_module_get(type);
-	bool                     has_frame = m && m->tree && m->tree->frame != NULL;
+	bool                     has_frame = (m && m->tree && m->tree->frame != NULL) || type == FLUX_CONTROL_FRAME;
 	( void ) id_list_set(&store->frame_nodes, &store->nframe, &store->frame_cap, node, has_frame);
 }
 
@@ -294,7 +309,13 @@ XentNodeId flux_store_frame(FluxStore const *store, uint32_t i) {
 	return store && i < store->nframe ? store->frame_nodes [i] : XENT_NODE_INVALID;
 }
 
-static void ns_on_node_lifecycle(XentCtx *ctx, XentNodeEvent const *lifecycle, void *userdata) {
+void flux_store_setmotion(FluxStore *store, struct FluxMotionSystem *motion) {
+	if (store) store->motion = motion;
+}
+
+struct FluxMotionSystem *flux_store_motion(FluxStore const *store) { return store ? store->motion : NULL; }
+
+static void              ns_on_node_lifecycle(XentCtx *ctx, XentNodeEvent const *lifecycle, void *userdata) {
 	FluxStore *store = ( FluxStore * ) userdata;
 	switch (lifecycle->event) {
 	case XENT_NODE_EVENT_DESTROY :

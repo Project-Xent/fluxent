@@ -4,8 +4,8 @@
 static void lift_shift(FluxStore *store, XentNodeId node, FluxLiftPlace *place) {
 	FluxNodeData *nd = flux_store_find(store, node);
 	if (!nd) return;
-	place->dx += nd->render_translate_x;
-	place->dy += nd->render_translate_y;
+	place->dx += nd->render_translate_x + nd->motion_translate_x;
+	place->dy += nd->render_translate_y + nd->motion_translate_y;
 	if (nd->component_type != FLUX_CONTROL_SCROLL || !nd->component_data) return;
 	FluxScrollData const *sd  = ( FluxScrollData const * ) nd->component_data;
 	place->dx                -= flux_scroll_off_x(sd);

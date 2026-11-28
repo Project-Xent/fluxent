@@ -1,6 +1,7 @@
 #include "gallery.h"
 #include "gallery_assets.h"
 
+#include <fluxent/flux_theme.h>
 #include <fluxent/flux_window.h>
 
 #include <windows.h>
@@ -16,6 +17,7 @@ void gallery_decl_update(void *model, XtkMsg msg) {
 	Model *m = ( Model * ) model;
 	gallery_model_update(m, msg);
 	if (msg.tag == MSG_BACKDROP) gallery_backdrop_apply(g_window, m->backdrop);
+	if (msg.tag == MSG_MOTION_REDUCED) flux_set_animations_override(m->motion_reduced_override);
 }
 
 typedef XtkEl *(*GalleryPageFn)(XtkUi *ui, Model const *m);
@@ -101,6 +103,7 @@ static GalleryPageFn const k_page_fn [PAGE_COUNT] = {
   [PAGE_TITLE_BAR]       = page_title_bar,
   [PAGE_DRAG_DROP]       = page_drag_drop,
   [PAGE_MATERIALS]       = page_materials,
+  [PAGE_MOTION]          = page_motion,
   [PAGE_MENUS]           = page_menus,
   [PAGE_COMMANDBAR]      = page_commandbar,
   [PAGE_TABVIEW]         = page_tabview,
@@ -128,22 +131,25 @@ static XtkEl *page_view(XtkUi *ui, Model const *m) {
 }
 
 XtkEl *gallery_decl_page_view(XtkUi *ui, void *model) {
-	Model *m = ( Model * ) model;
-	return xtk_grow(
-	  xtk_keyed(
-		ui, xtk_fmt(ui, "page-%d", m->page),
-		xtk_scroll(
-		  ui,
-		  (XtkScrollDesc) {
-			0
+	Model               *m    = ( Model * ) model;
+	XtkNavPaneMode       mode = m->nav_style ? XTK_NAV_PANE_TOP : XTK_NAV_PANE_AUTO;
+	XtkNavTransitionKind tr   = xtk_nav_recommended_transition(m->prev_page, m->page, mode);
+	XtkEl               *page = xtk_keyed(
+	  ui, xtk_fmt(ui, "page-%d", m->page),
+	  xtk_scroll(
+		ui,
+		(XtkScrollDesc) {
+		  0
     },
-		  xtk_kids(xtk_column(
-			ui, (XtkStackDesc) {.padding = {36, 28, 36, 28}, .align = XENT_FLEX_ALIGN_STRETCH, .fill = true},
-			xtk_kids(page_view(ui, m))
-		  ))
-		)
-	  ),
-	  1.0f
+		xtk_kids(xtk_column(
+		  ui, (XtkStackDesc) {.padding = {36, 28, 36, 28}, .align = XENT_FLEX_ALIGN_STRETCH, .fill = true},
+		  xtk_kids(page_view(ui, m))
+		))
+	  )
+	);
+	return xtk_keyed(
+	  ui, "page-frame",
+	  xtk_grow(xtk_frame(ui, (XtkFrameDesc) {.transition = tr, .page_key = m->page + 1}, xtk_grow(page, 1.0f)), 1.0f)
 	);
 }
 

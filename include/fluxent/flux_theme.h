@@ -119,6 +119,12 @@ uint32_t                  flux_theme_ver(FluxTheme const *tm);
 
 bool                      flux_theme_systemdark(void);
 
+bool                      flux_theme_animations_enabled(FluxTheme *tm);
+
+bool                      flux_animations_enabled(void);
+
+void                      flux_set_animations_override(int mode);
+
 static_assert(sizeof(FluxThemeMode) == 4, "FluxThemeMode crosses the ABI as int32");
 
 #endif

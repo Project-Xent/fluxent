@@ -92,6 +92,7 @@ struct GalleryApp {
 	GalleryBind       search_query_bind;
 	XtkCtrl           nav;
 	XtkCtrl           control_search;
+	XtkCtrl           page_frame;
 	XtkCtrl           page_root;
 	GalleryBindBlock *bind_blocks;
 	GalleryPageAlloc *page_allocs;
@@ -190,6 +191,7 @@ bool       page_navigation_view_build(PageBuild *b);
 bool       page_title_bar_build(PageBuild *b);
 bool       page_drag_drop_build(PageBuild *b);
 bool       page_materials_build(PageBuild *b);
+bool       page_motion_build(PageBuild *b);
 bool       page_dialog_build(PageBuild *b);
 bool       page_teaching_tip_build(PageBuild *b);
 bool       page_settings_build(PageBuild *b);

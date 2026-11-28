@@ -76,6 +76,7 @@ target("fluxent")
         "src/host/*.c",
         "src/graphics/*.c",
         "src/input/*.c",
+        "src/motion/*.c",
         "src/popup/*.c",
         "src/render/*.c",
         "src/runtime/*.c",

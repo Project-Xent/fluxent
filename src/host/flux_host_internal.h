@@ -145,7 +145,11 @@ static FluxHostState const inline *flux_host_state_c(XtkHost const *host) {
 }
 
 static bool inline flux_host_node_live(FluxHostState const *R, XtkCtrl control) {
-	return control != XTK_CTRL_INVALID && xent_node_valid(R->ctx, flux_host_as_node(control));
+	if (control == XTK_CTRL_INVALID) return false;
+	XentNodeId node = flux_host_as_node(control);
+	if (!xent_node_valid(R->ctx, node)) return false;
+	FluxNodeData const *nd = flux_store_find(R->store, node);
+	return !nd || !nd->retiring;
 }
 
 void             flux_host_value_clear(XtkValue *v);

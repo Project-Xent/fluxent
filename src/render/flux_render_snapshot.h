@@ -199,6 +199,7 @@ typedef struct FluxNavSnapshot {
 	float       nav_ind_scale;
 	float       nav_ind_offset;
 	float       nav_ind_opacity;
+	float       nav_header_opacity;
 	float       nav_shadow_opacity;
 	float       nav_content_x;
 	float       nav_content_y;

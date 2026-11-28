@@ -29,6 +29,7 @@ typedef enum FluxClipAction
 	FLUX_CLIP_POP,
 	FLUX_CLIP_PUSH_TRANSFORM,
 	FLUX_CLIP_POP_TRANSFORM,
+	FLUX_CLIP_SHADOW,
 } FluxClipAction;
 
 typedef struct FluxRenderCommand {
@@ -39,7 +40,8 @@ typedef struct FluxRenderCommand {
 	FluxClipAction   clip_action;
 	float            scroll_x;
 	float            scroll_y;
-	float            scale;
+	float            scale_x;
+	float            scale_y;
 	float            pivot_x;
 	float            pivot_y;
 	float            opacity;
@@ -47,7 +49,9 @@ typedef struct FluxRenderCommand {
 	float            translate_y;
 	float            rotate_x;
 	float            rotate_y;
+	float            rotate_z;
 	bool             clip_subtree;
+	bool             has_layer;
 } FluxRenderCommand;
 
 typedef void               (*FluxDegradedFn)(void *ctx);
@@ -77,5 +81,15 @@ FluxRenderCommand const *flux_engine_cmd(FluxEngine const *eng, uint32_t index);
 void                     flux_engine_execute(FluxEngine const *eng, FluxRenderCtx const *rc);
 
 void flux_engine_execute_clipped(FluxEngine const *eng, FluxRenderCtx const *rc, FluxRect const *clip);
+
+void flux_engine_push_transform(FluxEngine *eng, FluxRenderCommand const *xform);
+
+void flux_engine_pop_transform(FluxEngine *eng, bool has_layer);
+
+void flux_engine_push_shadow(FluxEngine *eng, FluxRect bounds, float z_elevation, float opacity, float corner_radius);
+
+void flux_engine_collect_subtree(
+  FluxEngine *eng, XentCtx *ctx, XentNodeId node, float scroll_x, float scroll_y, bool include_hidden
+);
 
 #endif

@@ -180,6 +180,7 @@ struct FluxNavViewData {
 
 	FluxNavTween           pane_progress;
 	FluxNavTween           ind_progress;
+	FluxNavTween           header_opacity;
 	float                  ind_travel;
 	bool                   anim_active;
 	bool                   ind_same_level;

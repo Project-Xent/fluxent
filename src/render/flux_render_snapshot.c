@@ -20,6 +20,7 @@
 #include "render/flux_looping_geom.h"
 #include "controls/behavior/flux_picker_internal.h"
 #include "render/flux_render_internal.h"
+#include "motion/flux_motion_internal.h"
 
 #include <string.h>
 
@@ -274,6 +275,7 @@ void flux_snap_nav_view_item(FluxSnapCtx const *ctx) {
 	s->nav_ind_scale                = indicator.scale;
 	s->nav_ind_offset               = indicator.offset;
 	s->nav_ind_opacity              = indicator.opacity;
+	s->nav_header_opacity           = it->place == FLUX_NAV_PLACE_LEFT ? d->header_opacity.current : 1.0f;
 	s->nav_ind_horizontal           = indicator.horizontal;
 	s->nav_in_flyout                = indicator.in_flyout;
 }
@@ -630,13 +632,14 @@ void flux_snap_person_picture(FluxSnapCtx const *ctx) {
 
 void flux_snapshot_build(FluxRenderSnap *snap, XentCtx const *ctx, XentNodeId node, FluxNodeData const *nd) {
 	snapshot_base(snap, ctx, node, nd);
-	if (!nd || !nd->component_data) return;
-
-	FluxControlModule const *m = flux_module_get(snap->type);
-	if (!m || !m->snapshot) return;
-
-	FluxSnapCtx build = {snap, ctx, node, nd->component_data};
-	m->snapshot(&build);
+	if (nd && nd->component_data) {
+		FluxControlModule const *m = flux_module_get(snap->type);
+		if (m && m->snapshot) {
+			FluxSnapCtx build = {snap, ctx, node, nd->component_data};
+			m->snapshot(&build);
+		}
+	}
+	if (nd && nd->motion) flux_motion_patch_snap(nd, snap);
 }
 
 static uint64_t snap_fnv(uint64_t h, void const *data, size_t len) {

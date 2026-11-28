@@ -93,6 +93,7 @@ XtkNavItemDesc const kNavItems [PAGE_COUNT] = {
   [PAGE_TITLE_BAR]       = {XTK_NAV_CHILD,     NULL,              "TitleBar"         },
   [PAGE_DRAG_DROP]       = {XTK_NAV_CHILD,     NULL,              "Drag and drop"    },
   [PAGE_MATERIALS]       = {XTK_NAV_CHILD,     NULL,              "Materials"        },
+  [PAGE_MOTION]          = {XTK_NAV_CHILD,     NULL,              "Motion"           },
   [PAGE_CAT_DIALOGS]     = {XTK_NAV_ITEM,      "Flag",            "Dialogs & flyouts"},
   [PAGE_DIALOG]          = {XTK_NAV_CHILD,     NULL,              "ContentDialog"    },
   [PAGE_TEACHING_TIP]    = {XTK_NAV_CHILD,     NULL,              "TeachingTip"      },
@@ -231,13 +232,23 @@ void gallery_model_init(Model *m) {
 	wchar_t exe [512];
 	DWORD   n = GetModuleFileNameW(NULL, exe, 512);
 	if (n && n < 512) WideCharToMultiByte(CP_UTF8, 0, exe, -1, m->dd_exe, sizeof(m->dd_exe), NULL, NULL);
-	m->det_width [0]   = 260.0f;
-	m->det_width [1]   = 200.0f;
-	m->det_width [2]   = 160.0f;
-	m->det_width [3]   = 120.0f;
-	m->slider_range_lo = 30.0f;
-	m->slider_range_hi = 70.0f;
-	m->combo_edit_sel  = -1;
+	m->det_width [0]           = 260.0f;
+	m->det_width [1]           = 200.0f;
+	m->det_width [2]           = 160.0f;
+	m->det_width [3]           = 120.0f;
+	m->slider_range_lo         = 30.0f;
+	m->slider_range_hi         = 70.0f;
+	m->combo_edit_sel          = -1;
+	m->prev_page               = PAGE_HOME;
+	m->motion_imp_mask         = XTK_MOTION_ALL;
+	m->motion_theme_kind       = XTK_THEME_TRANSITION_ENTRANCE;
+	m->motion_item_ids [0]     = 1;
+	m->motion_item_ids [1]     = 2;
+	m->motion_item_ids [2]     = 3;
+	m->motion_item_count       = 3;
+	m->motion_item_next        = 4;
+	m->motion_frame_kind       = XTK_NAV_TRANSITION_SLIDE_RIGHT;
+	m->motion_reduced_override = -1;
 }
 
 static int tab_selection_after_close(Model const *m, int index) {
@@ -266,9 +277,13 @@ static void tab_add(Model *m) {
 
 typedef void (*GalleryMsgFn)(Model *m, XtkMsg msg);
 
-static void  msg_nav(Model *m, XtkMsg msg) { m->page = msg.i; }
+static void  msg_nav(Model *m, XtkMsg msg) {
+	if (msg.i == m->page) return;
+	m->prev_page = m->page;
+	m->page      = msg.i;
+}
 
-static void  msg_click(Model *m, XtkMsg msg) {
+static void msg_click(Model *m, XtkMsg msg) {
 	( void ) msg;
 	m->clicks++;
 }
@@ -639,9 +654,52 @@ static void msg_control_search_text(Model *m, XtkMsg msg) {
 static void msg_control_search_query(Model *m, XtkMsg msg) {
 	int page = search_page(msg.ptr);
 	if (page < 0) return;
-	m->page              = page;
+	if (page != m->page) {
+		m->prev_page = m->page;
+		m->page      = page;
+	}
 	m->control_query [0] = '\0';
 }
+
+static void msg_motion_imp_state(Model *m, XtkMsg msg) { m->motion_imp_step = msg.i; }
+
+static void msg_motion_imp_mask(Model *m, XtkMsg msg) { m->motion_imp_mask ^= ( uint32_t ) msg.i; }
+
+static void msg_motion_enter_kind(Model *m, XtkMsg msg) { m->motion_theme_kind = msg.i; }
+
+static void msg_motion_item_add(Model *m, XtkMsg msg) {
+	( void ) msg;
+	if (m->motion_item_count < 8) m->motion_item_ids [m->motion_item_count++] = m->motion_item_next++;
+}
+
+static void msg_motion_item_remove(Model *m, XtkMsg msg) {
+	( void ) msg;
+	if (m->motion_item_count > 0) m->motion_item_count--;
+}
+
+static void msg_motion_item_shuffle(Model *m, XtkMsg msg) {
+	( void ) msg;
+	if (m->motion_item_count < 2) return;
+	int first = m->motion_item_ids [0];
+	for (int i = 0; i < m->motion_item_count - 1; i++) m->motion_item_ids [i] = m->motion_item_ids [i + 1];
+	m->motion_item_ids [m->motion_item_count - 1] = first;
+}
+
+static void msg_motion_frame_kind(Model *m, XtkMsg msg) { m->motion_frame_kind = msg.i; }
+
+static void msg_motion_frame_step(Model *m, XtkMsg msg) {
+	m->motion_frame_back = msg.i < 0;
+	m->motion_frame_page = (m->motion_frame_page + (msg.i < 0 ? 3 : 1)) % 4;
+}
+
+static void msg_motion_conn_kind(Model *m, XtkMsg msg) { m->motion_conn_kind = msg.i; }
+
+static void msg_motion_conn_toggle(Model *m, XtkMsg msg) {
+	( void ) msg;
+	m->motion_conn_detail = !m->motion_conn_detail;
+}
+
+static void               msg_motion_reduced(Model *m, XtkMsg msg) { m->motion_reduced_override = msg.i; }
 
 static GalleryMsgFn const k_msg_fn [] = {
   [MSG_NAV]                  = msg_nav,
@@ -747,6 +805,17 @@ static GalleryMsgFn const k_msg_fn [] = {
   [MSG_NAV_DEMO_HIDE_HEADER] = msg_nav_demo_hide_header,
   [MSG_CONTROL_SEARCH_TEXT]  = msg_control_search_text,
   [MSG_CONTROL_SEARCH_QUERY] = msg_control_search_query,
+  [MSG_MOTION_IMP_STATE]     = msg_motion_imp_state,
+  [MSG_MOTION_IMP_MASK]      = msg_motion_imp_mask,
+  [MSG_MOTION_ENTER_KIND]    = msg_motion_enter_kind,
+  [MSG_MOTION_ITEM_ADD]      = msg_motion_item_add,
+  [MSG_MOTION_ITEM_REMOVE]   = msg_motion_item_remove,
+  [MSG_MOTION_ITEM_SHUFFLE]  = msg_motion_item_shuffle,
+  [MSG_MOTION_FRAME_KIND]    = msg_motion_frame_kind,
+  [MSG_MOTION_FRAME_STEP]    = msg_motion_frame_step,
+  [MSG_MOTION_CONN_KIND]     = msg_motion_conn_kind,
+  [MSG_MOTION_CONN_TOGGLE]   = msg_motion_conn_toggle,
+  [MSG_MOTION_REDUCED]       = msg_motion_reduced,
 };
 
 void gallery_model_update(Model *m, XtkMsg msg) {

@@ -61,6 +61,7 @@ enum
 	PAGE_TITLE_BAR,
 	PAGE_DRAG_DROP,
 	PAGE_MATERIALS,
+	PAGE_MOTION,
 	PAGE_CAT_DIALOGS,
 	PAGE_DIALOG,
 	PAGE_TEACHING_TIP,
@@ -193,6 +194,17 @@ enum
 	MSG_NAV_DEMO_HIDE_HEADER,
 	MSG_CONTROL_SEARCH_TEXT,
 	MSG_CONTROL_SEARCH_QUERY,
+	MSG_MOTION_IMP_STATE,
+	MSG_MOTION_IMP_MASK,
+	MSG_MOTION_ENTER_KIND,
+	MSG_MOTION_ITEM_ADD,
+	MSG_MOTION_ITEM_REMOVE,
+	MSG_MOTION_ITEM_SHUFFLE,
+	MSG_MOTION_FRAME_KIND,
+	MSG_MOTION_FRAME_STEP,
+	MSG_MOTION_CONN_KIND,
+	MSG_MOTION_CONN_TOGGLE,
+	MSG_MOTION_REDUCED,
 	MSG_COUNT,
 };
 
@@ -305,6 +317,19 @@ typedef struct Model {
 	bool     nav_demo_hide;
 	int      nav_demo_mode;
 	bool     nav_demo_hide_header;
+	int      prev_page;
+	int      motion_imp_step;
+	uint32_t motion_imp_mask;
+	int      motion_theme_kind;
+	int      motion_item_ids [8];
+	int      motion_item_count;
+	int      motion_item_next;
+	int      motion_frame_page;
+	int      motion_frame_kind;
+	bool     motion_frame_back;
+	int      motion_conn_kind;
+	bool     motion_conn_detail;
+	int      motion_reduced_override;
 } Model;
 
 void                     gallery_model_init(Model *m);

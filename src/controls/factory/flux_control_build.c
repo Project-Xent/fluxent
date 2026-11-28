@@ -43,6 +43,7 @@
 #include "controls/data/flux_split_view_data.h"
 #include "controls/data/flux_tab_view_data.h"
 #include "controls/data/flux_title_bar_data.h"
+#include "motion/flux_motion_internal.h"
 #include "fluxent/flux_input.h"
 #include <xtk/xtk_catalog.h>
 
@@ -2351,3 +2352,25 @@ MODULE(groupheader) = {
   .seed   = seed_group_header,
   .record = flux_groupheader_record,
   .uia    = &uia_groupheader};
+
+static bool shell_frame(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxControlEnv const *env) {
+	( void ) env;
+	FluxNodeData *nd = flux_store_ensure(store, node);
+	if (!nd) return false;
+	layout_flex_column(ctx, node);
+	nd->clips_children       = true;
+	FluxFrameControlData *fd = ( FluxFrameControlData * ) calloc(1, sizeof(*fd));
+	if (!fd) return false;
+	fd->active_child           = XENT_NODE_INVALID;
+	fd->pending_outgoing       = XENT_NODE_INVALID;
+	nd->component_data         = fd;
+	nd->destroy_component_data = free;
+	return true;
+}
+
+MODULE(frame) = {
+  .type   = FLUX_CONTROL_FRAME,
+  .props  = flux_props_frame,
+  .shell  = shell_frame,
+  .record = flux_container_record,
+  .uia    = &uia_panel};

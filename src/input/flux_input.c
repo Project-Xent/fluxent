@@ -36,8 +36,8 @@ typedef struct HitChildList {
 static FluxPoint hit_test_node_offset(InputHitQuery const *query, FluxNodeData const *nd) {
 	FluxPoint offset = query->scroll;
 	if (!nd) return offset;
-	offset.x -= nd->render_translate_x;
-	offset.y -= nd->render_translate_y;
+	offset.x -= nd->render_translate_x + nd->motion_translate_x;
+	offset.y -= nd->render_translate_y + nd->motion_translate_y;
 	return offset;
 }
 

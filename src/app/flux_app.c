@@ -29,6 +29,8 @@
 #include "graphics/flux_graphics_compose.h"
 #include "render/flux_dl_replay.h"
 #include "render/flux_lift.h"
+#include "motion/flux_motion_internal.h"
+#include "fluxent/flux_motion.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -65,6 +67,7 @@ struct FluxApp {
 
 	FluxTooltip             *tooltip;
 	bool                     auto_tip_open;
+	bool                     motion_was_active;
 
 	FluxDManip              *dmanip;
 
@@ -275,6 +278,15 @@ static void app_prepare_layout_tree(FluxApp *app, FluxDpi dpi) {
 	xent_layout(ctx, root, dips.w, dips.h);
 	app_sync_layout_controls(app, ctx, store, root);
 	if (xent_has_layout_dirty(ctx, root)) xent_layout(ctx, root, dips.w, dips.h);
+	bool   anim_en       = app->theme ? flux_theme_animations_enabled(app->theme) : flux_animations_enabled();
+	double now_s         = flux_perf_seconds(flux_perf_now());
+	bool   motion_active = flux_motion_tick(store, ctx, now_s, anim_en);
+	if (motion_active) {
+		flux_engine_invalidate_full(app->engine);
+		flux_app_redraw(app);
+	}
+	else if (app->motion_was_active) { flux_engine_invalidate_full(app->engine); }
+	app->motion_was_active = motion_active;
 	if (app->dmanip) flux_dmanip_sync_tree(app->dmanip, ctx, store, root, scale);
 	if (app->focus_request != XTK_CTRL_INVALID) {
 		XentNodeId target  = ( XentNodeId ) app->focus_request;
@@ -289,15 +301,16 @@ static void app_prepare_layout_tree(FluxApp *app, FluxDpi dpi) {
 static FluxRenderCtx app_render_context(FluxApp *app, FluxGfx *gfx, FluxDpi dpi, int64_t now_ticks) {
 	FluxRenderCtx rc;
 	memset(&rc, 0, sizeof(rc));
-	rc.d2d     = flux_gfx_d2d(gfx);
-	rc.brush   = app->shared_brush;
-	rc.cache   = app->cache;
-	rc.text    = app->text;
-	rc.dpi     = dpi;
-	rc.theme   = app->theme ? flux_theme_colors(app->theme) : NULL;
-	rc.now     = flux_perf_seconds(now_ticks);
-	rc.dt      = flux_compute_dt(app->last_frame_ticks, now_ticks);
-	rc.is_dark = app_theme_is_dark(app->theme);
+	rc.d2d                = flux_gfx_d2d(gfx);
+	rc.brush              = app->shared_brush;
+	rc.cache              = app->cache;
+	rc.text               = app->text;
+	rc.dpi                = dpi;
+	rc.theme              = app->theme ? flux_theme_colors(app->theme) : NULL;
+	rc.now                = flux_perf_seconds(now_ticks);
+	rc.dt                 = flux_compute_dt(app->last_frame_ticks, now_ticks);
+	rc.is_dark            = app_theme_is_dark(app->theme);
+	rc.animations_enabled = app->theme ? flux_theme_animations_enabled(app->theme) : flux_animations_enabled();
 	return rc;
 }
 
@@ -760,6 +773,7 @@ static void app_destroy_scene_runtime(FluxApp *app) {
 
 static void app_on_node_removed(void *userdata, XentNodeId id) {
 	FluxApp *app = ( FluxApp * ) userdata;
+	flux_motion_on_node_removed(app_store(app), id);
 	if (app->engine) flux_engine_note_removed(app->engine, id);
 	flux_input_dropnode(app->input, id);
 	if (app->cache) flux_render_cache_remove(app->cache, id);
@@ -784,6 +798,7 @@ static bool app_bind_scene_runtime(FluxApp *app) {
 	if (app->text) flux_text_register(app->text, ctx);
 
 	flux_store_ondel(store, app_on_node_removed, app);
+	flux_store_setmotion(store, flux_motion_system_create(store, ctx));
 	if (app->tooltip && app->text) flux_tooltip_settext(app->tooltip, app->text);
 
 	return app->engine && app->input;

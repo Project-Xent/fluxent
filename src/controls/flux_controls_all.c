@@ -95,6 +95,7 @@ void flux_controls_all(void) {
 	  &flux_ctrl_cmdovf,
 	  &flux_ctrl_cmdovfrow,
 	  &flux_ctrl_navslot,
+	  &flux_ctrl_frame,
 	};
 	for (unsigned i = 0; i < sizeof(all) / sizeof(all [0]); i++) flux_controls_use(all [i]);
 }

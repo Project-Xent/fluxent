@@ -8,6 +8,7 @@
 #include "controls/factory/flux_init_nav.h"
 #include "controls/factory/flux_init_popup.h"
 #include "controls/behavior/flux_host_menu.h"
+#include "motion/flux_motion_internal.h"
 
 static bool
 materialize(FluxHostState *R, XentNodeId node, XtkCtrlId type, XtkPropPatch const *props, uint32_t prop_count) {
@@ -648,16 +649,48 @@ static XtkBatchError apply_op(Prepare *P, XtkBatchOp const *op) {
 	return XTK_BATCH_ERR_VALIDATION;
 }
 
+static bool destroy_list_contains(XentNodeId const *list, uint32_t count, XentNodeId target) {
+	for (uint32_t i = 0; i < count; i++)
+		if (list [i] == target) return true;
+	return false;
+}
+
+static void destroy_prepare_retiring(Prepare *P) {
+	XentCtx   *ctx   = P->R->ctx;
+	FluxStore *store = P->R->store;
+	for (uint32_t i = 0; i < P->destroy_count; i++) {
+		XentNodeId node = P->deferred_destroy [i];
+		if (!xent_node_valid(ctx, node)) continue;
+		flux_motion_connected_prepare_subtree(store, ctx, node);
+	}
+	for (uint32_t i = P->destroy_count; i-- > 0;) {
+		XentNodeId node = P->deferred_destroy [i];
+		if (!xent_node_valid(ctx, node)) continue;
+		FluxNodeData *nd = flux_store_find(store, node);
+		if (nd && nd->retiring) continue;
+		XentNodeId parent = xent_node_parent(ctx, node);
+		if (parent == XENT_NODE_INVALID || destroy_list_contains(P->deferred_destroy, P->destroy_count, parent))
+			continue;
+		if (flux_motion_try_retire(store, ctx, node, parent)) flux_motion_mark_subtree_retiring(store, ctx, node);
+	}
+}
+
+static void destroy_unmount_node(Prepare *P, XentNodeId node) {
+	XtkCtrl control = flux_host_as_control(node);
+	flux_control_unmount(P->R->store, node, ( FluxControlType ) flux_host_types_get(P->R, node));
+	if (P->R->comp && xtk_comp_hasinst(P->R->comp, control))
+		xtk_comp_unmount(P->R->comp, &P->R->host, P->R->ctx, control);
+	flux_host_purge_sidecar(P->R, node);
+}
+
 static void finish_destroys(Prepare *P) {
+	destroy_prepare_retiring(P);
 	for (uint32_t i = 0; i < P->destroy_count; i++) {
 		XentNodeId node = P->deferred_destroy [i];
 		if (!xent_node_valid(P->R->ctx, node)) continue;
-		XtkCtrl control = flux_host_as_control(node);
-		flux_control_unmount(P->R->store, node, ( FluxControlType ) flux_host_types_get(P->R, node));
-		if (P->R->comp && xtk_comp_hasinst(P->R->comp, control))
-			xtk_comp_unmount(P->R->comp, &P->R->host, P->R->ctx, control);
-		flux_host_purge_sidecar(P->R, node);
-		flux_tree_drop(P->R->store, node);
+		destroy_unmount_node(P, node);
+		FluxNodeData const *nd = flux_store_find(P->R->store, node);
+		if (!nd || !nd->retiring) flux_tree_drop(P->R->store, node);
 	}
 }
 
@@ -765,6 +798,36 @@ static void project_native_props(Prepare *P) {
 	}
 }
 
+static bool
+created_buf_push(XentNodeId **buf, XentNodeId stack_buf [64], uint32_t *cap, uint32_t *count, XentNodeId id) {
+	if (*count == *cap) {
+		uint32_t    ncap = *cap * 2u;
+		XentNodeId *next = (*buf == stack_buf) ? ( XentNodeId * ) malloc(sizeof(*next) * ncap)
+		                                       : ( XentNodeId * ) realloc(*buf, sizeof(*next) * ncap);
+		if (!next) return false;
+		if (*buf == stack_buf) memcpy(next, stack_buf, sizeof(XentNodeId) * (*count));
+		*buf = next;
+		*cap = ncap;
+	}
+	(*buf) [(*count)++] = id;
+	return true;
+}
+
+static void commit_motion_created(Prepare *P) {
+	XentNodeId  stack_buf [64];
+	XentNodeId *created = stack_buf;
+	uint32_t    cap     = 64u;
+	uint32_t    count   = 0u;
+	for (uint32_t i = 0; i < P->batch->count; i++) {
+		XtkBatchOp const *op = &P->batch->ops [i];
+		if (op->kind != XTK_BATCH_OP_CREATE) continue;
+		XtkCtrl c = mapped_created_control(P, &op->u.create);
+		if (c != XTK_CTRL_INVALID && !created_buf_push(&created, stack_buf, &cap, &count, flux_host_as_node(c))) break;
+	}
+	flux_motion_commit(P->R->store, P->R->ctx, created, count);
+	if (created != stack_buf) free(created);
+}
+
 XtkBatchResult *flux_host_commit(XtkHost *host, XtkPrepare *prepare, XtkBatchDiag *diagnostic) {
 	( void ) host;
 	Prepare *P = ( Prepare * ) prepare;
@@ -807,6 +870,7 @@ XtkBatchResult *flux_host_commit(XtkHost *host, XtkPrepare *prepare, XtkBatchDia
 	project_native_props(P);
 	finish_destroys(P);
 	sync_touched_owners(P);
+	commit_motion_created(P);
 	flux_host_publish_invalidations(P);
 	P->R->revision += 1u;
 	P->undo_count   = 0u;

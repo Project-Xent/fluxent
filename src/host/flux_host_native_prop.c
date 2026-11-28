@@ -22,6 +22,7 @@
 #include "controls/behavior/flux_colheader.h"
 #include "controls/behavior/flux_cmdbar.h"
 #include "host/flux_prop_apply.h"
+#include "motion/flux_motion_internal.h"
 #include "render/flux_resource_intern.h"
 #include <controls/data/flux_list_view_data.h>
 #include <controls/data/flux_pager_data.h>
@@ -196,6 +197,182 @@ HANDLER(prop_wrap) {
 }
 
 SETTER(prop_tooltip, flux_prop_node_tooltip, str_or_empty(v))
+
+typedef struct MotionImplicitWire {
+	uint32_t mask;
+	float    opacity_dur;
+	float    transform_dur;
+	float    brush_dur;
+} MotionImplicitWire;
+
+typedef struct ConnectedCfgWire {
+	uint32_t kind;
+	uint32_t shadow;
+	float    dip_x;
+	float    dip_y;
+	float    duration;
+} ConnectedCfgWire;
+
+HANDLER(prop_style_bg) {
+	( void ) control;
+	FluxNodeData *nd = flux_store_ensure(R->store, node);
+	if (!nd) return false;
+	nd->visuals.background = v->u.color;
+	flux_motion_sync_implicit(R->store, node, nd, false);
+	return true;
+}
+
+HANDLER(prop_style_border) {
+	( void ) control;
+	FluxNodeData *nd = flux_store_ensure(R->store, node);
+	if (!nd) return false;
+	nd->visuals.border_color = v->u.color;
+	flux_motion_sync_implicit(R->store, node, nd, false);
+	return true;
+}
+
+HANDLER(prop_style_radius) {
+	( void ) control;
+	FluxNodeData *nd = flux_store_ensure(R->store, node);
+	if (!nd) return false;
+	nd->visuals.corner_radius = v->u.f32;
+	flux_motion_sync_implicit(R->store, node, nd, false);
+	return true;
+}
+
+HANDLER(prop_style_border_w) {
+	( void ) control;
+	FluxNodeData *nd = flux_store_ensure(R->store, node);
+	if (!nd) return false;
+	nd->visuals.border_width = v->u.f32;
+	return true;
+}
+
+HANDLER(prop_style_opacity) {
+	( void ) control;
+	flux_motion_set_opacity(R->store, node, v->u.f32);
+	return true;
+}
+
+HANDLER(prop_style_tx) {
+	FluxNodeData *nd = flux_store_find(R->store, node);
+	float         ty = (nd && nd->motion) ? nd->motion->target_ty : stored_f32(R, control, XTK_PROP_STYLE_TY);
+	flux_motion_set_translation(R->store, node, v->u.f32, ty);
+	return true;
+}
+
+HANDLER(prop_style_ty) {
+	FluxNodeData *nd = flux_store_find(R->store, node);
+	float         tx = (nd && nd->motion) ? nd->motion->target_tx : stored_f32(R, control, XTK_PROP_STYLE_TX);
+	flux_motion_set_translation(R->store, node, tx, v->u.f32);
+	return true;
+}
+
+HANDLER(prop_style_sx) {
+	( void ) control;
+	FluxNodeData *nd = flux_store_find(R->store, node);
+	float         sy = (nd && nd->motion) ? nd->motion->target_sy : 1.0f;
+	flux_motion_set_scale(R->store, node, v->u.f32, sy);
+	return true;
+}
+
+HANDLER(prop_style_sy) {
+	( void ) control;
+	FluxNodeData *nd = flux_store_find(R->store, node);
+	float         sx = (nd && nd->motion) ? nd->motion->target_sx : 1.0f;
+	flux_motion_set_scale(R->store, node, sx, v->u.f32);
+	return true;
+}
+
+HANDLER(prop_style_rotation) {
+	( void ) control;
+	flux_motion_set_rotation(R->store, node, v->u.f32);
+	return true;
+}
+
+HANDLER(prop_motion_implicit) {
+	( void ) control;
+	if (!v->u.bytes.data || v->u.bytes.len != sizeof(MotionImplicitWire)) return false;
+	MotionImplicitWire wire;
+	memcpy(&wire, v->u.bytes.data, sizeof(wire));
+	FluxImplicitCfg cfg = {
+	  .enabled_mask       = wire.mask,
+	  .opacity_duration   = wire.opacity_dur,
+	  .transform_duration = wire.transform_dur,
+	  .brush_duration     = wire.brush_dur,
+	};
+	flux_motion_set_implicit(R->store, node, &cfg);
+	return true;
+}
+
+HANDLER(prop_motion_enter_exit) {
+	( void ) control;
+	flux_motion_set_theme_transition(R->store, node, ( FluxThemeTransitionKind ) v->u.u32);
+	return true;
+}
+
+HANDLER(prop_connected_key) {
+	( void ) control;
+	struct FluxMotionState *st = flux_motion_ensure_state(R->store, node);
+	FluxConnectedCfg        cfg
+	  = st ? st->connected_cfg : (FluxConnectedCfg) {.kind = FLUX_CONNECTED_GRAVITY, .is_shadow_enabled = true};
+	flux_motion_set_connected_key(R->store, node, v->u.string.data, &cfg);
+	return true;
+}
+
+HANDLER(prop_connected_config) {
+	( void ) control;
+	if (!v->u.bytes.data || v->u.bytes.len != sizeof(ConnectedCfgWire)) return false;
+	ConnectedCfgWire cw;
+	memcpy(&cw, v->u.bytes.data, sizeof(cw));
+	struct FluxMotionState *st = flux_motion_ensure_state(R->store, node);
+	if (!st) return false;
+	st->connected_cfg = (FluxConnectedCfg) {
+	  .kind              = ( FluxConnectedKind ) cw.kind,
+	  .is_shadow_enabled = cw.shadow != 0u,
+	  .dip_x             = cw.dip_x,
+	  .dip_y             = cw.dip_y,
+	  .duration          = cw.duration,
+	};
+	return true;
+}
+
+HANDLER(prop_connected_coord) {
+	( void ) control;
+	flux_motion_set_connected_coord(R->store, node, v->u.string.data);
+	return true;
+}
+
+HANDLER(frame_transition) {
+	( void ) control;
+	FluxFrameControlData *fd = ( FluxFrameControlData * ) component(R, node);
+	if (!fd) return false;
+	fd->transition = ( FluxNavTransitionKind ) v->u.u32;
+	return true;
+}
+
+HANDLER(frame_back) {
+	( void ) control;
+	FluxFrameControlData *fd = ( FluxFrameControlData * ) component(R, node);
+	if (!fd) return false;
+	fd->is_back = v->u.b;
+	return true;
+}
+
+HANDLER(frame_page_key) {
+	( void ) control;
+	FluxFrameControlData *fd = ( FluxFrameControlData * ) component(R, node);
+	if (!fd) return false;
+	fd->page_key = ( uint64_t ) ( uint32_t ) v->u.i32;
+	return true;
+}
+
+FluxPropHandler const flux_props_frame [] = {
+  ON(FRAME_TRANSITION, ENUM, frame_transition),
+  ON(FRAME_BACK, BOOL, frame_back),
+  ON(FRAME_PAGE_KEY, I32, frame_page_key),
+  END,
+};
 
 #define A11Y_TEXT(name, slot)                                    \
 	HANDLER(name) {                                              \
@@ -1722,6 +1899,24 @@ static FluxPropHandler const core_props [] = {
   ON(NAV_BACK_ENABLED, BOOL, prop_none),
   ON(PANE_TITLE, STRING, prop_none),
   ON(NAV_SLOT, ENUM, prop_none),
+  ON(STYLE_BG, COLOR, prop_style_bg),
+  ON(STYLE_BORDER, COLOR, prop_style_border),
+  ON(STYLE_RADIUS, F32, prop_style_radius),
+  ON(STYLE_BORDER_W, F32, prop_style_border_w),
+  ON(STYLE_OPACITY, F32, prop_style_opacity),
+  ON(STYLE_TX, F32, prop_style_tx),
+  ON(STYLE_TY, F32, prop_style_ty),
+  ON(STYLE_SX, F32, prop_style_sx),
+  ON(STYLE_SY, F32, prop_style_sy),
+  ON(STYLE_ROTATION, F32, prop_style_rotation),
+  ON(MOTION_IMPLICIT, BYTES, prop_motion_implicit),
+  ON(MOTION_ENTER_EXIT, ENUM, prop_motion_enter_exit),
+  ON(CONNECTED_KEY, STRING, prop_connected_key),
+  ON(CONNECTED_CONFIG, BYTES, prop_connected_config),
+  ON(CONNECTED_COORD, STRING, prop_connected_coord),
+  ON(FRAME_TRANSITION, ENUM, prop_none),
+  ON(FRAME_BACK, BOOL, prop_none),
+  ON(FRAME_PAGE_KEY, I32, prop_none),
   END,
 };
 

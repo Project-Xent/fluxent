@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include <fluxent/flux_theme.h>
 #include <xtk/xtk.h>
 
 #include <stdarg.h>
@@ -354,7 +355,18 @@ static bool page_begin(PageBuild *b, GalleryApp *g) {
 	if (!xtk_txn_begin(&g->scene, &b->txn)) return false;
 	b->active = true;
 	if (g->page_root != XTK_CTRL_INVALID) xtk_txn_drop(&b->txn, xtk_ref_existing(g->page_root));
-	b->content = page_scroll(b, g->nav);
+	XtkNavPaneMode       mode = g->model.nav_style ? XTK_NAV_PANE_TOP : XTK_NAV_PANE_AUTO;
+	XtkNavTransitionKind tr   = xtk_nav_recommended_transition(g->model.prev_page, g->model.page, mode);
+	XtkNodeRef           fref = xtk_ref_existing(g->page_frame);
+	xtk_txn_set(
+	  &b->txn, fref, XTK_PROP_FRAME_TRANSITION, (XtkValue) {.kind = XTK_VALUE_ENUM, .u.u32 = ( uint32_t ) tr},
+	  (XtkChangeStamp) {0}
+	);
+	xtk_txn_set(
+	  &b->txn, fref, XTK_PROP_FRAME_PAGE_KEY, (XtkValue) {.kind = XTK_VALUE_I32, .u.i32 = g->model.page + 1},
+	  (XtkChangeStamp) {0}
+	);
+	b->content = page_scroll(b, g->page_frame);
 	return b->content != XTK_LOCAL_INVALID;
 }
 
@@ -446,6 +458,7 @@ static PageBuildFn const k_pages [PAGE_COUNT] = {
   [PAGE_TITLE_BAR]       = page_title_bar_build,
   [PAGE_DRAG_DROP]       = page_drag_drop_build,
   [PAGE_MATERIALS]       = page_materials_build,
+  [PAGE_MOTION]          = page_motion_build,
   [PAGE_DIALOG]          = page_dialog_build,
   [PAGE_TEACHING_TIP]    = page_teaching_tip_build,
   [PAGE_SETTINGS]        = page_settings_build,
@@ -497,7 +510,8 @@ static void apply_pending_message(GalleryApp *g, XtkMsg msg) {
 		  &g->scene, g->nav, g->model.nav_style ? XTK_NAV_PANE_TOP : XTK_NAV_PANE_AUTO, (XtkChangeStamp) {0}
 		);
 		break;
-	default : break;
+	case MSG_MOTION_REDUCED : flux_set_animations_override(g->model.motion_reduced_override); break;
+	default                 : break;
 	}
 }
 
@@ -564,14 +578,23 @@ static bool shell_build(GalleryApp *g) {
 	);
 	g->nav_bind = (GalleryBind) {.app = g, .tag = MSG_NAV};
 	xtk_nav_onselect(&txn, xtk_ref_local(nav), page_post, &g->nav_bind);
-	XtkLocalId      search = create_control_search(g, &txn, xtk_ref_local(nav));
+	XtkLocalId search = create_control_search(g, &txn, xtk_ref_local(nav));
+	XtkLocalId frame  = xtk_frame_create(
+	  &txn, xtk_ref_local(nav),
+	  &(XtkFrameProps) {
+		.set        = XTK_FRAME_GROW_MASK | XTK_FRAME_TRANSITION_MASK,
+		.grow       = 1.0f,
+		.transition = XTK_NAV_TRANSITION_ENTRANCE,
+	  }
+	);
 	XtkBatchResult *result = xtk_txn_commit(&txn, NULL);
 	if (!result) return false;
 	g->nav            = result_ctrl(result, nav);
 	g->control_search = result_ctrl(result, search);
+	g->page_frame     = result_ctrl(result, frame);
 	xtk_batchresult_destroy(result);
 	if (g->nav != XTK_CTRL_INVALID) xtk_nav_setsettings_visible(&g->scene, g->nav, false, (XtkChangeStamp) {0});
-	return g->nav != XTK_CTRL_INVALID && g->control_search != XTK_CTRL_INVALID;
+	return g->nav != XTK_CTRL_INVALID && g->control_search != XTK_CTRL_INVALID && g->page_frame != XTK_CTRL_INVALID;
 }
 
 bool gallery_app_create(GalleryApp *g) {

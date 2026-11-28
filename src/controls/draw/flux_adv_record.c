@@ -536,11 +536,14 @@ nav_rec_separator(XentDlBuilder *b, FluxRect const *ib, FluxRenderSnap const *sn
 }
 
 static bool nav_rec_header(XentDlBuilder *b, FluxRect const *ib, FluxRenderSnap const *snap, FluxThemeColors const *t) {
-	if (!snap->u.nav.label) return true;
+	float op = snap->u.nav.nav_header_opacity;
+	if (!snap->u.nav.label || op <= 0.001f) return true;
 	float    pad = snap->u.nav.nav_top ? 12.0f : FLUX_NAV_HEADER_PAD - FLUX_NAV_ITEM_MARGIN_H;
 	FluxRect tr  = {ib->x + pad, ib->y, ib->w - pad * 2.0f, ib->h};
 	if (tr.w <= 0.0f) return true;
-	return flux_rec_text(b, &tr, snap->u.nav.label, FLUX_NAV_HEADER_FONT, FLUX_FONT_SEMI_BOLD, t->text_secondary);
+	return flux_rec_text(
+	  b, &tr, snap->u.nav.label, FLUX_NAV_HEADER_FONT, FLUX_FONT_SEMI_BOLD, rec_scale_alpha(t->text_secondary, op)
+	);
 }
 
 static FluxColor nav_rec_fg(FluxThemeColors const *t, FluxControlState const *state) {

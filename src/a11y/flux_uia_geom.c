@@ -29,11 +29,17 @@ static void geom_cut(XentRect *r, XentRect c) {
 
 static bool geom_moved(FluxNodeData const *nd) {
 	return nd->render_scale != 1.0f
+	    || nd->render_scale_x != 1.0f
+	    || nd->render_scale_y != 1.0f
 	    || nd->render_opacity < 1.0f
+	    || nd->motion_opacity < 1.0f
 	    || nd->render_translate_x != 0.0f
+	    || nd->motion_translate_x != 0.0f
 	    || nd->render_translate_y != 0.0f
+	    || nd->motion_translate_y != 0.0f
 	    || nd->render_rotate_x != 0.0f
-	    || nd->render_rotate_y != 0.0f;
+	    || nd->render_rotate_y != 0.0f
+	    || nd->render_rotate_z != 0.0f;
 }
 
 static uint32_t geom_chain(FluxUiaContext const *info, XentNodeId node, XentNodeId *chain) {
@@ -72,10 +78,12 @@ static void geom_scroll(FluxNodeData const *nd, GeomWalk *w) {
 static void geom_frame(FluxNodeData const *nd, GeomWalk *w, bool clips) {
 	XentRect r = w->visual;
 	if (clips && nd->render_clip_subtree && geom_moved(nd)) geom_cut(&w->clip, r);
-	w->ox       += nd->render_translate_x;
-	w->oy       += nd->render_translate_y;
-	w->visual.x += nd->render_translate_x;
-	w->visual.y += nd->render_translate_y;
+	float tx     = nd->render_translate_x + nd->motion_translate_x;
+	float ty     = nd->render_translate_y + nd->motion_translate_y;
+	w->ox       += tx;
+	w->oy       += ty;
+	w->visual.x += tx;
+	w->visual.y += ty;
 	r            = w->visual;
 	if (clips && nd->clip_top > 0.0f)
 		geom_cut(&w->clip, (XentRect) {r.x, r.y + nd->clip_top, r.w, fmaxf(r.h - nd->clip_top, 0.0f)});

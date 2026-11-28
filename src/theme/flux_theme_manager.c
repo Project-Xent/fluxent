@@ -26,7 +26,38 @@ struct FluxTheme {
 	WUIVI_UISettings *settings;
 	cwinrt_token      accent_token;
 	volatile LONG     accent_dirty;
+	cwinrt_token      anim_token;
+	volatile LONG     anim_dirty;
+	bool              animations_enabled;
 };
+
+static volatile LONG g_anim_override   = -1;
+static volatile LONG g_sys_anim_cached = -1;
+
+static bool          theme_query_system_animations(void) {
+#ifdef _WIN32
+	BOOL enabled = TRUE;
+	SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0);
+	return enabled != FALSE;
+#else
+	return true;
+#endif
+}
+
+static bool theme_query_animations_enabled(WUIVI_UISettings *settings) {
+	bool enabled = true;
+	if (settings) {
+		BOOL val = TRUE;
+		if (SUCCEEDED(wuivi_u_i_settings_get__animations_enabled(settings, &val))) {
+			enabled = val != FALSE;
+			InterlockedExchange(&g_sys_anim_cached, enabled ? 1 : 0);
+			return enabled;
+		}
+	}
+	enabled = theme_query_system_animations();
+	InterlockedExchange(&g_sys_anim_cached, enabled ? 1 : 0);
+	return enabled;
+}
 
 static void init_light_palette(FluxThemeColors *c) {
 	c->ctrl_fill_default               = flux_color_rgba(255, 255, 255, 0xb3);
@@ -239,6 +270,14 @@ static void theme_on_color_values_changed(void *sender, void *args, void *ctx) {
 	if (tm) InterlockedExchange(&tm->accent_dirty, 1);
 }
 
+static void theme_on_animations_enabled_changed(void *sender, void *args, void *ctx) {
+	FluxTheme *tm = ( FluxTheme * ) ctx;
+	( void ) sender;
+	( void ) args;
+	if (tm) InterlockedExchange(&tm->anim_dirty, 1);
+	InterlockedExchange(&g_sys_anim_cached, -1);
+}
+
 FluxTheme *flux_theme_create(void) {
 	FluxTheme *tm = calloc(1, sizeof(FluxTheme));
 	if (!tm) return NULL;
@@ -246,8 +285,12 @@ FluxTheme *flux_theme_create(void) {
 	tm->mode    = FLUX_THEME_SYSTEM;
 	tm->version = 1;
 
-	if (SUCCEEDED(wuivi_u_i_settings_new(&tm->settings)) && tm->settings)
+	if (SUCCEEDED(wuivi_u_i_settings_new(&tm->settings)) && tm->settings) {
 		tm->accent_token = wuivi_u_i_settings_on_color_values_changed(tm->settings, theme_on_color_values_changed, tm);
+		tm->anim_token
+		  = wuivi_u_i_settings_on_animations_enabled_changed(tm->settings, theme_on_animations_enabled_changed, tm);
+	}
+	tm->animations_enabled = theme_query_animations_enabled(tm->settings);
 
 	theme_rebuild(tm);
 	return tm;
@@ -257,6 +300,7 @@ void flux_theme_destroy(FluxTheme *tm) {
 	if (!tm) return;
 	if (tm->settings) {
 		if (tm->accent_token.value) wuivi_u_i_settings_off_color_values_changed(tm->settings, tm->accent_token);
+		if (tm->anim_token.value) wuivi_u_i_settings_off_animations_enabled_changed(tm->settings, tm->anim_token);
 		(( IUnknown * ) tm->settings)->lpVtbl->Release(( IUnknown * ) tm->settings);
 	}
 	free(tm);
@@ -264,7 +308,8 @@ void flux_theme_destroy(FluxTheme *tm) {
 
 void flux_theme_setmode(FluxTheme *tm, FluxThemeMode mode) {
 	if (!tm) return;
-	tm->mode = mode;
+	tm->mode               = mode;
+	tm->animations_enabled = theme_query_animations_enabled(tm->settings);
 	resolve_current(tm);
 	tm->version++;
 }
@@ -306,4 +351,29 @@ bool flux_theme_systemdark(void) {
 	if (status == ERROR_SUCCESS) return value == 0;
 #endif
 	return false;
+}
+
+bool flux_animations_enabled(void) {
+	LONG ov = InterlockedCompareExchange(&g_anim_override, 0, 0);
+	if (ov == 0) return false;
+	if (ov == 1) return true;
+	LONG cached = InterlockedCompareExchange(&g_sys_anim_cached, 0, 0);
+	if (cached >= 0) return cached != 0;
+	bool enabled = theme_query_system_animations();
+	InterlockedExchange(&g_sys_anim_cached, enabled ? 1 : 0);
+	return enabled;
+}
+
+bool flux_theme_animations_enabled(FluxTheme *tm) {
+	LONG ov = InterlockedCompareExchange(&g_anim_override, 0, 0);
+	if (ov == 0) return false;
+	if (ov == 1) return true;
+	if (!tm) return flux_animations_enabled();
+	if (InterlockedExchange(&tm->anim_dirty, 0)) tm->animations_enabled = theme_query_animations_enabled(tm->settings);
+	return tm->animations_enabled;
+}
+
+void flux_set_animations_override(int mode) {
+	LONG v = mode < 0 ? -1 : (mode ? 1 : 0);
+	InterlockedExchange(&g_anim_override, v);
 }

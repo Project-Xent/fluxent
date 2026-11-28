@@ -337,6 +337,16 @@ void flux_snap_text(FluxSnapCtx const *ctx) {
 	ctx->snap->u.text.font_weight  = ( FluxFontWeight ) xent_fontweight(ctx->ctx, ctx->node);
 }
 
+void flux_snap_fonticon(FluxSnapCtx const *ctx) {
+	FluxFontIconData const *d                = ( FluxFontIconData const * ) ctx->data;
+	ctx->snap->font_size                     = d->font_size > 0.0f ? d->font_size : 20.0f;
+	ctx->snap->u.font_icon.glyph             = d->glyph;
+	ctx->snap->u.font_icon.font_family       = d->font_family;
+	ctx->snap->u.font_icon.color             = d->color;
+	ctx->snap->u.font_icon.font_weight       = d->font_weight;
+	ctx->snap->u.font_icon.mirrored_when_rtl = d->mirrored_when_rtl;
+}
+
 void flux_snap_button(FluxSnapCtx const *ctx) { snapshot_button(ctx->snap, ( FluxButtonData const * ) ctx->data); }
 
 void flux_snap_checkbox_like(FluxSnapCtx const *ctx) {
@@ -660,6 +670,7 @@ static uint64_t snap_hash_strings_at(uint64_t h, FluxRenderSnap const *snap) {
 #define STR_OFF(field) (( uint16_t ) (offsetof(FluxRenderSnap, u.field) + 1u))
 	static uint16_t const kStrOff [XTK_CTRL_TYPE_COUNT][4] = {
 	  [FLUX_CONTROL_TEXT]            = {STR_OFF(text.text_content), STR_OFF(text.font_family)},
+	  [FLUX_CONTROL_FONT_ICON]       = {STR_OFF(font_icon.glyph), STR_OFF(font_icon.font_family)},
 	  [FLUX_CONTROL_BUTTON]          = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
 	  [FLUX_CONTROL_TOGGLE_BUTTON]   = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},
 	  [FLUX_CONTROL_REPEAT_BUTTON]   = {STR_OFF(button.label), STR_OFF(button.text_content), STR_OFF(button.icon_name)},

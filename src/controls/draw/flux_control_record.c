@@ -118,6 +118,38 @@ XentDl *flux_text_record(
 	FLUX_REC_END(ok);
 }
 
+static FluxColor fonticon_color(FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxControlState const *state) {
+	FluxThemeColors const *t = flux_rec_theme(rc);
+	if (state && !state->enabled) return t->text_disabled;
+	if (flux_color_af(snap->u.font_icon.color) > 0.0f) return snap->u.font_icon.color;
+	return t->text_primary;
+}
+
+XentDl *flux_fonticon_record(
+  FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
+) {
+	FLUX_REC_BEGIN();
+	bool        ok = flux_rec_fill_bg(b, snap, bounds) && flux_rec_stroke_border(b, snap, bounds);
+	char        utf8 [8];
+	char const *resolved
+	  = flux_fonticon_resolve_glyph(snap->u.font_icon.glyph, snap->u.font_icon.font_family, utf8, sizeof(utf8));
+	if (ok && resolved [0]) {
+		bool          custom_fam = snap->u.font_icon.font_family && snap->u.font_icon.font_family [0];
+		uint8_t       icon_flag  = custom_fam ? 0u : XENT_DL_TEXT_ICON;
+		uint8_t       rtl_flag   = snap->u.font_icon.mirrored_when_rtl ? XENT_DL_TEXT_MIRRORABLE : 0u;
+		XentTextStyle style      = {
+		  .font_size   = snap->font_size > 0.0f ? snap->font_size : 20.0f,
+		  .font_weight = snap->u.font_icon.font_weight > 0 ? ( uint16_t ) snap->u.font_icon.font_weight : 400u,
+		  .h_align     = 1u,
+		  .v_align     = 1u,
+		  .flags       = ( uint8_t ) (icon_flag | rtl_flag),
+		  .font_family = custom_fam ? snap->u.font_icon.font_family : flux_icon_font_family(),
+		};
+		ok = flux_rec_text_ex(b, bounds, resolved, &style, fonticon_color(rc, snap, state));
+	}
+	FLUX_REC_END(ok);
+}
+
 XentDl *flux_divider_record(
   FluxRenderCtx const *rc, FluxRenderSnap const *snap, FluxRect const *bounds, FluxControlState const *state
 ) {

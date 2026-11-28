@@ -46,6 +46,14 @@ typedef struct FluxTextSnapshot {
 	FluxItemTextColor item_color;
 } FluxTextSnapshot;
 
+typedef struct FluxFontIconSnapshot {
+	char const    *glyph;
+	char const    *font_family;
+	FluxColor      color;
+	FluxFontWeight font_weight;
+	bool           mirrored_when_rtl;
+} FluxFontIconSnapshot;
+
 typedef struct FluxButtonSnapshot {
 	char const     *label;
 	char const     *text_content;
@@ -429,6 +437,7 @@ typedef struct FluxRenderSnap {
 	union
 	{
 		FluxTextSnapshot         text;
+		FluxFontIconSnapshot     font_icon;
 		FluxButtonSnapshot       button;
 		FluxCheckSnapshot        check;
 		FluxSwitchSnapshot       sw;
@@ -528,6 +537,7 @@ void                            flux_snap_split_pane(FluxSnapCtx const *ctx);
 void                            flux_snap_switch(FluxSnapCtx const *ctx);
 void                            flux_snap_tab_view_item(FluxSnapCtx const *ctx);
 void                            flux_snap_text(FluxSnapCtx const *ctx);
+void                            flux_snap_fonticon(FluxSnapCtx const *ctx);
 void                            flux_snap_textbox(FluxSnapCtx const *ctx);
 void                            flux_snap_title_bar(FluxSnapCtx const *ctx);
 void                            flux_snap_tree_item(FluxSnapCtx const *ctx);

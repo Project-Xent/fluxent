@@ -2,6 +2,7 @@
 #define FLUX_COMPONENT_DATA_H
 
 #include "flux_text_data.h"
+#include "flux_font_icon_data.h"
 #include "store/flux_node_data.h"
 #include "flux_button_data.h"
 #include "flux_slider_data.h"

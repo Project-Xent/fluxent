@@ -55,6 +55,15 @@ void flux_prop_text_wrap(FluxStore *store, XentNodeId id, bool wrap);
 
 void flux_prop_text_selectable(FluxStore *store, XentNodeId id, bool selectable);
 
+void flux_prop_text_fontfamily(FluxStore *store, XentNodeId id, char const *family);
+
+void flux_prop_fonticon_glyph(FluxStore *store, XentNodeId id, char const *glyph);
+void flux_prop_fonticon_fontfamily(FluxStore *store, XentNodeId id, char const *family);
+void flux_prop_fonticon_fontsize(FluxStore *store, XentNodeId id, float size);
+void flux_prop_fonticon_weight(FluxStore *store, XentNodeId id, FluxFontWeight weight);
+void flux_prop_fonticon_color(FluxStore *store, XentNodeId id, FluxColor color);
+void flux_prop_fonticon_mirror_rtl(FluxStore *store, XentNodeId id, bool mirrored);
+
 void flux_prop_textbox_content(FluxStore *store, XentNodeId id, char const *content);
 
 void flux_prop_textbox_placeholder(FluxStore *store, XentNodeId id, char const *placeholder);

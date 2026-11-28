@@ -44,6 +44,8 @@
 #include "controls/data/flux_tab_view_data.h"
 #include "controls/data/flux_title_bar_data.h"
 #include "motion/flux_motion_internal.h"
+#include "render/flux_icon.h"
+#include "runtime/flux_str.h"
 #include "fluxent/flux_input.h"
 #include <xtk/xtk_catalog.h>
 
@@ -2368,9 +2370,41 @@ static bool shell_frame(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxCon
 	return true;
 }
 
+static void fonticon_data_destroy(void *component_data) {
+	FluxFontIconData *fd = ( FluxFontIconData * ) component_data;
+	if (!fd) return;
+	flux_str_free(fd->glyph);
+	flux_str_free(fd->font_family);
+	free(fd);
+}
+
+static bool shell_fonticon(XentCtx *ctx, FluxStore *store, XentNodeId node, FluxControlEnv const *env) {
+	( void ) env;
+	FluxNodeData *nd = flux_store_ensure(store, node);
+	if (!nd) return false;
+	FluxFontIconData *fd = ( FluxFontIconData * ) calloc(1, sizeof(*fd));
+	if (!fd) return false;
+	fd->font_size              = 20.0f;
+	nd->component_data         = fd;
+	nd->destroy_component_data = fonticon_data_destroy;
+	xent_sem_setrole(ctx, node, XENT_SEM_ROLE_NONE);
+	xent_setfontfamily(ctx, node, flux_icon_font_family());
+	xent_setfontsize(ctx, node, 20.0f);
+	xent_setlinebreak(ctx, node, XENT_LINEBREAK_NOWRAP);
+	return true;
+}
+
 MODULE(frame) = {
   .type   = FLUX_CONTROL_FRAME,
   .props  = flux_props_frame,
   .shell  = shell_frame,
   .record = flux_container_record,
   .uia    = &uia_panel};
+
+MODULE(fonticon) = {
+  .type     = FLUX_CONTROL_FONT_ICON,
+  .snapshot = flux_snap_fonticon,
+  .props    = flux_props_fonticon,
+  .shell    = shell_fonticon,
+  .record   = flux_fonticon_record,
+  .uia      = &uia_panel};

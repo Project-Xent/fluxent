@@ -142,4 +142,14 @@ static int inline flux_icon_to_utf8(wchar_t const *wc, char *out, int cap) {
 	return n;
 }
 
+static char const inline *
+flux_fonticon_resolve_glyph(char const *glyph, char const *font_family, char *buf, size_t cap) {
+	if (!glyph || !glyph [0]) return "";
+	if (!font_family || !font_family [0]) {
+		wchar_t const *wc = flux_icon_lookup(glyph);
+		if (wc && flux_icon_to_utf8(wc, buf, ( int ) cap) > 0) return buf;
+	}
+	return glyph;
+}
+
 #endif

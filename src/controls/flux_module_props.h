@@ -57,5 +57,6 @@ extern FluxPropHandler const flux_props_colitem [];
 extern FluxPropHandler const flux_props_commandbar [];
 extern FluxPropHandler const flux_props_appbar [];
 extern FluxPropHandler const flux_props_frame [];
+extern FluxPropHandler const flux_props_fonticon [];
 
 #endif

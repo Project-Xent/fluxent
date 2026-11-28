@@ -636,6 +636,7 @@ SETTER(text_foreground, flux_prop_text_color, v->u.color)
 SETTER(text_max_lines, flux_prop_text_maxlines, v->u.i32 > 0 ? ( uint32_t ) v->u.i32 : 0u)
 SETTER(text_wrap, flux_prop_text_wrap, v->u.b)
 SETTER(text_selectable, flux_prop_text_selectable, v->u.b)
+SETTER(text_font_family, flux_prop_text_fontfamily, str_or_empty(v))
 
 HANDLER(text_trim) {
 	( void ) control;
@@ -645,6 +646,7 @@ HANDLER(text_trim) {
 
 FluxPropHandler const flux_props_text [] = {
   ON(TEXT, STRING, text_content),
+  ON(FONT_FAMILY, STRING, text_font_family),
   ON(FONT_SIZE, F32, text_font_size),
   ON(FONT_WEIGHT, ENUM, text_font_weight),
   ON(TEXT_ALIGN, ENUM, text_align),
@@ -653,6 +655,23 @@ FluxPropHandler const flux_props_text [] = {
   ON(TEXT_TRIM, ENUM, text_trim),
   ON(TEXT_WRAP, BOOL, text_wrap),
   ON(SELECTABLE, BOOL, text_selectable),
+  END,
+};
+
+SETTER(fonticon_glyph, flux_prop_fonticon_glyph, str_or_empty(v))
+SETTER(fonticon_font_family, flux_prop_fonticon_fontfamily, str_or_empty(v))
+SETTER(fonticon_font_size, flux_prop_fonticon_fontsize, v->u.f32)
+SETTER(fonticon_font_weight, flux_prop_fonticon_weight, ( FluxFontWeight ) v->u.u32)
+SETTER(fonticon_foreground, flux_prop_fonticon_color, v->u.color)
+SETTER(fonticon_mirror_rtl, flux_prop_fonticon_mirror_rtl, v->u.b)
+
+FluxPropHandler const flux_props_fonticon [] = {
+  ON(ICON, STRING, fonticon_glyph),
+  ON(FONT_FAMILY, STRING, fonticon_font_family),
+  ON(FONT_SIZE, F32, fonticon_font_size),
+  ON(FONT_WEIGHT, ENUM, fonticon_font_weight),
+  ON(FOREGROUND, COLOR, fonticon_foreground),
+  ON(MIRROR_RTL, BOOL, fonticon_mirror_rtl),
   END,
 };
 
@@ -1917,6 +1936,8 @@ static FluxPropHandler const core_props [] = {
   ON(FRAME_TRANSITION, ENUM, prop_none),
   ON(FRAME_BACK, BOOL, prop_none),
   ON(FRAME_PAGE_KEY, I32, prop_none),
+  ON(FONT_FAMILY, STRING, prop_none),
+  ON(MIRROR_RTL, BOOL, prop_none),
   END,
 };
 

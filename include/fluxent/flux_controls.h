@@ -100,5 +100,6 @@ extern FluxControlModule const   flux_ctrl_cmdovf;
 extern FluxControlModule const   flux_ctrl_cmdovfrow;
 extern FluxControlModule const   flux_ctrl_navslot;
 extern FluxControlModule const   flux_ctrl_frame;
+extern FluxControlModule const   flux_ctrl_fonticon;
 
 #endif

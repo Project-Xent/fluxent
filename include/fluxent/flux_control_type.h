@@ -101,5 +101,6 @@ typedef XtkCtrlType FluxControlType;
 #define FLUX_CONTROL_CMDBAR_ROW          XTK_CTRL_CMDOVFROW
 #define FLUX_CONTROL_NAV_SLOT            XTK_CTRL_NAVSLOT
 #define FLUX_CONTROL_FRAME               XTK_CTRL_FRAME
+#define FLUX_CONTROL_FONT_ICON           XTK_CTRL_FONTICON
 
 #endif

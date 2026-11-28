@@ -6,6 +6,7 @@
 #include "controls/textbox/tb_internal.h"
 #include "controls/factory/flux_factory.h"
 #include "render/flux_fluent.h"
+#include "render/flux_icon.h"
 #include "runtime/flux_str.h"
 
 #include <xent/xent.h>
@@ -217,6 +218,71 @@ void flux_prop_text_selectable(FluxStore *store, XentNodeId id, bool selectable)
 	if (!selectable) td->selection_start = td->selection_end = 0u;
 	flux_text_select_wire(component_node(store, id), td, selectable);
 	xent_set_focusable(flux_store_ctx(store), id, selectable);
+}
+
+void flux_prop_text_fontfamily(FluxStore *store, XentNodeId id, char const *family) {
+	FluxTextData *td = text_data(store, id);
+	if (!td) return;
+	char const *val = (family && family [0]) ? family : NULL;
+	flux_str_replace(&td->font_family, val);
+	xent_setfontfamily(flux_store_ctx(store), id, val);
+}
+
+static FluxFontIconData *fonticon_data(FluxStore *store, XentNodeId id) {
+	FluxNodeData *nd = component_node(store, id);
+	return nd && FLUX_EXPECT_TYPE(nd, FLUX_CONTROL_FONT_ICON) ? ( FluxFontIconData * ) nd->component_data : NULL;
+}
+
+static void fonticon_sync(FluxStore *store, XentNodeId id, FluxFontIconData const *d) {
+	XentCtx    *ctx = flux_store_ctx(store);
+	char        utf8 [8];
+	char const *resolved = flux_fonticon_resolve_glyph(d->glyph, d->font_family, utf8, sizeof(utf8));
+	char const *fam      = (d->font_family && d->font_family [0]) ? d->font_family : flux_icon_font_family();
+	float       fs       = d->font_size > 0.0f ? d->font_size : 20.0f;
+	xent_setfontfamily(ctx, id, fam);
+	xent_setfontsize(ctx, id, fs);
+	xent_setfontweight(ctx, id, ( uint16_t ) (d->font_weight > 0 ? d->font_weight : 0));
+	xent_setlinebreak(ctx, id, XENT_LINEBREAK_NOWRAP);
+	xent_settext(ctx, id, resolved);
+}
+
+void flux_prop_fonticon_glyph(FluxStore *store, XentNodeId id, char const *glyph) {
+	FluxFontIconData *fd = fonticon_data(store, id);
+	if (!fd) return;
+	flux_str_replace(&fd->glyph, glyph);
+	fonticon_sync(store, id, fd);
+}
+
+void flux_prop_fonticon_fontfamily(FluxStore *store, XentNodeId id, char const *family) {
+	FluxFontIconData *fd = fonticon_data(store, id);
+	if (!fd) return;
+	char const *val = (family && family [0]) ? family : NULL;
+	flux_str_replace(&fd->font_family, val);
+	fonticon_sync(store, id, fd);
+}
+
+void flux_prop_fonticon_fontsize(FluxStore *store, XentNodeId id, float size) {
+	FluxFontIconData *fd = fonticon_data(store, id);
+	if (!fd) return;
+	fd->font_size = size > 0.0f ? size : 20.0f;
+	fonticon_sync(store, id, fd);
+}
+
+void flux_prop_fonticon_weight(FluxStore *store, XentNodeId id, FluxFontWeight weight) {
+	FluxFontIconData *fd = fonticon_data(store, id);
+	if (!fd) return;
+	fd->font_weight = weight;
+	fonticon_sync(store, id, fd);
+}
+
+void flux_prop_fonticon_color(FluxStore *store, XentNodeId id, FluxColor color) {
+	FluxFontIconData *fd = fonticon_data(store, id);
+	if (fd) fd->color = color;
+}
+
+void flux_prop_fonticon_mirror_rtl(FluxStore *store, XentNodeId id, bool mirrored) {
+	FluxFontIconData *fd = fonticon_data(store, id);
+	if (fd) fd->mirrored_when_rtl = mirrored;
 }
 
 static FluxTextBoxInputData *text_input_data(FluxStore *store, XentNodeId id, FluxControlType type) {

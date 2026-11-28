@@ -7,7 +7,7 @@ bool page_tooltip_build(PageBuild *b) {
 	);
 	XtkNodeRef ex   = page_example(b, parent, "A Button with a ToolTip.");
 	XtkLocalId card = xtk_card_create(
-	  &b->txn, ex,
+	  b->txn, ex,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -24,7 +24,7 @@ bool page_tooltip_build(PageBuild *b) {
 	  }
 	);
 	XtkLocalId row = xtk_container_create(
-	  &b->txn, xtk_ref_local(card),
+	  b->txn, xtk_ref_local(card),
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -39,7 +39,7 @@ bool page_tooltip_build(PageBuild *b) {
 	  }
 	);
 	xtk_button_create(
-	  &b->txn, xtk_ref_local(row),
+	  b->txn, xtk_ref_local(row),
 	  &(XtkButtonProps) {
 		.set     = XTK_BUTTON_TEXT_MASK | XTK_BUTTON_TIP_MASK | XTK_BUTTON_ENABLED_MASK,
 		.text    = "Hover me",
@@ -48,7 +48,7 @@ bool page_tooltip_build(PageBuild *b) {
 	  }
 	);
 	xtk_button_create(
-	  &b->txn, xtk_ref_local(row),
+	  b->txn, xtk_ref_local(row),
 	  &(XtkButtonProps) {
 		.set       = XTK_BUTTON_ICON_MASK | XTK_BUTTON_TIP_MASK | XTK_BUTTON_ENABLED_MASK | XTK_BUTTON_ANAME_MASK,
 		.icon      = "Save",

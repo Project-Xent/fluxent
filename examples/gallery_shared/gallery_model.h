@@ -4,6 +4,8 @@
 #include <xtk/xtk.h>
 #include <stdbool.h>
 
+#define GALLERY_MODEL_VERSION 1u
+
 enum
 {
 	PAGE_HOME = 0,

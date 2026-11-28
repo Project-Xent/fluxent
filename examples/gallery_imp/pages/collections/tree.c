@@ -35,10 +35,10 @@ bool page_tree_view_build(PageBuild *b) {
 	  "Hierarchical data flattened into a virtualized list. Chevron toggles expand; row selects and invokes."
 	);
 	XtkNodeRef col = xtk_ref_local(
-	  ui_column(&b->txn, page_example(b, parent, "Sample folder tree."), 12.0f, XENT_FLEX_ALIGN_STRETCH)
+	  ui_column(b->txn, page_example(b, parent, "Sample folder tree."), 12.0f, XENT_FLEX_ALIGN_STRETCH)
 	);
 	XtkLocalId tree = xtk_tree_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkTreeProps) {
 		.set   = XTK_TREE_H_MASK | XTK_TREE_SEL_MASK | XTK_TREE_ITEMH_MASK,
 		.h     = 280.0f,
@@ -47,10 +47,10 @@ bool page_tree_view_build(PageBuild *b) {
 	  }
 	);
 	XtkNodeRef ref = xtk_ref_local(tree);
-	xtk_txn_settree(&b->txn, ref, &(XtkTreeDesc) {.roots = roots, .nroot = 3});
+	xtk_txn_settree(b->txn, ref, &(XtkTreeDesc) {.roots = roots, .nroot = 3});
 	page_on(b, tree, XTK_EVENT_TREE_SELECT, MSG_TREE_SELECT, 0);
 	page_on(b, tree, XTK_EVENT_TREE_EXPAND, MSG_TREE_EXPAND, 0);
-	xtk_tree_oninvoke(&b->txn, ref, page_post, page_bind(b, MSG_TREE_INVOKE));
+	xtk_tree_oninvoke(b->txn, ref, page_post, page_bind(b, MSG_TREE_INVOKE));
 	page_keepout(b, MSG_TREE_SELECT, page_note(b, col, select_text(b->app)));
 	page_keepout(b, MSG_TREE_INVOKE, page_note(b, col, invoke_text(b->app)));
 	return true;

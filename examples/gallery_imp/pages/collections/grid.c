@@ -31,11 +31,10 @@ bool        page_gridview_build(PageBuild *b) {
 	  "ring is the WinUI accent border."
 	);
 	XtkNodeRef col  = xtk_ref_local(ui_column(
-	  &b->txn, page_example(b, parent, "10,000 uniform cells; columns follow the width."), 12.0f,
-	  XENT_FLEX_ALIGN_STRETCH
+	  b->txn, page_example(b, parent, "10,000 uniform cells; columns follow the width."), 12.0f, XENT_FLEX_ALIGN_STRETCH
 	));
 	XtkLocalId grid = xtk_gridview_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkListProps) {
 		.set   = XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK | XTK_LIST_ITEMW_MASK,
 		.h     = 420.0f,
@@ -45,13 +44,13 @@ bool        page_gridview_build(PageBuild *b) {
 		.itemw = 152.0f,
 	  }
 	);
-	xtk_gridview_onselect(&b->txn, xtk_ref_local(grid), page_post, page_bind(b, MSG_GRID_SELECT));
+	xtk_gridview_onselect(b->txn, xtk_ref_local(grid), page_post, page_bind(b, MSG_GRID_SELECT));
 	page_list(b, grid, grid_cell);
 	page_keepout(b, MSG_GRID_SELECT, page_note(b, col, grid_text(b->app)));
 	int total = 0;
 	for (int i = 0; i < 10; i++) total += kGridGroups [i];
 	XtkLocalId grouped = xtk_gridview_create(
-	  &b->txn,
+	  b->txn,
 	  page_example(
 		b, parent, "Grouped: each group starts a new row under its header; headers stick while the group is in view."
 	  ),

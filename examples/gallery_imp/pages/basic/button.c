@@ -5,7 +5,7 @@ static void       page_button_sync(GalleryApp *g);
 
 static XtkNodeRef button_row(PageBuild *b, XtkNodeRef parent) {
 	XtkLocalId card = xtk_card_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -22,7 +22,7 @@ static XtkNodeRef button_row(PageBuild *b, XtkNodeRef parent) {
 	  }
 	);
 	XtkLocalId row = xtk_container_create(
-	  &b->txn, xtk_ref_local(card),
+	  b->txn, xtk_ref_local(card),
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -41,7 +41,7 @@ static XtkNodeRef button_row(PageBuild *b, XtkNodeRef parent) {
 
 static void button_add(PageBuild *b, XtkNodeRef parent, char const *text, char const *icon, uint32_t style) {
 	xtk_button_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkButtonProps) {
 		.set       = (text ? XTK_BUTTON_TEXT_MASK : 0u)
 	               | (icon ? XTK_BUTTON_ICON_MASK : 0u)
@@ -71,7 +71,7 @@ bool page_button_build(PageBuild *b) {
 		XtkNodeRef ex   = page_example(b, parent, "A simple Button with text content.");
 		PageDemo   demo = page_demo(b, ex);
 		XtkLocalId btn  = xtk_button_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkButtonProps) {
 			.set     = XTK_BUTTON_TEXT_MASK | XTK_BUTTON_STYLE_MASK | XTK_BUTTON_ENABLED_MASK,
 			.text    = "Standard button",
@@ -79,9 +79,9 @@ bool page_button_build(PageBuild *b) {
 			.enabled = !m->button_disabled,
 		  }
 		);
-		xtk_button_oninvoke(&b->txn, xtk_ref_local(btn), page_post, page_bind(b, MSG_CLICK));
+		xtk_button_oninvoke(b->txn, xtk_ref_local(btn), page_post, page_bind(b, MSG_CLICK));
 		XtkLocalId dis = xtk_checkbox_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkCheckBoxProps) {
 			.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 			.text    = "Disable button",
@@ -89,7 +89,7 @@ bool page_button_build(PageBuild *b) {
 			.enabled = true,
 		  }
 		);
-		xtk_checkbox_onchange(&b->txn, xtk_ref_local(dis), page_post, page_bind(b, MSG_BUTTON_DISABLE));
+		xtk_checkbox_onchange(b->txn, xtk_ref_local(dis), page_post, page_bind(b, MSG_BUTTON_DISABLE));
 		page_keep(b, MSG_BUTTON_DISABLE, btn);
 		XtkLocalId output
 		  = page_output(b, demo.row, gallery_fmt(b->app, "Clicked %d time%s", m->clicks, m->clicks == 1 ? "" : "s"));

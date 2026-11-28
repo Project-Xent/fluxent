@@ -20,7 +20,7 @@ bool page_dialog_build(PageBuild *b) {
 	page_button(b, demo.items, "Show dialog", MSG_DIALOG_OPEN, 0);
 	page_keepout(b, MSG_DIALOG_RESULT, page_output(b, demo.row, result_text(b->app)));
 	XtkLocalId dialog = xtk_dialog_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkDialogProps) {
 		.set            = XTK_DIALOG_W_MASK
 	                    | XTK_DIALOG_TEXT_MASK
@@ -38,9 +38,9 @@ bool page_dialog_build(PageBuild *b) {
 		.open           = b->app->model.dialog_open,
 	  }
 	);
-	xtk_dialog_onclose(&b->txn, xtk_ref_local(dialog), page_post, page_bind(b, MSG_DIALOG_RESULT));
+	xtk_dialog_onclose(b->txn, xtk_ref_local(dialog), page_post, page_bind(b, MSG_DIALOG_RESULT));
 	ui_text(
-	  &b->txn, xtk_ref_local(dialog), "This file will be permanently removed. This cannot be undone.", 14.0f,
+	  b->txn, xtk_ref_local(dialog), "This file will be permanently removed. This cannot be undone.", 14.0f,
 	  FLUX_FONT_REGULAR
 	);
 	page_keep(b, MSG_DIALOG_OPEN, dialog);

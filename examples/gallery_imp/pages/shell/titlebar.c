@@ -17,11 +17,11 @@ bool        page_title_bar_build(PageBuild *b) {
 	  "window integration to make the band drag the window."
 	);
 	XtkNodeRef card = xtk_ref_local(ui_card(
-	  &b->txn, page_example(b, parent, "Icon, title, subtitle, back and pane-toggle buttons."), 0.0f,
+	  b->txn, page_example(b, parent, "Icon, title, subtitle, back and pane-toggle buttons."), 0.0f,
 	  XENT_FLEX_ALIGN_STRETCH, 0.0f
 	));
 	XtkLocalId bar  = xtk_titlebar_create(
-	  &b->txn, card,
+	  b->txn, card,
 	  &(XtkTitleBarProps) {
 		.set        = XTK_TITLEBAR_TEXT_MASK
 	                | XTK_TITLEBAR_SUBTITLE_MASK
@@ -35,10 +35,10 @@ bool        page_title_bar_build(PageBuild *b) {
 		.showtoggle = true,
 	  }
 	);
-	xtk_titlebar_oninvoke(&b->txn, xtk_ref_local(bar), page_post, page_bind(b, MSG_TB_BACK));
+	xtk_titlebar_oninvoke(b->txn, xtk_ref_local(bar), page_post, page_bind(b, MSG_TB_BACK));
 	page_on(b, bar, XTK_EVENT_TOGGLE, MSG_TB_PANE, 0);
 	XtkNodeRef events
-	  = xtk_ref_local(ui_card(&b->txn, page_example(b, parent, "Button events."), 0.0f, XENT_FLEX_ALIGN_START, 16.0f));
+	  = xtk_ref_local(ui_card(b->txn, page_example(b, parent, "Button events."), 0.0f, XENT_FLEX_ALIGN_START, 16.0f));
 	page_keepout(b, MSG_TB_BACK, page_note(b, events, clicks_text(b->app)));
 	return true;
 }

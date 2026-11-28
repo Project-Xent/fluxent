@@ -10,9 +10,9 @@ static void scroll_bar_example(
 	PageDemo   demo  = page_demo(b, ex);
 	extra.set       |= XTK_SCROLLBAR_VALUE_MASK;
 	extra.value      = value;
-	XtkLocalId bar   = xtk_scrollbar_create(&b->txn, demo.items, &extra);
+	XtkLocalId bar   = xtk_scrollbar_create(b->txn, demo.items, &extra);
 	if (tag == 0) return;
-	xtk_scrollbar_onchange(&b->txn, xtk_ref_local(bar), page_post, page_bind(b, tag));
+	xtk_scrollbar_onchange(b->txn, xtk_ref_local(bar), page_post, page_bind(b, tag));
 	XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "%.0f", value));
 	page_keepout(b, tag, output);
 }

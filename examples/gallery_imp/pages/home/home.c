@@ -4,7 +4,7 @@
 
 static void home_card(PageBuild *b, XtkNodeRef parent, char const *icon, char const *title, char const *body) {
 	XtkLocalId card = xtk_card_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_GROW_MASK
 	           | XTK_CONTAINER_DIR_MASK
@@ -26,7 +26,7 @@ static void home_card(PageBuild *b, XtkNodeRef parent, char const *icon, char co
 	);
 	XtkNodeRef ref = xtk_ref_local(card);
 	xtk_button_create(
-	  &b->txn, ref,
+	  b->txn, ref,
 	  &(XtkButtonProps) {
 		.set       = XTK_BUTTON_ICON_MASK | XTK_BUTTON_STYLE_MASK | XTK_BUTTON_ENABLED_MASK | XTK_BUTTON_ANAME_MASK,
 		.icon      = icon,
@@ -37,7 +37,7 @@ static void home_card(PageBuild *b, XtkNodeRef parent, char const *icon, char co
 	  }
 	);
 	xtk_text_create(
-	  &b->txn, ref,
+	  b->txn, ref,
 	  &(XtkTextProps) {
 		.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTSIZE_MASK | XTK_TEXT_FONTWEIGHT_MASK,
 		.text       = title,
@@ -46,7 +46,7 @@ static void home_card(PageBuild *b, XtkNodeRef parent, char const *icon, char co
 	  }
 	);
 	xtk_text_create(
-	  &b->txn, ref,
+	  b->txn, ref,
 	  &(XtkTextProps) {
 		.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTSIZE_MASK | XTK_TEXT_FONTWEIGHT_MASK,
 		.text       = body,
@@ -63,7 +63,7 @@ bool page_home_build(PageBuild *b) {
 	  "WinUI 3-style controls in pure C — every page is a live view function over one shared model."
 	);
 	xtk_infobar_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkInfoBarProps) {
 		.set = XTK_INFOBAR_TEXT_MASK | XTK_INFOBAR_MESSAGE_MASK | XTK_INFOBAR_SEVERITY_MASK | XTK_INFOBAR_CLOSABLE_MASK,
 		.text     = "Welcome",
@@ -73,7 +73,7 @@ bool page_home_build(PageBuild *b) {
 	  }
 	);
 	XtkLocalId row = xtk_container_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK | XTK_CONTAINER_ITEMS_MASK | XTK_CONTAINER_GAP_MASK | XTK_CONTAINER_FILL_MASK,
 		.dir   = XTK_STACK_ROW,

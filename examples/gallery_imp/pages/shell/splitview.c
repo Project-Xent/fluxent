@@ -28,17 +28,17 @@ static void pane_items(XtkTxn *txn, XtkNodeRef pane) {
 
 static void mode_row(PageBuild *b, XtkNodeRef parent) {
 	Model const *m     = &b->app->model;
-	XtkNodeRef   row   = xtk_ref_local(ui_row(&b->txn, parent, 12.0f, true));
+	XtkNodeRef   row   = xtk_ref_local(ui_row(b->txn, parent, 12.0f, true));
 	XtkLocalId   combo = xtk_combo_create(
-	  &b->txn, row,
+	  b->txn, row,
 	  &(XtkComboProps) {
 		.set         = XTK_COMBO_PLACEHOLDER_MASK | XTK_COMBO_SEL_MASK,
 		.placeholder = "Display mode",
 		.sel         = m->split_mode,
 	  }
 	);
-	xtk_txn_setitems(&b->txn, xtk_ref_local(combo), kModes, 4);
-	xtk_combo_onselect(&b->txn, xtk_ref_local(combo), page_post, page_bind(b, MSG_SPLIT_MODE));
+	xtk_txn_setitems(b->txn, xtk_ref_local(combo), kModes, 4);
+	xtk_combo_onselect(b->txn, xtk_ref_local(combo), page_post, page_bind(b, MSG_SPLIT_MODE));
 	page_checkbox(b, row, "Pane on right", m->split_right, MSG_SPLIT_PLACE);
 }
 
@@ -53,7 +53,7 @@ bool page_split_view_build(PageBuild *b) {
 	);
 	mode_row(b, parent);
 	XtkLocalId view = xtk_splitview_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkSplitViewProps) {
 		.set
 	    = XTK_SPLITVIEW_H_MASK | XTK_SPLITVIEW_OPEN_MASK | XTK_SPLITVIEW_DISPLAY_MASK | XTK_SPLITVIEW_PLACEMENT_MASK,
@@ -63,14 +63,14 @@ bool page_split_view_build(PageBuild *b) {
 		.placement = m->split_right ? XTK_SPLITVIEW_RIGHT : XTK_SPLITVIEW_LEFT,
 	  }
 	);
-	XtkNodeRef body = xtk_ref_local(xtk_splitbody_create(&b->txn, xtk_ref_local(view), NULL));
-	xtk_splitview_onopen(&b->txn, xtk_ref_local(view), page_post, page_bind(b, MSG_SPLIT_OPEN));
-	XtkNodeRef pane    = xtk_ref_local(xtk_splitpane_create(&b->txn, xtk_ref_local(view), NULL));
-	XtkNodeRef content = xtk_ref_local(ui_card(&b->txn, body, 12.0f, XENT_FLEX_ALIGN_START, 16.0f));
+	XtkNodeRef body = xtk_ref_local(xtk_splitbody_create(b->txn, xtk_ref_local(view), NULL));
+	xtk_splitview_onopen(b->txn, xtk_ref_local(view), page_post, page_bind(b, MSG_SPLIT_OPEN));
+	XtkNodeRef pane    = xtk_ref_local(xtk_splitpane_create(b->txn, xtk_ref_local(view), NULL));
+	XtkNodeRef content = xtk_ref_local(ui_card(b->txn, body, 12.0f, XENT_FLEX_ALIGN_START, 16.0f));
 	page_button(b, content, "\xE2\x98\xB0 Toggle pane", MSG_SPLIT_TOGGLE, 0);
-	ui_text(&b->txn, content, "Main content area", 20.0f, FLUX_FONT_SEMI_BOLD);
+	ui_text(b->txn, content, "Main content area", 20.0f, FLUX_FONT_SEMI_BOLD);
 	page_keepout(b, MSG_SPLIT_TOGGLE, page_note(b, content, pane_text(b->app)));
-	pane_items(&b->txn, xtk_ref_local(ui_column(&b->txn, pane, 4.0f, XENT_FLEX_ALIGN_STRETCH)));
+	pane_items(b->txn, xtk_ref_local(ui_column(b->txn, pane, 4.0f, XENT_FLEX_ALIGN_STRETCH)));
 	page_keep(b, MSG_SPLIT_TOGGLE, view);
 	return true;
 }

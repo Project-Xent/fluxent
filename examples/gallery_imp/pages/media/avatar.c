@@ -29,7 +29,7 @@ static void person_sync(GalleryApp *g) {
 bool page_person_picture_build(PageBuild *b) {
 	page_sync(b, person_sync);
 	Model const *m      = &b->app->model;
-	XtkTxn      *txn    = &b->txn;
+	XtkTxn      *txn    = b->txn;
 	XtkNodeRef   parent = xtk_ref_local(b->content);
 	page_header(
 	  b, parent, "PersonPicture",

@@ -17,7 +17,7 @@ bool        page_radio_buttons_build(PageBuild *b) {
 	);
 	PageDemo   demo  = page_demo(b, page_example(b, parent, "A RadioButtons group with a header."));
 	XtkLocalId group = xtk_radiogroup_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkRadioGroupProps) {
 		.set   = XTK_RADIOGROUP_SEL_MASK | XTK_RADIOGROUP_NITEM_MASK | XTK_RADIOGROUP_NCOL_MASK,
 		.sel   = b->app->model.radio_buttons_sel,
@@ -26,10 +26,10 @@ bool        page_radio_buttons_build(PageBuild *b) {
 	  }
 	);
 	XtkNodeRef ref = xtk_ref_local(group);
-	ui_text(&b->txn, ref, "Background", 14.0f, FLUX_FONT_REGULAR);
+	ui_text(b->txn, ref, "Background", 14.0f, FLUX_FONT_REGULAR);
 	for (int i = 0; i < 3; i++)
-		xtk_radio_create(&b->txn, ref, &(XtkToggleProps) {.set = XTK_TOGGLE_TEXT_MASK, .text = kItems [i]});
-	xtk_radiogroup_onselect(&b->txn, ref, page_post, page_bind(b, MSG_RADIO_BUTTONS));
+		xtk_radio_create(b->txn, ref, &(XtkToggleProps) {.set = XTK_TOGGLE_TEXT_MASK, .text = kItems [i]});
+	xtk_radiogroup_onselect(b->txn, ref, page_post, page_bind(b, MSG_RADIO_BUTTONS));
 	page_keepout(b, MSG_RADIO_BUTTONS, page_output(b, demo.row, radio_text(b->app)));
 	return true;
 }

@@ -101,15 +101,15 @@ void ui_center(XtkTxn *txn, XtkLocalId local) {
 }
 
 XtkNodeRef page_header(PageBuild *b, XtkNodeRef parent, char const *title, char const *blurb) {
-	XtkNodeRef col = xtk_ref_local(ui_column(&b->txn, parent, 8.0f, XENT_FLEX_ALIGN_STRETCH));
-	ui_text(&b->txn, col, title, 28.0f, FLUX_FONT_SEMI_BOLD);
-	ui_text(&b->txn, col, blurb, 13.0f, FLUX_FONT_REGULAR);
+	XtkNodeRef col = xtk_ref_local(ui_column(b->txn, parent, 8.0f, XENT_FLEX_ALIGN_STRETCH));
+	ui_text(b->txn, col, title, 28.0f, FLUX_FONT_SEMI_BOLD);
+	ui_text(b->txn, col, blurb, 13.0f, FLUX_FONT_REGULAR);
 	return col;
 }
 
 XtkNodeRef page_example(PageBuild *b, XtkNodeRef parent, char const *caption) {
-	XtkNodeRef col = xtk_ref_local(ui_column(&b->txn, parent, 8.0f, XENT_FLEX_ALIGN_STRETCH));
-	ui_text(&b->txn, col, caption, 14.0f, FLUX_FONT_REGULAR);
+	XtkNodeRef col = xtk_ref_local(ui_column(b->txn, parent, 8.0f, XENT_FLEX_ALIGN_STRETCH));
+	ui_text(b->txn, col, caption, 14.0f, FLUX_FONT_REGULAR);
 	return col;
 }
 
@@ -134,36 +134,36 @@ static XtkLocalId demo_row(XtkTxn *txn, XtkNodeRef parent, bool fill, XentFlexJu
 }
 
 PageDemo page_demo(PageBuild *b, XtkNodeRef parent) {
-	XtkNodeRef card  = xtk_ref_local(ui_card(&b->txn, parent, 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f));
-	XtkNodeRef row   = xtk_ref_local(demo_row(&b->txn, card, true, XENT_FLEX_JUSTIFY_SPACE_BETWEEN));
-	XtkNodeRef items = xtk_ref_local(demo_row(&b->txn, row, false, XENT_FLEX_JUSTIFY_START));
+	XtkNodeRef card  = xtk_ref_local(ui_card(b->txn, parent, 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f));
+	XtkNodeRef row   = xtk_ref_local(demo_row(b->txn, card, true, XENT_FLEX_JUSTIFY_SPACE_BETWEEN));
+	XtkNodeRef items = xtk_ref_local(demo_row(b->txn, row, false, XENT_FLEX_JUSTIFY_START));
 	return (PageDemo) {.row = row, .items = items};
 }
 
 XtkLocalId page_output(PageBuild *b, XtkNodeRef parent, char const *value) {
-	XtkLocalId col = ui_column(&b->txn, parent, 4.0f, XENT_FLEX_ALIGN_STRETCH);
-	ui_size(&b->txn, col, 260.0f, NAN);
-	ui_text(&b->txn, xtk_ref_local(col), "Output:", 12.0f, FLUX_FONT_SEMI_BOLD);
-	return ui_text(&b->txn, xtk_ref_local(col), value, 14.0f, FLUX_FONT_REGULAR);
+	XtkLocalId col = ui_column(b->txn, parent, 4.0f, XENT_FLEX_ALIGN_STRETCH);
+	ui_size(b->txn, col, 260.0f, NAN);
+	ui_text(b->txn, xtk_ref_local(col), "Output:", 12.0f, FLUX_FONT_SEMI_BOLD);
+	return ui_text(b->txn, xtk_ref_local(col), value, 14.0f, FLUX_FONT_REGULAR);
 }
 
 XtkLocalId page_button(PageBuild *b, XtkNodeRef parent, char const *text, int tag, int i) {
-	XtkLocalId button = ui_button(&b->txn, parent, text, NULL, XTK_BUTTON_STANDARD);
-	xtk_button_oninvoke(&b->txn, xtk_ref_local(button), page_post, page_bind_i(b, tag, i));
+	XtkLocalId button = ui_button(b->txn, parent, text, NULL, XTK_BUTTON_STANDARD);
+	xtk_button_oninvoke(b->txn, xtk_ref_local(button), page_post, page_bind_i(b, tag, i));
 	return button;
 }
 
 XtkLocalId page_checkbox(PageBuild *b, XtkNodeRef parent, char const *text, bool checked, int tag) {
 	XtkLocalId box = xtk_checkbox_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkCheckBoxProps) {.set = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK, .text = text, .checked = checked}
 	);
-	xtk_checkbox_onchange(&b->txn, xtk_ref_local(box), page_post, page_bind(b, tag));
+	xtk_checkbox_onchange(b->txn, xtk_ref_local(box), page_post, page_bind(b, tag));
 	return box;
 }
 
 XtkLocalId page_note(PageBuild *b, XtkNodeRef parent, char const *text) {
-	return ui_text(&b->txn, parent, text, 13.0f, FLUX_FONT_REGULAR);
+	return ui_text(b->txn, parent, text, 13.0f, FLUX_FONT_REGULAR);
 }
 
 static struct {

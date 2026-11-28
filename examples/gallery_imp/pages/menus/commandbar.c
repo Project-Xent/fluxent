@@ -10,7 +10,7 @@ static void commandbar_sync(GalleryApp *g) { gallery_settext(g, g->live_output [
 static void command(PageBuild *b, XtkNodeRef bar, int i, bool secondary, char const *accel) {
 	uint64_t   set   = XTK_APPBARBUTTON_TEXT_MASK | XTK_APPBARBUTTON_ICON_MASK | XTK_APPBARBUTTON_SECONDARY_MASK;
 	XtkLocalId local = xtk_appbarbutton_create(
-	  &b->txn, bar,
+	  b->txn, bar,
 	  &(XtkAppBarButtonProps) {
 		.set       = set | (accel ? XTK_APPBARBUTTON_ACCEL_MASK : 0u),
 		.text      = kCbCommands [i],
@@ -19,12 +19,12 @@ static void command(PageBuild *b, XtkNodeRef bar, int i, bool secondary, char co
 		.secondary = secondary,
 	  }
 	);
-	xtk_appbarbutton_oninvoke(&b->txn, xtk_ref_local(local), page_post, page_bind_i(b, MSG_CB_ACTION, i));
+	xtk_appbarbutton_oninvoke(b->txn, xtk_ref_local(local), page_post, page_bind_i(b, MSG_CB_ACTION, i));
 }
 
 static void toggle(PageBuild *b, XtkNodeRef bar, char const *text, char const *icon, bool secondary, int tag) {
 	XtkLocalId local = xtk_appbartoggle_create(
-	  &b->txn, bar,
+	  b->txn, bar,
 	  &(XtkAppBarToggleProps) {
 		.set       = XTK_APPBARTOGGLE_TEXT_MASK | XTK_APPBARTOGGLE_ICON_MASK | XTK_APPBARTOGGLE_SECONDARY_MASK,
 		.text      = text,
@@ -32,18 +32,18 @@ static void toggle(PageBuild *b, XtkNodeRef bar, char const *text, char const *i
 		.secondary = secondary,
 	  }
 	);
-	xtk_appbartoggle_onchange(&b->txn, xtk_ref_local(local), page_post, page_bind(b, tag));
+	xtk_appbartoggle_onchange(b->txn, xtk_ref_local(local), page_post, page_bind(b, tag));
 }
 
 static void separator(PageBuild *b, XtkNodeRef bar) {
-	( void ) xtk_appbarsep_create(&b->txn, bar, &(XtkAppBarSeparatorProps) {0});
+	( void ) xtk_appbarsep_create(b->txn, bar, &(XtkAppBarSeparatorProps) {0});
 }
 
 static XtkNodeRef bar_card(PageBuild *b, XtkNodeRef parent, char const *caption, XtkCommandBarProps const *props) {
 	XtkNodeRef card
-	  = xtk_ref_local(ui_card(&b->txn, page_example(b, parent, caption), 12.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f));
-	XtkLocalId bar = xtk_commandbar_create(&b->txn, card, props);
-	xtk_commandbar_onopen(&b->txn, xtk_ref_local(bar), page_post, page_bind(b, MSG_CB_OPEN));
+	  = xtk_ref_local(ui_card(b->txn, page_example(b, parent, caption), 12.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f));
+	XtkLocalId bar = xtk_commandbar_create(b->txn, card, props);
+	xtk_commandbar_onopen(b->txn, xtk_ref_local(bar), page_post, page_bind(b, MSG_CB_OPEN));
 	return xtk_ref_local(bar);
 }
 

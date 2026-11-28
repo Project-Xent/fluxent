@@ -1,7 +1,9 @@
 #include "gallery_assets.h"
 
-#include <objbase.h>
+#include <windows.h>
+
 #include <stdio.h>
+#include <wchar.h>
 
 static unsigned char const logo [] = {
 #include "logo.svg.h"
@@ -29,56 +31,91 @@ static GalleryAsset const assets [] = {
   {L"frame.png",   frame,   sizeof(frame)  },
 };
 
-static wchar_t asset_dir [MAX_PATH];
+static wchar_t const kPrefix [] = L"FluxentGallery-";
 
-static bool    asset_path(wchar_t output [MAX_PATH], wchar_t const *name) {
-	int n = swprintf(output, MAX_PATH, L"%ls\\%ls", asset_dir, name);
+static bool          temp_dir(wchar_t out [MAX_PATH]) {
+	DWORD n = GetTempPathW(MAX_PATH, out);
+	return n && n < MAX_PATH;
+}
+
+static bool process_dir(wchar_t out [MAX_PATH], DWORD pid) {
+	wchar_t temp [MAX_PATH];
+	if (!temp_dir(temp)) return false;
+	int n = swprintf(out, MAX_PATH, L"%ls%ls%lu", temp, kPrefix, pid);
 	return n > 0 && n < MAX_PATH;
 }
 
-static bool asset_write(GalleryAsset const *asset) {
+static bool asset_path(wchar_t out [MAX_PATH], wchar_t const *dir, wchar_t const *name) {
+	int n = swprintf(out, MAX_PATH, L"%ls\\%ls", dir, name);
+	return n > 0 && n < MAX_PATH;
+}
+
+static void dir_remove(wchar_t const *dir) {
+	for (size_t i = 0; i < ARRAYSIZE(assets); i++) {
+		wchar_t path [MAX_PATH];
+		if (asset_path(path, dir, assets [i].name)) DeleteFileW(path);
+	}
+	RemoveDirectoryW(dir);
+}
+
+static bool asset_write(wchar_t const *dir, GalleryAsset const *asset) {
 	wchar_t path [MAX_PATH];
-	if (!asset_path(path, asset->name)) return false;
+	if (!asset_path(path, dir, asset->name)) return false;
 	HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (file == INVALID_HANDLE_VALUE) return false;
+	if (file == INVALID_HANDLE_VALUE) return GetLastError() == ERROR_FILE_EXISTS;
 	DWORD written = 0;
 	bool  ok      = WriteFile(file, asset->data, asset->size, &written, NULL) && written == asset->size;
 	CloseHandle(file);
 	return ok;
 }
 
-static bool asset_create_dir(void) {
-	wchar_t temp [MAX_PATH];
-	DWORD   length = GetTempPathW(MAX_PATH, temp);
-	if (!length || length >= MAX_PATH) return false;
-	GUID    id;
-	wchar_t key [40];
-	if (FAILED(CoCreateGuid(&id)) || !StringFromGUID2(&id, key, ARRAYSIZE(key))) return false;
-	int n = swprintf(asset_dir, MAX_PATH, L"%lsFluxentGallery-%ls", temp, key);
-	return n > 0 && n < MAX_PATH && CreateDirectoryW(asset_dir, NULL);
+static bool process_alive(DWORD pid) {
+	HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+	if (!process) return GetLastError() == ERROR_ACCESS_DENIED;
+	DWORD code  = 0;
+	bool  alive = GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+	CloseHandle(process);
+	return alive;
+}
+
+static bool stale_dir(WIN32_FIND_DATAW const *found) {
+	if (!(found->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) return false;
+	wchar_t const *digits = found->cFileName + ARRAYSIZE(kPrefix) - 1;
+	wchar_t       *end    = NULL;
+	unsigned long  pid    = wcstoul(digits, &end, 10);
+	if (end == digits || *end || pid == GetCurrentProcessId()) return false;
+	return !process_alive(( DWORD ) pid);
+}
+
+static void sweep_stale(void) {
+	wchar_t temp [MAX_PATH], pattern [MAX_PATH];
+	if (!temp_dir(temp) || swprintf(pattern, MAX_PATH, L"%ls%ls*", temp, kPrefix) <= 0) return;
+	WIN32_FIND_DATAW found;
+	HANDLE           find = FindFirstFileW(pattern, &found);
+	if (find == INVALID_HANDLE_VALUE) return;
+	do {
+		wchar_t dir [MAX_PATH];
+		if (stale_dir(&found) && swprintf(dir, MAX_PATH, L"%ls%ls", temp, found.cFileName) > 0) dir_remove(dir);
+	}
+	while (FindNextFileW(find, &found));
+	FindClose(find);
 }
 
 void gallery_assets_init(void) {
-	if (asset_dir [0]) return;
-	if (!asset_create_dir()) {
-		asset_dir [0] = L'\0';
-		return;
-	}
+	sweep_stale();
+	wchar_t dir [MAX_PATH];
+	if (!process_dir(dir, GetCurrentProcessId())) return;
+	if (!CreateDirectoryW(dir, NULL) && GetLastError() != ERROR_ALREADY_EXISTS) return;
 	for (size_t i = 0; i < ARRAYSIZE(assets); i++) {
-		if (asset_write(&assets [i])) continue;
-		gallery_assets_clear();
+		if (asset_write(dir, &assets [i])) continue;
+		dir_remove(dir);
 		return;
 	}
 }
 
 void gallery_assets_clear(void) {
-	if (!asset_dir [0]) return;
-	for (size_t i = 0; i < ARRAYSIZE(assets); i++) {
-		wchar_t path [MAX_PATH];
-		if (asset_path(path, assets [i].name)) DeleteFileW(path);
-	}
-	RemoveDirectoryW(asset_dir);
-	asset_dir [0] = L'\0';
+	wchar_t dir [MAX_PATH];
+	if (process_dir(dir, GetCurrentProcessId())) dir_remove(dir);
 }
 
 static XtkResource asset_resource(wchar_t const *path) {
@@ -88,8 +125,9 @@ static XtkResource asset_resource(wchar_t const *path) {
 }
 
 XtkResource gallery_asset(wchar_t const *name) {
-	wchar_t path [MAX_PATH];
-	if (!asset_dir [0] || !asset_path(path, name)) return 0;
+	wchar_t dir [MAX_PATH], path [MAX_PATH];
+	if (!process_dir(dir, GetCurrentProcessId()) || !asset_path(path, dir, name)) return 0;
+	if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) return 0;
 	return asset_resource(path);
 }
 

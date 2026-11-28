@@ -18,7 +18,7 @@ typedef XtkLocalId (*PatchFn)(XtkTxn *txn, XtkNodeRef parent, XtkContainerProps 
 
 static void        patch(PageBuild *b, XtkLocalId row, PatchFn make, char const *caption, char const *note) {
 	XtkLocalId p = make(
-	  &b->txn, xtk_ref_local(row),
+	  b->txn, xtk_ref_local(row),
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -38,8 +38,8 @@ static void        patch(PageBuild *b, XtkLocalId row, PatchFn make, char const 
 		.grow  = 1.0f,
 	  }
 	);
-	ui_text(&b->txn, xtk_ref_local(p), caption, 14.0f, FLUX_FONT_SEMI_BOLD);
-	ui_text(&b->txn, xtk_ref_local(p), note, 12.0f, FLUX_FONT_REGULAR);
+	ui_text(b->txn, xtk_ref_local(p), caption, 14.0f, FLUX_FONT_SEMI_BOLD);
+	ui_text(b->txn, xtk_ref_local(p), note, 12.0f, FLUX_FONT_REGULAR);
 }
 
 bool page_materials_build(PageBuild *b) {
@@ -57,17 +57,17 @@ bool page_materials_build(PageBuild *b) {
 	PageDemo demo = page_demo(b, page_example(b, parent, "Backdrop"));
 	for (int i = 0; i < BACKDROP_COUNT; i++) {
 		XtkLocalId btn
-		  = ui_button(&b->txn, demo.items, kNames [i], NULL, cur == i ? XTK_BUTTON_ACCENT : XTK_BUTTON_STANDARD);
-		xtk_button_oninvoke(&b->txn, xtk_ref_local(btn), page_post, page_bind_i(b, MSG_BACKDROP, i));
+		  = ui_button(b->txn, demo.items, kNames [i], NULL, cur == i ? XTK_BUTTON_ACCENT : XTK_BUTTON_STANDARD);
+		xtk_button_oninvoke(b->txn, xtk_ref_local(btn), page_post, page_bind_i(b, MSG_BACKDROP, i));
 	}
 	page_output(b, demo.row, gallery_fmt(b->app, "Active: %s  (%s)\n%s", kNames [cur], kDwm [cur], kWhat [cur]));
 
-	XtkLocalId row = ui_row(&b->txn, page_example(b, parent, "See-through vs painted"), 12.0f, false);
+	XtkLocalId row = ui_row(b->txn, page_example(b, parent, "See-through vs painted"), 12.0f, false);
 	patch(b, row, xtk_container_create, "Bare page", "Nothing paints here - the backdrop is the background.");
 	patch(b, row, xtk_card_create, "Card", "Cards paint card_bg_default, which hides the material.");
 
 	ui_text(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  "The backdrop belongs to the window, not to elements inside it: anything that paints an "
 	  "opaque background covers it. Requires Windows 11 22H2 (build 22621) or newer; below that "
 	  "Fluxent clamps the backdrop to None. Your choice is written to fluxent-gallery.ini under "

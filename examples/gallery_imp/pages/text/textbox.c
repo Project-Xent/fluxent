@@ -14,7 +14,7 @@ bool        page_textbox_build(PageBuild *b) {
 		XtkNodeRef ex      = page_example(b, parent, "A simple TextBox.");
 		PageDemo   demo    = page_demo(b, ex);
 		XtkLocalId textbox = xtk_textbox_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkTextBoxProps) {
 			.set = XTK_TEXTBOX_W_MASK | XTK_TEXTBOX_TEXT_MASK | XTK_TEXTBOX_ENABLED_MASK | XTK_TEXTBOX_PLACEHOLDER_MASK,
 			.w   = 300.0f,
@@ -23,7 +23,7 @@ bool        page_textbox_build(PageBuild *b) {
 			.placeholder = "Enter your name",
 		  }
 		);
-		xtk_textbox_onchange(&b->txn, xtk_ref_local(textbox), page_post, page_bind(b, MSG_NAME));
+		xtk_textbox_onchange(b->txn, xtk_ref_local(textbox), page_post, page_bind(b, MSG_NAME));
 		page_keep(b, MSG_NAME, textbox);
 		XtkLocalId output = page_output(
 		  b, demo.row, m->name && m->name [0] ? gallery_fmt(b->app, "Hello, %s!", m->name) : "Waiting for input…"
@@ -34,7 +34,7 @@ bool        page_textbox_build(PageBuild *b) {
 		XtkNodeRef ex       = page_example(b, parent, "A PasswordBox hides what you type.");
 		PageDemo   demo     = page_demo(b, ex);
 		XtkLocalId password = xtk_password_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkInputProps) {
 			.set         = XTK_INPUT_W_MASK | XTK_INPUT_ENABLED_MASK | XTK_INPUT_PLACEHOLDER_MASK,
 			.w           = 300.0f,
@@ -42,7 +42,7 @@ bool        page_textbox_build(PageBuild *b) {
 			.placeholder = "Enter a password",
 		  }
 		);
-		xtk_password_onchange(&b->txn, xtk_ref_local(password), page_post, page_bind(b, MSG_PASSWORD));
+		xtk_password_onchange(b->txn, xtk_ref_local(password), page_post, page_bind(b, MSG_PASSWORD));
 		page_keep(b, MSG_PASSWORD, password);
 		XtkLocalId output = page_output(
 		  b, demo.row, gallery_fmt(b->app, "%d character%s", m->pass_chars, m->pass_chars == 1 ? "" : "s")

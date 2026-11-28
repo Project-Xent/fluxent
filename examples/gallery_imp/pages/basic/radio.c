@@ -16,7 +16,7 @@ bool                     page_radio_build(PageBuild *b) {
 		XtkNodeRef ex   = page_example(b, parent, "A group of RadioButtons.");
 		PageDemo   demo = page_demo(b, ex);
 		XtkLocalId col  = xtk_container_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkContainerProps) {
 			.set    = XTK_CONTAINER_SHRINK_MASK
 		            | XTK_CONTAINER_DIR_MASK
@@ -36,14 +36,14 @@ bool                     page_radio_build(PageBuild *b) {
 		);
 		for (int i = 0; i < 3; i++) {
 			XtkLocalId radio = xtk_radio_create(
-			  &b->txn, xtk_ref_local(col),
+			  b->txn, xtk_ref_local(col),
 			  &(XtkToggleProps) {
 				.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK,
 				.text    = kRadioOptions [i],
 				.checked = m->radio == i,
 			  }
 			);
-			xtk_radio_onchange(&b->txn, xtk_ref_local(radio), page_post, page_bind(b, MSG_RADIO_0 + i));
+			xtk_radio_onchange(b->txn, xtk_ref_local(radio), page_post, page_bind(b, MSG_RADIO_0 + i));
 			page_keep(b, MSG_RADIO_0 + i, radio);
 		}
 		XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "You selected %s", kRadioOptions [m->radio]));

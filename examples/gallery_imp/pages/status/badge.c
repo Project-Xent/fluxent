@@ -6,7 +6,7 @@ static void       page_badge_sync(GalleryApp *g);
 
 static XtkLocalId badge_button(PageBuild *b, XtkNodeRef parent, char const *icon, int delta) {
 	XtkLocalId button = xtk_button_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkButtonProps) {
 		.set       = XTK_BUTTON_ICON_MASK | XTK_BUTTON_STYLE_MASK | XTK_BUTTON_ENABLED_MASK | XTK_BUTTON_ANAME_MASK,
 		.icon      = icon,
@@ -16,7 +16,7 @@ static XtkLocalId badge_button(PageBuild *b, XtkNodeRef parent, char const *icon
 		.aname_len = ( uint32_t ) strlen(icon),
 	  }
 	);
-	xtk_button_oninvoke(&b->txn, xtk_ref_local(button), page_post, page_bind_i(b, MSG_BADGE_DELTA, delta));
+	xtk_button_oninvoke(b->txn, xtk_ref_local(button), page_post, page_bind_i(b, MSG_BADGE_DELTA, delta));
 	return button;
 }
 
@@ -29,14 +29,14 @@ bool page_badge_build(PageBuild *b) {
 	XtkNodeRef ex   = page_example(b, parent, "Dot, numeric, and icon badges sharing one counter.");
 	PageDemo   demo = page_demo(b, ex);
 	xtk_badge_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkBadgeProps) {
 		.set       = XTK_BADGE_BADGEMODE_MASK,
 		.badgemode = XTK_BADGE_DOT,
 	  }
 	);
 	XtkLocalId numeric = xtk_badge_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkBadgeProps) {
 		.set       = XTK_BADGE_BADGEMODE_MASK | XTK_BADGE_VALUE_MASK,
 		.badgemode = XTK_BADGE_NUMBER,
@@ -44,7 +44,7 @@ bool page_badge_build(PageBuild *b) {
 	  }
 	);
 	xtk_badge_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkBadgeProps) {
 		.set       = XTK_BADGE_BADGEMODE_MASK | XTK_BADGE_ICON_MASK,
 		.badgemode = XTK_BADGE_ICON,

@@ -85,11 +85,10 @@ static void listview_sync(GalleryApp *g) {
 }
 
 static void list_example(PageBuild *b, XtkNodeRef parent, char const *caption, XtkListProps props, int tag) {
-	XtkNodeRef col
-	  = xtk_ref_local(ui_column(&b->txn, page_example(b, parent, caption), 12.0f, XENT_FLEX_ALIGN_STRETCH));
+	XtkNodeRef col = xtk_ref_local(ui_column(b->txn, page_example(b, parent, caption), 12.0f, XENT_FLEX_ALIGN_STRETCH));
 	props.set |= XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK | XTK_LIST_MODE_MASK;
-	XtkLocalId list = xtk_list_create(&b->txn, col, &props);
-	xtk_list_onselect(&b->txn, xtk_ref_local(list), page_post, page_bind(b, tag));
+	XtkLocalId list = xtk_list_create(b->txn, col, &props);
+	xtk_list_onselect(b->txn, xtk_ref_local(list), page_post, page_bind(b, tag));
 	page_list(b, list, list_row);
 	page_keepout(b, tag, page_note(b, col, tag == MSG_LIST_SELECT ? single_text(b->app) : multi_text(b->app)));
 }
@@ -126,7 +125,7 @@ bool page_listview_build(PageBuild *b) {
 	  b, parent, "Variable-height rows: 10,000 notes measured as they are realized; resize the window to rewrap."
 	);
 	XtkLocalId notes = xtk_list_create(
-	  &b->txn, ex,
+	  b->txn, ex,
 	  &(XtkListProps) {
 		.set = XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK, .h = 360.0f, .sel = -1, .nitem = 10000}
 	);
@@ -135,7 +134,7 @@ bool page_listview_build(PageBuild *b) {
 	int            total  = 0;
 	for (int i = 0; i < 26; i++) total += groups [i];
 	XtkLocalId contacts = xtk_list_create(
-	  &b->txn,
+	  b->txn,
 	  page_example(
 		b, parent,
 		"Grouped with sticky headers: the current group's header stays pinned until the next one pushes it out."

@@ -22,11 +22,11 @@ bool        page_listbox_build(PageBuild *b) {
 	XtkNodeRef parent = xtk_ref_local(b->content);
 	page_header(b, parent, "ListBox", "The bordered list surface with accent-filled selection.");
 	XtkNodeRef row  = xtk_ref_local(ui_row(
-	  &b->txn, page_example(b, parent, "Selection fills the row with the accent at WinUI's 0.6/0.8/0.9 opacities."),
+	  b->txn, page_example(b, parent, "Selection fills the row with the accent at WinUI's 0.6/0.8/0.9 opacities."),
 	  16.0f, true
 	));
 	XtkLocalId list = xtk_listbox_create(
-	  &b->txn, row,
+	  b->txn, row,
 	  &(XtkListProps) {
 		.set   = XTK_LIST_W_MASK | XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK,
 		.w     = 260.0f,
@@ -36,7 +36,7 @@ bool        page_listbox_build(PageBuild *b) {
 		.itemh = 40.0f,
 	  }
 	);
-	xtk_listbox_onselect(&b->txn, xtk_ref_local(list), page_post, page_bind(b, MSG_LISTBOX_SELECT));
+	xtk_listbox_onselect(b->txn, xtk_ref_local(list), page_post, page_bind(b, MSG_LISTBOX_SELECT));
 	page_list(b, list, listbox_row);
 	page_keepout(b, MSG_LISTBOX_SELECT, page_note(b, row, listbox_text(b->app)));
 	return true;

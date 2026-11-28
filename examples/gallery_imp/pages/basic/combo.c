@@ -55,7 +55,7 @@ static XtkLocalId combo(
   PageBuild *b, XtkNodeRef parent, char const *placeholder, char const *const *items, int count, int sel, bool editable
 ) {
 	XtkLocalId local = xtk_combo_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkComboProps) {
 		.set         = XTK_COMBO_PLACEHOLDER_MASK | XTK_COMBO_SEL_MASK | XTK_COMBO_EDITABLE_MASK,
 		.placeholder = placeholder,
@@ -63,7 +63,7 @@ static XtkLocalId combo(
 		.editable    = editable,
 	  }
 	);
-	xtk_txn_setitems(&b->txn, xtk_ref_local(local), items, count);
+	xtk_txn_setitems(b->txn, xtk_ref_local(local), items, count);
 	return local;
 }
 
@@ -75,13 +75,13 @@ bool page_combo_build(PageBuild *b) {
 	{
 		PageDemo   demo = page_demo(b, page_example(b, parent, "A ComboBox with items defined inline."));
 		XtkLocalId cb   = combo(b, demo.items, "Pick a color", kColors, COLOR_COUNT, m->combo_sel, false);
-		xtk_combo_onselect(&b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO));
+		xtk_combo_onselect(b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO));
 		page_keepout(b, MSG_COMBO, page_output(b, demo.row, picked(b->app, kColors, m->combo_sel)));
 	}
 	{
 		PageDemo   demo = page_demo(b, page_example(b, parent, "A ComboBox with a long scrolling list."));
 		XtkLocalId cb   = combo(b, demo.items, "Pick a font", kFonts, FONT_COUNT, m->combo_font, false);
-		xtk_combo_onselect(&b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO_FONT));
+		xtk_combo_onselect(b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO_FONT));
 		page_keepout(b, MSG_COMBO_FONT, page_output(b, demo.row, picked(b->app, kFonts, m->combo_font)));
 	}
 	{
@@ -89,8 +89,8 @@ bool page_combo_build(PageBuild *b) {
 		  b, page_example(b, parent, "An editable ComboBox: type to highlight a match, press Enter to submit any text.")
 		);
 		XtkLocalId cb = combo(b, demo.items, "Type or pick a color", kColors, COLOR_COUNT, m->combo_edit_sel, true);
-		xtk_combo_onselect(&b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO_EDIT));
-		xtk_combo_onsubmit(&b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO_SUBMIT));
+		xtk_combo_onselect(b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO_EDIT));
+		xtk_combo_onsubmit(b->txn, xtk_ref_local(cb), page_post, page_bind(b, MSG_COMBO_SUBMIT));
 		page_keepout(b, MSG_COMBO_SUBMIT, page_output(b, demo.row, submitted(b->app)));
 	}
 	return true;

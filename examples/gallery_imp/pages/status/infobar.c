@@ -22,12 +22,12 @@ bool page_infobar_build(PageBuild *b) {
 	  b, parent, "InfoBar", "Use an InfoBar for essential status messages. Closing one just flips a model flag."
 	);
 	XtkNodeRef col = xtk_ref_local(ui_column(
-	  &b->txn, page_example(b, parent, "One bar per severity; close them, then restore."), 8.0f, XENT_FLEX_ALIGN_STRETCH
+	  b->txn, page_example(b, parent, "One bar per severity; close them, then restore."), 8.0f, XENT_FLEX_ALIGN_STRETCH
 	));
 	for (int i = 0; i < BAR_COUNT; i++) {
 		if (!b->app->model.bar_open [i]) continue;
 		XtkLocalId bar = xtk_infobar_create(
-		  &b->txn, col,
+		  b->txn, col,
 		  &(XtkInfoBarProps) {
 			.set
 		    = XTK_INFOBAR_TEXT_MASK | XTK_INFOBAR_MESSAGE_MASK | XTK_INFOBAR_SEVERITY_MASK | XTK_INFOBAR_CLOSABLE_MASK,
@@ -37,12 +37,12 @@ bool page_infobar_build(PageBuild *b) {
 			.closable = true,
 		  }
 		);
-		xtk_infobar_onclose(&b->txn, xtk_ref_local(bar), page_post, page_bind_i(b, MSG_BAR_CLOSE, i));
+		xtk_infobar_onclose(b->txn, xtk_ref_local(bar), page_post, page_bind_i(b, MSG_BAR_CLOSE, i));
 		page_keepx(b, i, bar);
 	}
 	XtkLocalId reset = page_button(b, col, "Restore all info bars", MSG_BARS_RESET, 0);
 	xtk_txn_set(
-	  &b->txn, xtk_ref_local(reset), XTK_PROP_ALIGN_SELF,
+	  b->txn, xtk_ref_local(reset), XTK_PROP_ALIGN_SELF,
 	  (XtkValue) {.kind = XTK_VALUE_ENUM, .u.u32 = XENT_FLEX_ALIGN_START}, (XtkChangeStamp) {0}
 	);
 	page_keep(b, MSG_BARS_RESET, reset);

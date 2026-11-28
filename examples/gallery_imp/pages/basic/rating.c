@@ -20,7 +20,7 @@ bool        page_rating_build(PageBuild *b) {
 		XtkNodeRef ex     = page_example(b, parent, "An interactive RatingControl with a caption.");
 		PageDemo   demo   = page_demo(b, ex);
 		XtkLocalId rating = xtk_rating_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkRatingProps) {
 			.set   = XTK_RATING_VALUE_MASK
 		           | XTK_RATING_MAX_MASK
@@ -33,7 +33,7 @@ bool        page_rating_build(PageBuild *b) {
 			.clear = true,
 		  }
 		);
-		xtk_rating_onrating(&b->txn, xtk_ref_local(rating), page_post, page_bind(b, MSG_RATING));
+		xtk_rating_onrating(b->txn, xtk_ref_local(rating), page_post, page_bind(b, MSG_RATING));
 		XtkLocalId output = page_output(b, demo.row, out);
 		page_keepout(b, MSG_RATING, output);
 	}
@@ -41,7 +41,7 @@ bool        page_rating_build(PageBuild *b) {
 		XtkNodeRef ex   = page_example(b, parent, "Read-only, displaying a fractional average as a partial fill.");
 		PageDemo   demo = page_demo(b, ex);
 		xtk_rating_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkRatingProps) {
 			.set      = XTK_RATING_VALUE_MASK | XTK_RATING_MAX_MASK | XTK_RATING_TEXT_MASK | XTK_RATING_READONLY_MASK,
 			.value    = 3.5,

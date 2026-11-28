@@ -12,7 +12,7 @@ static void date_sync(GalleryApp *g) {
 static XtkLocalId date_picker(PageBuild *b, XtkNodeRef parent, XtkDatePickerProps props) {
 	props.set |= XTK_DATEPICKER_HEADER_MASK | XTK_DATEPICKER_DATE_MASK;
 	if (props.minyear) props.set |= XTK_DATEPICKER_MINYEAR_MASK | XTK_DATEPICKER_MAXYEAR_MASK;
-	return xtk_datepicker_create(&b->txn, parent, &props);
+	return xtk_datepicker_create(b->txn, parent, &props);
 }
 
 bool page_date_picker_build(PageBuild *b) {
@@ -29,7 +29,7 @@ bool page_date_picker_build(PageBuild *b) {
 		  b, page_example(b, parent, "A DatePicker with a header. Escape or a click outside dismisses it unchanged.")
 		);
 		XtkLocalId pick = date_picker(b, demo.items, (XtkDatePickerProps) {.header = "Pick a date", .date = date});
-		xtk_datepicker_onvalue(&b->txn, xtk_ref_local(pick), page_post, page_bind(b, MSG_DATE_PICKER));
+		xtk_datepicker_onvalue(b->txn, xtk_ref_local(pick), page_post, page_bind(b, MSG_DATE_PICKER));
 		page_keepout(b, MSG_DATE_PICKER, page_output(b, demo.row, date_text(b->app, date)));
 	}
 	{
@@ -45,9 +45,7 @@ bool page_date_picker_build(PageBuild *b) {
 	}
 	{
 		PageDemo demo = page_demo(b, page_example(b, parent, "A disabled DatePicker."));
-		ui_enable(
-		  &b->txn, date_picker(b, demo.items, (XtkDatePickerProps) {.header = "Disabled", .date = date}), false
-		);
+		ui_enable(b->txn, date_picker(b, demo.items, (XtkDatePickerProps) {.header = "Disabled", .date = date}), false);
 	}
 	return true;
 }

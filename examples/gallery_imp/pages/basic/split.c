@@ -10,8 +10,8 @@ static char const       *split_text(GalleryApp *g) {
 static void split_sync(GalleryApp *g) { gallery_settext(g, g->live_output [MSG_SPLIT_PRIMARY], split_text(g)); }
 
 static void menu_item(PageBuild *b, XtkNodeRef menu, char const *text, int tag, int i) {
-	XtkLocalId item = xtk_menuitem_create(&b->txn, menu, &(XtkItemProps) {.set = XTK_ITEM_TEXT_MASK, .text = text});
-	xtk_menuitem_oninvoke(&b->txn, xtk_ref_local(item), page_post, page_bind_i(b, tag, i));
+	XtkLocalId item = xtk_menuitem_create(b->txn, menu, &(XtkItemProps) {.set = XTK_ITEM_TEXT_MASK, .text = text});
+	xtk_menuitem_oninvoke(b->txn, xtk_ref_local(item), page_post, page_bind_i(b, tag, i));
 }
 
 bool page_split_build(PageBuild *b) {
@@ -22,11 +22,11 @@ bool page_split_build(PageBuild *b) {
 	);
 	PageDemo   demo  = page_demo(b, page_example(b, parent, "A SplitButton for saving with alternatives."));
 	XtkLocalId split = xtk_split_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkButtonProps) {.set = XTK_BUTTON_TEXT_MASK | XTK_BUTTON_ICON_MASK, .text = "Save", .icon = "Save"}
 	);
-	xtk_split_oninvoke(&b->txn, xtk_ref_local(split), page_post, page_bind(b, MSG_SPLIT_PRIMARY));
-	XtkNodeRef menu = xtk_ref_local(xtk_menufly_create(&b->txn, xtk_ref_local(split), NULL));
+	xtk_split_oninvoke(b->txn, xtk_ref_local(split), page_post, page_bind(b, MSG_SPLIT_PRIMARY));
+	XtkNodeRef menu = xtk_ref_local(xtk_menufly_create(b->txn, xtk_ref_local(split), NULL));
 	menu_item(b, menu, "Save as...", MSG_SPLIT_MENU, 0);
 	menu_item(b, menu, "Save all", MSG_SPLIT_MENU, 1);
 	page_keepout(b, MSG_SPLIT_PRIMARY, page_output(b, demo.row, split_text(b->app)));

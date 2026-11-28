@@ -24,15 +24,15 @@ bool page_pull_refresh_build(PageBuild *b) {
 	  b, parent, "PullToRefresh", "A RefreshContainer wrapping scrollable content. Pull from the top edge to refresh."
 	);
 	XtkNodeRef col     = xtk_ref_local(ui_column(
-	  &b->txn, page_example(b, parent, "List inside a top-edge pull container."), 12.0f, XENT_FLEX_ALIGN_STRETCH
+	  b->txn, page_example(b, parent, "List inside a top-edge pull container."), 12.0f, XENT_FLEX_ALIGN_STRETCH
 	));
 	XtkLocalId refresh = xtk_refresh_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkRefreshProps) {.set = XTK_REFRESH_H_MASK | XTK_REFRESH_REFRESHING_MASK, .h = 360.0f, .refreshing = busy}
 	);
-	xtk_refresh_onrefresh(&b->txn, xtk_ref_local(refresh), page_post, page_bind(b, MSG_REFRESH));
+	xtk_refresh_onrefresh(b->txn, xtk_ref_local(refresh), page_post, page_bind(b, MSG_REFRESH));
 	XtkLocalId list = xtk_list_create(
-	  &b->txn, xtk_ref_local(refresh),
+	  b->txn, xtk_ref_local(refresh),
 	  &(XtkListProps) {
 		.set   = XTK_LIST_GROW_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK | XTK_LIST_MODE_MASK,
 		.grow  = 1.0f,
@@ -45,7 +45,7 @@ bool page_pull_refresh_build(PageBuild *b) {
 	page_keep(b, MSG_REFRESH, refresh);
 	page_keepout(b, MSG_REFRESH, page_note(b, col, refresh_text(b->app)));
 	XtkLocalId done = page_button(b, col, "End refresh", MSG_REFRESH_DONE, 0);
-	ui_enable(&b->txn, done, busy);
+	ui_enable(b->txn, done, busy);
 	page_keep(b, MSG_REFRESH_DONE, done);
 	return true;
 }

@@ -12,14 +12,14 @@ static void color_sync(GalleryApp *g) {
 static void color_example(PageBuild *b, XtkNodeRef parent, char const *caption, unsigned rgba, bool alpha, int tag) {
 	PageDemo   demo   = page_demo(b, page_example(b, parent, caption));
 	XtkLocalId picker = xtk_colorpicker_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkColorPickerProps) {
 		.set   = XTK_COLORPICKER_COLOR_MASK | XTK_COLORPICKER_ALPHA_MASK,
 		.color = (XtkColor) {rgba},
 		.alpha = alpha,
 	  }
 	);
-	xtk_colorpicker_onvalue(&b->txn, xtk_ref_local(picker), page_post, page_bind(b, tag));
+	xtk_colorpicker_onvalue(b->txn, xtk_ref_local(picker), page_post, page_bind(b, tag));
 	page_keepout(b, tag, page_output(b, demo.row, color_text(b->app, rgba)));
 }
 

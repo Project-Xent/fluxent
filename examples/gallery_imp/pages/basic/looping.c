@@ -15,7 +15,7 @@ static void looping_sync(GalleryApp *g) {
 
 static XtkLocalId wheel(PageBuild *b, XtkNodeRef parent, char const *const *items, int count, int sel, bool loop) {
 	XtkLocalId local = xtk_looping_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkLoopingProps) {
 		.set   = XTK_LOOPING_W_MASK
 	           | XTK_LOOPING_H_MASK
@@ -29,7 +29,7 @@ static XtkLocalId wheel(PageBuild *b, XtkNodeRef parent, char const *const *item
 		.loop  = loop,
 	  }
 	);
-	xtk_txn_setitems(&b->txn, xtk_ref_local(local), items, count);
+	xtk_txn_setitems(b->txn, xtk_ref_local(local), items, count);
 	return local;
 }
 
@@ -47,7 +47,7 @@ bool page_looping_build(PageBuild *b) {
 		  b, page_example(b, parent, "A looping wheel. Spinning past either end carries on from the other.")
 		);
 		XtkLocalId w = wheel(b, demo.items, kMonths, MONTH_COUNT, sel, true);
-		xtk_looping_onselect(&b->txn, xtk_ref_local(w), page_post, page_bind(b, MSG_LOOPING));
+		xtk_looping_onselect(b->txn, xtk_ref_local(w), page_post, page_bind(b, MSG_LOOPING));
 		page_keepout(b, MSG_LOOPING, page_output(b, demo.row, kMonths [sel % MONTH_COUNT]));
 	}
 	{
@@ -57,7 +57,7 @@ bool page_looping_build(PageBuild *b) {
 	}
 	{
 		PageDemo demo = page_demo(b, page_example(b, parent, "A disabled LoopingSelector."));
-		ui_enable(&b->txn, wheel(b, demo.items, kMonths, MONTH_COUNT, 0, true), false);
+		ui_enable(b->txn, wheel(b, demo.items, kMonths, MONTH_COUNT, 0, true), false);
 	}
 	return true;
 }

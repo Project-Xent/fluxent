@@ -15,9 +15,9 @@ bool        page_breadcrumb_build(PageBuild *b) {
 	page_header(b, parent, "BreadcrumbBar", "Shows the path to the current location. Every crumb posts ItemClicked.");
 	PageDemo   demo = page_demo(b, page_example(b, parent, "A four-segment breadcrumb."));
 	XtkLocalId crumb
-	  = xtk_breadcrumb_create(&b->txn, demo.items, &(XtkSelectionProps) {.set = XTK_SELECTION_NITEM_MASK, .nitem = 4});
-	xtk_txn_setitems(&b->txn, xtk_ref_local(crumb), kCrumbs, 4);
-	xtk_breadcrumb_onselect(&b->txn, xtk_ref_local(crumb), page_post, page_bind(b, MSG_BREADCRUMB));
+	  = xtk_breadcrumb_create(b->txn, demo.items, &(XtkSelectionProps) {.set = XTK_SELECTION_NITEM_MASK, .nitem = 4});
+	xtk_txn_setitems(b->txn, xtk_ref_local(crumb), kCrumbs, 4);
+	xtk_breadcrumb_onselect(b->txn, xtk_ref_local(crumb), page_post, page_bind(b, MSG_BREADCRUMB));
 	page_keepout(b, MSG_BREADCRUMB, page_output(b, demo.row, crumb_text(b->app)));
 	return true;
 }

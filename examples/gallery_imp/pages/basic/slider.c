@@ -13,8 +13,8 @@ static void slider_example(
 	extra.min          = min;
 	extra.max          = max;
 	extra.value        = value;
-	XtkLocalId slider  = xtk_slider_create(&b->txn, demo.items, &extra);
-	xtk_slider_onchange(&b->txn, xtk_ref_local(slider), page_post, page_bind(b, tag));
+	XtkLocalId slider  = xtk_slider_create(b->txn, demo.items, &extra);
+	xtk_slider_onchange(b->txn, xtk_ref_local(slider), page_post, page_bind(b, tag));
 	XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "%.0f", value));
 	page_keepout(b, tag, output);
 }
@@ -23,7 +23,7 @@ static void slider_vertical_example(PageBuild *b, XtkNodeRef parent, Model const
 	XtkNodeRef ex   = page_example(b, parent, "A vertical Slider: arrow keys move it, the minimum sits at the bottom.");
 	PageDemo   demo = page_demo(b, ex);
 	XtkLocalId slider = xtk_slider_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkSliderProps) {
 		.set       = XTK_SLIDER_H_MASK
 	               | XTK_SLIDER_DIR_MASK
@@ -41,7 +41,7 @@ static void slider_vertical_example(PageBuild *b, XtkNodeRef parent, Model const
 		.tickplace = XTK_TICK_OUTSIDE,
 	  }
 	);
-	xtk_slider_onchange(&b->txn, xtk_ref_local(slider), page_post, page_bind(b, MSG_SLIDER_VERT));
+	xtk_slider_onchange(b->txn, xtk_ref_local(slider), page_post, page_bind(b, MSG_SLIDER_VERT));
 	XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "%.0f", m->slider_vert));
 	page_keepout(b, MSG_SLIDER_VERT, output);
 }
@@ -50,7 +50,7 @@ static void slider_range_example(PageBuild *b, XtkNodeRef parent, Model const *m
 	XtkNodeRef ex   = page_example(b, parent, "A range Slider: two thumbs that cannot cross, each reachable with Tab.");
 	PageDemo   demo = page_demo(b, ex);
 	XtkLocalId slider = xtk_slider_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkSliderProps) {
 		.set        = XTK_SLIDER_W_MASK
 	                | XTK_SLIDER_MIN_MASK
@@ -70,7 +70,7 @@ static void slider_range_example(PageBuild *b, XtkNodeRef parent, Model const *m
 		.tickplace  = XTK_TICK_OUTSIDE,
 	  }
 	);
-	xtk_slider_onrange(&b->txn, xtk_ref_local(slider), page_post, page_bind(b, MSG_SLIDER_RANGE));
+	xtk_slider_onrange(b->txn, xtk_ref_local(slider), page_post, page_bind(b, MSG_SLIDER_RANGE));
 	XtkLocalId output
 	  = page_output(b, demo.row, gallery_fmt(b->app, "%.0f - %.0f", m->slider_range_lo, m->slider_range_hi));
 	page_keepout(b, MSG_SLIDER_RANGE, output);

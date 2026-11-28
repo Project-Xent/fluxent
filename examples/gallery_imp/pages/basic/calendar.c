@@ -17,13 +17,13 @@ static void calendar_sync(GalleryApp *g) {
 static XtkLocalId calendar(PageBuild *b, XtkNodeRef parent, XtkCalendarProps props) {
 	props.set |= XTK_CALENDAR_DATE_MASK | XTK_CALENDAR_MODE_MASK;
 	if (props.mindate) props.set |= XTK_CALENDAR_MINDATE_MASK | XTK_CALENDAR_MAXDATE_MASK;
-	return xtk_calendar_create(&b->txn, parent, &props);
+	return xtk_calendar_create(b->txn, parent, &props);
 }
 
 static void calendar_example(PageBuild *b, XtkNodeRef parent, char const *caption, XtkCalendarProps props, int tag) {
 	PageDemo   demo = page_demo(b, page_example(b, parent, caption));
 	XtkLocalId cal  = calendar(b, demo.items, props);
-	xtk_calendar_ondate(&b->txn, xtk_ref_local(cal), page_post, page_bind(b, tag));
+	xtk_calendar_ondate(b->txn, xtk_ref_local(cal), page_post, page_bind(b, tag));
 	char const *out = tag == MSG_CALENDAR ? date_text(b->app, props.date) : multi_text(b->app);
 	page_keepout(b, tag, page_output(b, demo.row, out));
 }
@@ -52,7 +52,7 @@ bool page_calendar_build(PageBuild *b) {
 	}
 	{
 		PageDemo demo = page_demo(b, page_example(b, parent, "A disabled CalendarView."));
-		ui_enable(&b->txn, calendar(b, demo.items, (XtkCalendarProps) {0}), false);
+		ui_enable(b->txn, calendar(b, demo.items, (XtkCalendarProps) {0}), false);
 	}
 	return true;
 }

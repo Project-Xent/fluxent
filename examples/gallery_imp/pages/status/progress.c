@@ -6,7 +6,7 @@ static void       page_progress_sync(GalleryApp *g);
 
 static XtkNodeRef progress_column(PageBuild *b, XtkNodeRef parent) {
 	XtkLocalId column = xtk_container_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK | XTK_CONTAINER_ITEMS_MASK | XTK_CONTAINER_GAP_MASK | XTK_CONTAINER_FILL_MASK,
 		.dir   = XTK_STACK_COLUMN,
@@ -20,7 +20,7 @@ static XtkNodeRef progress_column(PageBuild *b, XtkNodeRef parent) {
 
 static XtkNodeRef progress_row(PageBuild *b, XtkNodeRef parent) {
 	XtkLocalId row = xtk_container_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set     = XTK_CONTAINER_DIR_MASK
 	             | XTK_CONTAINER_ITEMS_MASK
@@ -42,7 +42,7 @@ static XtkNodeRef progress_row(PageBuild *b, XtkNodeRef parent) {
 static void
 progress_state_bar(PageBuild *b, XtkNodeRef parent, Model const *m, bool indeterminate, XtkProgressState state) {
 	xtk_progress_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkProgressProps) {
 		.set           = XTK_PROGRESS_W_MASK
 	                   | XTK_PROGRESS_MIN_MASK
@@ -84,7 +84,7 @@ bool page_progress_build(PageBuild *b) {
 	XtkNodeRef controls = progress_column(b, demo.items);
 	XtkNodeRef row      = progress_row(b, controls);
 	XtkLocalId slider   = xtk_slider_create(
-	  &b->txn, row,
+	  b->txn, row,
 	  &(XtkSliderProps) {
 		.set     = XTK_SLIDER_W_MASK
 	             | XTK_SLIDER_ENABLED_MASK
@@ -98,9 +98,9 @@ bool page_progress_build(PageBuild *b) {
 		.value   = m->progress,
 	  }
 	);
-	xtk_slider_onchange(&b->txn, xtk_ref_local(slider), page_post, page_bind(b, MSG_PROGRESS));
+	xtk_slider_onchange(b->txn, xtk_ref_local(slider), page_post, page_bind(b, MSG_PROGRESS));
 	XtkLocalId value = xtk_text_create(
-	  &b->txn, row,
+	  b->txn, row,
 	  &(XtkTextProps) {
 		.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTSIZE_MASK | XTK_TEXT_FONTWEIGHT_MASK,
 		.text       = gallery_fmt(b->app, "%.0f%%", m->progress),
@@ -109,7 +109,7 @@ bool page_progress_build(PageBuild *b) {
 	  }
 	);
 	XtkLocalId indeterminate = xtk_checkbox_create(
-	  &b->txn, row,
+	  b->txn, row,
 	  &(XtkCheckBoxProps) {
 		.set     = XTK_CHECKBOX_TEXT_MASK | XTK_CHECKBOX_CHECKED_MASK | XTK_CHECKBOX_ENABLED_MASK,
 		.text    = "Indeterminate",
@@ -117,7 +117,7 @@ bool page_progress_build(PageBuild *b) {
 		.enabled = true,
 	  }
 	);
-	xtk_checkbox_onchange(&b->txn, xtk_ref_local(indeterminate), page_post, page_bind(b, MSG_INDETERMINATE));
+	xtk_checkbox_onchange(b->txn, xtk_ref_local(indeterminate), page_post, page_bind(b, MSG_INDETERMINATE));
 	XtkProgressProps progress = {
 	  .set = XTK_PROGRESS_MIN_MASK | XTK_PROGRESS_MAX_MASK | XTK_PROGRESS_VALUE_MASK | XTK_PROGRESS_INDETERMINATE_MASK,
 	  .min = 0.0f,
@@ -125,8 +125,8 @@ bool page_progress_build(PageBuild *b) {
 	  .value         = m->progress,
 	  .indeterminate = m->indeterminate,
 	};
-	XtkLocalId bar  = xtk_progress_create(&b->txn, controls, &progress);
-	XtkLocalId ring = xtk_progressring_create(&b->txn, controls, &progress);
+	XtkLocalId bar  = xtk_progress_create(b->txn, controls, &progress);
+	XtkLocalId ring = xtk_progressring_create(b->txn, controls, &progress);
 	page_keep(b, MSG_PROGRESS, bar);
 	page_keep(b, MSG_INDETERMINATE, ring);
 	page_keepout(b, MSG_PROGRESS, value);

@@ -12,13 +12,13 @@ static void time_sync(GalleryApp *g) {
 static XtkLocalId time_picker(PageBuild *b, XtkNodeRef parent, XtkTimePickerProps props) {
 	props.set |= XTK_TIMEPICKER_HEADER_MASK | XTK_TIMEPICKER_TIME_MASK | XTK_TIMEPICKER_CLOCK_MASK;
 	if (props.step) props.set |= XTK_TIMEPICKER_STEP_MASK;
-	return xtk_timepicker_create(&b->txn, parent, &props);
+	return xtk_timepicker_create(b->txn, parent, &props);
 }
 
 static void time_example(PageBuild *b, XtkNodeRef parent, char const *caption, XtkTimePickerProps props, int tag) {
 	PageDemo   demo = page_demo(b, page_example(b, parent, caption));
 	XtkLocalId pick = time_picker(b, demo.items, props);
-	xtk_timepicker_onvalue(&b->txn, xtk_ref_local(pick), page_post, page_bind(b, tag));
+	xtk_timepicker_onvalue(b->txn, xtk_ref_local(pick), page_post, page_bind(b, tag));
 	page_keepout(b, tag, page_output(b, demo.row, time_text(b->app, props.time)));
 }
 
@@ -47,7 +47,7 @@ bool page_time_picker_build(PageBuild *b) {
 	{
 		PageDemo demo = page_demo(b, page_example(b, parent, "A disabled TimePicker."));
 		ui_enable(
-		  &b->txn, time_picker(b, demo.items, (XtkTimePickerProps) {.header = "Disabled", .time = 8 * 60}), false
+		  b->txn, time_picker(b, demo.items, (XtkTimePickerProps) {.header = "Disabled", .time = 8 * 60}), false
 		);
 	}
 	return true;

@@ -11,8 +11,8 @@ static XtkLocalId pager(PageBuild *b, XtkNodeRef parent, XtkPagerProps props) {
 	props.set    |= XTK_PAGER_SEL_MASK | XTK_PAGER_NITEM_MASK;
 	props.sel     = b->app->model.pager_page;
 	props.nitem   = 32;
-	XtkLocalId p  = xtk_pager_create(&b->txn, parent, &props);
-	xtk_pager_onselect(&b->txn, xtk_ref_local(p), page_post, page_bind(b, MSG_PAGER_SELECT));
+	XtkLocalId p  = xtk_pager_create(b->txn, parent, &props);
+	xtk_pager_onselect(b->txn, xtk_ref_local(p), page_post, page_bind(b, MSG_PAGER_SELECT));
 	return p;
 }
 
@@ -25,8 +25,8 @@ bool page_pager_build(PageBuild *b) {
 	  "with ellipses, a NumberBox, or a ComboBox."
 	);
 	XtkNodeRef card = xtk_ref_local(ui_card(
-	  &b->txn, page_example(b, parent, "Number panel (32 pages) with First/Last buttons."), 12.0f,
-	  XENT_FLEX_ALIGN_START, 16.0f
+	  b->txn, page_example(b, parent, "Number panel (32 pages) with First/Last buttons."), 12.0f, XENT_FLEX_ALIGN_START,
+	  16.0f
 	));
 	page_keep(
 	  b, MSG_PAGER_SELECT,

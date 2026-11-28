@@ -43,10 +43,10 @@ bool page_autosuggest_build(PageBuild *b) {
 	  "Enter or the query button submit."
 	);
 	XtkNodeRef col = xtk_ref_local(
-	  ui_column(&b->txn, page_example(b, parent, "Prefix search over city names."), 12.0f, XENT_FLEX_ALIGN_START)
+	  ui_column(b->txn, page_example(b, parent, "Prefix search over city names."), 12.0f, XENT_FLEX_ALIGN_START)
 	);
 	XtkLocalId box = xtk_suggest_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkSuggestProps) {
 		.set         = XTK_SUGGEST_W_MASK
 	                 | XTK_SUGGEST_PLACEHOLDER_MASK
@@ -60,10 +60,10 @@ bool page_autosuggest_build(PageBuild *b) {
 	);
 	char const *found [8];
 	XtkNodeRef  ref = xtk_ref_local(box);
-	xtk_txn_setitems(&b->txn, ref, found, filter(text, found));
-	xtk_suggest_onchange(&b->txn, ref, page_post, page_bind(b, MSG_ASB_TEXT));
-	xtk_suggest_onquery(&b->txn, ref, page_post, page_bind(b, MSG_ASB_QUERY));
-	xtk_suggest_onselect(&b->txn, ref, page_post, page_bind(b, MSG_ASB_CHOSEN));
+	xtk_txn_setitems(b->txn, ref, found, filter(text, found));
+	xtk_suggest_onchange(b->txn, ref, page_post, page_bind(b, MSG_ASB_TEXT));
+	xtk_suggest_onquery(b->txn, ref, page_post, page_bind(b, MSG_ASB_QUERY));
+	xtk_suggest_onselect(b->txn, ref, page_post, page_bind(b, MSG_ASB_CHOSEN));
 	page_keep(b, MSG_ASB_TEXT, box);
 	page_keepout(b, MSG_ASB_QUERY, page_note(b, col, query_text(b->app)));
 	return true;

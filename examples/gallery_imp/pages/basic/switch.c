@@ -14,7 +14,7 @@ bool        page_toggle_build(PageBuild *b) {
 		XtkNodeRef ex    = page_example(b, parent, "A simple ToggleSwitch.");
 		PageDemo   demo  = page_demo(b, ex);
 		XtkLocalId inner = xtk_container_create(
-		  &b->txn, demo.items,
+		  b->txn, demo.items,
 		  &(XtkContainerProps) {
 			.set = XTK_CONTAINER_DIR_MASK | XTK_CONTAINER_ITEMS_MASK | XTK_CONTAINER_GAP_MASK | XTK_CONTAINER_FILL_MASK,
 			.dir = XTK_STACK_ROW,
@@ -24,11 +24,11 @@ bool        page_toggle_build(PageBuild *b) {
 		  }
 		);
 		XtkLocalId sw = xtk_switch_create(
-		  &b->txn, xtk_ref_local(inner), &(XtkToggleProps) {.set = XTK_TOGGLE_CHECKED_MASK, .checked = m->light_on}
+		  b->txn, xtk_ref_local(inner), &(XtkToggleProps) {.set = XTK_TOGGLE_CHECKED_MASK, .checked = m->light_on}
 		);
-		xtk_switch_onchange(&b->txn, xtk_ref_local(sw), page_post, page_bind(b, MSG_LIGHT));
+		xtk_switch_onchange(b->txn, xtk_ref_local(sw), page_post, page_bind(b, MSG_LIGHT));
 		XtkLocalId state = xtk_text_create(
-		  &b->txn, xtk_ref_local(inner),
+		  b->txn, xtk_ref_local(inner),
 		  &(XtkTextProps) {
 			.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTSIZE_MASK | XTK_TEXT_FONTWEIGHT_MASK,
 			.text       = m->light_on ? "On" : "Off",

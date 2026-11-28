@@ -23,18 +23,17 @@ bool page_flipview_build(PageBuild *b) {
 	  "— both post the same message."
 	);
 	XtkNodeRef col  = xtk_ref_local(ui_column(
-	  &b->txn, page_example(b, parent, "FlipView + PipsPager sharing one selected index."), 12.0f,
-	  XENT_FLEX_ALIGN_CENTER
+	  b->txn, page_example(b, parent, "FlipView + PipsPager sharing one selected index."), 12.0f, XENT_FLEX_ALIGN_CENTER
 	));
 	XtkLocalId flip = xtk_flip_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkFlipProps) {
 		.set = XTK_FLIP_W_MASK | XTK_FLIP_H_MASK | XTK_FLIP_SEL_MASK, .w = 560.0f, .h = 300.0f, .sel = sel}
 	);
-	for (int i = 0; i < 5; i++) flip_page(b->app, &b->txn, xtk_ref_local(flip), i);
-	xtk_flip_onselect(&b->txn, xtk_ref_local(flip), page_post, page_bind(b, MSG_FLIP_SELECT));
+	for (int i = 0; i < 5; i++) flip_page(b->app, b->txn, xtk_ref_local(flip), i);
+	xtk_flip_onselect(b->txn, xtk_ref_local(flip), page_post, page_bind(b, MSG_FLIP_SELECT));
 	XtkLocalId pips = xtk_pips_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkPipsProps) {
 		.set   = XTK_PIPS_SEL_MASK | XTK_PIPS_NITEM_MASK | XTK_PIPS_NAV_MASK,
 		.sel   = sel,
@@ -42,7 +41,7 @@ bool page_flipview_build(PageBuild *b) {
 		.nav   = XTK_PIPS_NAV_ON_HOVER,
 	  }
 	);
-	xtk_pips_onselect(&b->txn, xtk_ref_local(pips), page_post, page_bind(b, MSG_FLIP_SELECT));
+	xtk_pips_onselect(b->txn, xtk_ref_local(pips), page_post, page_bind(b, MSG_FLIP_SELECT));
 	page_keep(b, MSG_FLIP_SELECT, flip);
 	page_keepout(b, MSG_FLIP_SELECT, pips);
 	return true;

@@ -17,29 +17,29 @@ static void stretch_col(XtkTxn *txn, XtkNodeRef parent, XtkImageStretch stretch,
 }
 
 static void asset_col(PageBuild *b, XtkNodeRef parent, wchar_t const *name, XtkImageProps props, char const *label) {
-	XtkNodeRef col  = xtk_ref_local(ui_column(&b->txn, parent, 6.0f, XENT_FLEX_ALIGN_START));
+	XtkNodeRef col  = xtk_ref_local(ui_column(b->txn, parent, 6.0f, XENT_FLEX_ALIGN_START));
 	props.set      |= XTK_IMAGE_SRC_MASK | XTK_IMAGE_FIT_MASK;
 	props.src       = gallery_asset(name);
-	xtk_image_create(&b->txn, col, &props);
-	ui_text(&b->txn, col, label, 12.0f, FLUX_FONT_REGULAR);
+	xtk_image_create(b->txn, col, &props);
+	ui_text(b->txn, col, label, 12.0f, FLUX_FONT_REGULAR);
 }
 
 static XtkNodeRef image_card(PageBuild *b, XtkNodeRef parent, char const *caption) {
 	XtkNodeRef card
-	  = xtk_ref_local(ui_card(&b->txn, page_example(b, parent, caption), 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f));
-	return xtk_ref_local(ui_row(&b->txn, card, 24.0f, true));
+	  = xtk_ref_local(ui_card(b->txn, page_example(b, parent, caption), 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f));
+	return xtk_ref_local(ui_row(b->txn, card, 24.0f, true));
 }
 
 bool page_image_build(PageBuild *b) {
 	XtkNodeRef parent = xtk_ref_local(b->content);
 	page_header(b, parent, "Image", "WIC-decoded images with the WinUI stretch modes.");
 	XtkNodeRef card = xtk_ref_local(ui_card(
-	  &b->txn, page_example(b, parent, "The same source under each Stretch mode."), 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f
+	  b->txn, page_example(b, parent, "The same source under each Stretch mode."), 0.0f, XENT_FLEX_ALIGN_STRETCH, 16.0f
 	));
-	XtkNodeRef row  = xtk_ref_local(ui_row(&b->txn, card, 24.0f, true));
-	stretch_col(&b->txn, row, XTK_IMAGE_UNIFORM, "Uniform");
-	stretch_col(&b->txn, row, XTK_IMAGE_FILL, "Fill");
-	stretch_col(&b->txn, row, XTK_IMAGE_UNIFORM_TO_FILL, "UniformToFill");
+	XtkNodeRef row  = xtk_ref_local(ui_row(b->txn, card, 24.0f, true));
+	stretch_col(b->txn, row, XTK_IMAGE_UNIFORM, "Uniform");
+	stretch_col(b->txn, row, XTK_IMAGE_FILL, "Fill");
+	stretch_col(b->txn, row, XTK_IMAGE_UNIFORM_TO_FILL, "UniformToFill");
 	XtkNodeRef natural = image_card(
 	  b, parent,
 	  "No Width or Height: each image measures to its natural size once its header is decoded off the UI thread."

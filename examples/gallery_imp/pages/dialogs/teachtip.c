@@ -23,7 +23,7 @@ bool page_teaching_tip_build(PageBuild *b) {
 	page_keepx(b, 0, page_button(b, demo.items, open ? "Hide tip" : "Show tip", MSG_TIP_OPEN, 0));
 	page_keepout(b, MSG_TIP_OPEN, page_output(b, demo.row, open ? "Tip is open." : "Tip is closed."));
 	XtkLocalId tip = xtk_teachtip_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkTeachingTipProps) {
 		.set          = XTK_TEACHTIP_TEXT_MASK
 	                  | XTK_TEACHTIP_SUBTITLE_MASK
@@ -41,11 +41,11 @@ bool page_teaching_tip_build(PageBuild *b) {
 		.open         = open,
 	  }
 	);
-	xtk_teachtip_oninvoke(&b->txn, xtk_ref_local(tip), page_post, page_bind(b, MSG_TIP_ACTION));
-	xtk_teachtip_onclose(&b->txn, xtk_ref_local(tip), page_post, page_bind(b, MSG_TIP_CLOSE));
+	xtk_teachtip_oninvoke(b->txn, xtk_ref_local(tip), page_post, page_bind(b, MSG_TIP_ACTION));
+	xtk_teachtip_onclose(b->txn, xtk_ref_local(tip), page_post, page_bind(b, MSG_TIP_CLOSE));
 	page_keep(b, MSG_TIP_OPEN, tip);
 	XtkNodeRef card
-	  = xtk_ref_local(ui_card(&b->txn, page_example(b, parent, "Tip events."), 0.0f, XENT_FLEX_ALIGN_START, 16.0f));
+	  = xtk_ref_local(ui_card(b->txn, page_example(b, parent, "Tip events."), 0.0f, XENT_FLEX_ALIGN_START, 16.0f));
 	page_keepout(b, MSG_TIP_ACTION, page_note(b, card, events_text(b->app)));
 	return true;
 }

@@ -55,16 +55,16 @@ bool page_tabview_build(PageBuild *b) {
 	XtkNodeRef parent = xtk_ref_local(b->content);
 	page_header(b, parent, "TabView", "Tabs live in the model: selection, close, and add update the retained control.");
 	XtkNodeRef ex   = page_example(b, parent, "A TabView with closable tabs and an add button.");
-	XtkLocalId tabs = xtk_tabs_create(&b->txn, ex, &(XtkSelectionProps) {.set = XTK_SELECTION_H_MASK, .h = 280.0f});
+	XtkLocalId tabs = xtk_tabs_create(b->txn, ex, &(XtkSelectionProps) {.set = XTK_SELECTION_H_MASK, .h = 280.0f});
 	XtkNodeRef ref  = xtk_ref_local(tabs);
-	tab_items(b->app, &b->txn, ref);
+	tab_items(b->app, b->txn, ref);
 	xtk_txn_set(
-	  &b->txn, ref, XTK_PROP_ADD_VISIBLE, (XtkValue) {.kind = XTK_VALUE_BOOL, .u.b = true}, (XtkChangeStamp) {0}
+	  b->txn, ref, XTK_PROP_ADD_VISIBLE, (XtkValue) {.kind = XTK_VALUE_BOOL, .u.b = true}, (XtkChangeStamp) {0}
 	);
-	xtk_tabs_onselect(&b->txn, ref, page_post, page_bind(b, MSG_TAB_SELECT));
+	xtk_tabs_onselect(b->txn, ref, page_post, page_bind(b, MSG_TAB_SELECT));
 	page_on(b, tabs, XTK_EVENT_CLOSE, MSG_TAB_CLOSE, 0);
-	xtk_tabs_oninvoke(&b->txn, ref, page_post, page_bind(b, MSG_TAB_ADD));
+	xtk_tabs_oninvoke(b->txn, ref, page_post, page_bind(b, MSG_TAB_ADD));
 	page_keep(b, MSG_TAB_SELECT, tabs);
-	page_keepx(b, 0, tab_content(b->app, &b->txn, ref));
+	page_keepx(b, 0, tab_content(b->app, b->txn, ref));
 	return true;
 }

@@ -328,6 +328,16 @@ bool flux_host_registercomp(XtkHost *host, XtkCompType const *type) {
 	return R && R->comp && xtk_comp_register(R->comp, type);
 }
 
+bool flux_host_replacecomp(XtkHost *host, XtkCompType const *type) {
+	FluxHostState *R = flux_host_state(host);
+	return R && R->comp && xtk_comp_replace(R->comp, type);
+}
+
+void flux_host_dropcomp(XtkHost *host, XtkCtrlId id) {
+	FluxHostState *R = flux_host_state(host);
+	if (R && R->comp) xtk_comp_unregister(R->comp, id);
+}
+
 bool flux_host_setproviders(XtkHost *host, XtkProviderDesc const *providers, uint32_t count) {
 	FluxHostState *R = flux_host_state(host);
 	return R && R->comp && xtk_comp_setproviders(R->comp, providers, count);

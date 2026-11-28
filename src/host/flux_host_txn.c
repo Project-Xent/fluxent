@@ -500,7 +500,9 @@ static XtkBatchError store_create_props(Prepare *P, XentNodeId node, XtkPropPatc
 static XtkBatchError create_node(
   Prepare *P, XtkCtrlId type, XtkLocalId local, XtkPropPatch const *props, uint32_t prop_count, XentNodeId *out
 ) {
-	XentNodeId node = flux_factory_create_node(P->R->ctx, P->R->store, XENT_NODE_INVALID, ( FluxControlType ) type);
+	bool       comp     = xtk_ctrl_iscomp(type);
+	XtkCtrlId  physical = comp ? XTK_CTRL_CONTAINER : type;
+	XentNodeId node = flux_factory_create_node(P->R->ctx, P->R->store, XENT_NODE_INVALID, ( FluxControlType ) physical);
 	if (node == XENT_NODE_INVALID) return XTK_BATCH_ERR_OOM;
 	if (!flux_host_types_set(P->R, node, type)
 	    || !flux_host_undo_push(P, (Undo) {.kind = UNDO_CREATE, .u.created = node}))
@@ -512,7 +514,7 @@ static XtkBatchError create_node(
 	*out              = node;
 	XtkBatchError err = store_create_props(P, node, props, prop_count);
 	if (err != XTK_BATCH_OK) return err;
-	if (!materialize(P->R, node, type, props, prop_count)) return XTK_BATCH_ERR_OOM;
+	if (!materialize(P->R, node, physical, comp ? NULL : props, comp ? 0u : prop_count)) return XTK_BATCH_ERR_OOM;
 	return XTK_BATCH_OK;
 }
 

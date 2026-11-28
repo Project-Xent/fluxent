@@ -20,7 +20,7 @@ static uint32_t det_reorder(void *arg, XtkEvent const *event) {
 static void det_column(PageBuild *b, XtkNodeRef header, int slot, int col) {
 	Model const *m     = &b->app->model;
 	XtkLocalId   local = xtk_colitem_create(
-	  &b->txn, header,
+	  b->txn, header,
 	  &(XtkColumnProps) {
 		.set  = XTK_COLUMN_W_MASK | XTK_COLUMN_TEXT_MASK | XTK_COLUMN_SORT_MASK,
 		.w    = m->det_width [col],
@@ -29,23 +29,22 @@ static void det_column(PageBuild *b, XtkNodeRef header, int slot, int col) {
 	  }
 	);
 	XtkNodeRef ref = xtk_ref_local(local);
-	xtk_colitem_oninvoke(&b->txn, ref, page_post, page_bind_i(b, MSG_DET_SORT, col));
-	xtk_colitem_onresize(&b->txn, ref, page_post, page_bind_i(b, MSG_DET_RESIZE, col));
-	xtk_colitem_onfit(&b->txn, ref, page_post, page_bind_i(b, MSG_DET_FIT, col));
-	xtk_colitem_onreorder(&b->txn, ref, det_reorder, page_bind_i(b, MSG_DET_REORDER, col));
+	xtk_colitem_oninvoke(b->txn, ref, page_post, page_bind_i(b, MSG_DET_SORT, col));
+	xtk_colitem_onresize(b->txn, ref, page_post, page_bind_i(b, MSG_DET_RESIZE, col));
+	xtk_colitem_onfit(b->txn, ref, page_post, page_bind_i(b, MSG_DET_FIT, col));
+	xtk_colitem_onreorder(b->txn, ref, det_reorder, page_bind_i(b, MSG_DET_REORDER, col));
 	page_keepx(b, slot, local);
 }
 
 static void det_row(PageBuild *b, XtkNodeRef parent, int r, int const rows [DET_ROWS]) {
 	Model const *m   = &b->app->model;
-	XtkNodeRef   row = xtk_ref_local(ui_row(&b->txn, parent, 0.0f, false));
+	XtkNodeRef   row = xtk_ref_local(ui_row(b->txn, parent, 0.0f, false));
 	for (int p = 0; p < DET_COLS; p++) {
-		int        col = m->det_order [p];
-		XtkLocalId cell
-		  = ui_text(&b->txn, row, gallery_det_cell(rows [r], col), col ? 12.0f : 14.0f, FLUX_FONT_REGULAR);
-		ui_size(&b->txn, cell, m->det_width [col] - DET_CELL_PAD, NAN);
+		int        col  = m->det_order [p];
+		XtkLocalId cell = ui_text(b->txn, row, gallery_det_cell(rows [r], col), col ? 12.0f : 14.0f, FLUX_FONT_REGULAR);
+		ui_size(b->txn, cell, m->det_width [col] - DET_CELL_PAD, NAN);
 		xtk_txn_set(
-		  &b->txn, xtk_ref_local(cell), XTK_PROP_MARGIN_LEFT, (XtkValue) {.kind = XTK_VALUE_F32, .u.f32 = DET_CELL_PAD},
+		  b->txn, xtk_ref_local(cell), XTK_PROP_MARGIN_LEFT, (XtkValue) {.kind = XTK_VALUE_F32, .u.f32 = DET_CELL_PAD},
 		  (XtkChangeStamp) {0}
 		);
 		page_keepx(b, DET_SLOT_ROW + r * DET_COLS + p, cell);
@@ -88,7 +87,7 @@ bool page_details_build(PageBuild *b) {
 	  b, parent, "Click a header to sort, drag a divider to resize, double-click it to fit, drag a header to reorder."
 	);
 	XtkNodeRef list   = xtk_ref_local(xtk_list_create(
-	  &b->txn, card,
+	  b->txn, card,
 	  &(XtkListProps) {
 		.set   = XTK_LIST_H_MASK | XTK_LIST_SEL_MASK | XTK_LIST_NITEM_MASK | XTK_LIST_ITEMH_MASK,
 		.h     = 420.0f,
@@ -98,7 +97,7 @@ bool page_details_build(PageBuild *b) {
 	  }
 	));
 	XtkNodeRef top    = xtk_ref_local(xtk_container_create(
-	  &b->txn, list,
+	  b->txn, list,
 	  &(XtkContainerProps) {
 		.set  = XTK_CONTAINER_DIR_MASK
 	          | XTK_CONTAINER_PL_MASK
@@ -112,7 +111,7 @@ bool page_details_build(PageBuild *b) {
 		.fith = true,
 	  }
 	));
-	XtkNodeRef header = xtk_ref_local(xtk_colheader_create(&b->txn, top, &(XtkLayoutProps) {0}));
+	XtkNodeRef header = xtk_ref_local(xtk_colheader_create(b->txn, top, &(XtkLayoutProps) {0}));
 	for (int p = 0; p < DET_COLS; p++) {
 		det_built [p] = m->det_order [p];
 		det_column(b, header, p, m->det_order [p]);
@@ -120,6 +119,6 @@ bool page_details_build(PageBuild *b) {
 	int rows [DET_ROWS];
 	gallery_det_rows(m, rows);
 	for (int r = 0; r < DET_ROWS; r++)
-		det_row(b, xtk_ref_local(xtk_txn_create(&b->txn, XTK_CTRL_LISTITEM, list, xtk_ref_none(), NULL, 0)), r, rows);
+		det_row(b, xtk_ref_local(xtk_txn_create(b->txn, XTK_CTRL_LISTITEM, list, xtk_ref_none(), NULL, 0)), r, rows);
 	return true;
 }

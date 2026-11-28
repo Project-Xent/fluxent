@@ -19,11 +19,11 @@ bool        page_items_view_build(PageBuild *b) {
 	  b, parent, "ItemsView", "ItemsRepeater + layout + ItemContainer chrome. Here: a wrapping flow of 24 cards."
 	);
 	XtkNodeRef col  = xtk_ref_local(ui_column(
-	  &b->txn, page_example(b, parent, "Flow layout with ItemInvoked (no selection chrome)."), 12.0f,
+	  b->txn, page_example(b, parent, "Flow layout with ItemInvoked (no selection chrome)."), 12.0f,
 	  XENT_FLEX_ALIGN_STRETCH
 	));
 	XtkLocalId view = xtk_itemsview_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkItemsViewProps) {
 		.set     = XTK_ITEMSVIEW_H_MASK
 	             | XTK_ITEMSVIEW_NITEM_MASK
@@ -39,7 +39,7 @@ bool        page_items_view_build(PageBuild *b) {
 		.invoked = true,
 	  }
 	);
-	xtk_itemsview_oninvoke(&b->txn, xtk_ref_local(view), page_post, page_bind(b, MSG_ITEMS_INVOKE));
+	xtk_itemsview_oninvoke(b->txn, xtk_ref_local(view), page_post, page_bind(b, MSG_ITEMS_INVOKE));
 	page_list(b, view, items_cell);
 	page_keepout(b, MSG_ITEMS_INVOKE, page_note(b, col, invoke_text(b->app)));
 	return true;

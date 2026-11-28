@@ -3,17 +3,13 @@
 
 #include <fluxent/flux_theme.h>
 #include <fluxent/flux_window.h>
+#include <xtk/xtk_hot.h>
 
 #include <windows.h>
 
 static FluxWindow *g_window;
 
-static void        gallery_on_start(FluxApp *app, void *user) {
-	( void ) user;
-	g_window = flux_app_window(app);
-}
-
-void gallery_decl_update(void *model, XtkMsg msg) {
+void               gallery_decl_update(void *model, XtkMsg msg) {
 	Model *m = ( Model * ) model;
 	gallery_model_update(m, msg);
 	if (msg.tag == MSG_BACKDROP) gallery_backdrop_apply(g_window, m->backdrop);
@@ -192,6 +188,18 @@ XtkEl *gallery_decl_view(XtkUi *ui, void *model) {
 	);
 }
 
+#ifdef GALLERY_HOT_MODULE
+static void gallery_load(void *app) { g_window = flux_app_window(( FluxApp * ) app); }
+
+XTK_HOT_EXPORT_MODULE(
+  Model, GALLERY_MODEL_VERSION, 0u, .update = gallery_decl_update, .view = gallery_decl_view, .on_load = gallery_load
+)
+#else
+static void gallery_on_start(FluxApp *app, void *user) {
+	( void ) user;
+	g_window = flux_app_window(app);
+}
+
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd) {
 	( void ) hInst;
 	( void ) hPrev;
@@ -215,3 +223,4 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmdLine, int showCmd)
 	gallery_assets_clear();
 	return rc;
 }
+#endif

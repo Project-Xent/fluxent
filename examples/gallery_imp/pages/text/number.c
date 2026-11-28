@@ -13,7 +13,7 @@ bool        page_numberbox_build(PageBuild *b) {
 	XtkNodeRef ex     = page_example(b, parent, "A NumberBox with spin buttons (0–100).");
 	PageDemo   demo   = page_demo(b, ex);
 	XtkLocalId number = xtk_number_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkNumberProps) {
 		.set     = XTK_NUMBER_VALUE_MASK
 	             | XTK_NUMBER_MIN_MASK
@@ -27,7 +27,7 @@ bool        page_numberbox_build(PageBuild *b) {
 		.enabled = true,
 	  }
 	);
-	xtk_number_onchange(&b->txn, xtk_ref_local(number), page_post, page_bind(b, MSG_QUANTITY));
+	xtk_number_onchange(b->txn, xtk_ref_local(number), page_post, page_bind(b, MSG_QUANTITY));
 	page_keep(b, MSG_QUANTITY, number);
 	XtkLocalId output = page_output(b, demo.row, gallery_fmt(b->app, "Quantity: %.0f", m->quantity));
 	page_keepout(b, MSG_QUANTITY, output);

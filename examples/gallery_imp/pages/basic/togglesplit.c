@@ -20,7 +20,7 @@ bool page_toggle_split_build(PageBuild *b) {
 	);
 	PageDemo   demo  = page_demo(b, page_example(b, parent, "Toggle + menu split button."));
 	XtkLocalId split = xtk_togglesplit_create(
-	  &b->txn, demo.items,
+	  b->txn, demo.items,
 	  &(XtkToggleProps) {
 		.set     = XTK_TOGGLE_TEXT_MASK | XTK_TOGGLE_CHECKED_MASK,
 		.text    = "Bold",
@@ -28,20 +28,20 @@ bool page_toggle_split_build(PageBuild *b) {
 	  }
 	);
 	xtk_txn_set(
-	  &b->txn, xtk_ref_local(split), XTK_PROP_ICON,
+	  b->txn, xtk_ref_local(split), XTK_PROP_ICON,
 	  (XtkValue) {
 		.kind = XTK_VALUE_STRING, .u.string = {.data = ( char * ) "Bold", .len = 4}
     },
 	  (XtkChangeStamp) {0}
 	);
-	xtk_togglesplit_onchange(&b->txn, xtk_ref_local(split), page_post, page_bind(b, MSG_TOGGLE_SPLIT));
+	xtk_togglesplit_onchange(b->txn, xtk_ref_local(split), page_post, page_bind(b, MSG_TOGGLE_SPLIT));
 	page_on(b, split, XTK_EVENT_INVOKE, MSG_TOGGLE_SPLIT_CLICK, 0);
-	XtkNodeRef               menu      = xtk_ref_local(xtk_menufly_create(&b->txn, xtk_ref_local(split), NULL));
+	XtkNodeRef               menu      = xtk_ref_local(xtk_menufly_create(b->txn, xtk_ref_local(split), NULL));
 	static char const *const kItems [] = {"Align left", "Align center", "Align right"};
 	for (int i = 0; i < 3; i++) {
 		XtkLocalId item
-		  = xtk_menuitem_create(&b->txn, menu, &(XtkItemProps) {.set = XTK_ITEM_TEXT_MASK, .text = kItems [i]});
-		xtk_menuitem_oninvoke(&b->txn, xtk_ref_local(item), page_post, page_bind_i(b, MSG_TOGGLE_SPLIT_MENU, i));
+		  = xtk_menuitem_create(b->txn, menu, &(XtkItemProps) {.set = XTK_ITEM_TEXT_MASK, .text = kItems [i]});
+		xtk_menuitem_oninvoke(b->txn, xtk_ref_local(item), page_post, page_bind_i(b, MSG_TOGGLE_SPLIT_MENU, i));
 	}
 	page_keepout(b, MSG_TOGGLE_SPLIT, page_output(b, demo.row, toggle_split_text(b->app)));
 	return true;

@@ -160,8 +160,8 @@ static void txn_bytes(XtkTxn *t, XtkNodeRef r, XtkPropertyId id, void const *dat
 }
 
 static XtkLocalId pill_btn(PageBuild *b, XtkNodeRef parent, char const *label, bool active, int tag, int i) {
-	XtkLocalId btn = ui_button(&b->txn, parent, label, NULL, active ? XTK_BUTTON_ACCENT : XTK_BUTTON_STANDARD);
-	xtk_button_oninvoke(&b->txn, xtk_ref_local(btn), page_post, page_bind_i(b, tag, i));
+	XtkLocalId btn = ui_button(b->txn, parent, label, NULL, active ? XTK_BUTTON_ACCENT : XTK_BUTTON_STANDARD);
+	xtk_button_oninvoke(b->txn, xtk_ref_local(btn), page_post, page_bind_i(b, tag, i));
 	return btn;
 }
 
@@ -236,8 +236,8 @@ static void build_implicit_section(PageBuild *b, XtkNodeRef parent, Model const 
 	XtkNodeRef ex = page_example(
 	  b, parent, "Implicit Property Transitions (click states rapidly to verify mid-flight retargeting)"
 	);
-	XtkNodeRef col   = xtk_ref_local(ui_column(&b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
-	XtkNodeRef masks = xtk_ref_local(ui_row(&b->txn, col, 6.0f, true));
+	XtkNodeRef col   = xtk_ref_local(ui_column(b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
+	XtkNodeRef masks = xtk_ref_local(ui_row(b->txn, col, 6.0f, true));
 	for (int i = 0; i < 6; i++) {
 		bool active = (m->motion_imp_mask & kImpMaskChecks [i]) != 0u;
 		page_keepx(
@@ -245,7 +245,7 @@ static void build_implicit_section(PageBuild *b, XtkNodeRef parent, Model const 
 		  pill_btn(b, masks, kImpMaskLabels [i], active, MSG_MOTION_IMP_MASK, ( int ) kImpMasks [i])
 		);
 	}
-	XtkNodeRef targets = xtk_ref_local(ui_row(&b->txn, col, 8.0f, false));
+	XtkNodeRef targets = xtk_ref_local(ui_row(b->txn, col, 8.0f, false));
 	for (int i = 0; i < 3; i++)
 		page_keepx(
 		  b, EX_IMP_STATES + i,
@@ -253,7 +253,7 @@ static void build_implicit_section(PageBuild *b, XtkNodeRef parent, Model const 
 		);
 
 	XtkLocalId card = xtk_card_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_W_MASK
 	           | XTK_CONTAINER_H_MASK
@@ -273,9 +273,9 @@ static void build_implicit_section(PageBuild *b, XtkNodeRef parent, Model const 
 		.pb    = 10.0f,
 	  }
 	);
-	ui_text(&b->txn, xtk_ref_local(card), "Implicit Target", 13.0f, FLUX_FONT_SEMI_BOLD);
-	apply_implicit_cfg(&b->txn, xtk_ref_local(card), m->motion_imp_mask);
-	apply_implicit_style(&b->txn, xtk_ref_local(card), m->motion_imp_step);
+	ui_text(b->txn, xtk_ref_local(card), "Implicit Target", 13.0f, FLUX_FONT_SEMI_BOLD);
+	apply_implicit_cfg(b->txn, xtk_ref_local(card), m->motion_imp_mask);
+	apply_implicit_style(b->txn, xtk_ref_local(card), m->motion_imp_step);
 	page_keepx(b, EX_IMP_TARGET, card);
 }
 
@@ -299,8 +299,8 @@ static XtkLocalId create_item_card(XtkTxn *t, XtkNodeRef row, int id, int theme_
 static void build_enter_exit_section(PageBuild *b, XtkNodeRef parent, Model const *m) {
 	XtkNodeRef ex
 	  = page_example(b, parent, "Enter, Exit & Reorder Theme Transitions (with PVL stagger & unloading ghost storage)");
-	XtkNodeRef col   = xtk_ref_local(ui_column(&b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
-	XtkNodeRef modes = xtk_ref_local(ui_row(&b->txn, col, 6.0f, true));
+	XtkNodeRef col   = xtk_ref_local(ui_column(b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
+	XtkNodeRef modes = xtk_ref_local(ui_row(b->txn, col, 6.0f, true));
 	for (int i = 0; i < 5; i++)
 		page_keepx(
 		  b, EX_THEME_KINDS + i,
@@ -308,16 +308,16 @@ static void build_enter_exit_section(PageBuild *b, XtkNodeRef parent, Model cons
 			b, modes, kThemeLabels [i], m->motion_theme_kind == kThemeKinds [i], MSG_MOTION_ENTER_KIND, kThemeKinds [i]
 		  )
 		);
-	XtkNodeRef actions = xtk_ref_local(ui_row(&b->txn, col, 8.0f, false));
+	XtkNodeRef actions = xtk_ref_local(ui_row(b->txn, col, 8.0f, false));
 	page_button(b, actions, "Add item", MSG_MOTION_ITEM_ADD, 0);
 	page_button(b, actions, "Remove last", MSG_MOTION_ITEM_REMOVE, 0);
 	page_button(b, actions, "Shift order", MSG_MOTION_ITEM_SHUFFLE, 0);
 
-	XtkLocalId row = ui_row(&b->txn, col, 8.0f, true);
+	XtkLocalId row = ui_row(b->txn, col, 8.0f, true);
 	page_keepx(b, EX_ITEMS_ROW, row);
 	for (int i = 0; i < m->motion_item_count; i++)
 		page_keepx(
-		  b, EX_ITEMS + i, create_item_card(&b->txn, xtk_ref_local(row), m->motion_item_ids [i], m->motion_theme_kind)
+		  b, EX_ITEMS + i, create_item_card(b->txn, xtk_ref_local(row), m->motion_item_ids [i], m->motion_theme_kind)
 		);
 }
 
@@ -336,8 +336,8 @@ static XtkLocalId create_subpage_card(XtkTxn *t, XtkNodeRef frame, int page_idx,
 static void build_frame_section(PageBuild *b, XtkNodeRef parent, Model const *m) {
 	XtkNodeRef ex
 	  = page_example(b, parent, "Frame NavigationTransitionInfo (all 6 WinUI transition kinds & Back direction)");
-	XtkNodeRef col   = xtk_ref_local(ui_column(&b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
-	XtkNodeRef kinds = xtk_ref_local(ui_row(&b->txn, col, 6.0f, true));
+	XtkNodeRef col   = xtk_ref_local(ui_column(b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
+	XtkNodeRef kinds = xtk_ref_local(ui_row(b->txn, col, 6.0f, true));
 	for (int i = 0; i < 6; i++)
 		page_keepx(
 		  b, EX_FRAME_KINDS + i,
@@ -345,14 +345,14 @@ static void build_frame_section(PageBuild *b, XtkNodeRef parent, Model const *m)
 			b, kinds, kFrameLabels [i], m->motion_frame_kind == kFrameKinds [i], MSG_MOTION_FRAME_KIND, kFrameKinds [i]
 		  )
 		);
-	XtkNodeRef nav = xtk_ref_local(ui_row(&b->txn, col, 8.0f, false));
+	XtkNodeRef nav = xtk_ref_local(ui_row(b->txn, col, 8.0f, false));
 	page_button(b, nav, "Back", MSG_MOTION_FRAME_STEP, -1);
-	XtkLocalId next_btn = ui_button(&b->txn, nav, "Next page", NULL, XTK_BUTTON_ACCENT);
-	xtk_button_oninvoke(&b->txn, xtk_ref_local(next_btn), page_post, page_bind_i(b, MSG_MOTION_FRAME_STEP, 1));
+	XtkLocalId next_btn = ui_button(b->txn, nav, "Next page", NULL, XTK_BUTTON_ACCENT);
+	xtk_button_oninvoke(b->txn, xtk_ref_local(next_btn), page_post, page_bind_i(b, MSG_MOTION_FRAME_STEP, 1));
 
 	int        idx   = m->motion_frame_page & 3;
 	XtkLocalId frame = xtk_frame_create(
-	  &b->txn, col,
+	  b->txn, col,
 	  &(XtkFrameProps) {
 		.set        = XTK_FRAME_W_MASK
 	                | XTK_FRAME_H_MASK
@@ -367,7 +367,7 @@ static void build_frame_section(PageBuild *b, XtkNodeRef parent, Model const *m)
 	  }
 	);
 	page_keepx(b, EX_FRAME, frame);
-	page_keepx(b, EX_SUBPAGE, create_subpage_card(&b->txn, xtk_ref_local(frame), idx, m->motion_frame_back));
+	page_keepx(b, EX_SUBPAGE, create_subpage_card(b->txn, xtk_ref_local(frame), idx, m->motion_frame_back));
 }
 
 static XtkLocalId create_hero_card(XtkTxn *t, XtkNodeRef parent, int conn_kind, bool detail) {
@@ -444,8 +444,8 @@ create_conn_body(XtkTxn *t, XtkNodeRef host, int conn_kind, bool detail, XtkLoca
 static void build_connected_section(PageBuild *b, XtkNodeRef parent, Model const *m) {
 	XtkNodeRef ex
 	  = page_example(b, parent, "Connected Animation (Gravity dip & shadow, Direct, Basic + coordinated elements)");
-	XtkNodeRef col   = xtk_ref_local(ui_column(&b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
-	XtkNodeRef modes = xtk_ref_local(ui_row(&b->txn, col, 6.0f, false));
+	XtkNodeRef col   = xtk_ref_local(ui_column(b->txn, ex, 10.0f, XENT_FLEX_ALIGN_STRETCH));
+	XtkNodeRef modes = xtk_ref_local(ui_row(b->txn, col, 6.0f, false));
 	for (int i = 0; i < 3; i++)
 		page_keepx(
 		  b, EX_CONN_KINDS + i,
@@ -454,14 +454,14 @@ static void build_connected_section(PageBuild *b, XtkNodeRef parent, Model const
 		  )
 		);
 	XtkLocalId toggle
-	  = ui_button(&b->txn, modes, m->motion_conn_detail ? "Collapse" : "Expand detail", NULL, XTK_BUTTON_ACCENT);
-	xtk_button_oninvoke(&b->txn, xtk_ref_local(toggle), page_post, page_bind(b, MSG_MOTION_CONN_TOGGLE));
+	  = ui_button(b->txn, modes, m->motion_conn_detail ? "Collapse" : "Expand detail", NULL, XTK_BUTTON_ACCENT);
+	xtk_button_oninvoke(b->txn, xtk_ref_local(toggle), page_post, page_bind(b, MSG_MOTION_CONN_TOGGLE));
 	page_keepx(b, EX_CONN_TOGGLE, toggle);
 
-	XtkLocalId host = ui_column(&b->txn, col, 0.0f, XENT_FLEX_ALIGN_STRETCH);
+	XtkLocalId host = ui_column(b->txn, col, 0.0f, XENT_FLEX_ALIGN_STRETCH);
 	page_keepx(b, EX_CONN_HOST, host);
 	XtkLocalId body = XTK_LOCAL_INVALID, hero = XTK_LOCAL_INVALID;
-	create_conn_body(&b->txn, xtk_ref_local(host), m->motion_conn_kind, m->motion_conn_detail, &body, &hero);
+	create_conn_body(b->txn, xtk_ref_local(host), m->motion_conn_kind, m->motion_conn_detail, &body, &hero);
 	page_keepx(b, EX_CONN_BODY, body);
 	page_keepx(b, EX_CONN_HERO, hero);
 }
@@ -472,7 +472,7 @@ static char const *reduced_status_text(void) {
 
 static void build_reduced_section(PageBuild *b, XtkNodeRef parent, Model const *m) {
 	XtkNodeRef ex  = page_example(b, parent, "Reduced Motion (UISettings.AnimationsEnabled)");
-	XtkNodeRef row = xtk_ref_local(ui_row(&b->txn, ex, 8.0f, false));
+	XtkNodeRef row = xtk_ref_local(ui_row(b->txn, ex, 8.0f, false));
 	for (int i = 0; i < 3; i++)
 		page_keepx(
 		  b, EX_RED_KINDS + i,
@@ -618,22 +618,26 @@ static void sync_connected_section(
 	st->conn_detail = m->motion_conn_detail;
 }
 
+static void adopt_items(
+  GalleryApp *g, MotionPageState const *st, Model const *m, XtkBatchResult const *res, XtkLocalId const new_items [8],
+  bool rebuilt
+) {
+	if (rebuilt) {
+		for (int i = 0; i < 8; i++)
+			g->live_extra [EX_ITEMS + i]
+			  = i < m->motion_item_count ? find_result_ctrl(res, new_items [i]) : XTK_CTRL_INVALID;
+		return;
+	}
+	if (m->motion_item_count > st->item_count)
+		g->live_extra [EX_ITEMS + st->item_count] = find_result_ctrl(res, new_items [st->item_count]);
+	else if (m->motion_item_count < st->item_count) g->live_extra [EX_ITEMS + m->motion_item_count] = XTK_CTRL_INVALID;
+}
+
 static void adopt_sync_ctrls(
   GalleryApp *g, MotionPageState *st, Model const *m, XtkBatchResult const *res, XtkLocalId const new_items [8],
   bool items_rebuilt, XtkLocalId new_sub, XtkLocalId new_body, XtkLocalId new_hero
 ) {
-	if (items_rebuilt) {
-		for (int i = 0; i < 8; i++)
-			g->live_extra [EX_ITEMS + i]
-			  = i < m->motion_item_count ? find_result_ctrl(res, new_items [i]) : XTK_CTRL_INVALID;
-	}
-	else if (m->motion_item_count > st->item_count) {
-		int idx                        = st->item_count;
-		g->live_extra [EX_ITEMS + idx] = find_result_ctrl(res, new_items [idx]);
-	}
-	else if (m->motion_item_count < st->item_count) {
-		g->live_extra [EX_ITEMS + m->motion_item_count] = XTK_CTRL_INVALID;
-	}
+	adopt_items(g, st, m, res, new_items, items_rebuilt);
 	st->item_count = m->motion_item_count;
 	memcpy(st->item_ids, m->motion_item_ids, sizeof(st->item_ids));
 

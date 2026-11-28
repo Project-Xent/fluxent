@@ -25,7 +25,7 @@ bool page_typography_build(PageBuild *b) {
 	XtkNodeRef parent = xtk_ref_local(b->content);
 	page_header(b, parent, "Typography", "The WinUI 3 type ramp, explicit font_family, and FontIcon.");
 	XtkLocalId card = xtk_card_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -43,7 +43,7 @@ bool page_typography_build(PageBuild *b) {
 	);
 	for (size_t i = 0; i < sizeof(samples) / sizeof(samples [0]); i++)
 		xtk_text_create(
-		  &b->txn, xtk_ref_local(card),
+		  b->txn, xtk_ref_local(card),
 		  &(XtkTextProps) {
 			.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTSIZE_MASK | XTK_TEXT_FONTWEIGHT_MASK,
 			.text       = samples [i].text,
@@ -52,7 +52,7 @@ bool page_typography_build(PageBuild *b) {
 		  }
 		);
 	XtkLocalId font_card = xtk_card_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -72,7 +72,7 @@ bool page_typography_build(PageBuild *b) {
 	);
 	for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts [0]); i++)
 		xtk_text_create(
-		  &b->txn, xtk_ref_local(font_card),
+		  b->txn, xtk_ref_local(font_card),
 		  &(XtkTextProps) {
 			.set        = XTK_TEXT_TEXT_MASK | XTK_TEXT_FONTFAMILY_MASK | XTK_TEXT_FONTSIZE_MASK,
 			.text       = fonts [i][1],
@@ -81,7 +81,7 @@ bool page_typography_build(PageBuild *b) {
 		  }
 		);
 	XtkLocalId icon_card = xtk_card_create(
-	  &b->txn, parent,
+	  b->txn, parent,
 	  &(XtkContainerProps) {
 		.set   = XTK_CONTAINER_DIR_MASK
 	           | XTK_CONTAINER_ITEMS_MASK
@@ -102,18 +102,18 @@ bool page_typography_build(PageBuild *b) {
 	  }
 	);
 	xtk_fonticon_create(
-	  &b->txn, xtk_ref_local(icon_card), &(XtkFontIconProps) {.set = XTK_FONTICON_GLYPH_MASK, .glyph = "Home"}
+	  b->txn, xtk_ref_local(icon_card), &(XtkFontIconProps) {.set = XTK_FONTICON_GLYPH_MASK, .glyph = "Home"}
 	);
 	xtk_fonticon_create(
-	  &b->txn, xtk_ref_local(icon_card),
+	  b->txn, xtk_ref_local(icon_card),
 	  &(XtkFontIconProps) {
 		.set = XTK_FONTICON_GLYPH_MASK | XTK_FONTICON_ANAME_MASK, .glyph = "Settings", .aname = "Settings icon"}
 	);
 	xtk_fonticon_create(
-	  &b->txn, xtk_ref_local(icon_card), &(XtkFontIconProps) {.set = XTK_FONTICON_GLYPH_MASK, .glyph = "Search"}
+	  b->txn, xtk_ref_local(icon_card), &(XtkFontIconProps) {.set = XTK_FONTICON_GLYPH_MASK, .glyph = "Search"}
 	);
 	xtk_fonticon_create(
-	  &b->txn, xtk_ref_local(icon_card),
+	  b->txn, xtk_ref_local(icon_card),
 	  &(XtkFontIconProps) {
 		.set      = XTK_FONTICON_GLYPH_MASK | XTK_FONTICON_FONTSIZE_MASK | XTK_FONTICON_FG_MASK,
 		.glyph    = "Heart",
@@ -122,7 +122,7 @@ bool page_typography_build(PageBuild *b) {
 	  }
 	);
 	xtk_fonticon_create(
-	  &b->txn, xtk_ref_local(icon_card),
+	  b->txn, xtk_ref_local(icon_card),
 	  &(XtkFontIconProps) {
 		.set      = XTK_FONTICON_GLYPH_MASK | XTK_FONTICON_FONTSIZE_MASK | XTK_FONTICON_FG_MASK,
 		.glyph    = "Refresh",
@@ -131,12 +131,12 @@ bool page_typography_build(PageBuild *b) {
 	  }
 	);
 	xtk_fonticon_create(
-	  &b->txn, xtk_ref_local(icon_card),
+	  b->txn, xtk_ref_local(icon_card),
 	  &(XtkFontIconProps) {
 		.set = XTK_FONTICON_GLYPH_MASK | XTK_FONTICON_FONTSIZE_MASK, .glyph = "\xEE\x9C\xB4", .fontsize = 24.0f}
 	);
 	xtk_fonticon_create(
-	  &b->txn, xtk_ref_local(icon_card),
+	  b->txn, xtk_ref_local(icon_card),
 	  &(XtkFontIconProps) {
 		.set = XTK_FONTICON_GLYPH_MASK | XTK_FONTICON_MIRRORRTL_MASK, .glyph = "Forward", .mirrorrtl = true}
 	);

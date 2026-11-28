@@ -64,7 +64,7 @@ typedef void (*PageSyncFn)(GalleryApp *g);
 
 typedef struct PageBuild {
 	GalleryApp       *app;
-	XtkTxn            txn;
+	XtkTxn           *txn;
 	GalleryBindBlock *bind_blocks;
 	GalleryBindBlock *bind_cursor;
 	GalleryPageAlloc *allocs;
@@ -74,7 +74,6 @@ typedef struct PageBuild {
 	XtkLocalId        controls [MSG_COUNT];
 	XtkLocalId        outputs [MSG_COUNT];
 	XtkLocalId        extra [PAGE_EXTRA];
-	bool              active;
 } PageBuild;
 
 typedef struct PageDemo {
@@ -94,8 +93,10 @@ struct GalleryApp {
 	XtkCtrl           control_search;
 	XtkCtrl           page_frame;
 	XtkCtrl           page_root;
-	GalleryBindBlock *bind_blocks;
 	GalleryPageAlloc *page_allocs;
+	void              (*dispatch)(GalleryApp *g, XtkMsg msg);
+	void             *page;
+	void             *hot;
 	GalleryPending   *pending_head;
 	GalleryPending   *pending_tail;
 	PageSyncFn        sync_page;
@@ -112,6 +113,11 @@ void         gallery_app_destroy(GalleryApp *g);
 int          gallery_app_run(GalleryApp *g);
 char const  *gallery_fmt(GalleryApp *g, char const *fmt, ...);
 void         gallery_settext(GalleryApp *g, XtkCtrl text, char const *value);
+
+bool         gallery_page_build(GalleryApp *g, XtkTxn *txn, void **out);
+void         gallery_page_adopt(void *page, XtkBatchResult const *result);
+void         gallery_page_release(void *page);
+XtkCtrl      gallery_result_ctrl(XtkBatchResult const *result, XtkLocalId local);
 
 GalleryBind *page_bind(PageBuild *b, int tag);
 GalleryBind *page_bind_i(PageBuild *b, int tag, int i);
